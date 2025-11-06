@@ -1,14 +1,20 @@
-For test.
+Say hello to all your classmates.
 
 @<hello.c@>=
 #include <stdio.h>
 
 int main()
 {
-	@<print hello @| sed -e "s/H/h/"@>
+    @<print hello to every one@>
 }
 @
 
-@<print hello@>=
-printf("Hello\n");
+@<classmates@>=
+Maeda Chu
+Alic Ford
 @
+
+@<print hello to every one@>=
+@<classmates@|sed -e 's/\(.*\)/printf("Hello, \1!");/'@>
+@
+

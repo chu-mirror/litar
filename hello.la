@@ -1,0 +1,14 @@
+For test.
+
+@<hello.c@>=
+#include <stdio.h>
+
+int main()
+{
+	@<print hello @| sed -e "s/H/h/"@>
+}
+@
+
+@<print hello@>=
+printf("Hello\n");
+@

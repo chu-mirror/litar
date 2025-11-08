@@ -7,6 +7,6 @@ To install:
 
 To test:
 ```
-litar "hello.c" hello.la
+$ make hello
 ```
 

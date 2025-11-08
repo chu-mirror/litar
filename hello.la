@@ -10,11 +10,19 @@ int main()
 @
 
 @<classmates@>=
-Maeda Chu
-Alic Ford
+Alice
+Floyd
+@
+
+@<greetings for a list of people@>=
+sed -e 's/\(.*\)/printf("Hello, \1!\\n");/'
+@
+
+@<exaggerated version for greetings@>=
+sed -e 's/Hello,/HELLO!/'
 @
 
 @<print hello to every one@>=
-@<classmates@|sed -e 's/\(.*\)/printf("Hello, \1!");/'@>
+@<classmates@|greetings for a list of people@|exaggerated version for greetings@>
 @
 

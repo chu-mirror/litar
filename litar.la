@@ -1,0 +1,63 @@
+@<litar.c@>=
+@<includes@>
+
+@<flags@>
+@<global variables@>
+
+int main(int argn, char *argv[])
+{
+    @<parse command line arguments to set flags and global variables@>
+    @<perform operations according to flags@>
+    return 0;
+}
+@
+
+@<parse command line arguments to set flags and global variables@>=
+do {
+    int i;
+    for (i = 1; i < argn; ++i) {
+        @<check the argument at position 'i'@>
+    }
+} while (0);
+@
+
+@<flags@>=
+bool do_not_perform_operations;
+@
+
+@<perform operations according to flags@>=
+if (!do_not_perform_operations) {
+    @<perform some operations according to flags@>
+}
+@
+
+@<check the argument at position 'i'@>=
+if (strcmp(argv[i], "-v") == 0) {
+    @<print version information@|fill in build time infomation@>
+    do_not_perform_operations = true;
+    continue;
+}
+@
+
+@<global variables@>=
+char version[] = "dev";
+@
+
+@<print version information@>=
+printf("Version %s, built at <build time>\n", version);
+@
+
+@<fill in build time infomation@>=
+sed -e "s/<build time>/$(date -Iminute)/g"
+@
+
+@<perform some operations according to flags@>=
+printf("Performing operations\n");
+@
+
+@<includes@>=
+#include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
+@
+

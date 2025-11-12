@@ -1,3 +1,4 @@
+litar follows the common pattern of a command line tool, just executes and exits.
 
 @<litar.c@>=
 @<includes@>
@@ -13,14 +14,51 @@ int main(int argc, char *argv[])
 }
 @
 
+The operations of litar can be performed at three stages:
+
+1. before parsing,
+2. after parsing input,
+3. after executing commands.
+
+Not all invocations need all three stages.
+
+@<perform operations according to flags@>=
+do {
+    bool to_continue = true;
+    @<operations before parsing@|execute sequentially@>
+    if (!to_continue) {
+        break;
+    }
+
+    @<parse input@>
+
+    @<operations after parsing input@|execute sequentially@>
+    if (!to_continue) {
+        break;
+    }
+    
+    @<execute commands@>
+    @<operations after executing commands@|execute sequentially@>
+} while (0);
+@
+
+@<execute sequentially@>=
+echo "do {"
+cat -
+echo "} while (0);"
+@
+
+@<flags@>=
+bool to_print_version_info;
+@
+
 @<parse command line arguments to set flags and global variables@>=
 do {
     int opt;
     while ((opt = getopt(argc, argv, "v")) != -1) {
         switch (opt) {
         case 'v':
-            @<print version information@|fill in build time infomation@>
-            do_not_perform_operations = true;
+            to_print_version_info = true;
             break;
         default:
             break;
@@ -29,13 +67,11 @@ do {
 } while (0);
 @
 
-@<flags@>=
-bool do_not_perform_operations;
-@
-
-@<perform operations according to flags@>=
-if (!do_not_perform_operations) {
-    @<perform some operations according to flags@>
+@<operations before parsing@>=
+if (to_print_version_info) {
+    @<print version information@|fill in build time infomation@>
+    to_continue = false;
+    break;
 }
 @
 
@@ -51,8 +87,16 @@ printf("Version %s, built at <build time>\n", version);
 sed -e "s/<build time>/$(date -Iminute)/g"
 @
 
-@<perform some operations according to flags@>=
-printf("Performing operations\n");
+@<operations before parsing@>=
+printf("Do operations before parsing\n");
+@
+
+@<operations after parsing input@>=
+printf("Do operations after parsing parsing\n");
+@
+
+@<operations after executing commands@>=
+printf("Do operations after executing commands\n");
 @
 
 @<includes@>=

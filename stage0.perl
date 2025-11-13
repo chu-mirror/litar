@@ -11,7 +11,7 @@ my $code_block = "";
 my %blocks = ();
 
 sub eval_line_when_article($ln) {
-    if ($ln =~ /\A@<\s*(.*\S)\s*@>=\s*\Z/) {
+    if ($ln =~ /\A@<\s*(.*\S)\s*@=\s*\Z/) {
         (my $name = $1) =~ s/\s+/ /g;
         chomp $name;
         $state = 'code';
@@ -22,8 +22,6 @@ sub eval_line_when_article($ln) {
 sub eval_line_when_code($ln) {
     if ($ln =~ /\A@\s*\Z/) {
         $state = 'article';
-    } elsif ($ln =~ /\A@@(\s*)\Z/) {
-        $blocks{$code_block} .= "@$1\n";
     } else {
         $blocks{$code_block} .= $ln;
     }
@@ -31,7 +29,7 @@ sub eval_line_when_code($ln) {
 
 sub unfold_block($name) {
     my $blk = $blocks{$name};
-    my @refs = $blk =~ /@<.*@>/g;
+    my @refs = $blk =~ /@<.*[^@]@>/g;
 
     foreach my $ref (@refs) {
         $ref =~ /@<([^@]*).*@>/;

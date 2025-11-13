@@ -11,7 +11,9 @@ install:
 	install -C -m 755 ${EXEC} ${PREFIX}/bin/litar
 
 litar.c: litar.la
-	./stage0.perl "litar.c" litar.la > litar.c
+	./stage0.perl $@ $< > $@.bak
+	indent $@.bak -o $@
+	rm $@.bak
 
 clean:
 	rm -f litar.c litar hello

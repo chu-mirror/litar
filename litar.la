@@ -1,10 +1,151 @@
+@<introduction of litar@=
+Programmers have a lot of text to deal with. They write code,
+they write code to compile code, they write document, they write
+code to format document, they write code to parse whatever text,
+they even spell commands to control computer through shell. Basically,
+all work that programmers do is writing text.
+
+The traditional unit of text is file, text of different types
+is saved in seperated files, but sometimes, it might take
+too much energy to create a new file. Like, you want to
+insert a build time information to your code whenever you build
+your program. To do that, you might write a simple sed script and
+put that to Makefile. Here is the problem, sed operate on the whole
+file, so you have to make sure that the sed script won't influence the other
+part of file. To solve that, you might seperate that part of code to a new file,
+use a function to encapsulate it or simply store the information
+in a macro or a variable to pass back to the original file.
+We can see all the extra efforts made here.
+
+litar is created to handle a smaller unit of text, which is called chunk.
+With litar, you can gather text of whatever type to a single file
+and describe the relations between chunks at ease. Some relations
+are hard or cumbersome to implement if between files.
+What's more, follow the spirit of literate programming,
+the readability is supposed to be improved a lot.
+A such file is called litar archive, the name litar is from
+literate and archive.
+@
+
+@<syntax of litar@=
+Because a litar archive is supposed to contain text of all types, the syntax of
+itself should be simple. The syntax of a litar archive is built upon
+control characters, which are @@ followed by a character.
+
+To fully describe all concepts, we shall introduce another term, block.
+In the outermost, there are blocks interleaved by comments.
+Each block consists of two parts: the name of a chunk and contents of current block.
+
+```
+Some comments.
+
+@@<chunk1@@=
+The contents of block1.
+@@
+
+Some other comments
+
+@@<chunk2@@=
+The contents of block2.
+@@
+
+@@<chunk1@@=
+The contents of block3.
+@@
+
+```
+
+We say here that chunk1 is extended by block1 and block3, chunk2 is extended by block2.
+
+There is another relation between chunk and block, include.
+
+```
+Some comments.
+
+@@<chunk1@@=
+The contents of block1.
+@@
+
+Some other comments
+
+@@<chunk2@@=
+The contents of block2.
+@@<chunk1@@>
+The contents of block2.
+@@
+
+```
+
+The contents of block2 contains a reference to chunk1, we say block2 includes chunk1
+at the position of reference to chunk1.
+
+The definition for the content of a chunk is the expanded contents of all
+blocks appended to the chunk concatenated.
+The definition for the expanded contents of a block is the content of the block
+that all references to chunk are replaced by the content of the corresponding chunk.
+
+It's a recursive procedure to evaluate the content of a chunk.
+So it's wrong if a block includes the chunk that it extends.
+
+The syntax above decribes some common functionalities all literate programming tools have.
+litar has some useful extensions, which make it a general purpose tool
+for text processing rather than a literate programming tool.
+As a result litar will not take in weaving to its kernel.
+
+The major extension is user defined pipeline.
+Noweb has some similar design decisions, but litar makes use of pipeline even more.
+
+The following simple program explains the usage of pipeline in litar.
+
+```
+@@<hello.c@@=
+#include "stdio.h"
+int main() {
+    @@<print hello world@@|exaggeratedly@@>
+    return 0;
+}
+@@
+
+@@<print hello world@@=
+printf("Hello, world!\n");
+@@
+
+@@<exaggeratedly@@=
+sed 's/world/WORLD/'
+@@
+
+```
+
+The final output of this program is "Hello, WORLD!".
+The pipeline itself is nothing more than a chunk.
+
+Relation include is extended to, a block include a chunk transformed by
+pipelines at the position of reference to the chunk.
+
+@
+
+@<invocation syntax@=
+{
+    "name": "litar",
+    "optional arguments": [
+        ["v"],
+        ["h"],
+        ["p", "CHUNK"],
+        ["e", "CHUNK"]
+    ],
+    "arguments": [
+        "FILE"
+    ]
+}
+@
+
 litar follows the common pattern of a command line tool, just executes and exits.
 
-@<litar.c@>=
+@<litar.c@=
 @<includes@>
-
 @<flags@>
 @<global variables@>
+@<functions@>
 
 int main(int argc, char *argv[])
 {
@@ -20,9 +161,9 @@ The operations of litar can be performed at three stages:
 2. after parsing input,
 3. after executing commands.
 
-Not all invocations need all three stages.
+Not all invocations need to go through all three stages.
 
-@<perform operations according to flags@>=
+@<perform operations according to flags@=
 do {
     bool to_continue = true;
     @<operations before parsing@|execute sequentially@>
@@ -38,27 +179,27 @@ do {
     }
     
     @<execute commands@>
+
     @<operations after executing commands@|execute sequentially@>
 } while (0);
 @
 
-@<execute sequentially@>=
-echo "do {"
-cat -
-echo "} while (0);"
-@
-
-@<flags@>=
+@<flags@=
 bool to_print_version_info;
+bool to_print_help;
+bool to_print_block;
 @
 
-@<parse command line arguments to set flags and global variables@>=
+@<parse command line arguments to set flags and global variables@=
 do {
     int opt;
-    while ((opt = getopt(argc, argv, "v")) != -1) {
+    while ((opt = getopt(argc, argv, "vh")) != -1) {
         switch (opt) {
         case 'v':
             to_print_version_info = true;
+            break;
+        case 'h':
+            to_print_help = true;
             break;
         default:
             break;
@@ -67,42 +208,80 @@ do {
 } while (0);
 @
 
-@<operations before parsing@>=
+@<operations before parsing@=
 if (to_print_version_info) {
-    @<print version information@|fill in build time infomation@>
+    @<print version information@|fill in build time information@>
     to_continue = false;
     break;
 }
 @
 
-@<global variables@>=
+@<global variables@=
 char version[] = "dev";
 @
 
-@<print version information@>=
+@<print version information@=
 printf("Version %s, built at <build time>\n", version);
 @
 
-@<fill in build time infomation@>=
-sed -e "s/<build time>/$(date -Iminute)/g"
+@<operations before parsing@=
+if (to_print_help) {
+    printf("Usage: %s\n", @<invocation syntax@|usage of invocation syntax@>);
+    to_continue = false;
+}
 @
 
-@<operations before parsing@>=
-printf("Do operations before parsing\n");
+@<usage of invocation syntax@=
+python -c '
+import json
+import sys
+stx = json.load(sys.stdin)
+str = "\""
+str += stx["name"]
+
+opts = []
+for opt in stx["optional arguments"]:
+    if (len(opt) == 1):
+        opts.append(f"-{opt[0]}")
+    elif (len(opt) == 2):
+        opts.append(f"-{opt[0]} {opt[1]}")
+str += " [" + "|".join(opts) + "]"
+
+for arg in stx["arguments"]:
+    str += " " + arg
+str += "\""
+
+print(str, end="")
+'
 @
 
-@<operations after parsing input@>=
+@<operations after parsing input@=
 printf("Do operations after parsing parsing\n");
 @
 
-@<operations after executing commands@>=
+@<operations after executing commands@=
 printf("Do operations after executing commands\n");
 @
 
-@<includes@>=
+@<includes@=
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
 @
 
+@<fill in build time information@=
+sed -e "s/<build time>/$(date -Iminute)/g"
+@
+
+@<execute sequentially@=
+echo "do {"
+cat -
+echo "} while (0);"
+@
+
+@<print@=
+echo 'printf('
+sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed 's/^/"/' | sed 's/$/\\n"/'
+echo ');'
+@

@@ -149,10 +149,8 @@ execute an operation under a context built from archive.
 {
     "name": "litar",
     "options": [
-        ["Show the version and build information of litar.", "v"],
-        ["Show the usage of litar.", "h"],
-        ["Print the content of CHUNK in ARCHIVE.", "p", "CHUNK"],
-        ["Execute an operation in CHUNK under ARCHIVE.", "x", "CHUNK"]
+        @<command line options for litar@>
+        ["Show the usage of litar.", "h"]
     ],
     "arguments": [
         "ARCHIVE"
@@ -206,27 +204,59 @@ do {
 @
 
 @<flags@=
-bool to_print_version_info;
 bool to_print_help;
-bool to_print_block;
 @
 
 @<parse command line arguments to set flags and global variables@=
 do {
     int opt;
-    while ((opt = getopt(argc, argv, "vh")) != -1) {
+
+    while (
+        (
+            opt = getopt(
+                argc,
+                argv,
+                @<invocation syntax@|getopt string for invocation syntax@>
+            )
+        ) != -1
+    ) {
         switch (opt) {
-        case 'v':
-            to_print_version_info = true;
-            break;
+        @<each case for command line option@>
         case 'h':
             to_print_help = true;
             break;
         default:
+            to_print_help = true;
             break;
         }
     }
 } while (0);
+@
+
+@<operations before parsing@=
+if (to_print_help) {
+    printf("Usage: %s\n", @<invocation syntax@|usage of invocation syntax@>);
+    to_continue = false;
+}
+@
+
+
+@<command line options for litar@=
+["Show the version and build information of litar.", "v"],
+@
+
+@<flags@=
+bool to_print_version_info;
+@
+
+@<each case for command line option@=
+case 'v':
+    to_print_version_info = true;
+    break;
+@
+
+@<global variables@=
+char version[] = "dev";
 @
 
 @<operations before parsing@=
@@ -237,19 +267,13 @@ if (to_print_version_info) {
 }
 @
 
-@<global variables@=
-char version[] = "dev";
-@
-
 @<print version information@=
 printf("Version %s, built at <build time>\n", version);
 @
 
-@<operations before parsing@=
-if (to_print_help) {
-    printf("Usage: %s\n", @<invocation syntax@|usage of invocation syntax@>);
-    to_continue = false;
-}
+@<command line options for litar@=
+["Print the content of CHUNK in ARCHIVE.", "p", "CHUNK"],
+["Execute an operation in CHUNK under ARCHIVE.", "x", "CHUNK"],
 @
 
 @<operations after parsing input@=
@@ -344,6 +368,20 @@ for arg in arguments:
 str += "\""
 
 print(str, end="")
+'
+@
+
+@<getopt string for invocation syntax@=
+python -c '
+@<parse invocation syntax@>
+
+def opt_to_str(opt):
+    if opt.argument is None:
+        return opt.name
+    else:
+        return opt.name + ":"
+
+print("\"" + "".join(map(opt_to_str, options)) + "\"", end="")
 '
 @
 

@@ -16,5 +16,5 @@ litar.c: litar.la
 	rm $@.bak
 
 clean:
-	rm -f litar.c litar hello
+	rm -f litar.c litar hello litar.1
 

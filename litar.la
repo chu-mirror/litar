@@ -12,12 +12,12 @@ insert a build time information to your code whenever you build
 your program. To do that, you might write a simple sed script and
 put that to Makefile. Here is the problem, sed operate on the whole
 file, so you have to make sure that the sed script won't influence the other
-part of file. To solve that, you might seperate that part of code to a new file,
+part of the file. To solve that, you might seperate that part of code to a new file,
 use a function to encapsulate it or simply store the information
 in a macro or a variable to pass back to the original file.
-We can see all the extra efforts made here.
+You can see all the extra efforts made here.
 
-litar is created to handle a smaller unit of text, which is called chunk.
+litar is created to operate on a smaller unit of text, which is called chunk.
 With litar, you can gather text of whatever type to a single file
 and describe the relations between chunks at ease. Some relations
 are hard or cumbersome to implement if between files.
@@ -33,7 +33,7 @@ itself should be simple. The syntax of a litar archive is built upon
 control characters, which are @@ followed by a character.
 
 To fully describe all concepts, we shall introduce another term, block.
-In the outermost, there are blocks interleaved by comments.
+In the outermost, there are blocks interleaved with comments.
 Each block consists of two parts: the name of a chunk and contents of current block.
 
 ```
@@ -77,7 +77,7 @@ The contents of block2.
 ```
 
 The contents of block2 contains a reference to chunk1, we say block2 includes chunk1
-at the position of reference to chunk1.
+at the position of the reference to chunk1.
 
 The definition for the content of a chunk is the expanded contents of all
 blocks appended to the chunk concatenated.
@@ -116,25 +116,46 @@ sed 's/world/WORLD/'
 
 ```
 
-The final output of this program is "Hello, WORLD!".
-The pipeline itself is nothing more than a chunk.
+The final output of this program is "Hello, WORLD!". The creation
+of a chunk is pretty easy compared to files, so is the operation to
+the chunk. The operation take effect through a method like Unix pipeline,
+and itself is nothing more than a chunk.
+
+Operations are bash scripts by default, litar may support other languages in future
+or simply leave it as an option to users.
 
 Relation include is extended to, a block include a chunk transformed by
 pipelines at the position of reference to the chunk.
 
+The whole design of litar is around this relation, all other stuffs are
+supplements to this.
+@
+
+@<manpage of litar@=
+.TH LITAR 1
+.SH NAME
+litar \- take action on litar archive
+.SH SYNOPSIS
+@<invocation syntax@|synopsis for manpage@>
+.SH DESCRIPTION
+.B litar
+interacts with litar archives to extract contents of a chunk or
+execute an operation under a context built from archive.
+.SH OPTIONS
+@<invocation syntax@|options for manpage@>
 @
 
 @<invocation syntax@=
 {
     "name": "litar",
-    "optional arguments": [
-        ["v"],
-        ["h"],
-        ["p", "CHUNK"],
-        ["e", "CHUNK"]
+    "options": [
+        ["Show the version and build information of litar.", "v"],
+        ["Show the usage of litar.", "h"],
+        ["Print the content of CHUNK in ARCHIVE.", "p", "CHUNK"],
+        ["Execute an operation in CHUNK under ARCHIVE.", "x", "CHUNK"]
     ],
     "arguments": [
-        "FILE"
+        "ARCHIVE"
     ]
 }
 @
@@ -231,30 +252,6 @@ if (to_print_help) {
 }
 @
 
-@<usage of invocation syntax@=
-python -c '
-import json
-import sys
-stx = json.load(sys.stdin)
-str = "\""
-str += stx["name"]
-
-opts = []
-for opt in stx["optional arguments"]:
-    if (len(opt) == 1):
-        opts.append(f"-{opt[0]}")
-    elif (len(opt) == 2):
-        opts.append(f"-{opt[0]} {opt[1]}")
-str += " [" + "|".join(opts) + "]"
-
-for arg in stx["arguments"]:
-    str += " " + arg
-str += "\""
-
-print(str, end="")
-'
-@
-
 @<operations after parsing input@=
 printf("Do operations after parsing parsing\n");
 @
@@ -268,6 +265,86 @@ printf("Do operations after executing commands\n");
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+@
+
+@<parse invocation syntax@=
+import json
+import sys
+from typing import NamedTuple
+
+class Option(NamedTuple):
+    name: str
+    argument: str
+    comment: str
+
+stx = json.load(sys.stdin)
+
+name = stx["name"]
+options = list(map(
+    lambda opt: Option(opt[1], opt[2] if len(opt)==3 else None, opt[0]),
+    stx["options"]
+))
+arguments = stx["arguments"]
+@
+
+@<synopsis for manpage@=
+python -c '
+@<parse invocation syntax@>
+str = f".B {name}\n"
+
+def opt_to_str(opt):
+    if opt.argument is not None:
+        return f"\\fB\\-{opt[0]}\\fR \\fI{opt[1]}\\fR"
+    else:
+        return f"\\fB\\-{opt[0]}\\fR"
+
+str += "[" + "|".join(map(opt_to_str, options)) + "]"
+for arg in arguments:
+    str += f" \\fI{arg}\\fR"
+print(str)
+'
+@
+
+@<options for manpage@=
+python -c '
+@<parse invocation syntax@>
+str = ""
+
+def opt_to_str(opt):
+    if opt.argument is None:
+        return f".BR \\-{opt.name}\n"
+    else:
+        return f".BR \\-{opt.name} \" \" \\fI{opt.argument}\\fR\n"
+
+for opt in options:
+    str += ".TP\n"
+    str += opt_to_str(opt)
+    str += opt.comment + "\n"
+
+print(str)
+'
+@
+
+@<usage of invocation syntax@=
+python -c '
+@<parse invocation syntax@>
+str = "\""
+str += name
+
+def opt_to_str(opt):
+    if opt.argument is not None:
+        return f"-{opt[0]} {opt[1]}"
+    else:
+        return f"-{opt[0]}"
+
+str += " [" + "|".join(map(opt_to_str, options)) + "]"
+
+for arg in arguments:
+    str += " " + arg
+str += "\""
+
+print(str, end="")
+'
 @
 
 @<fill in build time information@=

@@ -2,7 +2,7 @@
 Programmers have a lot of text to deal with. They write code,
 they write code to compile code, they write document, they write
 code to format document, they write code to parse whatever text,
-they even spell commands to control computer through shell. Basically,
+they even spell commands to control computer through shells. Basically,
 all work that programmers do is writing text.
 
 The traditional unit of text is file, text of different types
@@ -149,8 +149,7 @@ execute an operation under a context built from archive.
 {
     "name": "litar",
     "options": [
-        @<command line options for litar@>
-        ["Show the usage of litar.", "h"]
+        @<command line options for litar@|remove ending comma@>
     ],
     "arguments": [
         "ARCHIVE"
@@ -171,6 +170,13 @@ int main(int argc, char *argv[])
     @<parse command line arguments to set flags and global variables@>
     @<perform operations according to flags@>
     return 0;
+}
+@
+
+@<functions@=
+void print_usage()
+{
+    printf("Usage: %s\n", @<invocation syntax@|usage of invocation syntax@>);
 }
 @
 
@@ -203,10 +209,6 @@ do {
 } while (0);
 @
 
-@<flags@=
-bool to_print_help;
-@
-
 @<parse command line arguments to set flags and global variables@=
 do {
     int opt;
@@ -222,24 +224,34 @@ do {
     ) {
         switch (opt) {
         @<each case for command line option@>
-        case 'h':
-            to_print_help = true;
-            break;
         default:
-            to_print_help = true;
-            break;
+            print_usage();
+            exit(1);
         }
     }
 } while (0);
 @
 
+@<command line options for litar@=
+["Show the usage of litar.", "h"],
+@
+
+@<flags@=
+bool to_print_help;
+@
+
+@<each case for command line option@=
+case 'h':
+    to_print_help = true;
+    break;
+@
+
 @<operations before parsing@=
 if (to_print_help) {
-    printf("Usage: %s\n", @<invocation syntax@|usage of invocation syntax@>);
+    print_usage();
     to_continue = false;
 }
 @
-
 
 @<command line options for litar@=
 ["Show the version and build information of litar.", "v"],
@@ -289,6 +301,7 @@ printf("Do operations after executing commands\n");
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <stdlib.h>
 @
 
 @<parse invocation syntax@=
@@ -400,3 +413,8 @@ echo 'printf('
 sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed 's/^/"/' | sed 's/$/\\n"/'
 echo ');'
 @
+
+@<remove ending comma@=
+sed -z 's/,[[:space:]]$/\n/'
+@
+

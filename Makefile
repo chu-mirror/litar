@@ -1,6 +1,8 @@
 PREFIX=/usr/local
 EXEC=stage0.perl
 
+CFLAGS=-g
+
 all: litar
 
 .SUFFIXES: .la

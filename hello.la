@@ -1,6 +1,6 @@
 Say hello to all your classmates.
 
-@<hello.c@>=
+@<hello.c@=
 #include <stdio.h>
 
 int main()
@@ -9,20 +9,20 @@ int main()
 }
 @
 
-@<classmates@>=
+@<classmates@=
 Alice
 Floyd
 @
 
-@<greetings for a list of people@>=
+@<greetings for a list of people@=
 sed -e 's/\(.*\)/printf("Hello, \1!\\n");/'
 @
 
-@<exaggerated version for greetings@>=
+@<exaggerated version for greetings@=
 sed -e 's/Hello,/HELLO!/'
 @
 
-@<print hello to every one@>=
+@<print hello to every one@=
 @<classmates@|greetings for a list of people@|exaggerated version for greetings@>
 @
 

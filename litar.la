@@ -161,6 +161,7 @@ litar follows the common pattern of a command line tool, just executes and exits
 
 @<litar.c@=
 @<includes@>
+@<datatypes@>
 @<flags@>
 @<global variables@>
 @<functions@>
@@ -209,8 +210,13 @@ do {
 } while (0);
 @
 
+@<global variables@=
+char *archive_name = NULL;
+@
+
 @<parse command line arguments to set flags and global variables@=
 do {
+    struct stat buf;
     int opt;
 
     while (
@@ -226,7 +232,16 @@ do {
         @<each case for command line option@>
         default:
             print_usage();
-            exit(1);
+            return 1;
+        }
+    }
+
+    if (optind < argc) {
+        archive_name = argv[optind];
+
+        if (access(archive_name, R_OK) == -1) {
+            perror(archive_name);
+            return 1;
         }
     }
 } while (0);
@@ -283,9 +298,92 @@ if (to_print_version_info) {
 printf("Version %s, built at <build time>\n", version);
 @
 
+The grammar of litar is designed deliberately to be as simple as possible.
+As a result, litar does not have a seperated scanning process,
+the tokens only have two types, control character and normal character,
+and the whole parsing process can be implemented as a finite state machine.
+
+@<datatypes@=
+typedef enum {
+    @<states in a parsing@>
+} State;
+
+typedef struct {
+    enum {
+        CONTROL_CHARACTER,
+        NORMAL_CHARACTER,
+    } type;
+    char value;
+} Token;
+@
+
+@<functions@=
+static inline int next_token(FILE *f, Token *tk_r)
+{
+    char c;
+    int n = 0;
+
+    n += (c = fgetc(f)) == EOF ? 0 : 1;
+    if (c == '@') {
+        tk_r->type = CONTROL_CHARACTER;
+        n += (c = fgetc(f)) == EOF ? 0 : 1;
+        if (c == EOF || c == '\n' || c == '\t' || c == ' ') {
+            tk_r->value = ' ';
+        } else {
+            tk_r->value = c;
+        }
+    } else {
+        tk_r->type = NORMAL_CHARACTER;
+        tk_r->value = c;
+    }
+    return n;
+}
+@
+
+The parsing start with the state reading in comments.
+
+@<states in a parsing@=
+COMMENT,
+@
+
+@<parse input@=
+do {
+    State cs = COMMENT; /* current state */
+    int step, cp = 0; /* current position */
+    FILE *in = NULL;
+    Token tkn;
+
+    if (archive_name == NULL) {
+        print_usage();
+        return 1;
+    }
+
+    if ((in = fopen(archive_name, "r")) == NULL) {
+        perror(archive_name);
+        return 1;
+    }
+
+    while (step = next_token(in, &tkn)) {
+        @<handle token |tkn| at position |cp|@>
+        cp += step;
+    }
+
+    fclose(in);
+} while (0);
+@
+
+@<handle token |tkn| at position |cp|@=
+printf("type: %d, value %c\n", tkn.type, tkn.value);
+@
+
 @<command line options for litar@=
 ["Print the content of CHUNK in ARCHIVE.", "p", "CHUNK"],
 ["Execute an operation in CHUNK under ARCHIVE.", "x", "CHUNK"],
+@
+
+@<each case for command line option@=
+case 'p':
+    break;
 @
 
 @<operations after parsing input@=
@@ -297,6 +395,7 @@ printf("Do operations after executing commands\n");
 @
 
 @<includes@=
+#include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>

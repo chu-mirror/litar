@@ -1,0 +1,3 @@
+[submodule "light"]
+	path = light
+	url = git@github.com:chu-mirror/light.git

@@ -97,6 +97,8 @@ Noweb has some similar design decisions, but litar makes use of pipeline even mo
 
 The following simple program explains the usage of pipeline in litar.
 
+Besides these control characters that describes the structure of a litar archive,
+there are some other control characters 
 ```
 @@<hello.c@@=
 #include "stdio.h"
@@ -229,7 +231,7 @@ do {
         ) != -1
     ) {
         switch (opt) {
-        @<each case for command line option@>
+        @<cases for command line option@>
         default:
             print_usage();
             return 1;
@@ -255,7 +257,7 @@ do {
 bool to_print_help;
 @
 
-@<each case for command line option@=
+@<cases for command line option@=
 case 'h':
     to_print_help = true;
     break;
@@ -276,7 +278,7 @@ if (to_print_help) {
 bool to_print_version_info;
 @
 
-@<each case for command line option@=
+@<cases for command line option@=
 case 'v':
     to_print_version_info = true;
     break;
@@ -318,7 +320,7 @@ typedef struct {
 @
 
 @<functions@=
-static inline int next_token(FILE *f, Token *tk_r)
+static inline bool next_token(FILE *f, Token *tk_r, int *p, int *l, int *r)
 {
     char c;
     int n = 0;
@@ -332,11 +334,22 @@ static inline int next_token(FILE *f, Token *tk_r)
         } else {
             tk_r->value = c;
         }
+        if (c == '\n') {
+            n -= ungetc(c, f) == EOF ? 0 : 1;
+        }
     } else {
         tk_r->type = NORMAL_CHARACTER;
         tk_r->value = c;
+        if (c == '\n') {
+            *p += n;
+            ++*l;
+            *r = 0;
+            n = 0;
+        }
     }
-    return n;
+    *p += n;
+    *r += n;
+    return c != EOF;
 }
 @
 
@@ -349,7 +362,8 @@ COMMENT,
 @<parse input@=
 do {
     State cs = COMMENT; /* current state */
-    int step, cp = 0; /* current position */
+    int cp = 0, cl = 0, cr = 0; /* current position, current line, current row */
+    @<context for parsing@>
     FILE *in = NULL;
     Token tkn;
 
@@ -363,17 +377,146 @@ do {
         return 1;
     }
 
-    while (step = next_token(in, &tkn)) {
-        @<handle token |tkn| at position |cp|@>
-        cp += step;
+    while (next_token(in, &tkn, &cp, &cl, &cr)) {
+        switch (cs) {
+        @<cases for handling token "tkn"@>
+        }
     }
 
     fclose(in);
 } while (0);
 @
 
-@<handle token |tkn| at position |cp|@=
-printf("type: %d, value %c\n", tkn.type, tkn.value);
+@<functions@=
+void handle_unknown_token(Token *tkn_r, int l, int r)
+{
+    if (tkn_r->type == CONTROL_CHARACTER) {
+        fprintf(stderr,
+            "Unknown control character %c before line %d row %d\n",
+            tkn_r->value, l, r
+        );
+    } else {
+        fprintf(stderr,
+            "You should use control character before line %d row %d, check the manual.\n",
+            l, r
+        );
+    }
+    exit(1);
+}
+@
+
+@<execute token handlings@=
+echo "do {"
+cat -
+echo "handle_unknown_token(&tkn, cl, cr);"
+echo "} while (0);"
+@
+
+@<cases for handling token "tkn"@=
+case COMMENT:
+    @<handlings for token "tkn" when state is "COMMENT"@|execute token handlings@>
+    break;
+@
+
+Ignore normal characters in a comment.
+@<handlings for token "tkn" when state is "COMMENT"@=
+if (tkn.type == NORMAL_CHARACTER) {
+    break;
+}
+@
+
+@<states in a parsing@=
+BLOCK_CHUNK_NAME,
+BLOCK_CONTENTS,
+@
+
+@<cases for handling token "tkn"@=
+case BLOCK_CHUNK_NAME:
+    @<handlings for token "tkn" when state is "BLOCK_CHUNK_NAME"@|execute token handlings@>
+    break;
+case BLOCK_CONTENTS:
+    @<handlings for token "tkn" when state is "BLOCK_CONTENTS"@|execute token handlings@>
+    break;
+@
+
+@<context for parsing@=
+Str input_cache;
+@
+
+@<handlings for token "tkn" when state is "COMMENT"@=
+if (tkn.type == CONTROL_CHARACTER && tkn.value == '<') {
+    input_cache = new_str("");
+    cs = BLOCK_CHUNK_NAME;
+    break;
+}
+@
+
+@<handlings for token "tkn" when state is "BLOCK_CHUNK_NAME"@=
+if (tkn.type == NORMAL_CHARACTER) {
+    char c[2] = {tkn.value, '\0'};
+    str_extend(input_cache, c);
+    break;
+}
+if (tkn.type == CONTROL_CHARACTER && tkn.value == '=') {
+    printf("Found chunk name: %s\n", raw_string(input_cache));
+    free_str(&input_cache);
+    cs = BLOCK_CONTENTS;
+    input_cache = new_str("");
+    break;
+}
+@
+
+@<handlings for token "tkn" when state is "BLOCK_CONTENTS"@=
+if (tkn.type == NORMAL_CHARACTER) {
+    char c[2] = {tkn.value, '\0'};
+    str_extend(input_cache, c);
+    break;
+}
+if (tkn.type == CONTROL_CHARACTER && tkn.value == ' ') {
+    printf("Find block contents:\n%s", raw_string(input_cache));
+    free_str(&input_cache);
+    cs = COMMENT;
+    break;
+}
+@
+
+@<states in a parsing@=
+REFERENCE_CHUNK_NAME,
+@
+
+@<cases for handling token "tkn"@=
+case REFERENCE_CHUNK_NAME:
+    @<handlings for token "tkn" when state is "REFERENCE_CHUNK_NAME"@|execute token handlings@>
+    break;
+@
+
+@<handlings for token "tkn" when state is "BLOCK_CONTENTS"@=
+if (tkn.type == CONTROL_CHARACTER && tkn.value == '<') {
+    printf("Found block contents:\n%s", raw_string(input_cache));
+    free_str(&input_cache);
+    input_cache = new_str("");
+    cs = REFERENCE_CHUNK_NAME;
+    break;
+}
+@
+
+@<handlings for token "tkn" when state is "REFERENCE_CHUNK_NAME"@=
+if (tkn.type == NORMAL_CHARACTER) {
+    char c[2] = {tkn.value, '\0'};
+    str_extend(input_cache, c);
+    break;
+}
+if (tkn.type == CONTROL_CHARACTER && tkn.value == '>') {
+    printf("Found reference: %s\n", raw_string(input_cache));
+    free_str(&input_cache);
+    cs = BLOCK_CONTENTS;
+    input_cache = new_str("");
+    break;
+}
+@
+
+@<execute commands@=
+
 @
 
 @<command line options for litar@=
@@ -381,7 +524,7 @@ printf("type: %d, value %c\n", tkn.type, tkn.value);
 ["Execute an operation in CHUNK under ARCHIVE.", "x", "CHUNK"],
 @
 
-@<each case for command line option@=
+@<cases for command line option@=
 case 'p':
     break;
 @
@@ -401,6 +544,9 @@ printf("Do operations after executing commands\n");
 #include <stdbool.h>
 #include <unistd.h>
 #include <stdlib.h>
+
+#include "light.h"
+#include "str.h"
 @
 
 @<parse invocation syntax@=

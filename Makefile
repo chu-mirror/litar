@@ -1,7 +1,7 @@
 PREFIX=/usr/local
 EXEC=stage0.perl
 
-CFLAGS=-g
+CFLAGS=-g -Ilight/include
 
 all: litar
 
@@ -14,8 +14,11 @@ install:
 
 litar.c: litar.la
 	./stage0.perl $@ $< > $@.bak
-	indent $@.bak -o $@
+	indent -orig $@.bak -o $@ 
 	rm $@.bak
+
+litar: litar.c
+	$(CC) $(CFLAGS) -o $@ $< `./light/finddeff.py $< ./light/include`
 
 clean:
 	rm -f litar.c litar hello litar.1

@@ -97,8 +97,6 @@ Noweb has some similar design decisions, but litar makes use of pipeline even mo
 
 The following simple program explains the usage of pipeline in litar.
 
-Besides these control characters that describes the structure of a litar archive,
-there are some other control characters 
 ```
 @@<hello.c@@=
 #include "stdio.h"
@@ -131,6 +129,23 @@ pipelines at the position of reference to the chunk.
 
 The whole design of litar is around this relation, all other stuffs are
 supplements to this.
+
+Besides these control characters that describes the structure of a litar archive,
+there are some other control characters. They are commands, which influence
+the process of dealing with litar archive. For example, @@i receive an argument
+of file name, and insert the content of that file at the place of @@i.
+@
+
+@<invocation syntax@=
+{
+    "name": "litar",
+    "options": [
+        @<command line options for litar@|remove ending comma@>
+    ],
+    "arguments": [
+        "ARCHIVE"
+    ]
+}
 @
 
 @<manpage of litar@=
@@ -145,18 +160,6 @@ interacts with litar archives to extract contents of a chunk or
 execute an operation under a context built from archive.
 .SH OPTIONS
 @<invocation syntax@|options for manpage@>
-@
-
-@<invocation syntax@=
-{
-    "name": "litar",
-    "options": [
-        @<command line options for litar@|remove ending comma@>
-    ],
-    "arguments": [
-        "ARCHIVE"
-    ]
-}
 @
 
 litar follows the common pattern of a command line tool, just executes and exits.
@@ -301,8 +304,7 @@ printf("Version %s, built at <build time>\n", version);
 @
 
 The grammar of litar is designed deliberately to be as simple as possible.
-As a result, litar does not have a seperated scanning process,
-the tokens only have two types, control character and normal character,
+As a result, the tokens only have two types, control character and normal character,
 and the whole parsing process can be implemented as a finite state machine.
 
 @<datatypes@=
@@ -320,7 +322,7 @@ typedef struct {
 @
 
 @<functions@=
-static inline bool next_token(FILE *f, Token *tk_r, int *p, int *l, int *r)
+static inline void next_token(FILE *f, Token *tk_r, int *p, int *l, int *r)
 {
     char c;
     int n = 0;
@@ -349,7 +351,6 @@ static inline bool next_token(FILE *f, Token *tk_r, int *p, int *l, int *r)
     }
     *p += n;
     *r += n;
-    return c != EOF;
 }
 @
 
@@ -366,6 +367,7 @@ do {
     @<context for parsing@>
     FILE *in = NULL;
     Token tkn;
+    bool finish_parsing = false;
 
     if (archive_name == NULL) {
         print_usage();
@@ -377,7 +379,8 @@ do {
         return 1;
     }
 
-    while (next_token(in, &tkn, &cp, &cl, &cr)) {
+    while (!finish_parsing) {
+        next_token(in, &tkn, &cp, &cl, &cr);
         switch (cs) {
         @<cases for handling token "tkn"@>
         }
@@ -418,10 +421,16 @@ case COMMENT:
     break;
 @
 
-Ignore normal characters in a comment.
 @<handlings for token "tkn" when state is "COMMENT"@=
 if (tkn.type == NORMAL_CHARACTER) {
+    @<handle normal character "tkn" when state is "COMMENT"@>
     break;
+}
+@
+
+@<handle normal character "tkn" when state is "COMMENT"@=
+if (tkn.value == EOF) {
+    finish_parsing = true;
 }
 @
 

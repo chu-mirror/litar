@@ -1,3 +1,5 @@
+# Introduction
+
 @<introduction of litar@=
 Programmers have a lot of text to deal with. They write code,
 they write code to compile code, they write document, they write
@@ -136,6 +138,8 @@ the process of dealing with litar archive. For example, @@i receive an argument
 of file name, and insert the content of that file at the place of @@i.
 @
 
+# Invocation
+
 @<invocation syntax@=
 {
     "name": "litar",
@@ -162,6 +166,8 @@ execute an operation under a context built from archive.
 @<invocation syntax@|options for manpage@>
 @
 
+# Implementation
+
 litar follows the common pattern of a command line tool, just executes and exits.
 
 @<litar.c@=
@@ -173,6 +179,7 @@ litar follows the common pattern of a command line tool, just executes and exits
 
 int main(int argc, char *argv[])
 {
+    @<initializations of global variables@>
     @<parse command line arguments to set flags and global variables@>
     @<perform operations according to flags@>
     return 0;
@@ -186,13 +193,12 @@ void print_usage()
 }
 @
 
-The operations of litar can be performed at three stages:
+The operations of litar can be performed at two stages:
 
 1. before parsing,
-2. after parsing input,
-3. after executing commands.
+2. after parsing input.
 
-Not all invocations need to go through all three stages.
+Not all invocations need to go through parsing.
 
 @<perform operations according to flags@=
 do {
@@ -205,13 +211,6 @@ do {
     @<parse input@>
 
     @<operations after parsing input@|execute sequentially@>
-    if (!to_continue) {
-        break;
-    }
-    
-    @<execute commands@>
-
-    @<operations after executing commands@|execute sequentially@>
 } while (0);
 @
 
@@ -301,6 +300,198 @@ if (to_print_version_info) {
 
 @<print version information@=
 printf("Version %s, built at <build time>\n", version);
+@
+
+## Parsing
+
+The purpose of parsing is to extract relations between objects belonging to
+a specific domain from unstructured information.
+
+@<functions@=
+@<relations between object@>
+@
+
+Let's begin with chunks. First, all chunks have a name and
+there's only one chunk if given a name.
+
+@<datatypes@=
+typedef void *Chunk;
+@
+
+@<relations between object@=
+Chunk chunk_of_name(const char *name)
+{
+    return atom_str(name);
+}
+@
+
+@<global variables@=
+HashTable chunk_to_chunk_name;
+@
+
+@<functions@=
+static uint32_t
+hash_func_chunk(const void *chk)
+{
+    return hash((uint8_t *) &chk, sizeof(chk)) % 512;
+}
+static int
+equal_func_chunk(const void *chk1, const void *chk2)
+{
+    return chk1 == chk2;
+}
+@
+
+@<initializations of global variables@=
+chunk_to_chunk_name = new_hash_table(
+    hash_func_chunk,
+    equal_func_chunk
+);
+@
+
+@<relations between object@=
+const char *name_of_chunk(Chunk chk)
+{
+    return get_from_hash_table(chunk_to_chunk_name, chk);
+}
+void name_of_chunk_is(Chunk chk, const char *name)
+{
+    put_to_hash_table(chunk_to_chunk_name, chk, strdup(name));
+}
+@
+
+Second, chunk is extended by a list of blocks.
+@<datatypes@=
+typedef void *Block;
+@
+
+@<global variables@=
+HashTable chunk_to_blocks;
+@
+
+@<initializations of global variables@=
+chunk_to_blocks = new_hash_table(
+    hash_func_chunk,
+    equal_func_chunk
+);
+@
+
+@<relations between object@=
+List blocks_of_chunk(Chunk chk)
+{
+    return (List) get_from_hash_table(chunk_to_blocks, chk);
+}
+void chunk_is_extended_by(Chunk chk, Block blk)
+{
+    List blks = blocks_of_chunk(chk);
+    blks = cons(blk, blks);
+    put_to_hash_table(chunk_to_blocks, chk, blks);
+}
+@
+
+Reference to the original text can be saved to some records to save memory.
+@<datatypes@=
+typedef struct {
+    char *file_name;
+    int start;
+    int end;
+} *TextRef;
+@
+
+Because every blocks contains at least one reference to the original text
+and every blocks must differ with each other in which references they contain,
+a block can be identified by the first reference it contains.
+
+@<relations between object@=
+Block block_of_first_text_reference(TextRef fr)
+{
+    return fr;
+}
+@
+
+The contents of a block can either be a reference to the original text
+or a reference to a chunk.
+@<datatypes@=
+typedef void *ChunkRef;
+typedef struct {
+    enum {
+        BLOCK_CONTENT_TEXT,
+        BLOCK_CONTENT_CHUNK,
+    } type;
+    union {
+        TextRef text;
+        ChunkRef chunk;
+    } value;
+} *BlockContent;
+@
+
+A block contains a list of contents defined before.
+
+@<global variables@=
+HashTable block_to_block_contents;
+@
+
+@<functions@=
+static uint32_t
+hash_func_block(const void *blk)
+{
+    return hash((uint8_t *) &blk, sizeof(blk)) % 2048;
+}
+static int
+equal_func_block(const void *blk1, const void *blk2)
+{
+    return blk1 == blk2;
+}
+@
+
+@<initializations of global variables@=
+block_to_block_contents = new_hash_table(
+    hash_func_block,
+    equal_func_block
+);
+@
+
+@<relations between object@=
+List contents_of_block(Block blk)
+{
+    return (List) get_from_hash_table(block_to_block_contents, blk);
+}
+
+void block_contain_text(Block blk, TextRef tr)
+{
+    List bcs = contents_of_block(blk);
+    BlockContent bc;
+
+    NEW(bc);
+    bc->type = BLOCK_CONTENT_TEXT;
+    bc->value.text = tr;
+
+    bcs = cons(bc, bcs);
+    put_to_hash_table(block_to_block_contents, blk, bcs);
+}
+
+void block_include_chunk(Block blk, ChunkRef cr)
+{
+    List bcs = contents_of_block(blk);
+    BlockContent bc;
+
+    NEW(bc);
+    bc->type = BLOCK_CONTENT_CHUNK;
+    bc->value.chunk = cr;
+
+    bcs = cons(bc, bcs);
+    put_to_hash_table(block_to_block_contents, blk, bcs);
+}
+@
+
+Same as blocks, each reference to chunk must be preceded by a text reference
+and the preceding text reference must be different among chunk reference.
+
+@<relations between object@=
+ChunkRef chunk_ref_of_preceding_text_reference(TextRef tr)
+{
+    return tr;
+}
 @
 
 The grammar of litar is designed deliberately to be as simple as possible.
@@ -524,10 +715,6 @@ if (tkn.type == CONTROL_CHARACTER && tkn.value == '>') {
 }
 @
 
-@<execute commands@=
-
-@
-
 @<command line options for litar@=
 ["Print the content of CHUNK in ARCHIVE.", "p", "CHUNK"],
 ["Execute an operation in CHUNK under ARCHIVE.", "x", "CHUNK"],
@@ -542,10 +729,6 @@ case 'p':
 printf("Do operations after parsing parsing\n");
 @
 
-@<operations after executing commands@=
-printf("Do operations after executing commands\n");
-@
-
 @<includes@=
 #include <sys/stat.h>
 #include <stdio.h>
@@ -556,6 +739,9 @@ printf("Do operations after executing commands\n");
 
 #include "light.h"
 #include "str.h"
+#include "list.h"
+#include "hash_table.h"
+#include "atom.h"
 @
 
 @<parse invocation syntax@=

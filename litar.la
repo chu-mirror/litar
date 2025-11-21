@@ -172,6 +172,7 @@ litar follows the common pattern of a command line tool, just executes and exits
 
 @<litar.c@=
 @<includes@>
+@<declarations@>
 @<datatypes@>
 @<flags@>
 @<global variables@>
@@ -311,108 +312,132 @@ a specific domain from unstructured information.
 @<relations between object@>
 @
 
-Let's begin with chunks. First, all chunks have a name and
-there's only one chunk if given a name.
+@<declarations@=
+typedef struct mappings_chunk *Chunk;
+typedef struct mappings_block *Block;
+typedef struct mappings_chunk_ref *ChunkRef;
+@
 
 @<datatypes@=
-typedef void *Chunk;
+struct mappings_chunk {
+    @<mappings from chunk@>
+};
+
+struct mappings_block {
+    @<mappings from block@>
+};
+
+struct mappings_chunk_ref {
+    @<mappings from chunk ref@>
+};
 @
 
-@<relations between object@=
-Chunk chunk_of_name(const char *name)
-{
-    return atom_str(name);
-}
-@
+To save space, reference to the original text is represented by some records
+rather than stored to memory.
 
-@<global variables@=
-HashTable chunk_to_chunk_name;
-@
-
-@<functions@=
-static uint32_t
-hash_func_chunk(const void *chk)
-{
-    return hash((uint8_t *) &chk, sizeof(chk)) % 512;
-}
-static int
-equal_func_chunk(const void *chk1, const void *chk2)
-{
-    return chk1 == chk2;
-}
-@
-
-@<initializations of global variables@=
-chunk_to_chunk_name = new_hash_table(
-    hash_func_chunk,
-    equal_func_chunk
-);
-@
-
-@<relations between object@=
-const char *name_of_chunk(Chunk chk)
-{
-    return get_from_hash_table(chunk_to_chunk_name, chk);
-}
-void name_of_chunk_is(Chunk chk, const char *name)
-{
-    put_to_hash_table(chunk_to_chunk_name, chk, strdup(name));
-}
-@
-
-Second, chunk is extended by a list of blocks.
-@<datatypes@=
-typedef void *Block;
-@
-
-@<global variables@=
-HashTable chunk_to_blocks;
-@
-
-@<initializations of global variables@=
-chunk_to_blocks = new_hash_table(
-    hash_func_chunk,
-    equal_func_chunk
-);
-@
-
-@<relations between object@=
-List blocks_of_chunk(Chunk chk)
-{
-    return (List) get_from_hash_table(chunk_to_blocks, chk);
-}
-void chunk_is_extended_by(Chunk chk, Block blk)
-{
-    List blks = blocks_of_chunk(chk);
-    blks = cons(blk, blks);
-    put_to_hash_table(chunk_to_blocks, chk, blks);
-}
-@
-
-Reference to the original text can be saved to some records to save memory.
 @<datatypes@=
 typedef struct {
-    char *file_name;
+    char *file;
     int start;
     int end;
 } *TextRef;
 @
 
-Because every blocks contains at least one reference to the original text
-and every blocks must differ with each other in which references they contain,
-a block can be identified by the first reference it contains.
+Let's begin with chunks. All chunks have a name and
+there's only one chunk if given a name. The name of a chunk
+consists of none-space words, so "name of chunk" does not
+differ from "  name  of  chunk".
+
+@<declarations@=
+void normalize_chunk_name(const char *orig, char *norm);
+@
+
+@<functions@=
+void normalize_chunk_name(const char *orig, char *norm)
+{
+    int i = 0, j = 0, l = strlen(orig);
+    while (i < l) {
+        if (isspace(orig[i])) {
+            if (j != 0 && norm[j-1] != ' ') {
+                norm[j++] = ' ';
+            }
+        } else {
+            norm[j++] = orig[i];
+        }
+        ++i;
+    }
+    if (norm[j-1] == ' ') {
+        norm[j-1] = '\0';
+    }
+}
+@
+
+@<mappings from chunk@=
+char *chunk_name;
+@
+
+@<global variables@=
+HashTable chunk_name_to_chunk = NULL;
+@
+
+@<initializations of global variables@=
+new_string_hash_table(&chunk_name_to_chunk);
+@
 
 @<relations between object@=
-Block block_of_first_text_reference(TextRef fr)
+Chunk chunk_of_name(const char *name)
 {
-    return fr;
+    char *norm;
+    norm = strdup(name);
+    normalize_chunk_name(name, norm);
+
+    Chunk chk;
+    chk = get_from_hash_table(chunk_name_to_chunk, norm);
+    if (chk == NULL) {
+        NEW0(chk);
+        put_to_hash_table(chunk_name_to_chunk, norm, chk);
+        chk->chunk_name = norm;
+    } else {
+        free(norm);
+    }
+
+    return chk;
+}
+
+const char *name_of_chunk(Chunk chk)
+{
+    return chk->chunk_name;
+}
+@
+
+Chunk is extended by a list of blocks.
+
+@<mappings from chunk@=
+List blocks;
+@
+
+@<mappings from block@=
+Chunk chunk;
+@
+
+@<relations between object@=
+List blocks_of_chunk(Chunk chk)
+{
+    return chk->blocks;
+}
+void block_extend_chunk(Block blk, Chunk chk)
+{
+    List blks = blocks_of_chunk(chk);
+    blks = cons(blk, blks);
+    chk->blocks = blks;
+    blk->chunk = chk;
 }
 @
 
 The contents of a block can either be a reference to the original text
 or a reference to a chunk.
+
 @<datatypes@=
-typedef void *ChunkRef;
 typedef struct {
     enum {
         BLOCK_CONTENT_TEXT,
@@ -427,132 +452,82 @@ typedef struct {
 
 A block contains a list of contents defined before.
 
-@<global variables@=
-HashTable block_to_block_contents;
-@
-
-@<functions@=
-static uint32_t
-hash_func_block(const void *blk)
-{
-    return hash((uint8_t *) &blk, sizeof(blk)) % 2048;
-}
-static int
-equal_func_block(const void *blk1, const void *blk2)
-{
-    return blk1 == blk2;
-}
-@
-
-@<initializations of global variables@=
-block_to_block_contents = new_hash_table(
-    hash_func_block,
-    equal_func_block
-);
+@<mappings from block@=
+List contents;
 @
 
 @<relations between object@=
 List contents_of_block(Block blk)
 {
-    return (List) get_from_hash_table(block_to_block_contents, blk);
+    return blk->contents;
 }
 
 void block_contain_text(Block blk, TextRef tr)
 {
     List bcs = contents_of_block(blk);
-    BlockContent bc;
+    BlockContent bc = NULL;
 
-    NEW(bc);
+    NEW0(bc);
     bc->type = BLOCK_CONTENT_TEXT;
     bc->value.text = tr;
 
     bcs = cons(bc, bcs);
-    put_to_hash_table(block_to_block_contents, blk, bcs);
+    blk->contents = bcs;
 }
 
 void block_include_chunk(Block blk, ChunkRef cr)
 {
     List bcs = contents_of_block(blk);
-    BlockContent bc;
+    BlockContent bc = NULL;
 
-    NEW(bc);
+    NEW0(bc);
     bc->type = BLOCK_CONTENT_CHUNK;
     bc->value.chunk = cr;
 
     bcs = cons(bc, bcs);
-    put_to_hash_table(block_to_block_contents, blk, bcs);
+    blk->contents = bcs;
 }
 @
 
 Sometimes it's useful to find the chunk the block extends.
-@<global variables@=
-HashTable block_to_chunk;
-@
-
-@<initializations of global variables@=
-block_to_chunk = new_hash_table(
-    hash_func_block,
-    equal_func_block
-);
-@
 
 @<relations between object@=
 Chunk chunk_extended_by(Block blk)
 {
-    return get_from_hash_table(block_to_chunk, blk);
-}
-void block_extend(Block blk, Chunk chk)
-{
-    put_to_hash_table(block_to_chunk, blk, chk);
+    return blk->chunk;
 }
 @
 
-Same as blocks, each reference to chunk must be preceded by a text reference
-and the preceding text reference must be different among chunk reference.
+A reference to chunk is consists of a chunk and a list of filters.
 
-@<relations between object@=
-ChunkRef chunk_ref_of_preceding_text_reference(TextRef tr)
-{
-    return tr;
-}
-@
-
-@<global variables@=
-HashTable chunk_ref_to_filters;
-@
-
-@<functions@=
-static uint32_t
-hash_func_chunk_ref(const void *ckr)
-{
-    return hash((uint8_t *) &ckr, sizeof(ckr)) % 2048;
-}
-static int
-equal_func_chunk_ref(const void *ckr1, const void *ckr2)
-{
-    return ckr1 == ckr2;
-}
-@
-
-@<initializations of global variables@=
-chunk_ref_to_filters = new_hash_table(
-    hash_func_chunk_ref,
-    equal_func_chunk_ref
-);
+@<mappings from chunk ref@=
+Chunk chunk;
+List filters;
 @
 
 As said before, a filter is just a chunk.
 
-@<relations between objcet@=
+@<relations between object@=
 List filters_of_chunk_ref(ChunkRef ckr)
 {
-    return get_from_hash_table(chunk_ref_to_filters, ckr);
+    return ckr->filters;
 }
+
+void chunk_ref_reference_to(ChunkRef ckr, Chunk chk)
+{
+    ckr->chunk = chk;
+}
+
 void chunk_ref_is_transformed_by(ChunkRef ckr, Chunk chk)
 {
     List flts = filters_of_chunk_ref(ckr);
     flts = cons(chk, flts);
-    put_to_hash_table(chunk_ref_to_filters, ckr, flts);
+    ckr->filters = flts;
+}
+
+Chunk chunk_of_chunk_ref(ChunkRef ckr)
+{
+    return ckr->chunk;
 }
 @
 
@@ -566,22 +541,25 @@ typedef struct {
 @
 
 @<global variables@=
-Deque sections;
-@
-
-@<initializations of global variables@=
-sections = new_deque();
+List sections;
 @
 
 The grammar of litar is designed deliberately to be as simple as possible.
-As a result, the tokens only have four types, control character, normal character,
-newline and EOF,
+As a result, the tokens only have four types, control character,
+normal character, newline and EOF,
 and the whole parsing process can be implemented as a finite state machine.
 
 @<datatypes@=
 typedef enum {
     @<states in a parsing@>
 } State;
+
+typedef struct {
+    char *file;
+    FILE *in;
+    /* current position, current line, current row */
+    int cp, cl, cr;
+} *InputFrame;
 
 typedef struct {
     enum {
@@ -591,43 +569,48 @@ typedef struct {
         TOKEN_EOF,
     } type;
     char value;
-} Token;
+} *Token;
 @
 
 @<functions@=
-static inline void next_token(FILE *f, Token *tk_r, int *p, int *l, int *r)
+static Token next_token(InputFrame ipt)
 {
+    Token tkn = NULL;
     char c;
     int n = 0;
 
-    n += (c = fgetc(f)) == EOF ? 0 : 1;
+    NEW0(tkn);
+
+    n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
     if (c == '@') {
-        tk_r->type = TOKEN_CONTROL_CHARACTER;
-        n += (c = fgetc(f)) == EOF ? 0 : 1;
+        tkn->type = TOKEN_CONTROL_CHARACTER;
+        n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
         if (c == EOF || c == '\n' || c == '\t' || c == ' ') {
-            tk_r->value = ' ';
+            tkn->value = ' ';
         } else {
-            tk_r->value = c;
+            tkn->value = c;
         }
         if (c == '\n') {
-            n -= ungetc(c, f) == EOF ? 0 : 1;
+            n -= ungetc(c, ipt->in) == EOF ? 0 : 1;
         }
     } else if (c == '\n') {
-        tk_r->type = TOKEN_NEWLINE;
-        tk_r->value = 0;
-        *p += n;
-        ++*l;
-        *r = 0;
+        tkn->type = TOKEN_NEWLINE;
+        tkn->value = '\n';
+        ipt->cp += n;
+        ++ipt->cl;
+        ipt->cr = 0;
         n = 0;
     } else if (c == EOF) {
-        tk_r->type = TOKEN_EOF;
-        tk_r->value = 0;
+        tkn->type = TOKEN_EOF;
+        tkn->value = EOF;
     } else {
-        tk_r->type = TOKEN_NORMAL_CHARACTER;
-        tk_r->value = c;
+        tkn->type = TOKEN_NORMAL_CHARACTER;
+        tkn->value = c;
     }
-    *p += n;
-    *r += n;
+    ipt->cp += n;
+    ipt->cr += n;
+
+    return tkn;
 }
 @
 
@@ -639,43 +622,49 @@ COMMENT,
 
 @<parse input@=
 do {
-    char *file = archive_name;
-    FILE *in = NULL;
     State cs = COMMENT; /* current state */
-    int cp = 0, cl = 0, cr = 0; /* current position, current line, current row */
-    Token tkn;
-    bool finish_parsing = false;
+    List stack = empty_list;
+
     @<context for parsing@>
 
-    if (file == NULL) {
-        print_usage();
-        return 1;
-    }
+    do {
+        InputFrame ipt = NULL;
+        NEW0(ipt);
+        ipt->file = strdup(archive_name);
+        push(ipt, &stack);
+    } while (0);
 
-    if ((in = fopen(file, "r")) == NULL) {
-        perror(file);
-        return 1;
-    }
+    while (!is_empty_list(stack)) {
+        Token tkn;
+        InputFrame ipt;
 
-    while (!finish_parsing) {
+        RENAME(car(stack), ipt);
+
+        if (ipt->cp == 0) {
+            if ((ipt->in = fopen(ipt->file, "r")) == NULL) {
+                perror(ipt->file);
+                return 1;
+            }
+        }
+
         int cp_t, cl_t, cr_t;
 
-        cp_t = cp;
-        cl_t = cl;
-        cr_t = cr;
+        cp_t = ipt->cp;
+        cl_t = ipt->cl;
+        cr_t = ipt->cr;
 
-        next_token(in, &tkn, &cp, &cl, &cr);
+        tkn = next_token(ipt);
         switch (cs) {
         @<cases for handling token "tkn"@>
         }
-    }
 
-    fclose(in);
+        FREE(tkn);
+    }
 } while (0);
 @
 
 @<functions@=
-void handle_unknown_token(Token *tkn_r, char *f, int l, int r)
+void handle_unknown_token(Token tkn, char *f, int l, int r)
 {
     fprintf(stderr,
         "Unexpected token at line %d row %d of %s\n",
@@ -688,7 +677,7 @@ void handle_unknown_token(Token *tkn_r, char *f, int l, int r)
 @<execute token handlings@=
 echo "do {"
 cat -
-echo "handle_unknown_token(&tkn, file, cl_t, cr_t);"
+echo "handle_unknown_token(tkn, ipt->file, cl_t, cr_t);"
 echo "} while (0);"
 @
 
@@ -701,30 +690,31 @@ case COMMENT:
 @<context for parsing@=
 TextRef ctxt = NULL;
 Section csec = NULL;
+
+NEW0(ctxt);
+ctxt->file = archive_name;
+
+NEW0(csec);
+csec->comment = ctxt;
+csec->block = NULL;
+push(csec, &sections);
 @
 
-Create a new section in need.
 @<handlings for token "tkn" when state is "COMMENT"@=
-if (tkn.type == TOKEN_NORMAL_CHARACTER) {
-    if (ctxt == NULL) {
-        NEW(ctxt);
-        ctxt->start = cp_t;
-        ctxt->end = cp_t;
-
-        NEW(csec);
-        csec->comment = ctxt;
-        csec->block = NULL;
-        push_back(sections, csec);
-    }
-    ctxt->end = cp;
+if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
+    ctxt->end = ipt->cp;
     break;
 }
 @
 
 End parsing of currnet file.
 @<handlings for token "tkn" when state is "COMMENT"@=
-if (tkn.type == TOKEN_EOF) {
-    finish_parsing = true;
+if (tkn->type == TOKEN_EOF) {
+    fclose(ipt->in);
+    free(ipt->file);
+    FREE(ipt);
+    pop(&stack);
+    break;
 }
 @
 
@@ -743,12 +733,15 @@ case BLOCK_CONTENTS:
 @
 
 @<context for parsing@=
-Str input_cache;
+Block cblk = NULL;
+Str cache = NULL;
 @
 
 @<handlings for token "tkn" when state is "COMMENT"@=
-if (tkn.type == TOKEN_CONTROL_CHARACTER && tkn.value == '<') {
-    input_cache = new_str("");
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
+    NEW0(cblk);
+    new_str(&cache, "");
+    csec->block = cblk;
     cs = BLOCK_CHUNK_NAME;
     break;
 }
@@ -756,32 +749,52 @@ if (tkn.type == TOKEN_CONTROL_CHARACTER && tkn.value == '<') {
 
 Read in chunk name.
 @<handlings for token "tkn" when state is "BLOCK_CHUNK_NAME"@=
-if (tkn.type == TOKEN_NORMAL_CHARACTER) {
-    char c[2] = {tkn.value, '\0'};
-    str_extend(input_cache, c);
+if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
+    str_append(cache, tkn->value);
     break;
 }
-@
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '=') {
+    char *chkn;
+    Chunk chk;
 
-@<handlings for token "tkn" when state is "BLOCK_CHUNK_NAME"@=
-if (tkn.type == TOKEN_CONTROL_CHARACTER && tkn.value == '=') {
-    printf("Found chunk name: %s\n", raw_string(input_cache));
-    free_str(&input_cache);
+    chkn = raw_string(cache);
+    chk = chunk_of_name(chkn);
+    block_extend_chunk(cblk, chk);
+    
+    free_str(&cache);
+
+    ctxt = NULL;
+    NEW0(ctxt);
+    ctxt->file = strdup(ipt->file);
+    ctxt->start = ipt->cp;
+    ctxt->end = ipt->cp;
+
+    block_contain_text(cblk, ctxt);
+
     cs = BLOCK_CONTENTS;
-    input_cache = new_str("");
     break;
 }
 @
 
 @<handlings for token "tkn" when state is "BLOCK_CONTENTS"@=
-if (tkn.type == TOKEN_NORMAL_CHARACTER) {
-    char c[2] = {tkn.value, '\0'};
-    str_extend(input_cache, c);
+if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
+    ++ctxt->end;
     break;
 }
-if (tkn.type == TOKEN_CONTROL_CHARACTER && tkn.value == ' ') {
-    printf("Find block contents:\n%s", raw_string(input_cache));
-    free_str(&input_cache);
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
+    cblk = NULL;
+
+    ctxt = NULL;
+    NEW0(ctxt);
+    ctxt->file = strdup(ipt->file);
+    ctxt->start = cp_t;
+    ctxt->end = cp_t;
+
+    csec = NULL;
+    NEW0(csec);
+    csec->comment = ctxt;
+    csec->block = NULL;
+    push(csec, &sections);
     cs = COMMENT;
     break;
 }
@@ -791,6 +804,10 @@ if (tkn.type == TOKEN_CONTROL_CHARACTER && tkn.value == ' ') {
 REFERENCE_CHUNK_NAME,
 @
 
+@<context for parsing@=
+ChunkRef cckr = NULL;
+@
+
 @<cases for handling token "tkn"@=
 case REFERENCE_CHUNK_NAME:
     @<handlings for token "tkn" when state is "REFERENCE_CHUNK_NAME"@|execute token handlings@>
@@ -798,26 +815,94 @@ case REFERENCE_CHUNK_NAME:
 @
 
 @<handlings for token "tkn" when state is "BLOCK_CONTENTS"@=
-if (tkn.type == TOKEN_CONTROL_CHARACTER && tkn.value == '<') {
-    printf("Found block contents:\n%s", raw_string(input_cache));
-    free_str(&input_cache);
-    input_cache = new_str("");
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
+    new_str(&cache, "");
+    NEW0(cckr);
+    block_include_chunk(cblk, cckr);
     cs = REFERENCE_CHUNK_NAME;
     break;
 }
 @
 
 @<handlings for token "tkn" when state is "REFERENCE_CHUNK_NAME"@=
-if (tkn.type == TOKEN_NORMAL_CHARACTER) {
-    char c[2] = {tkn.value, '\0'};
-    str_extend(input_cache, c);
+if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
+    str_append(cache, tkn->value);
     break;
 }
-if (tkn.type == TOKEN_CONTROL_CHARACTER && tkn.value == '>') {
-    printf("Found reference: %s\n", raw_string(input_cache));
-    free_str(&input_cache);
+
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
+    char *chkn;
+    Chunk chk;
+
+    chkn = raw_string(cache);
+    chk = chunk_of_name(chkn);
+    free_str(&cache);
+
+    chunk_ref_reference_to(cckr, chk);
+    cckr = NULL;
     cs = BLOCK_CONTENTS;
-    input_cache = new_str("");
+    break;
+}
+@
+
+@<states in a parsing@=
+REFERENCE_FILTER,
+@
+
+@<cases for handling token "tkn"@=
+case REFERENCE_FILTER:
+    @<handlings for token "tkn" when state is "REFERENCE_FILTER"@|execute token handlings@>
+    break;
+@
+
+@<handlings for token "tkn" when state is "REFERENCE_CHUNK_NAME"@=
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
+    char *chkn;
+    Chunk chk;
+
+    chkn = raw_string(cache);
+    chk = chunk_of_name(chkn);
+    free_str(&cache);
+
+    chunk_ref_reference_to(cckr, chk);
+
+    new_str(&cache, "");
+    cs = REFERENCE_FILTER;
+    break;
+}
+@
+
+@<handlings for token "tkn" when state is "REFERENCE_FILTER"@=
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
+    if (cache != NULL) {
+        char *chkn;
+        Chunk chk;
+
+        chkn = raw_string(cache);
+        chk = chunk_of_name(chkn);
+        free_str(&cache);
+
+        chunk_ref_is_transformed_by(cckr, chk);
+    }
+    new_str(&cache, "");
+    break;
+}
+
+if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
+    str_append(cache, tkn->value);
+    break;
+}
+
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
+    char *chkn;
+    Chunk chk;
+
+    chkn = raw_string(cache);
+    chk = chunk_of_name(chkn);
+    free_str(&cache);
+
+    chunk_ref_is_transformed_by(cckr, chk);
+    cs = BLOCK_CONTENTS;
     break;
 }
 @
@@ -833,7 +918,56 @@ case 'p':
 @
 
 @<operations after parsing input@=
-printf("Do operations after parsing parsing\n");
+@<print all sections@>
+@
+
+@<functions@=
+void print_section(Section sec)
+{
+    printf("Comment: (%s, %d, %d)\n",
+        sec->comment->file,
+        sec->comment->start,
+        sec->comment->end
+    );
+    if (sec->block) {
+        printf("Block: %s\n", name_of_chunk(sec->block->chunk));
+        List lst = copy_list(contents_of_block(sec->block));
+        reverse(&lst);
+        do {
+            BlockContent bc;
+            FOREACH(bc, lst) {
+                if (bc->type == BLOCK_CONTENT_TEXT) {
+                    printf("\tText: (%s, %d, %d)\n",
+                        bc->value.text->file,
+                        bc->value.text->start,
+                        bc->value.text->end
+                    );
+                } else {
+                    printf("\tReference: %s", name_of_chunk(bc->value.chunk->chunk));
+                    List lst2 = copy_list(bc->value.chunk->filters);
+                    reverse(&lst2);
+                    Chunk chk;
+                    FOREACH(chk, lst2) {
+                        printf(" | %s", name_of_chunk(chk));
+                    }
+                    free_list(&lst2);
+                    putchar('\n');
+                }
+            }
+        } while (0);
+        free_list(&lst);
+    }
+}
+@
+
+@<print all sections@=
+do {
+    Section sec;
+    reverse(&sections);
+    FOREACH(sec, sections) {
+        print_section(sec);
+    }
+} while (0);
 @
 
 @<includes@=
@@ -843,6 +977,7 @@ printf("Do operations after parsing parsing\n");
 #include <stdbool.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #include "light.h"
 #include "str.h"
@@ -965,4 +1100,5 @@ echo ');'
 @<remove ending comma@=
 sed -z 's/,[[:space:]]$/\n/'
 @
+
 

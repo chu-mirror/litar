@@ -531,12 +531,17 @@ Chunk chunk_of_chunk_ref(ChunkRef ckr)
 }
 @
 
-A litar archive is consists of comments and blocks, we call a pair of a comment and a block
-a section.
+A litar archive is consists of comments and blocks, we call a comment or a block a section.
 @<datatypes@=
 typedef struct {
-    TextRef comment;
-    Block block;
+    enum {
+        SECTION_COMMENT,
+        SECTION_BLOCK,
+    } type;
+    union {
+        TextRef comment;
+        Block block;
+    } content;
 } *Section;
 @
 
@@ -695,8 +700,8 @@ NEW0(ctxt);
 ctxt->file = archive_name;
 
 NEW0(csec);
-csec->comment = ctxt;
-csec->block = NULL;
+csec->type = SECTION_COMMENT;
+csec->content.comment = ctxt;
 push(csec, &sections);
 @
 
@@ -739,9 +744,18 @@ Str cache = NULL;
 
 @<handlings for token "tkn" when state is "COMMENT"@=
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
+    ctxt = NULL;
+    csec = NULL;
+
+
+    NEW0(csec);
+    csec->type = SECTION_BLOCK;
+    push(csec, &sections);
+
     NEW0(cblk);
+    csec->content.block = cblk;
+
     new_str(&cache, "");
-    csec->block = cblk;
     cs = BLOCK_CHUNK_NAME;
     break;
 }
@@ -763,7 +777,6 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '=') {
     
     free_str(&cache);
 
-    ctxt = NULL;
     NEW0(ctxt);
     ctxt->file = strdup(ipt->file);
     ctxt->start = ipt->cp;
@@ -792,8 +805,8 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
 
     csec = NULL;
     NEW0(csec);
-    csec->comment = ctxt;
-    csec->block = NULL;
+    csec->type = SECTION_COMMENT;
+    csec->content.comment = ctxt;
     push(csec, &sections);
     cs = COMMENT;
     break;
@@ -924,14 +937,15 @@ case 'p':
 @<functions@=
 void print_section(Section sec)
 {
-    printf("Comment: (%s, %d, %d)\n",
-        sec->comment->file,
-        sec->comment->start,
-        sec->comment->end
-    );
-    if (sec->block) {
-        printf("Block: %s\n", name_of_chunk(sec->block->chunk));
-        List lst = copy_list(contents_of_block(sec->block));
+    if (sec->type == SECTION_COMMENT) {
+        printf("Comment: (%s, %d, %d)\n",
+            sec->content.comment->file,
+            sec->content.comment->start,
+            sec->content.comment->end
+        );
+    } else {
+        printf("Block: %s\n", name_of_chunk(sec->content.block->chunk));
+        List lst = copy_list(contents_of_block(sec->content.block));
         reverse(&lst);
         do {
             BlockContent bc;

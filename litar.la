@@ -587,7 +587,7 @@ static Token next_token(InputFrame ipt)
     NEW0(tkn);
 
     n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
-    if (c == '@') {
+    if (c == '\100') {
         tkn->type = TOKEN_CONTROL_CHARACTER;
         n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
         if (c == EOF || c == '\n' || c == '\t' || c == ' ') {
@@ -712,11 +712,28 @@ if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
 }
 @
 
+So character @@ should also be able to be input.
+@<handlings for token "tkn" when state is "COMMENT"@=
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
+    csec = NULL;
+    NEW0(csec);
+    csec->type = SECTION_COMMENT;
+    push(csec, &sections);
+
+    ctxt = NULL;
+    NEW0(ctxt);
+    ctxt->file = ipt->file;
+    ctxt->start = cp_t+1;
+    ctxt->end = cp_t+1;
+    csec->content.comment = ctxt;
+    break;
+}
+@
+
 End parsing of currnet file.
 @<handlings for token "tkn" when state is "COMMENT"@=
 if (tkn->type == TOKEN_EOF) {
     fclose(ipt->in);
-    free(ipt->file);
     FREE(ipt);
     pop(&stack);
     break;
@@ -747,7 +764,6 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
     ctxt = NULL;
     csec = NULL;
 
-
     NEW0(csec);
     csec->type = SECTION_BLOCK;
     push(csec, &sections);
@@ -767,6 +783,12 @@ if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
     str_append(cache, tkn->value);
     break;
 }
+
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
+    str_append(cache, '\100');
+    break;
+}
+
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '=') {
     char *chkn;
     Chunk chk;
@@ -778,7 +800,7 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '=') {
     free_str(&cache);
 
     NEW0(ctxt);
-    ctxt->file = strdup(ipt->file);
+    ctxt->file = ipt->file;
     ctxt->start = ipt->cp;
     ctxt->end = ipt->cp;
 
@@ -794,12 +816,23 @@ if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
     ++ctxt->end;
     break;
 }
+
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
+    ctxt = NULL;
+    NEW0(ctxt);
+    ctxt->file = ipt->file;
+    ctxt->start = cp_t+1;
+    ctxt->end = cp_t+1;
+    block_contain_text(cblk, ctxt);
+    break;
+}
+
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
     cblk = NULL;
 
     ctxt = NULL;
     NEW0(ctxt);
-    ctxt->file = strdup(ipt->file);
+    ctxt->file = ipt->file;
     ctxt->start = cp_t;
     ctxt->end = cp_t;
 
@@ -829,6 +862,7 @@ case REFERENCE_CHUNK_NAME:
 
 @<handlings for token "tkn" when state is "BLOCK_CONTENTS"@=
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
+    ctxt = NULL;
     new_str(&cache, "");
     NEW0(cckr);
     block_include_chunk(cblk, cckr);
@@ -843,6 +877,11 @@ if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
     break;
 }
 
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
+    str_append(cache, '\100');
+    break;
+}
+
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
     char *chkn;
     Chunk chk;
@@ -853,6 +892,12 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
 
     chunk_ref_reference_to(cckr, chk);
     cckr = NULL;
+
+    NEW0(ctxt);
+    ctxt->file = ipt->file;
+    ctxt->start = ipt->cp;
+    ctxt->end = ipt->cp;
+    block_contain_text(cblk, ctxt);
     cs = BLOCK_CONTENTS;
     break;
 }
@@ -906,6 +951,11 @@ if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
     break;
 }
 
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
+    str_append(cache, '\100');
+    break;
+}
+
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
     char *chkn;
     Chunk chk;
@@ -915,6 +965,13 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
     free_str(&cache);
 
     chunk_ref_is_transformed_by(cckr, chk);
+    cckr = NULL;
+
+    NEW0(ctxt);
+    ctxt->file = ipt->file;
+    ctxt->start = ipt->cp;
+    ctxt->end = ipt->cp;
+    block_contain_text(cblk, ctxt);
     cs = BLOCK_CONTENTS;
     break;
 }

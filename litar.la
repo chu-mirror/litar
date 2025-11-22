@@ -622,12 +622,12 @@ static Token next_token(InputFrame ipt)
 The parsing start with the state reading in comments.
 
 @<states in a parsing@=
-COMMENT,
+PARSE_COMMENT,
 @
 
 @<parse input@=
 do {
-    State cs = COMMENT; /* current state */
+    State cs = PARSE_COMMENT; /* current state */
     List stack = empty_list;
 
     @<context for parsing@>
@@ -687,8 +687,8 @@ echo "} while (0);"
 @
 
 @<cases for handling token "tkn"@=
-case COMMENT:
-    @<handlings for token "tkn" when state is "COMMENT"@|execute token handlings@>
+case PARSE_COMMENT:
+    @<handlings for token "tkn" when state is "PARSE_COMMENT"@|execute token handlings@>
     break;
 @
 
@@ -705,7 +705,7 @@ csec->content.comment = ctxt;
 push(csec, &sections);
 @
 
-@<handlings for token "tkn" when state is "COMMENT"@=
+@<handlings for token "tkn" when state is "PARSE_COMMENT"@=
 if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
     ctxt->end = ipt->cp;
     break;
@@ -713,7 +713,7 @@ if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
 @
 
 So character @@ should also be able to be input.
-@<handlings for token "tkn" when state is "COMMENT"@=
+@<handlings for token "tkn" when state is "PARSE_COMMENT"@=
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
     csec = NULL;
     NEW0(csec);
@@ -731,7 +731,7 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
 @
 
 End parsing of currnet file.
-@<handlings for token "tkn" when state is "COMMENT"@=
+@<handlings for token "tkn" when state is "PARSE_COMMENT"@=
 if (tkn->type == TOKEN_EOF) {
     fclose(ipt->in);
     FREE(ipt);
@@ -741,16 +741,16 @@ if (tkn->type == TOKEN_EOF) {
 @
 
 @<states in a parsing@=
-BLOCK_CHUNK_NAME,
-BLOCK_CONTENTS,
+PARSE_BLOCK_CHUNK_NAME,
+PARSE_BLOCK_CONTENTS,
 @
 
 @<cases for handling token "tkn"@=
-case BLOCK_CHUNK_NAME:
-    @<handlings for token "tkn" when state is "BLOCK_CHUNK_NAME"@|execute token handlings@>
+case PARSE_BLOCK_CHUNK_NAME:
+    @<handlings for token "tkn" when state is "PARSE_BLOCK_CHUNK_NAME"@|execute token handlings@>
     break;
-case BLOCK_CONTENTS:
-    @<handlings for token "tkn" when state is "BLOCK_CONTENTS"@|execute token handlings@>
+case PARSE_BLOCK_CONTENTS:
+    @<handlings for token "tkn" when state is "PARSE_BLOCK_CONTENTS"@|execute token handlings@>
     break;
 @
 
@@ -759,7 +759,7 @@ Block cblk = NULL;
 Str cache = NULL;
 @
 
-@<handlings for token "tkn" when state is "COMMENT"@=
+@<handlings for token "tkn" when state is "PARSE_COMMENT"@=
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
     ctxt = NULL;
     csec = NULL;
@@ -772,13 +772,13 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
     csec->content.block = cblk;
 
     new_str(&cache, "");
-    cs = BLOCK_CHUNK_NAME;
+    cs = PARSE_BLOCK_CHUNK_NAME;
     break;
 }
 @
 
 Read in chunk name.
-@<handlings for token "tkn" when state is "BLOCK_CHUNK_NAME"@=
+@<handlings for token "tkn" when state is "PARSE_BLOCK_CHUNK_NAME"@=
 if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
     str_append(cache, tkn->value);
     break;
@@ -806,12 +806,12 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '=') {
 
     block_contain_text(cblk, ctxt);
 
-    cs = BLOCK_CONTENTS;
+    cs = PARSE_BLOCK_CONTENTS;
     break;
 }
 @
 
-@<handlings for token "tkn" when state is "BLOCK_CONTENTS"@=
+@<handlings for token "tkn" when state is "PARSE_BLOCK_CONTENTS"@=
 if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
     ++ctxt->end;
     break;
@@ -841,13 +841,13 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
     csec->type = SECTION_COMMENT;
     csec->content.comment = ctxt;
     push(csec, &sections);
-    cs = COMMENT;
+    cs = PARSE_COMMENT;
     break;
 }
 @
 
 @<states in a parsing@=
-REFERENCE_CHUNK_NAME,
+PARSE_REFERENCE_CHUNK_NAME,
 @
 
 @<context for parsing@=
@@ -855,23 +855,23 @@ ChunkRef cckr = NULL;
 @
 
 @<cases for handling token "tkn"@=
-case REFERENCE_CHUNK_NAME:
-    @<handlings for token "tkn" when state is "REFERENCE_CHUNK_NAME"@|execute token handlings@>
+case PARSE_REFERENCE_CHUNK_NAME:
+    @<handlings for token "tkn" when state is "PARSE_REFERENCE_CHUNK_NAME"@|execute token handlings@>
     break;
 @
 
-@<handlings for token "tkn" when state is "BLOCK_CONTENTS"@=
+@<handlings for token "tkn" when state is "PARSE_BLOCK_CONTENTS"@=
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
     ctxt = NULL;
     new_str(&cache, "");
     NEW0(cckr);
     block_include_chunk(cblk, cckr);
-    cs = REFERENCE_CHUNK_NAME;
+    cs = PARSE_REFERENCE_CHUNK_NAME;
     break;
 }
 @
 
-@<handlings for token "tkn" when state is "REFERENCE_CHUNK_NAME"@=
+@<handlings for token "tkn" when state is "PARSE_REFERENCE_CHUNK_NAME"@=
 if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
     str_append(cache, tkn->value);
     break;
@@ -898,22 +898,22 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
     ctxt->start = ipt->cp;
     ctxt->end = ipt->cp;
     block_contain_text(cblk, ctxt);
-    cs = BLOCK_CONTENTS;
+    cs = PARSE_BLOCK_CONTENTS;
     break;
 }
 @
 
 @<states in a parsing@=
-REFERENCE_FILTER,
+PARSE_REFERENCE_FILTER,
 @
 
 @<cases for handling token "tkn"@=
-case REFERENCE_FILTER:
-    @<handlings for token "tkn" when state is "REFERENCE_FILTER"@|execute token handlings@>
+case PARSE_REFERENCE_FILTER:
+    @<handlings for token "tkn" when state is "PARSE_REFERENCE_FILTER"@|execute token handlings@>
     break;
 @
 
-@<handlings for token "tkn" when state is "REFERENCE_CHUNK_NAME"@=
+@<handlings for token "tkn" when state is "PARSE_REFERENCE_CHUNK_NAME"@=
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
     char *chkn;
     Chunk chk;
@@ -925,12 +925,12 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
     chunk_ref_reference_to(cckr, chk);
 
     new_str(&cache, "");
-    cs = REFERENCE_FILTER;
+    cs = PARSE_REFERENCE_FILTER;
     break;
 }
 @
 
-@<handlings for token "tkn" when state is "REFERENCE_FILTER"@=
+@<handlings for token "tkn" when state is "PARSE_REFERENCE_FILTER"@=
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
     if (cache != NULL) {
         char *chkn;
@@ -972,7 +972,7 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
     ctxt->start = ipt->cp;
     ctxt->end = ipt->cp;
     block_contain_text(cblk, ctxt);
-    cs = BLOCK_CONTENTS;
+    cs = PARSE_BLOCK_CONTENTS;
     break;
 }
 @

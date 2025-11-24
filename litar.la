@@ -4,8 +4,8 @@
 Programmers have a lot of text to deal with. They write code,
 they write code to compile code, they write document, they write
 code to format document, they write code to parse whatever text,
-they even spell commands to control computer through shells. Basically,
-all work that programmers do is writing text.
+they even spell commands to control computer through shells.
+Basically, all work that programmers do is writing text.
 
 The traditional unit of text is file, text of different types
 is saved in seperated files, but sometimes, it might take
@@ -16,7 +16,7 @@ put that to Makefile. Here is the problem, sed operate on the whole
 file, so you have to make sure that the sed script won't influence the other
 part of the file. To solve that, you might seperate that part of code to a new file,
 use a function to encapsulate it or simply store the information
-in a macro or a variable to pass back to the original file.
+in a macro or a variable and pass back to the original file.
 You can see all the extra efforts made here.
 
 litar is created to operate on a smaller unit of text, which is called chunk.
@@ -25,7 +25,7 @@ and describe the relations between chunks at ease. Some relations
 are hard or cumbersome to implement if between files.
 What's more, follow the spirit of literate programming,
 the readability is supposed to be improved a lot.
-A such file is called litar archive, the name litar is from
+A such file is called a litar archive, the name litar is by combining
 literate and archive.
 @
 
@@ -42,17 +42,17 @@ Each block consists of two parts: the name of a chunk and contents of current bl
 Some comments.
 
 @@<chunk1@@=
-The contents of block1.
+    The contents of block1.
 @@
 
 Some other comments
 
 @@<chunk2@@=
-The contents of block2.
+    The contents of block2.
 @@
 
 @@<chunk1@@=
-The contents of block3.
+    The contents of block3.
 @@
 
 ```
@@ -65,15 +65,15 @@ There is another relation between chunk and block, include.
 Some comments.
 
 @@<chunk1@@=
-The contents of block1.
+    The contents of block1.
 @@
 
 Some other comments
 
 @@<chunk2@@=
-The contents of block2.
-@@<chunk1@@>
-The contents of block2.
+    The contents of block2.
+    @@<chunk1@@>
+    The contents of block2.
 @@
 
 ```
@@ -81,23 +81,23 @@ The contents of block2.
 The contents of block2 contains a reference to chunk1, we say block2 includes chunk1
 at the position of the reference to chunk1.
 
-The definition for the content of a chunk is the expanded contents of all
+The definition for the content of a chunk is the expanded content of all
 blocks appended to the chunk concatenated.
-The definition for the expanded contents of a block is the content of the block
+The definition for the expanded content of a block is the content of the block
 that all references to chunk are replaced by the content of the corresponding chunk.
 
 It's a recursive procedure to evaluate the content of a chunk.
-So it's wrong if a block includes the chunk that it extends.
+So a block can not includes the chunk that it extends.
 
-The syntax above decribes some common functionalities all literate programming tools have.
+The syntax above decribes some common concepts that all literate programming tools have.
 litar has some useful extensions, which make it a general purpose tool
 for text processing rather than a literate programming tool.
-As a result litar will not take in weaving to its kernel.
+As a result, litar will not take in weaving to its kernel.
 
-The major extension is user defined pipeline.
-Noweb has some similar design decisions, but litar makes use of pipeline even more.
+The major extension is user defined filters.
+Noweb has some similar design decisions, but litar makes use of filters even more.
 
-The following simple program explains the usage of pipeline in litar.
+The following simple program explains the usage of filter in litar.
 
 ```
 @@<hello.c@@=
@@ -120,8 +120,9 @@ sed 's/world/WORLD/'
 
 The final output of this program is "Hello, WORLD!". The creation
 of a chunk is pretty easy compared to files, so is the operation to
-the chunk. The operation take effect through a method like Unix pipeline,
-and itself is nothing more than a chunk.
+the chunk. The operation takes effect through pipes,
+and itself is nothing more than a chunk. An operation like this is called filter.
+Filter and pipe has same meaning as in the context of Unix shell.
 
 Operations are bash scripts by default, litar may support other languages in future
 or simply leave it as an option to users.
@@ -166,9 +167,10 @@ execute an operation under a context built from archive.
 @<invocation syntax@|options for manpage@>
 @
 
-# Implementation
+# Main body
 
 litar follows the common pattern of a command line tool, just executes and exits.
+Users specify operations through command line arguments, litar parse and execute them.
 
 @<litar.c@=
 @<includes@>
@@ -192,27 +194,6 @@ void print_usage()
 {
     printf("Usage: %s\n", @<invocation syntax@|usage of invocation syntax@>);
 }
-@
-
-The operations of litar can be performed at two stages:
-
-1. before parsing,
-2. after parsing input.
-
-Not all invocations need to go through parsing.
-
-@<perform operations according to flags@=
-do {
-    bool to_continue = true;
-    @<operations before parsing@|execute sequentially@>
-    if (!to_continue) {
-        break;
-    }
-
-    @<parse input@>
-
-    @<operations after parsing input@|execute sequentially@>
-} while (0);
 @
 
 @<global variables@=
@@ -252,61 +233,30 @@ do {
 } while (0);
 @
 
-@<command line options for litar@=
-["Show the usage of litar.", "h"],
+The operations of litar can be performed at two stages:
+
+1. before parsing,
+2. after parsing input.
+
+Not all invocations need to go through parsing.
+
+@<perform operations according to flags@=
+do {
+    bool to_continue = true;
+    @<operations before parsing@|execute sequentially@>
+    if (!to_continue) {
+        break;
+    }
+
+    @<parse input@>
+
+    @<operations after parsing input@|execute sequentially@>
+} while (0);
 @
 
-@<flags@=
-bool to_print_help;
-@
+# Concepts
 
-@<cases for command line option@=
-case 'h':
-    to_print_help = true;
-    break;
-@
-
-@<operations before parsing@=
-if (to_print_help) {
-    print_usage();
-    to_continue = false;
-}
-@
-
-@<command line options for litar@=
-["Show the version and build information of litar.", "v"],
-@
-
-@<flags@=
-bool to_print_version_info;
-@
-
-@<cases for command line option@=
-case 'v':
-    to_print_version_info = true;
-    break;
-@
-
-@<global variables@=
-char version[] = "dev";
-@
-
-@<operations before parsing@=
-if (to_print_version_info) {
-    @<print version information@|fill in build time information@>
-    to_continue = false;
-    break;
-}
-@
-
-@<print version information@=
-printf("Version %s, built at <build time>\n", version);
-@
-
-## Parsing
-
-The purpose of parsing is to extract relations between objects belonging to
-a specific domain from unstructured information.
+Concepts illustrated above should be represented before details of implementation.
 
 @<functions@=
 @<relations between object@>
@@ -332,7 +282,7 @@ struct mappings_chunk_ref {
 };
 @
 
-To save space, reference to the original text is represented by some records
+To save memory, reference to the original text is represented by some records
 rather than stored to memory. The text can be later fetched through mmap in need.
 
 @<datatypes@=
@@ -388,7 +338,7 @@ char *fetch_text_from(TextRef tr)
 }
 @
 
-Let's begin with chunks. All chunks have a name and
+All chunks have a name and
 there's only one chunk if given a name. The name of a chunk
 consists of none-space words, so "name of chunk" does not
 differ from "  name  of  chunk".
@@ -479,7 +429,7 @@ void block_extend_chunk(Block blk, Chunk chk)
 }
 @
 
-The contents of a block can either be a reference to the original text
+The contents of a block may either be a reference to the original text
 or a reference to a chunk.
 
 @<datatypes@=
@@ -593,6 +543,71 @@ typedef struct {
 @<global variables@=
 List sections;
 @
+
+From the definitions above, we can define the content of chunk
+and expanded content of block.
+@<declarations@=
+Str content_of_chunk(Chunk chk);
+Str expanded_content_of_block(Block blk);
+@
+
+@<functions@=
+Str content_of_chunk(Chunk chk)
+{
+    Str cc = NULL;
+    List blks = copy_list(blocks_of_chunk(chk));
+    Block blk;
+
+    reverse(&blks);
+
+    new_str(&cc, "");
+    FOREACH(blk, blks) {
+        Str exb = expanded_content_of_block(blk);
+        str_extend(cc, raw_string(exb));
+        free_str(&exb);
+    }
+
+    free_list(&blks);
+    return cc;
+}
+
+Str expanded_content_of_block(Block blk)
+{
+    Str ect = NULL;
+    List bcs = copy_list(contents_of_block(blk));
+    BlockContent bc;
+
+    reverse(&bcs);
+    
+    new_str(&ect, "");
+    FOREACH(bc, bcs) {
+        if (bc->type == BLOCK_CONTENT_TEXT) {
+            char *txt;
+            txt = fetch_text_from(bc->value.text);
+            str_extend(ect, txt);
+            FREE(txt);
+        }
+        if (bc->type == BLOCK_CONTENT_CHUNK) {
+            Str cc = content_of_chunk(bc->value.chunk->chunk);
+            @<transform "cc" through filters of "bc->value.chunk"@>
+            str_extend(ect, raw_string(cc));
+            free_str(&cc);
+        }
+    }
+    
+    free_list(&bcs);
+    return ect;
+}
+@
+
+@<transform "cc" through filters of "bc->value.chunk"@=
+
+@
+
+# Parsing
+
+The purpose of parsing is to extract relations between objects of
+a specific domain from unstructured information.
 
 The grammar of litar is designed deliberately to be as simple as possible.
 As a result, the tokens only have four types, control character,
@@ -1022,17 +1037,87 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
 }
 @
 
+# User Interface
+
+@<command line options for litar@=
+["Show the usage of litar.", "h"],
+@
+
+@<flags@=
+bool to_print_help;
+@
+
+@<cases for command line option@=
+case 'h':
+    to_print_help = true;
+    break;
+@
+
+@<operations before parsing@=
+if (to_print_help) {
+    print_usage();
+    to_continue = false;
+}
+@
+
+@<command line options for litar@=
+["Show the version and build information of litar.", "v"],
+@
+
+@<flags@=
+bool to_print_version_info;
+@
+
+@<cases for command line option@=
+case 'v':
+    to_print_version_info = true;
+    break;
+@
+
+@<global variables@=
+char version[] = "dev";
+@
+
+@<operations before parsing@=
+if (to_print_version_info) {
+    @<print version information@|fill in build time information@>
+    to_continue = false;
+    break;
+}
+@
+
+@<print version information@=
+printf("Version %s, built at <build time>\n", version);
+@
+
 @<command line options for litar@=
 ["Print the content of CHUNK in ARCHIVE.", "p", "CHUNK"],
 ["Execute an operation in CHUNK under ARCHIVE.", "x", "CHUNK"],
 @
 
+@<global variables@=
+char *name_of_chunk_to_print;
+@
+
+@<flags@=
+bool to_print_specific_chunk;
+@
+
 @<cases for command line option@=
 case 'p':
+    to_print_specific_chunk = true;
+    name_of_chunk_to_print = optarg;
     break;
 @
 
 @<operations after parsing input@=
+if (to_print_specific_chunk) {
+    Str cc;
+    cc = content_of_chunk(chunk_of_name(name_of_chunk_to_print));
+    puts(raw_string(cc));
+    free_str(&cc);
+    break;
+}
 @<print all sections@>
 @
 
@@ -1086,6 +1171,8 @@ do {
     }
 } while (0);
 @
+
+# Appendix
 
 @<includes@=
 #include <stdio.h>

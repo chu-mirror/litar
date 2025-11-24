@@ -115,7 +115,6 @@ printf("Hello, world!\n");
 @@<exaggeratedly@@=#!/bin/sh
 sed 's/world/WORLD/'
 @@
-
 ```
 
 The final output of this program is "Hello, WORLD!". The creation
@@ -131,7 +130,55 @@ Relation include is extended to, a block include a chunk transformed by
 filters at the position of reference to the chunk.
 
 The whole design of litar is around this relation, all other stuffs are
-supplements to this.
+supplements to this, and this is the hardest part.
+Filters are executed by litar, so litar has to
+face the complication of building a correct process. For example,
+which directory should be the working directory of filters,
+what does it mean if a filter create a file,
+how to decide what files a filter can access, etc.
+
+It's ideal if a filter just use 3 files, stdin, stdout and stderr,
+and do nothing more than transform input from stdin to stdout,
+occasionally report error through stderr. In reality,
+it's too restrictive. Like Bourne Shell, it can not do anything meaningful
+without accessing tools provided by underlying operating system.
+Even did we limit the choice of outside programs to a fixed set,
+then how to explain, let's say, sed's ability to use script files.
+So, to simply regard filters as executables and run them under
+current directory is enough? No, what if the invocated sed command want
+to make use of a script file written in the litar archive?
+Should we extract the file from the litar archive manually then run the sed command?
+It's too cumbersome, not at ease at all!
+
+The author of litar does not want to limit the powerful flexibility of Unix tools.
+So unlike traditional literate programming tools, litar has syntax to introduce
+the concept of files explicitly to kernel of it. This is done by using @@[.
+
+```
+@@[hello.c@@=
+#include "stdio.h"
+int main() {
+    @@<print hello world@@|exaggeratedly@@>
+    return 0;
+}
+@@
+
+@@<print hello world@@=
+printf("Hello, world!\n");
+@@
+
+@@[sed_scripts/bigger_world.sed@@=
+s/world/WORLD/
+@@
+
+@@<exaggeratedly@@=#!/bin/sh
+sed -f sed_scripts/bigger_world.sed
+@@
+```
+
+There are two files in this example, "hello.c" and "sed_scripts/bigger_world.sed".
+Filters are executed in an environment so that these two files can be visited.
+A file in a litar archive is also a chunk.
 
 Besides these control characters that describes the structure of a litar archive,
 there are some other control characters. They are commands, which influence

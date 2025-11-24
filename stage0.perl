@@ -11,7 +11,7 @@ my $code_block = "";
 my %blocks = ();
 
 sub eval_line_when_article($ln) {
-    if ($ln =~ /\A@<\s*(.*\S)\s*@=\s*\Z/) {
+    if ($ln =~ /\A@<\s*(.*\S)\s*@=/) {
         (my $name = $1) =~ s/\s+/ /g;
         chomp $name;
         $state = 'code';

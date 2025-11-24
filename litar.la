@@ -112,7 +112,7 @@ int main() {
 printf("Hello, world!\n");
 @@
 
-@@<exaggeratedly@@=
+@@<exaggeratedly@@=#!/bin/sh
 sed 's/world/WORLD/'
 @@
 
@@ -124,8 +124,8 @@ the chunk. The operation takes effect through pipes,
 and itself is nothing more than a chunk. An operation like this is called filter.
 Filter and pipe has same meaning as in the context of Unix shell.
 
-Operations are bash scripts by default, litar may support other languages in future
-or simply leave it as an option to users.
+Operations are scripts that the first line must be a shebang,
+so litar can support all script languages without extra effort.
 
 Relation include is extended to, a block include a chunk transformed by
 filters at the position of reference to the chunk.
@@ -399,6 +399,19 @@ Chunk chunk_of_name(const char *name)
     return chk;
 }
 
+bool chunk_of_name_exist(const char *name)
+{
+    char *norm;
+    norm = strdup(name);
+    normalize_chunk_name(name, norm);
+
+    Chunk chk;
+    chk = get_from_hash_table(chunk_name_to_chunk, norm);
+
+    free(norm);
+    return chk != NULL;
+}
+
 const char *name_of_chunk(Chunk chk)
 {
     return chk->chunk_name;
@@ -551,21 +564,46 @@ Str content_of_chunk(Chunk chk);
 Str expanded_content_of_block(Block blk);
 @
 
+litar use a stack to detect recursive including and report it as a severe error.
+@<global variables@=
+List stack_of_chunks_in_tangling = empty_list;
+@
+
+@<functions@=
+bool chunk_is_in_tangling(Chunk chk)
+{
+    Chunk chk_t;
+    FOREACH(chk_t, stack_of_chunks_in_tangling) {
+        if (chk_t == chk) {
+            return true;
+        }
+    }
+    return false;
+}
+@
+
 @<functions@=
 Str content_of_chunk(Chunk chk)
 {
+    if (chunk_is_in_tangling(chk)) {
+        fprintf(stderr, "Recursivly include \"%s\"\n", name_of_chunk(chk));
+        exit(1);
+    }
+
     Str cc = NULL;
     List blks = copy_list(blocks_of_chunk(chk));
     Block blk;
 
     reverse(&blks);
 
+    push(chk, &stack_of_chunks_in_tangling);
     new_str(&cc, "");
     FOREACH(blk, blks) {
         Str exb = expanded_content_of_block(blk);
         str_extend(cc, raw_string(exb));
         free_str(&exb);
     }
+    pop(&stack_of_chunks_in_tangling);
 
     free_list(&blks);
     return cc;
@@ -739,7 +777,7 @@ void handle_unknown_token(Token tkn, char *f, int l, int r)
 }
 @
 
-@<execute token handlings@=
+@<execute token handlings@=#!/bin/sh
 echo "do {"
 cat -
 echo "handle_unknown_token(tkn, ipt->file, cl_t, cr_t);"
@@ -1112,6 +1150,10 @@ case 'p':
 
 @<operations after parsing input@=
 if (to_print_specific_chunk) {
+    if (!chunk_of_name_exist(name_of_chunk_to_print)) {
+        fprintf(stderr, "Unknown chunk: %s\n", name_of_chunk_to_print);
+        exit(1);
+    }
     Str cc;
     cc = content_of_chunk(chunk_of_name(name_of_chunk_to_print));
     puts(raw_string(cc));
@@ -1193,7 +1235,7 @@ do {
 #include "deque.h"
 @
 
-@<parse invocation syntax@=
+@<parse invocation syntax@=#!/bin/sh
 import json
 import sys
 from typing import NamedTuple
@@ -1213,7 +1255,7 @@ options = list(map(
 arguments = stx["arguments"]
 @
 
-@<synopsis for manpage@=
+@<synopsis for manpage@=#!/bin/sh
 python -c '
 @<parse invocation syntax@>
 str = f".B {name}\n"
@@ -1231,7 +1273,7 @@ print(str)
 '
 @
 
-@<options for manpage@=
+@<options for manpage@=#!/bin/sh
 python -c '
 @<parse invocation syntax@>
 str = ""
@@ -1251,7 +1293,7 @@ print(str)
 '
 @
 
-@<usage of invocation syntax@=
+@<usage of invocation syntax@=#!/bin/sh
 python -c '
 @<parse invocation syntax@>
 str = "\""
@@ -1273,7 +1315,7 @@ print(str, end="")
 '
 @
 
-@<getopt string for invocation syntax@=
+@<getopt string for invocation syntax@=#!/bin/sh
 python -c '
 @<parse invocation syntax@>
 
@@ -1287,23 +1329,23 @@ print("\"" + "".join(map(opt_to_str, options)) + "\"", end="")
 '
 @
 
-@<fill in build time information@=
+@<fill in build time information@=#!/bin/sh
 sed -e "s/<build time>/$(date -Iminute)/g"
 @
 
-@<execute sequentially@=
+@<execute sequentially@=#!/bin/sh
 echo "do {"
 cat -
 echo "} while (0);"
 @
 
-@<print@=
+@<print@=#!/bin/sh
 echo 'printf('
 sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed 's/^/"/' | sed 's/$/\\n"/'
 echo ');'
 @
 
-@<remove ending comma@=
+@<remove ending comma@=#!/bin/sh
 sed -z 's/,[[:space:]]$/\n/'
 @
 

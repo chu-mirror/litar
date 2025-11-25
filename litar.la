@@ -123,13 +123,35 @@ the chunk. The operation takes effect through pipes,
 and itself is nothing more than a chunk. An operation like this is called filter.
 Filter and pipe has same meaning as in the context of Unix shell.
 
-Operations are scripts that the first line must be a shebang,
+Filters are scripts that the first line must be a shebang,
 so litar can support all script languages without extra effort.
 
-Relation include is extended to, a block include a chunk transformed by
-filters at the position of reference to the chunk.
+Filters can also make effect on blocks. The following program is same with the above.
 
-The whole design of litar is around this relation, all other stuffs are
+```
+@@<hello.c@@=
+#include "stdio.h"
+int main() {
+    @@<print hello world@@>
+    return 0;
+}
+@@
+
+@@<print hello world@@=
+printf("Hello, world!\n");
+@@|exaggeratedly@@
+
+@@<exaggeratedly@@=#!/bin/sh
+sed 's/world/WORLD/'
+@@
+```
+
+The two relations are extended to,
+1. a chunk is extended by a block transformed by a filter;
+2. a block include a chunk transformed by filters
+   at the position of reference to the chunk.
+
+The whole design of litar is around this extension, all other stuffs are
 supplements to this, and this is the hardest part.
 Filters are executed by litar, so litar has to
 face the complication of building a correct process. For example,
@@ -465,7 +487,7 @@ const char *name_of_chunk(Chunk chk)
 }
 @
 
-Chunk is extended by a list of blocks.
+Chunk is extended by a list of blocks transformed by filters.
 
 @<mappings from chunk@=
 List blocks;
@@ -473,6 +495,7 @@ List blocks;
 
 @<mappings from block@=
 Chunk chunk;
+List filters;
 @
 
 @<relations between object@=
@@ -486,6 +509,14 @@ void block_extend_chunk(Block blk, Chunk chk)
     blks = cons(blk, blks);
     chk->blocks = blks;
     blk->chunk = chk;
+}
+List filters_of_block(Block blk)
+{
+    return blk->filters;
+}
+void block_is_transformed_by(Block blk, Chunk flt)
+{
+    push(flt, &blk->filters);
 }
 @
 
@@ -573,11 +604,9 @@ void chunk_ref_reference_to(ChunkRef ckr, Chunk chk)
     ckr->chunk = chk;
 }
 
-void chunk_ref_is_transformed_by(ChunkRef ckr, Chunk chk)
+void chunk_ref_is_transformed_by(ChunkRef ckr, Chunk flt)
 {
-    List flts = filters_of_chunk_ref(ckr);
-    flts = cons(chk, flts);
-    ckr->filters = flts;
+    push(flt, &ckr->filters);
 }
 
 Chunk chunk_of_chunk_ref(ChunkRef ckr)
@@ -609,6 +638,7 @@ and expanded content of block.
 @<declarations@=
 Str content_of_chunk(Chunk chk);
 Str expanded_content_of_block(Block blk);
+void transform(Str txt, List flts);
 @
 
 litar use a stack to detect recursive including and report it as a severe error.
@@ -647,6 +677,7 @@ Str content_of_chunk(Chunk chk)
     new_str(&cc, "");
     FOREACH(blk, blks) {
         Str exb = expanded_content_of_block(blk);
+        transform(exb, blk->filters);
         str_extend(cc, raw_string(exb));
         free_str(&exb);
     }
@@ -674,7 +705,7 @@ Str expanded_content_of_block(Block blk)
         }
         if (bc->type == BLOCK_CONTENT_CHUNK) {
             Str cc = content_of_chunk(bc->value.chunk->chunk);
-            @<transform "cc" through filters of "bc->value.chunk"@>
+            transform(cc, filters_of_chunk_ref(bc->value.chunk));
             str_extend(ect, raw_string(cc));
             free_str(&cc);
         }
@@ -685,8 +716,10 @@ Str expanded_content_of_block(Block blk)
 }
 @
 
-@<transform "cc" through filters of "bc->value.chunk"@=
-
+@<functions@=
+void transform(Str txt, List flts)
+{
+}
 @
 
 # Parsing
@@ -888,6 +921,7 @@ if (tkn->type == TOKEN_EOF) {
 @<states in a parsing@=
 PARSE_BLOCK_CHUNK_NAME,
 PARSE_BLOCK_CONTENTS,
+PARSE_BLOCK_FILTER,
 @
 
 @<cases for handling token "tkn"@=
@@ -896,6 +930,9 @@ case PARSE_BLOCK_CHUNK_NAME:
     break;
 case PARSE_BLOCK_CONTENTS:
     @<handlings for token "tkn" when state is "PARSE_BLOCK_CONTENTS"@|execute token handlings@>
+    break;
+case PARSE_BLOCK_FILTER:
+    @<handlings for token "tkn" when state is "PARSE_BLOCK_FILTER"@|execute token handlings@>
     break;
 @
 
@@ -972,10 +1009,62 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
     break;
 }
 
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
+    ctxt = NULL;
+    new_str(&cache, "");
+    cs = PARSE_BLOCK_FILTER;
+    break;
+}
+
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
     cblk = NULL;
 
     ctxt = NULL;
+    NEW0(ctxt);
+    ctxt->file = ipt->file;
+    ctxt->start = ipt->cp;
+    ctxt->end = ipt->cp;
+
+    csec = NULL;
+    NEW0(csec);
+    csec->type = SECTION_COMMENT;
+    csec->content.comment = ctxt;
+    push(csec, &sections);
+    cs = PARSE_COMMENT;
+    break;
+}
+@
+
+@<handlings for token "tkn" when state is "PARSE_BLOCK_FILTER"@=
+if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
+    str_append(cache, tkn->value);
+    break;
+}
+
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
+    char *chkn;
+    Chunk chk;
+
+    chkn = raw_string(cache);
+    chk = chunk_of_name(chkn);
+    block_is_transformed_by(cblk, chk);
+    free_str(&cache);
+
+    new_str(&cache, "");
+    break;
+}
+
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
+    char *chkn;
+    Chunk chk;
+
+    chkn = raw_string(cache);
+    chk = chunk_of_name(chkn);
+    block_is_transformed_by(cblk, chk);
+    free_str(&cache);
+
+    cblk = NULL;
+
     NEW0(ctxt);
     ctxt->file = ipt->file;
     ctxt->start = ipt->cp;

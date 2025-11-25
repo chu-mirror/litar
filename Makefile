@@ -1,7 +1,8 @@
 PREFIX=/usr/local
 EXEC=stage0.perl
 
-CFLAGS=-g -Ilight/include
+CFLAGS=-g -Ilight/include `pkg-config fuse3 --cflags --libs`
+LIBS=`pkg-config fuse3 --libs`
 
 all: litar
 
@@ -18,7 +19,7 @@ litar.c: litar.la
 	rm $@.bak
 
 litar: litar.c
-	$(CC) $(CFLAGS) -o $@ $< `./light/finddeff.py $< ./light/include`
+	$(CC) $(CFLAGS) -o $@ $< `./light/finddeff.py $< ./light/include` $(LIBS)
 
 clean:
 	rm -f litar.c litar hello litar.1

@@ -174,7 +174,7 @@ It's too cumbersome, not at ease at all!
 
 The author of litar does not want to limit the powerful flexibility of Unix tools.
 So unlike traditional literate programming tools, litar has syntax to introduce
-the concept of files explicitly to kernel of it. This is done by using @@[.
+the concept of files explicitly to kernel of it. This is done by using @@[ and @@(.
 
 ```
 @@[hello.c@@=
@@ -193,14 +193,19 @@ printf("Hello, world!\n");
 s/world/WORLD/
 @@
 
-@@<exaggeratedly@@=#!/bin/sh
+@@(run_bigger_world.sh@@=#!/bin/sh
 sed -f sed_scripts/bigger_world.sed
+@@
+
+@@<exaggeratedly@@=#!/bin/sh
+run_bigger_world.sh
 @@
 ```
 
-There are two files in this example, "hello.c" and "sed_scripts/bigger_world.sed".
-Filters are executed in an environment so that these two files can be visited.
-A file in a litar archive is also a chunk.
+There are three files in this example, "hello.c", "sed_scripts/bigger_world.sed"
+and "exaggeratedly". The difference between @@[ and @@( is that @@( specifies
+a executable file.  Filters are executed in an environment so that these three
+files can be visited.  A file in a litar archive is also a chunk.
 
 Besides these control characters that describes the structure of a litar archive,
 there are some other control characters. They are commands, which influence
@@ -225,23 +230,27 @@ of file name, and insert the content of that file at the place of @@i.
 @<manpage of litar@=
 .TH LITAR 1
 .SH NAME
-litar \- take action on litar archive
+litar \- an user space file system for litar archive
 .SH SYNOPSIS
 @<invocation syntax@|synopsis for manpage@>
 .SH DESCRIPTION
 .B litar
-interacts with litar archives to extract contents of a chunk or
-execute an operation under a context built from archive.
+mount an user space file system based on a litar archive.
 .SH OPTIONS
 @<invocation syntax@|options for manpage@>
 @
 
 # Main body
 
-litar follows the common pattern of a command line tool, just executes and exits.
-Users specify operations through command line arguments, litar parse and execute them.
+litar follows the common pattern of a libfuse application,
+parses and handles file system specific options first,
+then just executes fuse_main.
 
 @<litar.c@=
+#define FUSE_MAJOR_VERSION 3
+#define FUSE_MINOR_VERSION 14
+#define FUSE_USE_VERSION FUSE_VERSION
+
 @<includes@>
 @<declarations@>
 @<datatypes@>
@@ -249,12 +258,22 @@ Users specify operations through command line arguments, litar parse and execute
 @<global variables@>
 @<functions@>
 
+static const struct fuse_operations litar_oper = {
+@<operations for litar file system@>
+};
+
 int main(int argc, char *argv[])
 {
+    struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
     @<initializations of global variables@>
     @<parse command line arguments to set flags and global variables@>
     @<perform operations according to flags@>
-    return 0;
+
+    int fuse_argc;
+    char **fuse_argv;
+    @<construct "fuse_argc" and "fuse_argv"@>
+
+    return fuse_main(fuse_argc, fuse_argv, &litar_oper, NULL);
 }
 @
 
@@ -302,25 +321,57 @@ do {
 } while (0);
 @
 
-The operations of litar can be performed at two stages:
+The operations before running fuse_main can be performed at two stages:
 
-1. before parsing,
+1. before parsing;
 2. after parsing input.
 
-Not all invocations need to go through parsing.
-
 @<perform operations according to flags@=
-do {
-    bool to_continue = true;
-    @<operations before parsing@|execute sequentially@>
-    if (!to_continue) {
-        break;
+@<operations before parsing@|execute sequentially@>
+@<parse input@>
+@<operations after parsing input@|execute sequentially@>
+@
+
+litar does not require user to specify mount point manually.
+By default, litar create a directory at work directory, and mount to that directory.
+The directory's name is the litar archive's name removed suffix.
+Users can also pass the mount point by command line argument "-m mountpoint".
+
+@<command line options for litar@=
+["specify the mount point", "m", "MOUNTPOINT"],
+@
+
+@<global variables@=
+char *mountpoint;
+@
+
+@<cases for command line option@=
+case 'm':
+    mountpoint = optarg;
+    break;
+@
+
+@<construct "fuse_argc" and "fuse_argv"@=
+if (mountpoint == NULL) {
+    char *dir = strdup(archive_name);
+    int i = strlen(dir) - 1;
+    
+    while (dir[i] != '.' && i >= 0) {
+        --i;
     }
-
-    @<parse input@>
-
-    @<operations after parsing input@|execute sequentially@>
-} while (0);
+    if (i > 0) {
+        dir[i] = '\0';
+    }
+    if (mkdir(dir, 0755) == -1) {
+        perror(dir);
+        exit(1);
+    }
+    mountpoint = dir;
+}
+fuse_argc = 2;
+CALLOC(fuse_argv, fuse_argc);
+fuse_argv[0] = argv[0];
+fuse_argv[1] = mountpoint;
 @
 
 # Concepts
@@ -633,6 +684,118 @@ typedef struct {
 List sections;
 @
 
+Some chunks may be labeled as files,
+a file system can be built from these file paths.
+
+@<datatypes@=
+typedef struct {
+    enum {
+        NODE_DIRECTORY,
+        NODE_NORMAL,
+        NODE_EXECUTABLE,
+    } type;
+    union {
+        List nodes;
+        Chunk chunk;
+    } value;
+    char *name;
+} *Node;
+@
+
+@<global variables@=
+Node root_node;
+@
+
+@<initializations of global variables@=
+NEW(root_node);
+root_node->type = NODE_DIRECTORY;
+root_node->value.nodes = empty_list;
+root_node->name = strdup("/");
+@
+
+@<relations between object@=
+Node node_under_node(const char *file, Node node)
+{
+    Node nd;
+    if (node->type != NODE_DIRECTORY) {
+        fprintf(stderr, "Node %s is not directory\n", node->name);
+        exit(1);
+    }
+    FOREACH(nd, node->value.nodes) {
+        if (strcmp(file, nd->name) == 0) {
+            return nd;
+        }
+    }
+    return NULL;
+}
+
+Node node_of_path(const char *path)
+{
+    char *path_t = strdup(path);
+    Node node = root_node;
+    int i = 0, f = i, l = strlen(path);
+    while (f < l) {
+        if (path_t[i] == '/' || path_t[i] == '\0') {
+            path_t[i] = '\0';
+            if ((node = node_under_node(path_t+f, node)) == NULL) {
+                break;
+            }
+            f = i+1;
+        }
+        ++i;
+    }
+    free(path_t);
+    return node;
+}
+
+Node node_of_chunk(Chunk chk)
+{
+    return node_of_path(name_of_chunk(chk));
+}
+
+void chunk_is_file(Chunk chk)
+{
+    char *name = strdup(name_of_chunk(chk));
+    Node node = root_node, nd;
+    int i = 0, f = i, l = strlen(name);
+    while (f < l) {
+        if (name[i] == '/') {
+            name[i] = '\0';
+            if ((nd = node_under_node(name+f, node)) == NULL) {
+                NEW(nd);
+                nd->type = NODE_DIRECTORY;
+                nd->name = strdup(name+f);
+                nd->value.nodes = empty_list;
+                push(nd, &node->value.nodes);
+            }
+            node = nd;
+            f = i+1;
+        }
+        if (name[i] == '\0') {
+            if ((nd = node_under_node(name+f, node)) == NULL) {
+                NEW(nd);
+                nd->type = NODE_NORMAL;
+                nd->name = strdup(name+f);
+                nd->value.chunk = chk;
+                push(nd, &node->value.nodes);
+            }
+            break;
+        }
+        ++i;
+    }
+    free(name);
+}
+
+void chunk_is_executable(Chunk chk)
+{
+    chunk_is_file(chk);
+    Node nd;
+
+    nd = node_of_chunk(chk);
+    nd->type = NODE_EXECUTABLE;
+}
+@
+
 From the definitions above, we can define the content of chunk
 and expanded content of block.
 @<declarations@=
@@ -714,6 +877,44 @@ Str expanded_content_of_block(Block blk)
     free_list(&bcs);
     return ect;
 }
+@
+
+# FUSE
+
+@<functions@=
+static void *litar_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
+{
+    (void) conn;
+    cfg->umask = 0222;
+    return NULL;
+}
+static int litar_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
+{
+    (void) fi;
+    Node nd;
+
+    memset(stbuf, 0, sizeof(struct stat));
+
+    if (strcmp(path, "/") == 0) {
+        stbuf->st_mode = S_IFDIR | 0555;
+        stbuf->st_nlink = 2;
+        return 0;
+    }
+    
+    nd = node_of_path(path);
+    if (nd == NULL) {
+        return -ENOENT;
+    }
+
+    switch (nd->type) {
+    case NODE_DIRECTORY:
+    }
+    return 0;
+}
+@
+
+@<operations for litar file system@=
+.init = litar_init,
 @
 
 @<functions@=
@@ -1230,7 +1431,7 @@ case 'h':
 @<operations before parsing@=
 if (to_print_help) {
     print_usage();
-    to_continue = false;
+    exit(0);
 }
 @
 
@@ -1255,13 +1456,12 @@ char version[] = "dev";
 @<operations before parsing@=
 if (to_print_version_info) {
     @<print version information@|fill in build time information@>
-    to_continue = false;
-    break;
+    exit(0);
 }
 @
 
 @<print version information@=
-printf("Version %s, built at <build time>\n", version);
+printf("Version %s, built at <build time>\nlibfuse version: %d\n", version, FUSE_VERSION);
 @
 
 @<command line options for litar@=
@@ -1362,6 +1562,8 @@ do {
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+
+#include <fuse.h>
 
 #include "light.h"
 #include "str.h"

@@ -14,7 +14,7 @@ insert a build time information to your code whenever you build
 your program. To do that, you might write a simple sed script and
 put that to Makefile. Here is the problem, sed operate on the whole
 file, so you have to make sure that the sed script won't influence the other
-part of the file. To solve that, you might seperate that part of code to a new file,
+parts of the file. To solve that, you might seperate that part of code to a new file,
 use a function to encapsulate it or simply store the information
 in a macro or a variable and pass back to the original file.
 You can see all the extra efforts made here.
@@ -934,10 +934,6 @@ normal character, newline and EOF,
 and the whole parsing process can be implemented as a finite state machine.
 
 @<datatypes@=
-typedef enum {
-    @<states in a parsing@>
-} State;
-
 typedef struct {
     char *file;
     FILE *in;
@@ -998,13 +994,40 @@ static Token next_token(InputFrame ipt)
 }
 @
 
+@<global variables@=
+@<model of states@|declarations of states@>
+@
+
+@<model of states@=
+[
+    @<states of parsing@|remove ending comma@>
+]
+@
+
+@<states of parsing@=
+["parse", null, "XOR"],
+@
+
+@<parse input@=
+do {
+    @<model of states@|initialization of states@>
+
+    @<model of states@|cleaning of states@>
+} while (0);
+@
+
+## Top level
+
+@<states of parsing@=
+@
+
 The parsing start with the state reading in comments.
 
 @<states in a parsing@=
 PARSE_COMMENT,
 @
 
-@<parse input@=
+@<parse input (old)@=
 do {
     State cs = PARSE_COMMENT; /* current state */
     List stack = empty_list;
@@ -1571,6 +1594,7 @@ do {
 #include "hash_table.h"
 #include "atom.h"
 #include "deque.h"
+#include "state.h"
 @
 
 @<parse invocation syntax@=#!/bin/sh
@@ -1664,6 +1688,77 @@ def opt_to_str(opt):
         return opt.name + ":"
 
 print("\"" + "".join(map(opt_to_str, options)) + "\"", end="")
+'
+@
+
+@<parse model of states@=
+import json
+import sys
+from typing import NamedTuple
+
+states = {}
+
+class State(NamedTuple):
+    name: str
+    parent: str
+    type: str
+
+def state_to_c_var(st):
+    return f"state_{st.name}"
+
+def state_to_handler(st):
+    return f"{state_to_c_var(st)}_handler"
+
+def state_to_type(st):
+    return f"STATE_{st.type}"
+
+model = json.load(sys.stdin)
+
+for st in model:
+    states[st[0]] = State(st[0], st[1], st[2])
+@
+
+@<declarations of states@=#!/bin/sh
+python -c '
+@<parse model of states@>
+
+def state_to_dec(st):
+    return f"State {state_toc_var(st)};"
+
+str = "\n".join(map(st_to_dec, states.values())) + "\n"
+print(str)
+'
+@
+
+@<initialization of states@=
+python -c '
+@<parse model of states@>
+
+def state_to_init(st):
+    s = ""
+    s += f"new_state(&{state_to_c_var(st)},"
+    s += f" {state_to_c_var(states[st.parent])}," if st.parent is not None else "root_state,"
+    s += f" {state_to_type(st)},"
+    s += f" {state_to_handler(st)});"
+    return s
+
+str = "\n".join(map(state_to_init, states.values())) + "\n"
+str += f"state_init({state_to_c_var(list(states.values())[0])});\n"
+print(str)
+'
+@
+
+@<cleaning of states@=
+python -c '
+@<parse model of states@>
+
+def state_to_free(st):
+    s = f"free_state(&{state_to_c_var(st)});"
+    return s
+
+str = f"state_clear({state_to_c_var(list(states.values())[0])});\n"
+str += "\n".join(map(state_to_free, states.values())) + "\n"
+print(str)
 '
 @
 

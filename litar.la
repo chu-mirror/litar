@@ -91,7 +91,7 @@ So a block can not includes the chunk that it extends.
 
 The syntax above decribes some common concepts that all literate programming tools have.
 litar has some useful extensions, which make it a general purpose tool
-for text processing rather than a literate programming tool.
+for text processing rather than a deliberate literate programming tool.
 As a result, litar will not take in weaving to its kernel.
 
 The major extension is user defined filters.
@@ -121,7 +121,7 @@ The final output of this program is "Hello, WORLD!". The creation
 of a chunk is pretty easy compared to files, so is the operation to
 the chunk. The operation takes effect through pipes,
 and itself is nothing more than a chunk. An operation like this is called filter.
-Filter and pipe has same meaning as in the context of Unix shell.
+Filter and pipe have the same meaning as in the context of Unix shell.
 
 Filters are scripts that the first line must be a shebang,
 so litar can support all script languages without extra effort.
@@ -147,7 +147,7 @@ sed 's/world/WORLD/'
 ```
 
 The two relations are extended to,
-1. a chunk is extended by a block transformed by a filter;
+1. a chunk is extended by a block transformed filters;
 2. a block include a chunk transformed by filters
    at the position of reference to the chunk.
 
@@ -163,8 +163,8 @@ It's ideal if a filter just use 3 files, stdin, stdout and stderr,
 and do nothing more than transform input from stdin to stdout,
 occasionally report error through stderr. In reality,
 it's too restrictive. Like Bourne Shell, it can not do anything meaningful
-without accessing tools provided by underlying operating system.
-Even did we limit the choice of outside programs to a fixed set,
+without accessing tools provided by the underlying operating system.
+Even did we limit the choices of outside programs to a fixed set,
 then how to explain, let's say, sed's ability to use script files.
 So, to simply regard filters as executables and run them under
 current directory is enough? No, what if the invocated sed command want
@@ -198,14 +198,22 @@ sed -f sed_scripts/bigger_world.sed
 @@
 
 @@<exaggeratedly@@=#!/bin/sh
-run_bigger_world.sh
+./run_bigger_world.sh
 @@
 ```
 
 There are three files in this example, "hello.c", "sed_scripts/bigger_world.sed"
 and "exaggeratedly". The difference between @@[ and @@( is that @@( specifies
-a executable file.  Filters are executed in an environment so that these three
-files can be visited.  A file in a litar archive is also a chunk.
+a executable file but @@['s is a regular file.
+Filters are executed in an environment so that these three
+files can be visited.
+It's worthy to mention that a file in a litar archive is also a chunk.
+
+The discussion above implies that a litar archive has a file system inside.
+To be compatible with Unix programming environment, litar uses a technology called
+Filesystem in Userspace (FUSE), which allows litar to create a custom file system
+and mount it. So filters can access the files in a litar archive just like
+other files in the operating system.
 
 Besides these control characters that describes the structure of a litar archive,
 there are some other control characters. They are commands, which influence

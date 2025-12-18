@@ -156,7 +156,6 @@ supplements to this, and this is the hardest part.
 Filters are executed by litar, so litar has to
 face the complication of building a correct process. For example,
 which directory should be the working directory of filters,
-what does it mean if a filter create a file,
 how to decide what files a filter can access, etc.
 
 It's ideal if a filter just use 3 files, stdin, stdout and stderr,
@@ -238,55 +237,39 @@ of file name, and insert the content of that file at the place of @@i.
 @<manpage of litar@=
 .TH LITAR 1
 .SH NAME
-litar \- an user space file system for litar archive
+litar \- manage all text in one file
 .SH SYNOPSIS
 @<invocation syntax@|synopsis for manpage@>
 .SH DESCRIPTION
 .B litar
-mount an user space file system based on a litar archive.
+deal with a litar archive. It provides all necessary functionalities
+expected from the using of a litar archive.
 .SH OPTIONS
 @<invocation syntax@|options for manpage@>
 @
 
 # Main body
 
-litar follows the common pattern of a libfuse application,
-parses and handles file system specific options first,
-then just executes fuse_main.
+litar follows the common pattern of a command line tool.
+It parses options and arguments, executes, then exits.
 
 @<litar.c@=
-#define FUSE_MAJOR_VERSION 3
-#define FUSE_MINOR_VERSION 14
-#define FUSE_USE_VERSION FUSE_VERSION
+@<a monolithic c program@>
+@
 
-@<includes@>
-@<declarations@>
-@<datatypes@>
+@<global variables@=
 @<flags@>
-@<global variables@>
-@<functions@>
+@
 
-static const struct fuse_operations litar_oper = {
-@<operations for litar file system@>
-};
-
-int main(int argc, char *argv[])
-{
-    struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-    @<initializations of global variables@>
-    @<parse command line arguments to set flags and global variables@>
-    @<perform operations according to flags@>
-
-    int fuse_argc;
-    char **fuse_argv;
-    @<construct "fuse_argc" and "fuse_argv"@>
-
-    return fuse_main(fuse_argc, fuse_argv, &litar_oper, NULL);
-}
+@<main body of the c program@=
+@<initializations of global variables@>
+@<parse command line arguments to set flags and global variables@>
+@<perform operations according to flags@>
 @
 
 @<functions@=
-void print_usage()
+void
+print_usage()
 {
     printf("Usage: %s\n", @<invocation syntax@|usage of invocation syntax@>);
 }
@@ -298,7 +281,6 @@ char *archive_name = NULL;
 
 @<parse command line arguments to set flags and global variables@=
 do {
-    struct stat buf;
     int opt;
 
     while (
@@ -314,7 +296,7 @@ do {
         @<cases for command line option@>
         default:
             print_usage();
-            return 1;
+            exit(1);
         }
     }
 
@@ -323,80 +305,56 @@ do {
 
         if (access(archive_name, R_OK) == -1) {
             perror(archive_name);
-            return 1;
+            exit(1);
         }
     }
 } while (0);
 @
 
-The operations before running fuse_main can be performed at two stages:
+The operations can be performed at three stages:
 
 1. before parsing;
-2. after parsing input.
+2. after parsing, before mounting;
+3. after mounting.
 
 @<perform operations according to flags@=
-@<operations before parsing@|execute sequentially@>
-@<parse input@>
-@<operations after parsing input@|execute sequentially@>
-@
+do {
+    bool to_continue = true;
 
-litar does not require user to specify mount point manually.
-By default, litar create a directory at work directory, and mount to that directory.
-The directory's name is the litar archive's name removed suffix.
-Users can also pass the mount point by command line argument "-m mountpoint".
-
-@<command line options for litar@=
-["specify the mount point", "m", "MOUNTPOINT"],
-@
-
-@<global variables@=
-char *mountpoint;
-@
-
-@<cases for command line option@=
-case 'm':
-    mountpoint = optarg;
-    break;
-@
-
-@<construct "fuse_argc" and "fuse_argv"@=
-if (mountpoint == NULL) {
-    char *dir = strdup(archive_name);
-    int i = strlen(dir) - 1;
-    
-    while (dir[i] != '.' && i >= 0) {
-        --i;
+    @<operations before parsing@|execute sequentially@>
+    if (!to_continue) {
+        break;
     }
-    if (i > 0) {
-        dir[i] = '\0';
+
+    @<parse input@>
+
+    @<operations after parsing input@|execute sequentially@>
+    if (!to_continue) {
+        break;
     }
-    if (mkdir(dir, 0755) == -1) {
-        perror(dir);
-        exit(1);
-    }
-    mountpoint = dir;
-}
-fuse_argc = 2;
-CALLOC(fuse_argv, fuse_argc);
-fuse_argv[0] = argv[0];
-fuse_argv[1] = mountpoint;
+
+    @<mount file system@>
+
+    @<operations after mounting file system@|execute sequentially@>
+} while (0);
 @
 
 # Concepts
 
-Concepts illustrated above should be represented before details of implementation.
+Concepts illustrated in the previous chapters
+should be represented before details of implementation.
 
 @<functions@=
 @<relations between object@>
 @
 
-@<declarations@=
+@<data type declarations@=
 typedef struct mappings_chunk *Chunk;
 typedef struct mappings_block *Block;
 typedef struct mappings_chunk_ref *ChunkRef;
 @
 
-@<datatypes@=
+@<data types@=
 struct mappings_chunk {
     @<mappings from chunk@>
 };
@@ -411,9 +369,9 @@ struct mappings_chunk_ref {
 @
 
 To save memory, reference to the original text is represented by some records
-rather than stored to memory. The text can be later fetched through mmap in need.
+rather than stored to memory. The text can later be fetched through mmap in need.
 
-@<datatypes@=
+@<data types@=
 typedef struct {
     char *file;
     int start;
@@ -471,7 +429,7 @@ there's only one chunk if given a name. The name of a chunk
 consists of none-space words, so "name of chunk" does not
 differ from "  name  of  chunk".
 
-@<declarations@=
+@<function declarations@=
 void normalize_chunk_name(const char *orig, char *norm);
 @
 
@@ -546,7 +504,7 @@ const char *name_of_chunk(Chunk chk)
 }
 @
 
-Chunk is extended by a list of blocks transformed by filters.
+A chunk is extended by a list of blocks transformed by filters.
 
 @<mappings from chunk@=
 List blocks;
@@ -582,7 +540,7 @@ void block_is_transformed_by(Block blk, Chunk flt)
 The contents of a block may either be a reference to the original text
 or a reference to a chunk.
 
-@<datatypes@=
+@<data types@=
 typedef struct {
     enum {
         BLOCK_CONTENT_TEXT,
@@ -675,14 +633,14 @@ Chunk chunk_of_chunk_ref(ChunkRef ckr)
 @
 
 A litar archive is consists of comments and blocks, we call a comment or a block a section.
-@<datatypes@=
+@<data types@=
 typedef struct {
     enum {
         SECTION_COMMENT,
         SECTION_BLOCK,
     } type;
     union {
-        TextRef comment;
+        List comment; /* A list of TextRef */
         Block block;
     } content;
 } *Section;
@@ -695,7 +653,7 @@ List sections;
 Some chunks may be labeled as files,
 a file system can be built from these file paths.
 
-@<datatypes@=
+@<data types@=
 typedef struct {
     enum {
         NODE_DIRECTORY,
@@ -806,7 +764,7 @@ void chunk_is_executable(Chunk chk)
 
 From the definitions above, we can define the content of chunk
 and expanded content of block.
-@<declarations@=
+@<function declarations@=
 Str content_of_chunk(Chunk chk);
 Str expanded_content_of_block(Block blk);
 void transform(Str txt, List flts);
@@ -834,7 +792,7 @@ bool chunk_is_in_tangling(Chunk chk)
 Str content_of_chunk(Chunk chk)
 {
     if (chunk_is_in_tangling(chk)) {
-        fprintf(stderr, "Recursivly include \"%s\"\n", name_of_chunk(chk));
+        fprintf(stderr, "Recursively include \"%s\"\n", name_of_chunk(chk));
         exit(1);
     }
 
@@ -887,50 +845,6 @@ Str expanded_content_of_block(Block blk)
 }
 @
 
-# FUSE
-
-@<functions@=
-static void *litar_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
-{
-    (void) conn;
-    cfg->umask = 0222;
-    return NULL;
-}
-static int litar_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
-{
-    (void) fi;
-    Node nd;
-
-    memset(stbuf, 0, sizeof(struct stat));
-
-    if (strcmp(path, "/") == 0) {
-        stbuf->st_mode = S_IFDIR | 0555;
-        stbuf->st_nlink = 2;
-        return 0;
-    }
-    
-    nd = node_of_path(path);
-    if (nd == NULL) {
-        return -ENOENT;
-    }
-
-    switch (nd->type) {
-    case NODE_DIRECTORY:
-    }
-    return 0;
-}
-@
-
-@<operations for litar file system@=
-.init = litar_init,
-@
-
-@<functions@=
-void transform(Str txt, List flts)
-{
-}
-@
-
 # Parsing
 
 The purpose of parsing is to extract relations between objects of
@@ -941,12 +855,14 @@ As a result, the tokens only have four types, control character,
 normal character, newline and EOF,
 and the whole parsing process can be implemented as a finite state machine.
 
-@<datatypes@=
+@<data types@=
 typedef struct {
     char *file;
     FILE *in;
-    /* current position, current line, current row */
-    int cp, cl, cr;
+    /* current position, current column, current row */
+    int cp, cc, cr;
+    /* previous position, previous column, previous row */
+    int pp, pc, pr;
 } *InputFrame;
 
 typedef struct {
@@ -967,7 +883,18 @@ static Token next_token(InputFrame ipt)
     char c;
     int n = 0;
 
+    if (ipt->cp == 0) {
+        if ((ipt->in = fopen(ipt->file, "r")) == NULL) {
+            perror(ipt->file);
+            exit(1);
+        }
+    }
+
     NEW0(tkn);
+
+    ipt->pp = ipt->cp;
+    ipt->pc = ipt->cc;
+    ipt->pr = ipt->cr;
 
     n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
     if (c == '\100') {
@@ -985,8 +912,8 @@ static Token next_token(InputFrame ipt)
         tkn->type = TOKEN_NEWLINE;
         tkn->value = '\n';
         ipt->cp += n;
-        ++ipt->cl;
-        ipt->cr = 0;
+        ++ipt->cr;
+        ipt->cc = 0;
         n = 0;
     } else if (c == EOF) {
         tkn->type = TOKEN_EOF;
@@ -996,14 +923,10 @@ static Token next_token(InputFrame ipt)
         tkn->value = c;
     }
     ipt->cp += n;
-    ipt->cr += n;
+    ipt->cc += n;
 
     return tkn;
 }
-@
-
-@<global variables@=
-@<model of states@|declarations of states@>
 @
 
 @<model of states@=
@@ -1012,434 +935,588 @@ static Token next_token(InputFrame ipt)
 ]
 @
 
-@<states of parsing@=
-["parse", null, "XOR"],
-@
-
-@<parse input@=
-do {
-    @<model of states@|initialization of states@>
-
-    @<model of states@|cleaning of states@>
-} while (0);
-@
-
-## Top level
+litar assumes that when starting parsing it is reading comment.
 
 @<states of parsing@=
-@
-
-The parsing start with the state reading in comments.
-
-@<states in a parsing@=
-PARSE_COMMENT,
-@
-
-@<parse input (old)@=
-do {
-    State cs = PARSE_COMMENT; /* current state */
-    List stack = empty_list;
-
-    @<context for parsing@>
-
-    do {
-        InputFrame ipt = NULL;
-        NEW0(ipt);
-        ipt->file = strdup(archive_name);
-        push(ipt, &stack);
-    } while (0);
-
-    while (!is_empty_list(stack)) {
-        Token tkn;
-        InputFrame ipt;
-
-        RENAME(car(stack), ipt);
-
-        if (ipt->cp == 0) {
-            if ((ipt->in = fopen(ipt->file, "r")) == NULL) {
-                perror(ipt->file);
-                return 1;
-            }
-        }
-
-        int cp_t, cl_t, cr_t;
-
-        cp_t = ipt->cp;
-        cl_t = ipt->cl;
-        cr_t = ipt->cr;
-
-        tkn = next_token(ipt);
-        switch (cs) {
-        @<cases for handling token "tkn"@>
-        }
-
-        FREE(tkn);
-    }
-} while (0);
+["parse", null],
+["parse_comment", "parse"],
 @
 
 @<functions@=
-void handle_unknown_token(Token tkn, char *f, int l, int r)
+static State state_parse_in(State s, Signal sig)
 {
-    fprintf(stderr,
-        "Unexpected token at line %d row %d of %s\n",
-        l, r, f
-    );
-    exit(1);
+    return state_parse_comment;
+}
+
+static State state_parse_handler(State s, Signal sig)
+{
+    @<handlings for token "tkn" when "state_parse"@|execute token handlings@>
+    return NULL;
+}
+
+static State state_parse_out(State s, Signal sig)
+{
+    return NULL;
 }
 @
 
 @<execute token handlings@=#!/bin/sh
 echo "do {"
+echo "Token tkn;"
+echo "RENAME(sig, tkn);"
 cat -
-echo "handle_unknown_token(tkn, ipt->file, cl_t, cr_t);"
 echo "} while (0);"
 @
 
-@<cases for handling token "tkn"@=
-case PARSE_COMMENT:
-    @<handlings for token "tkn" when state is "PARSE_COMMENT"@|execute token handlings@>
-    break;
+@<global variables@=
+List input_frames;
+@<model of states@|declarations of states@>
 @
 
-@<context for parsing@=
-TextRef ctxt = NULL;
-Section csec = NULL;
+@<parse input@=
+do {
+    input_frames = empty_list;
 
-NEW0(ctxt);
-ctxt->file = archive_name;
+    do {
+        InputFrame ipt = NULL;
+        NEW0(ipt);
+        ipt->file = strdup(archive_name);
+        push(ipt, &input_frames);
+    } while (0);
 
-NEW0(csec);
-csec->type = SECTION_COMMENT;
-csec->content.comment = ctxt;
-push(csec, &sections);
+    @<model of states@|initialization of states@>
+
+    while (!is_empty_list(input_frames)) {
+        Token tkn;
+        InputFrame ipt;
+
+        RENAME(car(input_frames), ipt);
+        tkn = next_token(ipt);
+
+        if (tkn->type == TOKEN_EOF) {
+            fclose(ipt->in);
+            FREE(ipt);
+            pop(&input_frames);
+        } else {
+            if (!state_handle_signal(state_parse, tkn)) {
+                fprintf(
+                    stderr,
+                    "Unexpected token at row %d column %d of %s\n",
+                    ipt->pr, ipt->pc, ipt->file
+                );
+                exit(1);
+            }
+        }
+
+        FREE(tkn);
+    }
+
+    @<model of states@|cleaning of states@>
+} while (0);
 @
 
-@<handlings for token "tkn" when state is "PARSE_COMMENT"@=
+## Parsing comment
+
+@<functions@=
+static State state_parse_comment_in(State s, Signal sig)
+{
+    InputFrame ipt;
+    RENAME(car(input_frames), ipt);
+
+    TextRef txt = NULL;
+    NEW0(txt);
+    txt->file = ipt->file;
+    txt->start = ipt->cp;
+    txt->end = ipt->cp;
+
+    List txts = empty_list;
+    push(txt, &txts);
+
+    *state_local(s) = txts;
+
+    return NULL;
+}
+
+static State state_parse_comment_handler(State s, Signal sig)
+{
+    @<handlings for token "tkn" when "state_parse_comment"@|execute token handlings@>
+    return NULL;
+}
+
+static State state_parse_comment_out(State s, Signal sig)
+{
+    Section sec = NULL;
+    NEW0(sec);
+    sec->type = SECTION_COMMENT;
+    sec->content.comment = *state_local(s);
+    push(sec, &sections);
+    return NULL;
+}
+@
+
+@<handlings for token "tkn" when "state_parse_comment"@=
 if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
-    ctxt->end = ipt->cp;
-    break;
-}
-@
+    List txts;
+    TextRef txt;
+    InputFrame ipt;
 
-So character @@ should also be able to be input.
-@<handlings for token "tkn" when state is "PARSE_COMMENT"@=
-if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-    csec = NULL;
-    NEW0(csec);
-    csec->type = SECTION_COMMENT;
-    push(csec, &sections);
+    RENAME(car(input_frames), ipt);
+    RENAME(*state_local(s), txts);
+    RENAME(car(txts), txt);
 
-    ctxt = NULL;
-    NEW0(ctxt);
-    ctxt->file = ipt->file;
-    ctxt->start = cp_t+1;
-    ctxt->end = cp_t+1;
-    csec->content.comment = ctxt;
-    break;
-}
-@
-
-End parsing of currnet file.
-@<handlings for token "tkn" when state is "PARSE_COMMENT"@=
-if (tkn->type == TOKEN_EOF) {
-    fclose(ipt->in);
-    FREE(ipt);
-    pop(&stack);
-    break;
-}
-@
-
-@<states in a parsing@=
-PARSE_BLOCK_CHUNK_NAME,
-PARSE_BLOCK_CONTENTS,
-PARSE_BLOCK_FILTER,
-@
-
-@<cases for handling token "tkn"@=
-case PARSE_BLOCK_CHUNK_NAME:
-    @<handlings for token "tkn" when state is "PARSE_BLOCK_CHUNK_NAME"@|execute token handlings@>
-    break;
-case PARSE_BLOCK_CONTENTS:
-    @<handlings for token "tkn" when state is "PARSE_BLOCK_CONTENTS"@|execute token handlings@>
-    break;
-case PARSE_BLOCK_FILTER:
-    @<handlings for token "tkn" when state is "PARSE_BLOCK_FILTER"@|execute token handlings@>
-    break;
-@
-
-@<context for parsing@=
-Block cblk = NULL;
-Str cache = NULL;
-@
-
-@<handlings for token "tkn" when state is "PARSE_COMMENT"@=
-if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
-    ctxt = NULL;
-    csec = NULL;
-
-    NEW0(csec);
-    csec->type = SECTION_BLOCK;
-    push(csec, &sections);
-
-    NEW0(cblk);
-    csec->content.block = cblk;
-
-    new_str(&cache, "");
-    cs = PARSE_BLOCK_CHUNK_NAME;
-    break;
-}
-@
-
-Read in chunk name.
-@<handlings for token "tkn" when state is "PARSE_BLOCK_CHUNK_NAME"@=
-if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
-    str_append(cache, tkn->value);
-    break;
+    txt->end = ipt->cp;
+    return s;
 }
 
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-    str_append(cache, '\100');
-    break;
+    List *txts_r;
+    InputFrame ipt;
+
+    RENAME(car(input_frames), ipt);
+    RENAME(state_local(s), txts_r);
+
+    TextRef txt = NULL;
+    NEW0(txt);
+    txt->file = ipt->file;
+    txt->start = ipt->pp+1;
+    txt->end = ipt->pp+1;
+
+    push(txt, txts_r);
+    return s;
+}
+@
+
+## Parsing block
+
+A block has three basic components, the name of chunk it extends,
+the contents and the filters.
+
+@<states of parsing@=
+["parse_block", "parse"],
+["parse_block_chunk_name", "parse_block"],
+["parse_block_contents", "parse_block"],
+["parse_block_filters", "parse_block"],
+@
+
+The chunk a block extends is one of the following types:
+
+1. plain text,
+2. regular file,
+3. executable file.
+
+@<data types@=
+struct state_parse_block_local {
+    enum {
+        CHUNK_TYPE_PLAIN_TEXT,
+        CHUNK_TYPE_REGULAR_FILE,
+        CHUNK_TYPE_EXECUTABLE_FILE
+    } chunk_type;
+    Str chunk_name;
+    Block block;
+};
+@
+
+@<handlings for token "tkn" when "state_parse_comment"@=
+if (tkn->type == TOKEN_CONTROL_CHARACTER &&
+    (tkn->value == '<' || tkn->value == '[' || tkn->value == '(')) {
+    return state_parse_block;
+}
+@
+
+@<functions@=
+static State state_parse_block_in(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+
+    struct state_parse_block_local *lc_r = NULL;
+    NEW0(lc_r);
+    NEW0(lc_r->block);
+    new_str(&lc_r->chunk_name, "");
+
+    switch (tkn->value) {
+    case '<':
+        lc_r->chunk_type = CHUNK_TYPE_PLAIN_TEXT;
+        break;
+    case '[':
+        lc_r->chunk_type = CHUNK_TYPE_REGULAR_FILE;
+        break;
+    case '(':
+        lc_r->chunk_type = CHUNK_TYPE_EXECUTABLE_FILE;
+        break;
+    }
+    *state_local(s) = lc_r;
+
+    return state_parse_block_chunk_name;
+}
+
+static State state_parse_block_handler(State s, Signal sig)
+{
+    @<handlings for token "tkn" when "state_parse_block"@|execute token handlings@>
+    return NULL;
+}
+
+static State state_parse_block_out(State s, Signal sig)
+{
+    struct state_parse_block_local *lc_r;
+    RENAME(*state_local(s), lc_r);
+
+    Chunk chk;
+    chk = chunk_of_name(raw_string(lc_r->chunk_name));
+    block_extend_chunk(lc_r->block, chk);
+
+    Section sec = NULL;
+    NEW0(sec);
+    sec->type = SECTION_BLOCK;
+    sec->content.block = lc_r->block;
+    push(sec, &sections);
+    
+    free_str(&lc_r->chunk_name);
+    FREE(*state_local(s));
+    return NULL;
+}
+@
+
+@<handlings for token "tkn" when "state_parse_block"@=
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
+    return state_parse_comment;
+}
+@
+
+@<functions@=
+static State state_parse_block_chunk_name_in(State s, Signal sig)
+{
+    return NULL;
+}
+
+static State state_parse_block_chunk_name_handler(State s, Signal sig)
+{
+    @<handlings for token "tkn" when "state_parse_block_chunk_name"@|execute token handlings@>
+    return NULL;
+}
+
+static State state_parse_block_chunk_name_out(State s, Signal sig)
+{
+    return NULL;
+}
+@
+
+@<handlings for token "tkn" when "state_parse_block_chunk_name"@=
+if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
+    struct state_parse_block_local *lc_r;
+    RENAME(*state_local(state_parse_block), lc_r);
+
+    str_append(lc_r->chunk_name, tkn->value);
+    return s;
+}
+
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
+    struct state_parse_block_local *lc_r;
+    RENAME(*state_local(state_parse_block), lc_r);
+
+    str_append(lc_r->chunk_name, '\100');
+    return s;
 }
 
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '=') {
-    char *chkn;
-    Chunk chk;
-
-    chkn = raw_string(cache);
-    chk = chunk_of_name(chkn);
-    block_extend_chunk(cblk, chk);
-    
-    free_str(&cache);
-
-    NEW0(ctxt);
-    ctxt->file = ipt->file;
-    ctxt->start = ipt->cp;
-    ctxt->end = ipt->cp;
-
-    block_contain_text(cblk, ctxt);
-
-    cs = PARSE_BLOCK_CONTENTS;
-    break;
+    return state_parse_block_contents;
 }
 @
 
-@<handlings for token "tkn" when state is "PARSE_BLOCK_CONTENTS"@=
+@<states of parsing@=
+["parse_block_contents_text", "parse_block_contents"],
+["parse_block_contents_reference", "parse_block_contents"],
+@
+
+@<functions@=
+static State state_parse_block_contents_in(State s, Signal sig)
+{
+    return state_parse_block_contents_text;
+}
+
+static State state_parse_block_contents_handler(State s, Signal sig)
+{
+    @<handlings for token "tkn" when "state_parse_block_contents"@|execute token handlings@>
+    return NULL;
+}
+
+static State state_parse_block_contents_out(State s, Signal sig)
+{
+    return NULL;
+}
+@
+
+@<handlings for token "tkn" when "state_parse_block_contents"@=
+if (state_is_active(state_parse_block_contents_text)
+    && tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
+    return state_parse_block_filters;
+}
+@
+
+@<functions@=
+static State state_parse_block_contents_text_in(State s, Signal sig)
+{
+    TextRef txt = NULL;
+    NEW0(txt);
+
+    InputFrame ipt;
+    RENAME(car(input_frames), ipt);
+
+    txt->file = ipt->file;
+    txt->start = ipt->cp;
+    txt->end = ipt->cp;
+
+    *state_local(s) = txt;
+
+    return NULL;
+}
+
+static State state_parse_block_contents_text_handler(State s, Signal sig)
+{
+    @<handlings for token "tkn" when "state_parse_block_contents_text"@|execute token handlings@>
+    return NULL;
+}
+
+static State state_parse_block_contents_text_out(State s, Signal sig)
+{
+    struct state_parse_block_local *lc_r;
+    TextRef txt;
+    RENAME(*state_local(s), txt);
+    RENAME(*state_local(state_parse_block), lc_r);
+    block_contain_text(lc_r->block, txt);
+    return NULL;
+}
+@
+
+@<handlings for token "tkn" when "state_parse_block_contents_text"@=
 if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
-    ++ctxt->end;
-    break;
+    TextRef txt;
+    RENAME(*state_local(s), txt);
+    ++txt->end;
+    return s;
 }
 
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-    ctxt = NULL;
-    NEW0(ctxt);
-    ctxt->file = ipt->file;
-    ctxt->start = cp_t+1;
-    ctxt->end = cp_t+1;
-    block_contain_text(cblk, ctxt);
-    break;
+    struct state_parse_block_local *lc_r;
+    RENAME(*state_local(state_parse_block), lc_r);
+
+    TextRef txt;
+    RENAME(*state_local(s), txt);
+
+    block_contain_text(lc_r->block, txt);
+
+    txt = NULL;
+    NEW0(txt);
+
+    InputFrame ipt;
+    RENAME(car(input_frames), ipt);
+
+    txt->file = ipt->file;
+    txt->start = ipt->pp+1;
+    txt->end = ipt->pp+1;
+
+    *state_local(s) = txt;
+
+    return s;
 }
 
-if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
-    ctxt = NULL;
-    new_str(&cache, "");
-    cs = PARSE_BLOCK_FILTER;
-    break;
-}
-
-if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
-    cblk = NULL;
-
-    ctxt = NULL;
-    NEW0(ctxt);
-    ctxt->file = ipt->file;
-    ctxt->start = ipt->cp;
-    ctxt->end = ipt->cp;
-
-    csec = NULL;
-    NEW0(csec);
-    csec->type = SECTION_COMMENT;
-    csec->content.comment = ctxt;
-    push(csec, &sections);
-    cs = PARSE_COMMENT;
-    break;
-}
-@
-
-@<handlings for token "tkn" when state is "PARSE_BLOCK_FILTER"@=
-if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
-    str_append(cache, tkn->value);
-    break;
-}
-
-if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
-    char *chkn;
-    Chunk chk;
-
-    chkn = raw_string(cache);
-    chk = chunk_of_name(chkn);
-    block_is_transformed_by(cblk, chk);
-    free_str(&cache);
-
-    new_str(&cache, "");
-    break;
-}
-
-if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
-    char *chkn;
-    Chunk chk;
-
-    chkn = raw_string(cache);
-    chk = chunk_of_name(chkn);
-    block_is_transformed_by(cblk, chk);
-    free_str(&cache);
-
-    cblk = NULL;
-
-    NEW0(ctxt);
-    ctxt->file = ipt->file;
-    ctxt->start = ipt->cp;
-    ctxt->end = ipt->cp;
-
-    csec = NULL;
-    NEW0(csec);
-    csec->type = SECTION_COMMENT;
-    csec->content.comment = ctxt;
-    push(csec, &sections);
-    cs = PARSE_COMMENT;
-    break;
-}
-@
-
-@<states in a parsing@=
-PARSE_REFERENCE_CHUNK_NAME,
-@
-
-@<context for parsing@=
-ChunkRef cckr = NULL;
-@
-
-@<cases for handling token "tkn"@=
-case PARSE_REFERENCE_CHUNK_NAME:
-    @<handlings for token "tkn" when state is "PARSE_REFERENCE_CHUNK_NAME"@|execute token handlings@>
-    break;
-@
-
-@<handlings for token "tkn" when state is "PARSE_BLOCK_CONTENTS"@=
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
-    ctxt = NULL;
-    new_str(&cache, "");
-    NEW0(cckr);
-    block_include_chunk(cblk, cckr);
-    cs = PARSE_REFERENCE_CHUNK_NAME;
-    break;
+    return state_parse_block_contents_reference;
 }
 @
 
-@<handlings for token "tkn" when state is "PARSE_REFERENCE_CHUNK_NAME"@=
+@<states of parsing@=
+["parse_block_contents_reference_name", "parse_block_contents_reference"],
+["parse_block_contents_reference_filters", "parse_block_contents_reference"],
+@
+
+@<functions@=
+static State state_parse_block_contents_reference_in(State s, Signal sig)
+{
+    ChunkRef ckr = NULL;
+    NEW0(ckr);
+    *state_local(s) = ckr;
+    return state_parse_block_contents_reference_name;
+}
+
+static State state_parse_block_contents_reference_handler(State s, Signal sig)
+{
+    @<handlings for token "tkn" when "state_parse_block_contents_reference"@|execute token handlings@>
+    return NULL;
+}
+
+static State state_parse_block_contents_reference_out(State s, Signal sig)
+{
+    struct state_parse_block_local *lc_r;
+    RENAME(*state_local(state_parse_block), lc_r);
+    ChunkRef ckr;
+    RENAME(*state_local(s), ckr);
+    block_include_chunk(lc_r->block, ckr);
+    return NULL;
+}
+@
+
+@<handlings for token "tkn" when "state_parse_block_contents_reference"@=
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
+    return state_parse_block_contents_text;
+}
+@
+
+@<functions@=
+static State state_parse_block_contents_reference_name_in(State s, Signal sig)
+{
+    new_str((Str *)state_local(s), "");
+    return NULL;
+}
+
+static State state_parse_block_contents_reference_name_handler(State s, Signal sig)
+{
+    @<handlings for token "tkn" when "state_parse_block_contents_reference_name"@|execute token handlings@>
+    return NULL;
+}
+
+static State state_parse_block_contents_reference_name_out(State s, Signal sig)
+{
+    Str txt;
+    RENAME(*state_local(s), txt);
+    Chunk chk;
+    chk = chunk_of_name(raw_string(txt));
+    ChunkRef ckr;
+    RENAME(*state_local(state_parse_block_contents_reference), ckr);
+    chunk_ref_reference_to(ckr, chk);
+    free_str((Str *)state_local(s));
+    return NULL;
+}
+@
+
+@<handlings for token "tkn" when "state_parse_block_contents_reference_name"@=
 if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
-    str_append(cache, tkn->value);
-    break;
+    str_append(*(Str *)state_local(s), tkn->value);
+    return s;
 }
 
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-    str_append(cache, '\100');
-    break;
+    str_append(*(Str *)state_local(s), '\100');
+    return s;
 }
 
-if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
-    char *chkn;
-    Chunk chk;
-
-    chkn = raw_string(cache);
-    chk = chunk_of_name(chkn);
-    free_str(&cache);
-
-    chunk_ref_reference_to(cckr, chk);
-    cckr = NULL;
-
-    NEW0(ctxt);
-    ctxt->file = ipt->file;
-    ctxt->start = ipt->cp;
-    ctxt->end = ipt->cp;
-    block_contain_text(cblk, ctxt);
-    cs = PARSE_BLOCK_CONTENTS;
-    break;
-}
-@
-
-@<states in a parsing@=
-PARSE_REFERENCE_FILTER,
-@
-
-@<cases for handling token "tkn"@=
-case PARSE_REFERENCE_FILTER:
-    @<handlings for token "tkn" when state is "PARSE_REFERENCE_FILTER"@|execute token handlings@>
-    break;
-@
-
-@<handlings for token "tkn" when state is "PARSE_REFERENCE_CHUNK_NAME"@=
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
-    char *chkn;
-    Chunk chk;
-
-    chkn = raw_string(cache);
-    chk = chunk_of_name(chkn);
-    free_str(&cache);
-
-    chunk_ref_reference_to(cckr, chk);
-
-    new_str(&cache, "");
-    cs = PARSE_REFERENCE_FILTER;
-    break;
+    return state_parse_block_contents_reference_filters;
 }
 @
 
-@<handlings for token "tkn" when state is "PARSE_REFERENCE_FILTER"@=
-if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
-    if (cache != NULL) {
-        char *chkn;
-        Chunk chk;
-
-        chkn = raw_string(cache);
-        chk = chunk_of_name(chkn);
-        free_str(&cache);
-
-        chunk_ref_is_transformed_by(cckr, chk);
-    }
-    new_str(&cache, "");
-    break;
+@<functions@=
+static State state_parse_block_contents_reference_filters_in(State s, Signal sig)
+{
+    new_str((Str *)state_local(s), "");
+    return NULL;
 }
 
+static State state_parse_block_contents_reference_filters_handler(State s, Signal sig)
+{
+    @<handlings for token "tkn" when "state_parse_block_contents_reference_filters"@|execute token handlings@>
+    return NULL;
+}
+
+static State state_parse_block_contents_reference_filters_out(State s, Signal sig)
+{
+    Str txt;
+    RENAME(*state_local(s), txt);
+    Chunk chk;
+    chk = chunk_of_name(raw_string(txt));
+    ChunkRef ckr;
+    RENAME(*state_local(state_parse_block_contents_reference), ckr);
+    chunk_ref_is_transformed_by(ckr, chk);
+    free_str((Str *)state_local(s));
+    return NULL;
+}
+@
+
+@<handlings for token "tkn" when "state_parse_block_contents_reference_filters"@=
 if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
-    str_append(cache, tkn->value);
-    break;
+    str_append(*(Str *)state_local(s), tkn->value);
+    return s;
 }
 
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-    str_append(cache, '\100');
-    break;
+    str_append(*(Str *)state_local(s), '\100');
+    return s;
 }
 
-if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
-    char *chkn;
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
+    Str txt;
+    RENAME(*state_local(s), txt);
+
     Chunk chk;
+    chk = chunk_of_name(raw_string(txt));
 
-    chkn = raw_string(cache);
-    chk = chunk_of_name(chkn);
-    free_str(&cache);
+    ChunkRef ckr;
+    RENAME(*state_local(state_parse_block_contents_reference), ckr);
 
-    chunk_ref_is_transformed_by(cckr, chk);
-    cckr = NULL;
+    chunk_ref_is_transformed_by(ckr, chk);
 
-    NEW0(ctxt);
-    ctxt->file = ipt->file;
-    ctxt->start = ipt->cp;
-    ctxt->end = ipt->cp;
-    block_contain_text(cblk, ctxt);
-    cs = PARSE_BLOCK_CONTENTS;
-    break;
+    free_str((Str *)state_local(s));
+    new_str((Str *)state_local(s), "");
+    return s;
+}
+@
+
+@<functions@=
+static State state_parse_block_filters_in(State s, Signal sig)
+{
+    new_str((Str *)state_local(s), "");
+    return NULL;
+}
+
+static State state_parse_block_filters_handler(State s, Signal sig)
+{
+    @<handlings for token "tkn" when "state_parse_block_filters"@|execute token handlings@>
+    return NULL;
+}
+
+static State state_parse_block_filters_out(State s, Signal sig)
+{
+    Str txt;
+    RENAME(*state_local(s), txt);
+
+    Chunk chk;
+    chk = chunk_of_name(raw_string(txt));
+
+    struct state_parse_block_local *lc_r;
+    RENAME(state_local(state_parse_block), lc_r);
+    block_is_transformed_by(lc_r->block, chk);
+
+    free_str((Str *)state_local(s));
+    return NULL;
+}
+@
+
+@<handlings for token "tkn" when "state_parse_block_filters"@=
+if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
+    str_append(*(Str *)state_local(s), tkn->value);
+    return s;
+}
+
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
+    str_append(*(Str *)state_local(s), '\100');
+    return s;
+}
+
+if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
+    Str txt;
+    RENAME(*state_local(s), txt);
+
+    Chunk chk;
+    chk = chunk_of_name(raw_string(txt));
+
+    struct state_parse_block_local *lc_r;
+    RENAME(state_local(state_parse_block), lc_r);
+
+    block_is_transformed_by(lc_r->block, chk);
+
+    free_str((Str *)state_local(s));
+    new_str((Str *)state_local(s), "");
+    return s;
 }
 @
 
@@ -1492,7 +1569,7 @@ if (to_print_version_info) {
 @
 
 @<print version information@=
-printf("Version %s, built at <build time>\nlibfuse version: %d\n", version, FUSE_VERSION);
+printf("Version %s, built at <build time>", version);
 @
 
 @<command line options for litar@=
@@ -1531,15 +1608,21 @@ if (to_print_specific_chunk) {
 @
 
 @<functions@=
-void print_section(Section sec)
+void
+print_section(Section sec)
 {
     if (sec->type == SECTION_COMMENT) {
-        printf("Comment: (%s, %d, %d)\nContent:\n%s\n",
-            sec->content.comment->file,
-            sec->content.comment->start,
-            sec->content.comment->end,
-            fetch_text_from(sec->content.comment)
-        );
+        List lst = copy_list(sec->content.comment);
+        reverse(&lst);
+        TextRef txt;
+        FOREACH (txt, lst) {
+            printf("Comment: (%s, %d, %d)\nContent:\n%s\n",
+                txt->file,
+                txt->start,
+                txt->end,
+                fetch_text_from(txt)
+            );
+        }
     } else {
         printf("Block: %s\n", name_of_chunk(sec->content.block->chunk));
         List lst = copy_list(contents_of_block(sec->content.block));
@@ -1583,6 +1666,21 @@ do {
 
 # Appendix
 
+@<a monolithic c program@=
+@<includes@>
+@<data type declarations@>
+@<function declarations@>
+@<data types@>
+@<global variables@>
+@<functions@>
+
+int main(int argc, char *argv[])
+{
+    @<main body of the c program@>
+    return 0;
+}
+@
+
 @<includes@=
 #include <stdio.h>
 #include <string.h>
@@ -1593,8 +1691,6 @@ do {
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
-
-#include <fuse.h>
 
 #include "light.h"
 #include "str.h"
@@ -1709,7 +1805,6 @@ states = {}
 class State(NamedTuple):
     name: str
     parent: str
-    type: str
 
 def state_to_c_var(st):
     return f"state_{st.name}"
@@ -1717,13 +1812,16 @@ def state_to_c_var(st):
 def state_to_handler(st):
     return f"{state_to_c_var(st)}_handler"
 
-def state_to_type(st):
-    return f"STATE_{st.type}"
+def state_to_in_func(st):
+    return f"{state_to_c_var(st)}_in"
+
+def state_to_out_func(st):
+    return f"{state_to_c_var(st)}_out"
 
 model = json.load(sys.stdin)
 
 for st in model:
-    states[st[0]] = State(st[0], st[1], st[2])
+    states[st[0]] = State(st[0], st[1])
 @
 
 @<declarations of states@=#!/bin/sh
@@ -1731,9 +1829,9 @@ python -c '
 @<parse model of states@>
 
 def state_to_dec(st):
-    return f"State {state_toc_var(st)};"
+    return f"State {state_to_c_var(st)};"
 
-str = "\n".join(map(st_to_dec, states.values())) + "\n"
+str = "\n".join(map(state_to_dec, states.values())) + "\n"
 print(str)
 '
 @
@@ -1746,8 +1844,10 @@ def state_to_init(st):
     s = ""
     s += f"new_state(&{state_to_c_var(st)},"
     s += f" {state_to_c_var(states[st.parent])}," if st.parent is not None else "root_state,"
-    s += f" {state_to_type(st)},"
-    s += f" {state_to_handler(st)});"
+    s += f" STATE_XOR,"
+    s += f" {state_to_handler(st)});\n"
+    s += f"state_register_in_func({state_to_c_var(st)}, {state_to_in_func(st)});\n"
+    s += f"state_register_out_func({state_to_c_var(st)}, {state_to_out_func(st)});\n"
     return s
 
 str = "\n".join(map(state_to_init, states.values())) + "\n"
@@ -1790,4 +1890,12 @@ echo ');'
 sed -z 's/,[[:space:]]$/\n/'
 @
 
+
+# Extra
+
+@<functions@=
+void transform(Str txt, List flts)
+{
+}
+@
 

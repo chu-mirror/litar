@@ -342,7 +342,7 @@ do {
 # Concepts
 
 Concepts illustrated in the previous chapters
-should be represented before details of implementation.
+should be represented before the details of implementation.
 
 @<functions@=
 @<relations between object@>
@@ -388,7 +388,8 @@ new_string_hash_table(&file_to_mmap_addr);
 @
 
 @<functions@=
-char *fetch_text_from(TextRef tr)
+char *
+fetch_text_from(TextRef tr)
 {
     void *addr;
 
@@ -592,7 +593,7 @@ void block_include_chunk(Block blk, ChunkRef cr)
 }
 @
 
-Sometimes it's useful to find the chunk the block extends.
+Sometimes it's useful to find the chunk that the block extends.
 
 @<relations between object@=
 Chunk chunk_extended_by(Block blk)
@@ -657,7 +658,7 @@ a file system can be built from these file paths.
 typedef struct {
     enum {
         NODE_DIRECTORY,
-        NODE_NORMAL,
+        NODE_REGULAR,
         NODE_EXECUTABLE,
     } type;
     union {
@@ -676,7 +677,7 @@ Node root_node;
 NEW(root_node);
 root_node->type = NODE_DIRECTORY;
 root_node->value.nodes = empty_list;
-root_node->name = strdup("/");
+root_node->name = strdup("");
 @
 
 @<relations between object@=
@@ -740,7 +741,7 @@ void chunk_is_file(Chunk chk)
         if (name[i] == '\0') {
             if ((nd = node_under_node(name+f, node)) == NULL) {
                 NEW(nd);
-                nd->type = NODE_NORMAL;
+                nd->type = NODE_REGULAR;
                 nd->name = strdup(name+f);
                 nd->value.chunk = chk;
                 push(nd, &node->value.nodes);
@@ -1165,6 +1166,16 @@ static State state_parse_block_out(State s, Signal sig)
     chk = chunk_of_name(raw_string(lc_r->chunk_name));
     block_extend_chunk(lc_r->block, chk);
 
+    switch (lc_r->chunk_type) {
+    case CHUNK_TYPE_REGULAR_FILE:
+        chunk_is_file(chk);
+        break;
+    case CHUNK_TYPE_EXECUTABLE_FILE:
+        chunk_is_executable(chk);
+        break;
+    default:
+    }
+
     Section sec = NULL;
     NEW0(sec);
     sec->type = SECTION_BLOCK;
@@ -1520,6 +1531,17 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
 }
 @
 
+# FUSE
+
+@<includes@=
+#define USE_FUSE_VERSION FUSE_MAKE_VERSION(3, 14)
+#include <fuse.h>
+@
+
+@<mount file system@=
+
+@
+
 # User Interface
 
 @<command line options for litar@=
@@ -1539,7 +1561,8 @@ case 'h':
 @<operations before parsing@=
 if (to_print_help) {
     print_usage();
-    exit(0);
+    to_continue = false;
+    break;
 }
 @
 
@@ -1564,7 +1587,8 @@ char version[] = "dev";
 @<operations before parsing@=
 if (to_print_version_info) {
     @<print version information@|fill in build time information@>
-    exit(0);
+    to_continue = false;
+    break;
 }
 @
 
@@ -1602,8 +1626,13 @@ if (to_print_specific_chunk) {
     cc = content_of_chunk(chunk_of_name(name_of_chunk_to_print));
     puts(raw_string(cc));
     free_str(&cc);
+
+    to_continue = false;
     break;
 }
+@
+
+@<operations after parsing input@=
 @<print all sections@>
 @
 
@@ -1662,6 +1691,37 @@ do {
         print_section(sec);
     }
 } while (0);
+@
+
+@<operations after parsing input@=
+@<print nodes@>
+@
+
+@<functions@=
+void print_node(Node nd, int level)
+{
+    char *prefix = NULL;
+
+    CALLOC(prefix, level+1);
+    memset(prefix, '\t', level);
+    prefix[level] = '\0';
+    switch (nd->type) {
+    case NODE_DIRECTORY:
+        printf("%s%s/\n", prefix, nd->name);
+        
+        Node sub;
+        FOREACH (sub, nd->value.nodes) {
+            print_node(sub, level+1);
+        }
+        break;
+    default:
+        printf("%s%s\n", prefix, nd->name);
+    }
+}
+@
+
+@<print nodes@=
+print_node(root_node, 0);
 @
 
 # Appendix

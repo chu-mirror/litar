@@ -1,12 +1,7 @@
 [MWEB](https://www.github.com/chu-mirror/mweb), but removed type system.
 
-To install:
+To build:
 ```
-# make install
-```
-
-To test:
-```
-$ make hello
+# make
 ```
 

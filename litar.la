@@ -262,7 +262,6 @@ It parses options and arguments, executes, then exits.
 @
 
 @<main body of the c program@=
-@<initializations of global variables@>
 @<parse command line arguments to set flags and global variables@>
 @<perform operations according to flags@>
 @
@@ -1533,13 +1532,118 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
 
 # FUSE
 
+The file system a litar archive implies does not have
+a meaningful way to reflect modifications, but still the filters
+might create some new files. So litar also uses overlayFS
+to grant the ability to modify file system to filters.
+
+The idea is to create an modifiable upper layer above
+the file system from a litar archive.
+
+@<global variables@=
+char *upper_layer = NULL;
+char *mount_point = NULL;
+char *work_dir = NULL;
+char *fuse_mount_point = NULL;
+@
+
+The "mount_point" here is the mount point of the overlay.
+The mount point for FUSE will be automatically created,
+users should not be bothered to deal with this.
+
+litar reserve the directory ".litar" for the created mount points.
+
+@<global variables@=
+const char *litar_data = ".litar";
+@
+
+@<functions@=
+void
+ensure_directory(const char *path)
+{
+    struct stat buf;
+    if (stat(path, &buf) == -1) {
+        if (errno != ENOENT) {
+            perror("stat");
+            exit(1);
+        }
+        if (mkdir(path, 0777) == -1) {
+            perror("mkdir");
+            exit(1);
+        }
+        stat(path, &buf);
+    }
+    if (!S_ISDIR(buf.st_mode)) {
+        fprintf(stderr, "%s is not a directory\n", path);
+        exit(1);
+    }
+}
+@
+
+@<initializations of global variables@=
+ensure_directory(litar_data);
+@
+
+@<mount file system@=
+do {
+    if (mount_point == NULL) {
+        CALLOC(mount_point, strlen(litar_data)+strlen(archive_name)+2);
+        strcat(mount_point, litar_data);
+        strcat(mount_point, "/");
+        strcat(mount_point, archive_name);
+    }
+    ensure_directory(mount_point);
+} while (0);
+
+do {
+    if (upper_layer == NULL) {
+        CALLOC(upper_layer, strlen(litar_data)+strlen("/upper")+1);
+        strcat(upper_layer, litar_data);
+        strcat(upper_layer, "/upper");
+    }
+    ensure_directory(upper_layer);
+} while (0);
+
+do {
+    char *work_dir = NULL;
+
+    CALLOC(work_dir, strlen(litar_data)+strlen("/work")+1);
+    strcat(work_dir, litar_data);
+    strcat(work_dir, "/work");
+
+    ensure_directory(work_dir);
+    rmdir(work_dir);
+    mkdir(work_dir, 0777);
+} while (0);
+
+do {
+    CALLOC(fuse_mount_point, strlen(litar_data)+strlen("/fuse")+1);
+    strcat(fuse_mount_point, litar_data);
+    strcat(fuse_mount_point, "/fuse");
+
+    ensure_directory(fuse_mount_point);
+    rmdir(fuse_mount_point);
+    mkdir(fuse_mount_point, 0777);
+} while (0);
+@
+
+litar uses version 3.14 to be compatitable with Debian.
+
 @<includes@=
-#define USE_FUSE_VERSION FUSE_MAKE_VERSION(3, 14)
+#define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 14)
 #include <fuse.h>
 @
 
 @<mount file system@=
-
+do {
+    pid_t pid;
+    if ((pid = fork()) < 0) {
+        perror("fork");
+        exit(1);
+    } else if (pid == 0) {
+        printf("Hello from fuse thread\n");
+    }
+} while (0);
 @
 
 # User Interface
@@ -1594,6 +1698,20 @@ if (to_print_version_info) {
 
 @<print version information@=
 printf("Version %s, built at <build time>", version);
+@
+
+@<command line options for litar@=
+["Specify the upper layer.", "u", "DIR"],
+["Specify the mount point.", "m", "DIR"],
+@
+
+@<cases for command line option@=
+case 'u':
+    upper_layer = optarg;
+    break;
+case 'm':
+    mount_point = optarg;
+    break;
 @
 
 @<command line options for litar@=
@@ -1736,6 +1854,7 @@ print_node(root_node, 0);
 
 int main(int argc, char *argv[])
 {
+    @<initializations of global variables@>
     @<main body of the c program@>
     return 0;
 }
@@ -1751,6 +1870,7 @@ int main(int argc, char *argv[])
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <errno.h>
 
 #include "light.h"
 #include "str.h"

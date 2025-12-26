@@ -680,7 +680,8 @@ root_node->name = strdup("");
 @
 
 @<relations between object@=
-Node node_under_node(const char *file, Node node)
+Node
+node_under_node(const char *file, Node node)
 {
     Node nd;
     if (node->type != NODE_DIRECTORY) {
@@ -695,11 +696,18 @@ Node node_under_node(const char *file, Node node)
     return NULL;
 }
 
-Node node_of_path(const char *path)
+Node
+node_of_path(const char *path)
 {
     char *path_t = strdup(path);
     Node node = root_node;
     int i = 0, f = i, l = strlen(path);
+
+    if (path[0] == '/') {
+        ++i;
+        ++f;
+    }
+
     while (f < l) {
         if (path_t[i] == '/' || path_t[i] == '\0') {
             path_t[i] = '\0';
@@ -710,16 +718,19 @@ Node node_of_path(const char *path)
         }
         ++i;
     }
+
     free(path_t);
     return node;
 }
 
-Node node_of_chunk(Chunk chk)
+Node
+node_of_chunk(Chunk chk)
 {
     return node_of_path(name_of_chunk(chk));
 }
 
-void chunk_is_file(Chunk chk)
+void
+chunk_is_file(Chunk chk)
 {
     char *name = strdup(name_of_chunk(chk));
     Node node = root_node, nd;
@@ -752,7 +763,8 @@ void chunk_is_file(Chunk chk)
     free(name);
 }
 
-void chunk_is_executable(Chunk chk)
+void
+chunk_is_executable(Chunk chk)
 {
     chunk_is_file(chk);
     Node nd;
@@ -1649,33 +1661,63 @@ litar_fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     (void) offset;
     (void) fi;
     (void) flags;
-    
-    if (strcmp(path, "/") != 0) {
+
+    Node nd;
+
+    nd = node_of_path(path);
+    if (nd == NULL) {
         return -ENOENT;
     }
-    filler(buf, ".", NULL, 0, 0);
-    filler(buf, "..", NULL, 0, 0);
-    filler(buf, "hello", NULL, 0, 0);
 
+    if (nd->type != NODE_DIRECTORY) {
+        return -ENOTDIR;
+    }
+
+    Node cld;
+    FOREACH (cld, nd->value.nodes) {
+        filler(buf, cld->name, NULL, 0, 0);
+    }
+    
     return 0;
 }
 
-static const char dummy_contents[] = "Hello!\n";
 static int
 litar_fuse_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
 {
     (void) fi;
     int res = 0;
     memset(stbuf, 0, sizeof(struct stat));
-    if (strcmp(path, "/") == 0) {
-        stbuf->st_mode = S_IFDIR | 0755;
-        stbuf->st_nlink = 2;
-    } else if (strcmp(path, "/hello") == 0) {
-        stbuf->st_mode = S_IFREG | 0444;
-        stbuf->st_nlink = 1;
-        stbuf->st_size = strlen(dummy_contents);
-    } else {
-        res = -ENOENT;
+    
+    Node nd;
+
+    nd = node_of_path(path);
+    if (nd == NULL) {
+        return -ENOENT;
+    }
+
+    switch (nd->type) {
+    case NODE_DIRECTORY:
+        do {
+            int cnt = 2;
+            Node nd_;
+            FOREACH (nd_, nd->value.nodes) {
+                if (nd_->type == NODE_DIRECTORY) {
+                    ++cnt;
+                }
+            }
+            stbuf->st_mode = S_IFDIR | 0755;
+            stbuf->st_nlink = cnt;
+        } while (0);
+        break;
+    default:
+        do {
+            Str ctn;
+            ctn = content_of_chunk(nd->value.chunk);
+            stbuf->st_mode = S_IFREG | 0444;
+            stbuf->st_nlink = 1;
+            stbuf->st_size = strlen(raw_string(ctn));
+            free_str(&ctn);
+        } while (0);
     }
     return res;
 }
@@ -1683,7 +1725,10 @@ litar_fuse_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *
 static int
 litar_fuse_open(const char *path, struct fuse_file_info *fi)
 {
-    if (strcmp(path, "/hello") != 0) {
+    Node nd;
+    nd = node_of_path(path);
+
+    if (nd == NULL) {
         return -ENOENT;
     }
 
@@ -1698,20 +1743,31 @@ static int
 litar_fuse_read(const char *path, char *buf, size_t size, off_t offset,
     struct fuse_file_info *fi)
 {
-    size_t len;
     (void) fi;
-    if (strcmp(path, "/hello") != 0) {
+
+    Node nd;
+    
+    nd = node_of_path(path);
+    if (nd == NULL) {
         return -ENOENT;
     }
-    len = strlen(dummy_contents);
+
+    Str ctn;
+
+    ctn = content_of_chunk(nd->value.chunk);
+
+    size_t len;
+    len = strlen(raw_string(ctn));
+
     if (offset < len) {
         if (offset + size > len) {
             size = len - offset;
         }
-        memcpy(buf, dummy_contents + offset, size);
+        memcpy(buf, raw_string(ctn) + offset, size);
     } else {
         size = 0;
     }
+    free_str(&ctn);
     return size;
 }
 
@@ -1726,11 +1782,11 @@ static const struct fuse_operations litar_fuse_oper = {
 
 @<mount file system@=
 do {
-    pid_t pid;
-    if ((pid = fork()) < 0) {
-        perror("fork");
-        exit(1);
-    } else if (pid == 0) {
+    /* pid_t pid; */
+    /* if ((pid = fork()) < 0) { */
+    /*     perror("fork"); */
+    /*     exit(1); */
+    /* } else if (pid == 0) { */
         struct fuse_args args = {0, NULL, 0};
         struct fuse *fuse_r;
 
@@ -1763,7 +1819,7 @@ do {
         fuse_destroy(fuse_r);
 
         out1:
-    }
+    /* } */
 } while (0);
 @
 

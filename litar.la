@@ -857,6 +857,12 @@ Str expanded_content_of_block(Block blk)
 }
 @
 
+@<functions@=
+void transform(Str txt, List flts)
+{
+}
+@
+
 # Parsing
 
 The purpose of parsing is to extract relations between objects of
@@ -1553,10 +1559,11 @@ The idea is to create an modifiable upper layer above
 the file system from a litar archive.
 
 @<global variables@=
+char *archive_data = NULL;
+char *fuse_mount_point = NULL;
+char *work_dir = NULL;
 char *upper_layer = NULL;
 char *mount_point = NULL;
-char *work_dir = NULL;
-char *fuse_mount_point = NULL;
 @
 
 The "mount_point" here is the mount point of the overlay.
@@ -1564,6 +1571,8 @@ The mount point for FUSE will be automatically created,
 users should not be bothered to deal with this.
 
 litar reserve the directory ".litar" for the created mount points.
+The mount points are organized under the directory that has a same name
+with the litar archive.
 
 @<global variables@=
 const char *litar_data = ".litar";
@@ -1598,29 +1607,25 @@ ensure_directory(litar_data);
 
 @<mount file system@=
 do {
-    if (mount_point == NULL) {
-        CALLOC(mount_point, strlen(litar_data)+strlen(archive_name)+2);
-        strcat(mount_point, litar_data);
-        strcat(mount_point, "/");
-        strcat(mount_point, archive_name);
-    }
-    ensure_directory(mount_point);
+    CALLOC(archive_data, strlen(litar_data)+strlen(archive_name)+2);
+    strcat(archive_data, litar_data);
+    strcat(archive_data, "/");
+    strcat(archive_data, archive_name);
+
+    ensure_directory(archive_data);
 } while (0);
 
 do {
-    if (upper_layer == NULL) {
-        CALLOC(upper_layer, strlen(litar_data)+strlen("/upper")+1);
-        strcat(upper_layer, litar_data);
-        strcat(upper_layer, "/upper");
-    }
-    ensure_directory(upper_layer);
+    CALLOC(fuse_mount_point, strlen(archive_data)+strlen("/fuse")+1);
+    strcat(fuse_mount_point, archive_data);
+    strcat(fuse_mount_point, "/fuse");
+
+    ensure_directory(fuse_mount_point);
 } while (0);
 
 do {
-    char *work_dir = NULL;
-
-    CALLOC(work_dir, strlen(litar_data)+strlen("/work")+1);
-    strcat(work_dir, litar_data);
+    CALLOC(work_dir, strlen(archive_data)+strlen("/work")+1);
+    strcat(work_dir, archive_data);
     strcat(work_dir, "/work");
 
     ensure_directory(work_dir);
@@ -1629,21 +1634,30 @@ do {
 } while (0);
 
 do {
-    CALLOC(fuse_mount_point, strlen(litar_data)+strlen("/fuse")+1);
-    strcat(fuse_mount_point, litar_data);
-    strcat(fuse_mount_point, "/fuse");
+    if (mount_point == NULL) {
+        CALLOC(mount_point, strlen(archive_data)+strlen("/overlay")+2);
+        strcat(mount_point, archive_data);
+        strcat(mount_point, "/overlay");
+    }
+    ensure_directory(mount_point);
+} while (0);
 
-    ensure_directory(fuse_mount_point);
-    rmdir(fuse_mount_point);
-    mkdir(fuse_mount_point, 0777);
+do {
+    if (upper_layer == NULL) {
+        CALLOC(upper_layer, strlen(archive_data)+strlen("/upper")+1);
+        strcat(upper_layer, archive_data);
+        strcat(upper_layer, "/upper");
+    }
+    ensure_directory(upper_layer);
 } while (0);
 @
 
 litar uses version 3.14 to be compatitable with Debian.
+The loop provided by the libfuse is run at a new process.
+The new process communicate with the main process by a pipe.
 
-@<includes@=
-#define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 14)
-#include <fuse.h>
+@<global variables@=
+int pipe_fuse_to_main[2];
 @
 
 @<functions@=
@@ -1782,44 +1796,127 @@ static const struct fuse_operations litar_fuse_oper = {
 
 @<mount file system@=
 do {
-    /* pid_t pid; */
-    /* if ((pid = fork()) < 0) { */
-    /*     perror("fork"); */
-    /*     exit(1); */
-    /* } else if (pid == 0) { */
-        struct fuse_args args = {0, NULL, 0};
-        struct fuse *fuse_r;
+    pid_t pid;
 
-        fuse_opt_add_arg(&args, "--help");
+    if (pipe(pipe_fuse_to_main) < 0) {
+        perror("pipe");
+        exit(1);
+    }
 
-        fuse_r = fuse_new(&args, &litar_fuse_oper, sizeof(litar_fuse_oper), NULL);
-        if (fuse_r == NULL) {
-            fprintf(stderr, "Can not create fuse");
-            goto out1;
-        }
+    uid_t ouid = getuid();
+    uid_t ogid = getgid();
 
-        if (fuse_mount(fuse_r, fuse_mount_point) != 0) {
-            fprintf(stderr, "Can not mount fuse");
-            goto out2;
-        }
+    if (unshare(CLONE_NEWUSER | CLONE_NEWNS) == -1) {
+        perror("unshare");
+        exit(1);
+    }
 
-        struct fuse_session *se = fuse_get_session(fuse_r);
-        if (fuse_set_signal_handlers(se) != 0) {
-            fprintf(stderr, "Can not register handlers");
-            goto out3;
-        }
+    FILE *setgroups = fopen("/proc/self/setgroups", "w");
+    if (setgroups != NULL) {
+        fprintf(setgroups, "deny");
+    }
+    fclose(setgroups);
 
-        fuse_loop(fuse_r);
-        fuse_remove_signal_handlers(se);
+    FILE *uid_map = fopen("/proc/self/uid_map", "w");
+    if (uid_map == NULL) {
+        fprintf(stderr, "failed to open /proc/self/uid_map\n");
+        exit(1);
+    }
+    fprintf(uid_map, "0 %u 1\n", ouid);
+    fclose(uid_map);
 
-        out3:
-        fuse_unmount(fuse_r);
+    FILE *gid_map = fopen("/proc/self/gid_map", "w");
+    if (gid_map == NULL) {
+        fprintf(stderr, "failed to open /proc/self/gid_map\n");
+        exit(1);
+    }
+    fprintf(gid_map, "0 %u 1\n", ogid);
+    fclose(gid_map);
+    
+    if ((pid = fork()) < 0) {
+        perror("fork");
+        exit(1);
+    } else if (pid == 0) {
+        close(pipe_fuse_to_main[0]);
+        @<run fuse loop@>
+        exit(0);
+    }
+    close(pipe_fuse_to_main[1]);
 
-        out2:
-        fuse_destroy(fuse_r);
+    char msg = 1;
+    
+    read(pipe_fuse_to_main[0], &msg, 1);
+    if (msg != 0) {
+        fprintf(stderr, "Error when mounting fuse\n");
+        exit(1);
+    }
 
-        out1:
-    /* } */
+    @<mount overlay over fuse@>
+} while (0);
+@
+
+@<run fuse loop@=
+do {
+    char msg = 0;
+    struct fuse_args args = {0, NULL, 0};
+    struct fuse *fuse_r;
+
+    fuse_opt_add_arg(&args, "-o auto_unmount");
+
+    fuse_r = fuse_new(&args, &litar_fuse_oper, sizeof(litar_fuse_oper), NULL);
+    if (fuse_r == NULL) {
+        fprintf(stderr, "Can not create fuse\n");
+        msg = 1;
+        write(pipe_fuse_to_main[1], &msg, 1);
+        goto out1;
+    }
+
+    if (fuse_mount(fuse_r, fuse_mount_point) != 0) {
+        fprintf(stderr, "Can not mount fuse\n");
+        msg = 1;
+        write(pipe_fuse_to_main[1], &msg, 1);
+        goto out2;
+    }
+    
+    write(pipe_fuse_to_main[1], &msg, 1);
+
+    struct fuse_session *se = fuse_get_session(fuse_r);
+    if (fuse_set_signal_handlers(se) != 0) {
+        fprintf(stderr, "Can not register handlers\n");
+        goto out3;
+    }
+
+    fuse_loop(fuse_r);
+    fuse_remove_signal_handlers(se);
+
+    out3:
+    fuse_unmount(fuse_r);
+
+    out2:
+    fuse_destroy(fuse_r);
+
+    out1:
+} while (0);
+@
+
+@<mount overlay over fuse@=
+do {
+    Str overlay_opt = NULL;
+
+    new_str(&overlay_opt, "userxattr");
+    str_extend(overlay_opt, ",lowerdir=");
+    str_extend(overlay_opt, fuse_mount_point);
+    str_extend(overlay_opt, ",upperdir=");
+    str_extend(overlay_opt, upper_layer);
+    str_extend(overlay_opt, ",workdir=");
+    str_extend(overlay_opt, work_dir);
+
+    if (mount("overlay", mount_point, "overlay", 0, raw_string(overlay_opt)) < 0) {
+        perror("mount");
+        exit(1);
+    }
+
+    free_str(&overlay_opt);
 } while (0);
 @
 
@@ -2019,6 +2116,16 @@ void print_node(Node nd, int level)
 print_node(root_node, 0);
 @
 
+@<operations after mounting file system@=
+do {
+    printf("Start executing shell\n");
+    if (execl("/usr/bin/bash", "bash", "-i", NULL) < 0) {
+        perror("execl");
+        exit(1);
+    }
+} while (0);
+@
+
 # Appendix
 
 @<a monolithic c program@=
@@ -2038,6 +2145,8 @@ int main(int argc, char *argv[])
 @
 
 @<includes@=
+#define _GNU_SOURCE
+#include <sched.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
@@ -2047,7 +2156,12 @@ int main(int argc, char *argv[])
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/mount.h>
+#include <sys/types.h>
 #include <errno.h>
+
+#define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 14)
+#include <fuse.h>
 
 #include "light.h"
 #include "str.h"
@@ -2247,12 +2361,4 @@ echo ');'
 sed -z 's/,[[:space:]]$/\n/'
 @
 
-
-# Extra
-
-@<functions@=
-void transform(Str txt, List flts)
-{
-}
-@
 

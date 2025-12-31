@@ -147,7 +147,7 @@ sed 's/world/WORLD/'
 ```
 
 The two relations are extended to,
-1. a chunk is extended by a block transformed filters;
+1. a chunk is extended by a block transformed by filters;
 2. a block include a chunk transformed by filters
    at the position of reference to the chunk.
 
@@ -173,7 +173,7 @@ It's too cumbersome, not at ease at all!
 
 The author of litar does not want to limit the powerful flexibility of Unix tools.
 So unlike traditional literate programming tools, litar has syntax to introduce
-the concept of files explicitly to kernel of it. This is done by using @@[ and @@(.
+the concept of files explicitly to the kernel of it. This is done by using @@[ and @@(.
 
 ```
 @@[hello.c@@=
@@ -203,9 +203,9 @@ sed -f sed_scripts/bigger_world.sed
 
 There are three files in this example, "hello.c", "sed_scripts/bigger_world.sed"
 and "exaggeratedly". The difference between @@[ and @@( is that @@( specifies
-a executable file but @@['s is a regular file.
+an executable file but @@['s is a regular file.
 Filters are executed in an environment so that these three
-files can be visited.
+files can be accessed.
 It's worthy to mention that a file in a litar archive is also a chunk.
 
 The discussion above implies that a litar archive has a file system inside.
@@ -216,8 +216,8 @@ other files in the operating system.
 
 Besides these control characters that describes the structure of a litar archive,
 there are some other control characters. They are commands, which influence
-the process of dealing with litar archive. For example, @@i receive an argument
-of file name, and insert the content of that file at the place of @@i.
+the process of dealing with litar archive. For example, @@i receives an argument
+of file name, and inserts the content of that file at the place of @@i.
 @
 
 # Invocation
@@ -858,9 +858,112 @@ Str expanded_content_of_block(Block blk)
 @
 
 @<functions@=
-void transform(Str txt, List flts)
+void
+transform(Str txt, List flts)
 {
+    int overlay = open(mount_point, O_RDONLY);
+
+    flts = copy_list(flts);
+    reverse(&flts);
+
+    int len = length(flts);
+
+    int (*pipes)[2] = NULL;
+    CALLOC(pipes, len);
+
+    char (*tmpfs)[L_tmpnam] = NULL;
+    CALLOC(pipes, len);
+
+    pid_t *pids = NULL;
+    CALLOC(pids, len);
+
+    int i = 0;
+    Chunk flt;
+    FOREACH (flt, flts) {
+        int fd;
+
+        tmpnam(tmpfs[i]);
+
+        if ((fd = open(tmpfs[i], O_WRONLY | O_CREAT, 0777)) < 0) {
+            perror("open");
+            exit(1);
+        }
+
+        @<write content of "flt" to "fd"@>
+        close(fd);
+
+        if (pipe(pipes[i]) < 0) {
+            perror("pipe");
+            goto clean_transform;
+        }
+
+        if (pids[i] = fork() < 0) {
+            perror("fork");
+            goto clean_transform;
+        } else if (pids[i] == 0) {
+            if (dup2(pipes[i][0], STDIN_FILENO) < 0) {
+                perror("dup2");
+                goto clean_transform;
+            }
+            if (i != len) {
+                if (dup2(pipes[i+1][1], STDOUT_FILENO) < 0) {
+                    perror("dup2");
+                    goto clean_transform;
+                }
+            }
+
+            for (int j = 0; j < len; ++j) {
+                close(pipes[j][0]);
+                close(pipes[j][1]);
+            }
+
+            @<execute filter "flt" under proper conditions@>
+        }
+
+        ++i;
+    }
+
+    for (i = 0; i < len-1; ++i) {
+        close(pipes[i][0]);
+        close(pipes[i][1]);
+    }
+    close(pipes[len-1][1]);
+
+    @<read from "pipes[len-1][0]"@>
+
+    FREE(pipes);
+    FREE(tmpfs);
+    FREE(pids);
+
+    return;
+
+clean_transform:
+    exit(1);
 }
+@
+
+@<write content of "flt" to "fd"@=
+do {
+    Str ct;
+    int n, wtn = 0;
+    ct = content_of_chunk(flt);
+
+    while ((n = write(fd, raw_string(ct) + wtn, str_length(ct) - wtn)) > 0) {
+        wtn += n;
+    }
+} while (0);
+@
+
+@<read from "pipes[len-1][0]"@=
+do {
+    int n, wtn;
+
+    wtn = 0;
+
+    while ((n = write(pipes[0][1], raw_string(txt))) > 0) {
+        
+    }
+} while (0);
 @
 
 # Parsing

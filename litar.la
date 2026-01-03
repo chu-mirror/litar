@@ -31,7 +31,7 @@ literate and archive.
 
 @<syntax of litar@=
 Because a litar archive is supposed to contain text of all types, the syntax of
-itself should be simple. The syntax of a litar archive is built upon
+itself should be as simple as possible. The syntax of a litar archive is built upon
 control characters, which are @@ followed by a character.
 
 To fully describe all concepts, we shall introduce another term, block.
@@ -857,11 +857,29 @@ Str expanded_content_of_block(Block blk)
 }
 @
 
+@<global variables@=
+char working_dir[PATH_MAX];
+@
+
+@<initializations of global variables@=
+if (getcwd(working_dir, PATH_MAX) == NULL) {
+    perror("getcwd");
+    exit(1);
+}
+@
+
 @<functions@=
 void
 transform(Str txt, List flts)
 {
-    int overlay = open(mount_point, O_RDONLY);
+    if (flts == empty_list) {
+        return;
+    }
+
+    if (chdir(mount_point) < 0) {
+        perror("chdir");
+        exit(1);
+    }
 
     flts = copy_list(flts);
     reverse(&flts);
@@ -869,9 +887,6 @@ transform(Str txt, List flts)
     int len = length(flts);
 
     int (*pipes)[2] = NULL;
-    CALLOC(pipes, len);
-
-    char (*tmpfs)[L_tmpnam] = NULL;
     CALLOC(pipes, len);
 
     pid_t *pids = NULL;
@@ -882,15 +897,12 @@ transform(Str txt, List flts)
     FOREACH (flt, flts) {
         int fd;
 
-        tmpnam(tmpfs[i]);
-
-        if ((fd = open(tmpfs[i], O_WRONLY | O_CREAT, 0777)) < 0) {
-            perror("open");
+        if ((fd = memfd_create(name_of_chunk(flt), 0)) < 0) {
+            perror("memfd_create");
             exit(1);
         }
 
         @<write content of "flt" to "fd"@>
-        close(fd);
 
         if (pipe(pipes[i]) < 0) {
             perror("pipe");
@@ -901,15 +913,31 @@ transform(Str txt, List flts)
             perror("fork");
             goto clean_transform;
         } else if (pids[i] == 0) {
-            if (dup2(pipes[i][0], STDIN_FILENO) < 0) {
-                perror("dup2");
-                goto clean_transform;
-            }
-            if (i != len) {
-                if (dup2(pipes[i+1][1], STDOUT_FILENO) < 0) {
+            if (i == 0) {
+                int txt_fd;
+                int n, wtn = 0;
+                if ((txt_fd = memfd_create("temp", 0)) < 0) {
+                    perror("memfd_create");
+                    goto clean_transform;
+                }
+                while ((n = write(fd, raw_string(txt) + wtn, str_length(txt) - wtn)) > 0) {
+                    wtn += n;
+                }
+                if (dup2(txt_fd, STDIN_FILENO) < 0) {
                     perror("dup2");
                     goto clean_transform;
                 }
+                close(txt_fd);
+            } else {
+                if (dup2(pipes[i-1][0], STDIN_FILENO) < 0) {
+                    perror("dup2");
+                    goto clean_transform;
+                }
+            }
+
+            if (dup2(pipes[i][1], STDOUT_FILENO) < 0) {
+                perror("dup2");
+                goto clean_transform;
             }
 
             for (int j = 0; j < len; ++j) {
@@ -917,10 +945,12 @@ transform(Str txt, List flts)
                 close(pipes[j][1]);
             }
 
-            @<execute filter "flt" under proper conditions@>
+            @<execute "fd" under proper conditions@>
         }
 
         ++i;
+
+        close(fd);
     }
 
     for (i = 0; i < len-1; ++i) {
@@ -929,10 +959,9 @@ transform(Str txt, List flts)
     }
     close(pipes[len-1][1]);
 
-    @<read from "pipes[len-1][0]"@>
+    @<read from final pipe to "txt"@>
 
     FREE(pipes);
-    FREE(tmpfs);
     FREE(pids);
 
     return;
@@ -951,18 +980,35 @@ do {
     while ((n = write(fd, raw_string(ct) + wtn, str_length(ct) - wtn)) > 0) {
         wtn += n;
     }
+
+    free_str(&ct);
 } while (0);
 @
 
-@<read from "pipes[len-1][0]"@=
+@<execute "fd" under proper conditions@=
 do {
-    int n, wtn;
-
-    wtn = 0;
-
-    while ((n = write(pipes[0][1], raw_string(txt))) > 0) {
-        
+    char *name = strdup(name_of_chunk(flt));
+    char *argv[2] = {name, NULL};
+    if (fexecve(fd, argv, environ) < 0) {
+        perror("fexecve");
+        exit(1);
     }
+} while (0);
+@
+
+@<read from final pipe to "txt"@=
+do {
+    int n, rd;
+    char buf[1000];
+
+    rd = 0;
+    
+    str_clean(txt);
+    while ((n = read(pipes[len-1][0], buf, 999)) > 0) {
+        buf[999] = '\0';
+        str_extend(txt, buf);
+    }
+    
 } while (0);
 @
 
@@ -2006,7 +2052,7 @@ do {
 do {
     Str overlay_opt = NULL;
 
-    new_str(&overlay_opt, "userxattr");
+    new_str(&overlay_opt, "");
     str_extend(overlay_opt, ",lowerdir=");
     str_extend(overlay_opt, fuse_mount_point);
     str_extend(overlay_opt, ",upperdir=");
@@ -2111,7 +2157,7 @@ case 'p':
     break;
 @
 
-@<operations after parsing input@=
+@<operations after mounting file system@=
 if (to_print_specific_chunk) {
     if (!chunk_of_name_exist(name_of_chunk_to_print)) {
         fprintf(stderr, "Unknown chunk: %s\n", name_of_chunk_to_print);
@@ -2127,7 +2173,7 @@ if (to_print_specific_chunk) {
 }
 @
 
-@<operations after parsing input@=
+@<operations after parsing input (DEBUG)@=
 @<print all sections@>
 @
 
@@ -2188,7 +2234,7 @@ do {
 } while (0);
 @
 
-@<operations after parsing input@=
+@<operations after parsing input (DEBUG)@=
 @<print nodes@>
 @
 
@@ -2217,16 +2263,6 @@ void print_node(Node nd, int level)
 
 @<print nodes@=
 print_node(root_node, 0);
-@
-
-@<operations after mounting file system@=
-do {
-    printf("Start executing shell\n");
-    if (execl("/usr/bin/bash", "bash", "-i", NULL) < 0) {
-        perror("execl");
-        exit(1);
-    }
-} while (0);
 @
 
 # Appendix
@@ -2261,6 +2297,7 @@ int main(int argc, char *argv[])
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/types.h>
+#include <limits.h>
 #include <errno.h>
 
 #define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 14)

@@ -18,11 +18,11 @@ Floyd
 s/\(.*\)/printf("Hello, \1!\\n");/
 @
 
-@<greetings for a list of people@=
+@<greetings for a list of people@=#!/bin/sh
 sed -f sed_script/greeting_each.sed
 @
 
-@<exaggerated version for greetings@=
+@<exaggerated version for greetings@=#!/bin/sh
 sed -e 's/Hello,/HELLO!/'
 @
 

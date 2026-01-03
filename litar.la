@@ -895,24 +895,24 @@ transform(Str txt, List flts)
     int i = 0;
     Chunk flt;
     FOREACH (flt, flts) {
-        int fd;
-
-        if ((fd = memfd_create(name_of_chunk(flt), 0)) < 0) {
-            perror("memfd_create");
-            exit(1);
-        }
-
-        @<write content of "flt" to "fd"@>
-
         if (pipe(pipes[i]) < 0) {
             perror("pipe");
             goto clean_transform;
         }
 
-        if (pids[i] = fork() < 0) {
+        if ((pids[i] = fork()) < 0) {
             perror("fork");
             goto clean_transform;
         } else if (pids[i] == 0) {
+			int fd;
+
+			if ((fd = memfd_create(name_of_chunk(flt), 0)) < 0) {
+				perror("memfd_create");
+				exit(1);
+			}
+
+			@<write content of "flt" to "fd"@>
+
             if (i == 0) {
                 int txt_fd;
                 int n, wtn = 0;
@@ -920,9 +920,10 @@ transform(Str txt, List flts)
                     perror("memfd_create");
                     goto clean_transform;
                 }
-                while ((n = write(fd, raw_string(txt) + wtn, str_length(txt) - wtn)) > 0) {
+                while ((n = write(txt_fd, raw_string(txt) + wtn, str_length(txt) - wtn)) > 0) {
                     wtn += n;
                 }
+				lseek(txt_fd, 0, SEEK_SET);
                 if (dup2(txt_fd, STDIN_FILENO) < 0) {
                     perror("dup2");
                     goto clean_transform;
@@ -949,8 +950,6 @@ transform(Str txt, List flts)
         }
 
         ++i;
-
-        close(fd);
     }
 
     for (i = 0; i < len-1; ++i) {

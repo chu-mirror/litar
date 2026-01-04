@@ -2343,8 +2343,7 @@ options = list(map(
 arguments = stx["arguments"]
 @
 
-@<synopsis for manpage@=#!/bin/sh
-python -c '
+@<synopsis for manpage@=#!/usr/bin/python
 @<parse invocation syntax@>
 str = f".B {name}\n"
 
@@ -2358,11 +2357,9 @@ str += "[" + "|".join(map(opt_to_str, options)) + "]"
 for arg in arguments:
     str += f" \\fI{arg}\\fR"
 print(str)
-'
 @
 
-@<options for manpage@=#!/bin/sh
-python -c '
+@<options for manpage@=#!/usr/bin/python
 @<parse invocation syntax@>
 str = ""
 
@@ -2378,11 +2375,9 @@ for opt in options:
     str += opt.comment + "\n"
 
 print(str)
-'
 @
 
-@<usage of invocation syntax@=#!/bin/sh
-python -c '
+@<usage of invocation syntax@=#!/usr/bin/python
 @<parse invocation syntax@>
 str = "\""
 str += name
@@ -2400,12 +2395,9 @@ for arg in arguments:
 str += "\""
 
 print(str, end="")
-'
 @
 
-@<getopt string for invocation syntax@=#!/bin/sh
-
-python -c '
+@<getopt string for invocation syntax@=#!/usr/bin/python
 @<parse invocation syntax@>
 
 def opt_to_str(opt):
@@ -2415,7 +2407,6 @@ def opt_to_str(opt):
         return opt.name + ":"
 
 print("\"" + "".join(map(opt_to_str, options)) + "\"", end="")
-'
 @
 
 @<parse model of states@=
@@ -2447,8 +2438,7 @@ for st in model:
     states[st[0]] = State(st[0], st[1])
 @
 
-@<declarations of states@=#!/bin/sh
-python -c '
+@<declarations of states@=#!/usr/bin/python
 @<parse model of states@>
 
 def state_to_dec(st):
@@ -2456,11 +2446,9 @@ def state_to_dec(st):
 
 str = "\n".join(map(state_to_dec, states.values())) + "\n"
 print(str)
-'
 @
 
-@<initialization of states@=#!/bin/sh
-python -c '
+@<initialization of states@=#!/usr/bin/python
 @<parse model of states@>
 
 def state_to_init(st):
@@ -2476,11 +2464,9 @@ def state_to_init(st):
 str = "\n".join(map(state_to_init, states.values())) + "\n"
 str += f"state_init({state_to_c_var(list(states.values())[0])});\n"
 print(str)
-'
 @
 
-@<cleaning of states@=#!/bin/sh
-python -c '
+@<cleaning of states@=#!/usr/bin/python
 @<parse model of states@>
 
 def state_to_free(st):
@@ -2490,7 +2476,6 @@ def state_to_free(st):
 str = f"state_clear({state_to_c_var(list(states.values())[0])});\n"
 str += "\n".join(map(state_to_free, states.values())) + "\n"
 print(str)
-'
 @
 
 @<fill in build time information@=#!/bin/sh

@@ -2,6 +2,12 @@
 
 To build:
 ```
-# make
+$ make
+```
+
+To test:
+```
+$ make hello
+$ ./hello
 ```
 

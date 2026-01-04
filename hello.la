@@ -1,6 +1,6 @@
 Say hello to all your classmates.
 
-@[src/hello.c@=
+@[hello.c@=
 #include <stdio.h>
 
 int main()

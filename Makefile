@@ -8,7 +8,7 @@ all: litar
 
 .SUFFIXES: .la
 .la.c:
-	litar $@ $< > $@
+	./litar -p "$@" $< > $@
 
 install:
 	install -C -m 755 ${EXEC} ${PREFIX}/bin/litar

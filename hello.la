@@ -15,11 +15,11 @@ Floyd
 @
 
 @[sed_script/greet_each.sed@=
-s/\(.*\)/printf("Hello, \1!\\n");/
+/^[A-Z]/s/\(.*\)/printf("Hello, \1!\\n");/
 @
 
 @<greetings for a list of people@=#!/bin/sh
-sed -f sed_script/greeting_each.sed
+sed -f sed_script/greet_each.sed
 @
 
 @<exaggerated version for greetings@=#!/bin/sh

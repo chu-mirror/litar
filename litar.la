@@ -876,11 +876,6 @@ transform(Str txt, List flts)
         return;
     }
 
-    if (chdir(mount_point) < 0) {
-        perror("chdir");
-        exit(1);
-    }
-
     flts = copy_list(flts);
     reverse(&flts);
 
@@ -904,6 +899,11 @@ transform(Str txt, List flts)
             perror("fork");
             goto clean_transform;
         } else if (pids[i] == 0) {
+            if (chdir(mount_point) < 0) {
+                perror("chdir");
+                exit(1);
+            }
+
 			int fd;
 
 			if ((fd = memfd_create(name_of_chunk(flt), 0)) < 0) {
@@ -941,7 +941,7 @@ transform(Str txt, List flts)
                 goto clean_transform;
             }
 
-            for (int j = 0; j < len; ++j) {
+            for (int j = 0; j <= i; ++j) {
                 close(pipes[j][0]);
                 close(pipes[j][1]);
             }
@@ -959,6 +959,8 @@ transform(Str txt, List flts)
     close(pipes[len-1][1]);
 
     @<read from final pipe to "txt"@>
+
+    close(pipes[len-1][0]);
 
     FREE(pipes);
     FREE(pids);
@@ -1004,7 +1006,7 @@ do {
     
     str_clean(txt);
     while ((n = read(pipes[len-1][0], buf, 999)) > 0) {
-        buf[999] = '\0';
+        buf[n] = '\0';
         str_extend(txt, buf);
     }
     
@@ -2264,6 +2266,16 @@ void print_node(Node nd, int level)
 print_node(root_node, 0);
 @
 
+@<operations after mounting file system@=
+do {
+    printf("Starting executing shell\n");
+    if (execl("/usr/bin/bash", "bash", "-i", NULL) != 0) {
+        perror("execl");
+        exit(1);
+    }
+} while (0);
+@
+
 # Appendix
 
 @<a monolithic c program@=
@@ -2311,7 +2323,7 @@ int main(int argc, char *argv[])
 #include "state.h"
 @
 
-@<parse invocation syntax@=#!/bin/sh
+@<parse invocation syntax@=
 import json
 import sys
 from typing import NamedTuple
@@ -2392,6 +2404,7 @@ print(str, end="")
 @
 
 @<getopt string for invocation syntax@=#!/bin/sh
+
 python -c '
 @<parse invocation syntax@>
 
@@ -2446,7 +2459,7 @@ print(str)
 '
 @
 
-@<initialization of states@=
+@<initialization of states@=#!/bin/sh
 python -c '
 @<parse model of states@>
 
@@ -2466,7 +2479,7 @@ print(str)
 '
 @
 
-@<cleaning of states@=
+@<cleaning of states@=#!/bin/sh
 python -c '
 @<parse model of states@>
 

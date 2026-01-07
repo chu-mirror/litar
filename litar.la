@@ -321,21 +321,21 @@ The operations can be performed at three stages:
 do {
     bool to_continue = true;
 
-    @<operations before parsing@|execute sequentially@>
+    KEEP(@<operations before parsing@|execute sequentially@>);
     if (!to_continue) {
         break;
     }
 
-    @<parse input@>
+    RESERVE(@<parse input@>);
 
-    @<operations after parsing input@|execute sequentially@>
+    KEEP(@<operations after parsing input@|execute sequentially@>);
     if (!to_continue) {
         break;
     }
 
     @<mount file system@>
 
-    @<operations after mounting file system@|execute sequentially@>
+    KEEP(@<operations after mounting file system@|execute sequentially@>);
 } while (0);
 @
 
@@ -413,7 +413,7 @@ fetch_text_from(TextRef tr)
             perror(tr->file);
             exit(1);
         }
-        put_to_hash_table(file_to_mmap_addr, tr->file, addr);
+        RESERVE(put_to_hash_table(file_to_mmap_addr, tr->file, addr));
     }
     
     char *str = NULL;
@@ -816,7 +816,7 @@ Str content_of_chunk(Chunk chk)
     reverse(&blks);
 
     push(chk, &stack_of_chunks_in_tangling);
-    new_str(&cc, "");
+    new_str(&cc);
     FOREACH(blk, blks) {
         Str exb = expanded_content_of_block(blk);
         transform(exb, blk->filters);
@@ -837,7 +837,7 @@ Str expanded_content_of_block(Block blk)
 
     reverse(&bcs);
     
-    new_str(&ect, "");
+    new_str(&ect);
     FOREACH(bc, bcs) {
         if (bc->type == BLOCK_CONTENT_TEXT) {
             char *txt;
@@ -952,6 +952,7 @@ transform(Str txt, List flts)
 
         ++i;
     }
+    free_list(&flts);
 
     for (i = 0; i < len-1; ++i) {
         close(pipes[i][0]);
@@ -1301,7 +1302,7 @@ static State state_parse_block_in(State s, Signal sig)
     struct state_parse_block_local *lc_r = NULL;
     NEW0(lc_r);
     NEW0(lc_r->block);
-    new_str(&lc_r->chunk_name, "");
+    new_str(&lc_r->chunk_name);
 
     switch (tkn->value) {
     case '<':
@@ -1544,7 +1545,7 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
 @<functions@=
 static State state_parse_block_contents_reference_name_in(State s, Signal sig)
 {
-    new_str((Str *)state_local(s), "");
+    new_str((Str *)state_local(s));
     return NULL;
 }
 
@@ -1587,7 +1588,7 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
 @<functions@=
 static State state_parse_block_contents_reference_filters_in(State s, Signal sig)
 {
-    new_str((Str *)state_local(s), "");
+    new_str((Str *)state_local(s));
     return NULL;
 }
 
@@ -1635,7 +1636,7 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
     chunk_ref_is_transformed_by(ckr, chk);
 
     free_str((Str *)state_local(s));
-    new_str((Str *)state_local(s), "");
+    new_str((Str *)state_local(s));
     return s;
 }
 @
@@ -1643,7 +1644,7 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
 @<functions@=
 static State state_parse_block_filters_in(State s, Signal sig)
 {
-    new_str((Str *)state_local(s), "");
+    new_str((Str *)state_local(s));
     return NULL;
 }
 
@@ -1694,7 +1695,7 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
     block_is_transformed_by(lc_r->block, chk);
 
     free_str((Str *)state_local(s));
-    new_str((Str *)state_local(s), "");
+    new_str((Str *)state_local(s));
     return s;
 }
 @
@@ -1757,24 +1758,20 @@ ensure_directory(litar_data);
 @
 
 @<mount file system@=
-do {
+RESERVE(do {
     CALLOC(archive_data, strlen(litar_data)+strlen(archive_name)+2);
     strcat(archive_data, litar_data);
     strcat(archive_data, "/");
     strcat(archive_data, archive_name);
 
     ensure_directory(archive_data);
-} while (0);
 
-do {
     CALLOC(fuse_mount_point, strlen(archive_data)+strlen("/fuse")+1);
     strcat(fuse_mount_point, archive_data);
     strcat(fuse_mount_point, "/fuse");
 
     ensure_directory(fuse_mount_point);
-} while (0);
 
-do {
     CALLOC(work_dir, strlen(archive_data)+strlen("/work")+1);
     strcat(work_dir, archive_data);
     strcat(work_dir, "/work");
@@ -1782,25 +1779,21 @@ do {
     ensure_directory(work_dir);
     rmdir(work_dir); /* make sure work_dir is empty */
     mkdir(work_dir, 0777);
-} while (0);
 
-do {
     if (mount_point == NULL) {
         CALLOC(mount_point, strlen(archive_data)+strlen("/overlay")+2);
         strcat(mount_point, archive_data);
         strcat(mount_point, "/overlay");
     }
     ensure_directory(mount_point);
-} while (0);
 
-do {
     if (upper_layer == NULL) {
         CALLOC(upper_layer, strlen(archive_data)+strlen("/upper")+1);
         strcat(upper_layer, archive_data);
         strcat(upper_layer, "/upper");
     }
     ensure_directory(upper_layer);
-} while (0);
+} while (0));
 @
 
 litar uses version 3.14 to be compatitable with Debian.
@@ -2056,7 +2049,7 @@ do {
 do {
     Str overlay_opt = NULL;
 
-    new_str(&overlay_opt, "");
+    new_str(&overlay_opt);
     str_extend(overlay_opt, ",lowerdir=");
     str_extend(overlay_opt, fuse_mount_point);
     str_extend(overlay_opt, ",upperdir=");
@@ -2297,8 +2290,9 @@ kill(fuse_pid, SIGTERM);
 
 int main(int argc, char *argv[])
 {
-    @<initializations of global variables@>
+    RESERVE(do {@<initializations of global variables@>} while (0));
     @<main body of the c program@>
+    assert_memory_safety();
     return 0;
 }
 @
@@ -2496,12 +2490,6 @@ sed -e "s/<build time>/$(date -Iminute)/g"
 echo "do {"
 cat -
 echo "} while (0);"
-@
-
-@<print@=#!/bin/sh
-echo 'printf('
-sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed 's/^/"/' | sed 's/$/\\n"/'
-echo ');'
 @
 
 @<remove ending comma@=#!/bin/sh

@@ -431,7 +431,7 @@ fetch_text_from(TextRef tr)
             perror(tr->file);
             exit(1);
         }
-        put_to_hash_table(file_to_mmap_addr, tr->file, addr);
+        RESERVE(put_to_hash_table(file_to_mmap_addr, tr->file, addr));
     }
 
     char *str = NULL;
@@ -488,7 +488,7 @@ content_of_chunk(Chunk chk)
     reverse(&blks);
 
     push(chk, &stack_of_chunks_in_tangling);
-    new_str(&cc, "");
+    new_str(&cc);
     FOREACH (blk, blks) {
         Str exb = expanded_content_of_block(blk);
         transform(exb, blk->filters);
@@ -510,7 +510,7 @@ expanded_content_of_block(Block blk)
 
     reverse(&bcs);
 
-    new_str(&ect, "");
+    new_str(&ect);
     FOREACH (bc, bcs) {
         if (bc->type == BLOCK_CONTENT_TEXT) {
             char *txt;
@@ -637,6 +637,7 @@ transform(Str txt, List flts)
 
         ++i;
     }
+    free_list(&flts);
 
     for (i = 0; i < len - 1; ++i) {
         close(pipes[i][0]);
@@ -831,7 +832,7 @@ state_parse_block_in(State s, Signal sig)
     struct state_parse_block_local *lc_r = NULL;
     NEW0(lc_r);
     NEW0(lc_r->block);
-    new_str(&lc_r->chunk_name, "");
+    new_str(&lc_r->chunk_name);
 
     switch (tkn->value) {
     case '<':
@@ -1081,7 +1082,7 @@ state_parse_block_contents_reference_out(State s, Signal sig)
 static State
 state_parse_block_contents_reference_name_in(State s, Signal sig)
 {
-    new_str((Str *)state_local(s), "");
+    new_str((Str *)state_local(s));
     return NULL;
 }
 
@@ -1128,7 +1129,7 @@ state_parse_block_contents_reference_name_out(State s, Signal sig)
 static State
 state_parse_block_contents_reference_filters_in(State s, Signal sig)
 {
-    new_str((Str *)state_local(s), "");
+    new_str((Str *)state_local(s));
     return NULL;
 }
 
@@ -1163,7 +1164,7 @@ state_parse_block_contents_reference_filters_handler(State s, Signal sig)
             chunk_ref_is_transformed_by(ckr, chk);
 
             free_str((Str *)state_local(s));
-            new_str((Str *)state_local(s), "");
+            new_str((Str *)state_local(s));
             return s;
         }
     } while (0);
@@ -1188,7 +1189,7 @@ state_parse_block_contents_reference_filters_out(State s, Signal sig)
 static State
 state_parse_block_filters_in(State s, Signal sig)
 {
-    new_str((Str *)state_local(s), "");
+    new_str((Str *)state_local(s));
     return NULL;
 }
 
@@ -1223,7 +1224,7 @@ state_parse_block_filters_handler(State s, Signal sig)
             block_is_transformed_by(lc_r->block, chk);
 
             free_str((Str *)state_local(s));
-            new_str((Str *)state_local(s), "");
+            new_str((Str *)state_local(s));
             return s;
         }
     } while (0);
@@ -1489,22 +1490,23 @@ print_node(Node nd, int level)
 int
 main(int argc, char *argv[])
 {
+    RESERVE(do {
+        new_string_hash_table(&file_to_mmap_addr);
 
-    new_string_hash_table(&file_to_mmap_addr);
+        new_string_hash_table(&chunk_name_to_chunk);
 
-    new_string_hash_table(&chunk_name_to_chunk);
+        NEW(root_node);
+        root_node->type = NODE_DIRECTORY;
+        root_node->value.nodes = empty_list;
+        root_node->name = strdup("");
 
-    NEW(root_node);
-    root_node->type = NODE_DIRECTORY;
-    root_node->value.nodes = empty_list;
-    root_node->name = strdup("");
+        if (getcwd(working_dir, PATH_MAX) == NULL) {
+            perror("getcwd");
+            exit(1);
+        }
 
-    if (getcwd(working_dir, PATH_MAX) == NULL) {
-        perror("getcwd");
-        exit(1);
-    }
-
-    ensure_directory(litar_data);
+        ensure_directory(litar_data);
+    } while (0));
 
     do {
         int opt;
@@ -1551,8 +1553,7 @@ main(int argc, char *argv[])
     do {
         bool to_continue = true;
 
-        do {
-
+        KEEP(do {
             if (to_print_help) {
                 print_usage();
                 to_continue = false;
@@ -1561,18 +1562,17 @@ main(int argc, char *argv[])
 
             if (to_print_version_info) {
 
-                printf("Version %s, built at 2026-01-05T10:22+08:00", version);
+                printf("Version %s, built at 2026-01-07T15:52+08:00", version);
 
                 to_continue = false;
                 break;
             }
-        } while (0);
-
+        } while (0););
         if (!to_continue) {
             break;
         }
 
-        do {
+        RESERVE(do {
             input_frames = empty_list;
 
             do {
@@ -1749,17 +1749,14 @@ main(int argc, char *argv[])
             free_state(&state_parse_block_contents_reference);
             free_state(&state_parse_block_contents_reference_name);
             free_state(&state_parse_block_contents_reference_filters);
+        } while (0););
 
-        } while (0);
-
-        do {
-        } while (0);
-
+        KEEP(do {} while (0););
         if (!to_continue) {
             break;
         }
 
-        do {
+        RESERVE(do {
             CALLOC(
                 archive_data, strlen(litar_data) + strlen(archive_name) + 2
             );
@@ -1768,9 +1765,7 @@ main(int argc, char *argv[])
             strcat(archive_data, archive_name);
 
             ensure_directory(archive_data);
-        } while (0);
 
-        do {
             CALLOC(
                 fuse_mount_point, strlen(archive_data) + strlen("/fuse") + 1
             );
@@ -1778,9 +1773,7 @@ main(int argc, char *argv[])
             strcat(fuse_mount_point, "/fuse");
 
             ensure_directory(fuse_mount_point);
-        } while (0);
 
-        do {
             CALLOC(work_dir, strlen(archive_data) + strlen("/work") + 1);
             strcat(work_dir, archive_data);
             strcat(work_dir, "/work");
@@ -1788,9 +1781,7 @@ main(int argc, char *argv[])
             ensure_directory(work_dir);
             rmdir(work_dir); /* make sure work_dir is empty */
             mkdir(work_dir, 0777);
-        } while (0);
 
-        do {
             if (mount_point == NULL) {
                 CALLOC(
                     mount_point, strlen(archive_data) + strlen("/overlay") + 2
@@ -1799,9 +1790,7 @@ main(int argc, char *argv[])
                 strcat(mount_point, "/overlay");
             }
             ensure_directory(mount_point);
-        } while (0);
 
-        do {
             if (upper_layer == NULL) {
                 CALLOC(
                     upper_layer, strlen(archive_data) + strlen("/upper") + 1
@@ -1810,7 +1799,7 @@ main(int argc, char *argv[])
                 strcat(upper_layer, "/upper");
             }
             ensure_directory(upper_layer);
-        } while (0);
+        } while (0));
 
         do {
             if (pipe(pipe_fuse_to_main) < 0) {
@@ -1913,7 +1902,7 @@ main(int argc, char *argv[])
             do {
                 Str overlay_opt = NULL;
 
-                new_str(&overlay_opt, "");
+                new_str(&overlay_opt);
                 str_extend(overlay_opt, ",lowerdir=");
                 str_extend(overlay_opt, fuse_mount_point);
                 str_extend(overlay_opt, ",upperdir=");
@@ -1938,8 +1927,7 @@ main(int argc, char *argv[])
 
         } while (0);
 
-        do {
-
+        KEEP(do {
             if (to_print_specific_chunk) {
                 if (!chunk_of_name_exist(name_of_chunk_to_print)) {
                     fprintf(
@@ -1963,11 +1951,11 @@ main(int argc, char *argv[])
                     exit(1);
                 }
             } while (0);
-        } while (0);
-
+        } while (0););
     } while (0);
 
     kill(fuse_pid, SIGTERM);
 
+    assert_memory_safety();
     return 0;
 }

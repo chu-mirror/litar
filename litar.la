@@ -1240,12 +1240,13 @@ if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
 
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
     List *txts_r;
+    TextRef txt;
     InputFrame ipt;
 
     RENAME(car(input_frames), ipt);
     RENAME(state_local(s), txts_r);
 
-    TextRef txt = NULL;
+    txt = NULL;
     NEW0(txt);
     txt->file = ipt->file;
     txt->start = ipt->pp+1;
@@ -1471,8 +1472,12 @@ static State state_parse_block_contents_text_out(State s, Signal sig)
 @<handlings for token "tkn" when "state_parse_block_contents_text"@=
 if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
     TextRef txt;
+    InputFrame ipt;
+
+    RENAME(car(input_frames), ipt);
     RENAME(*state_local(s), txt);
-    ++txt->end;
+
+    txt->end = ipt->cp;
     return s;
 }
 

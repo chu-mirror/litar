@@ -333,7 +333,7 @@ do {
         break;
     }
 
-    @<mount file system@>
+    KEEP(@<mount file system@>);
 
     KEEP(@<operations after mounting file system@|execute sequentially@>);
 } while (0);

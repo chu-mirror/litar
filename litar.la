@@ -870,107 +870,43 @@ if (getcwd(working_dir, PATH_MAX) == NULL) {
 @
 
 @<functions@=
-void
-transform(Str txt, List flts)
+pid_t
+run_filter(Chunk flt, int in, int out)
 {
-    if (flts == empty_list) {
-        return;
-    }
-
-    flts = copy_list(flts);
-    reverse(&flts);
-
-    int len = length(flts);
-
-    int (*pipes)[2] = NULL;
-    CALLOC(pipes, len);
-
-    pid_t *pids = NULL;
-    CALLOC(pids, len);
-
-    int i = 0;
-    Chunk flt;
-    FOREACH (flt, flts) {
-        if (pipe(pipes[i]) < 0) {
-            perror("pipe");
-            goto clean_transform;
+    pid_t pid;
+    if ((pid = fork()) < 0) {
+        perror("fork");
+        exit(1);
+    } else if (pid == 0) {
+        if (chdir(mount_point) < 0) {
+            perror("chdir");
+            exit(1);
         }
 
-        if ((pids[i] = fork()) < 0) {
-            perror("fork");
-            goto clean_transform;
-        } else if (pids[i] == 0) {
-            if (chdir(mount_point) < 0) {
-                perror("chdir");
-                exit(1);
-            }
+        if (dup2(in, STDIN_FILENO) < 0) {
+            perror("dup2");
+            exit(1);
+        }
+        close(in);
 
-			int fd;
+        if (dup2(out, STDOUT_FILENO) < 0) {
+            perror("dup2");
+            exit(1);
+        }
+        close(out);
 
-			if ((fd = memfd_create(name_of_chunk(flt), 0)) < 0) {
-				perror("memfd_create");
-				exit(1);
-			}
+        int fd;
 
-			@<write content of "flt" to "fd"@>
-
-            if (i == 0) {
-                int txt_fd;
-                int n, wtn = 0;
-                if ((txt_fd = memfd_create("temp", 0)) < 0) {
-                    perror("memfd_create");
-                    goto clean_transform;
-                }
-                while ((n = write(txt_fd, raw_string(txt) + wtn, str_length(txt) - wtn)) > 0) {
-                    wtn += n;
-                }
-				lseek(txt_fd, 0, SEEK_SET);
-                if (dup2(txt_fd, STDIN_FILENO) < 0) {
-                    perror("dup2");
-                    goto clean_transform;
-                }
-                close(txt_fd);
-            } else {
-                if (dup2(pipes[i-1][0], STDIN_FILENO) < 0) {
-                    perror("dup2");
-                    goto clean_transform;
-                }
-            }
-
-            if (dup2(pipes[i][1], STDOUT_FILENO) < 0) {
-                perror("dup2");
-                goto clean_transform;
-            }
-
-            for (int j = 0; j <= i; ++j) {
-                close(pipes[j][0]);
-                close(pipes[j][1]);
-            }
-
-            @<execute "fd" under proper conditions@>
+        if ((fd = memfd_create(name_of_chunk(flt), 0)) < 0) {
+            perror("memfd_create");
+            exit(1);
         }
 
-        ++i;
+        @<write content of "flt" to "fd"@>
+
+        @<execute "fd" under proper conditions@>
     }
-    free_list(&flts);
-
-    for (i = 0; i < len-1; ++i) {
-        close(pipes[i][0]);
-        close(pipes[i][1]);
-    }
-    close(pipes[len-1][1]);
-
-    @<read from final pipe to "txt"@>
-
-    close(pipes[len-1][0]);
-
-    FREE(pipes);
-    FREE(pids);
-
-    return;
-
-clean_transform:
-    exit(1);
+    return pid;
 }
 @
 
@@ -999,7 +935,81 @@ do {
 } while (0);
 @
 
-@<read from final pipe to "txt"@=
+@<functions@=
+void
+transform(Str txt, List flts)
+{
+    if (flts == empty_list) {
+        return;
+    }
+
+    flts = copy_list(flts);
+    reverse(&flts);
+
+    int len = length(flts);
+
+    int in, out;
+
+    if ((in = memfd_create("file1", 0)) < 0) {
+        perror("memfd_create");
+        exit(1);
+    }
+    do {
+        int n, wtn = 0;
+        while ((n = write(in, raw_string(txt) + wtn, str_length(txt) - wtn)) > 0) {
+            wtn += n;
+        }
+        lseek(in, 0, SEEK_SET);
+    } while (0);
+
+    if ((out = memfd_create("file2", 0)) < 0) {
+        perror("memfd_create");
+        exit(1);
+    }
+
+    Chunk flt;
+    FOREACH (flt, flts) {
+        pid_t pid;
+        int st;
+        lseek(in, 0, SEEK_SET);
+        lseek(out, 0, SEEK_SET);
+        pid = run_filter(flt, in, out);
+
+        do {
+            int t;
+
+            t = in;
+            in = out;
+            out = t;
+        } while (0);
+        waitpid(pid, &st, 0);
+        if (WIFEXITED(st)) {
+            if (WEXITSTATUS(st) != 0) {
+                fprintf(stderr,
+                    "filter @@<%s@@> failed, error code: %d\n",
+                    name_of_chunk(flt),
+                    WEXITSTATUS(st)
+                );
+                exit(1);
+            }
+        } else {
+            fprintf(stderr,
+                "filter @@<%s@@> failed, unknown reason",
+                name_of_chunk(flt)
+            );
+            exit(1);
+        }
+    }
+    free_list(&flts);
+
+    lseek(in, 0, SEEK_SET);
+    @<read from "in" to "txt"@>
+
+    return;
+}
+@
+
+@<read from "in" to "txt"@=
 do {
     int n, rd;
     char buf[1000];
@@ -1007,7 +1017,7 @@ do {
     rd = 0;
     
     str_clean(txt);
-    while ((n = read(pipes[len-1][0], buf, 999)) > 0) {
+    while ((n = read(in, buf, 999)) > 0) {
         buf[n] = '\0';
         str_extend(txt, buf);
     }
@@ -2141,7 +2151,6 @@ case 'm':
 
 @<command line options for litar@=
 ["Print the content of CHUNK in ARCHIVE.", "p", "CHUNK"],
-["Execute an operation in CHUNK under ARCHIVE.", "x", "CHUNK"],
 @
 
 @<global variables@=
@@ -2167,6 +2176,40 @@ if (to_print_specific_chunk) {
     }
     Str cc;
     cc = content_of_chunk(chunk_of_name(name_of_chunk_to_print));
+    puts(raw_string(cc));
+    free_str(&cc);
+
+    to_continue = false;
+    break;
+}
+@
+
+@<command line options for litar@=
+["Execute an operation in CHUNK under ARCHIVE.", "x", "CHUNK"],
+@
+
+@<flags@=
+bool to_execute_specific_chunk;
+@
+
+@<global variables@=
+char *name_of_chunk_to_execute;
+@
+
+@<cases for command line option@=
+case 'x':
+    to_execute_specific_chunk = true;
+    name_of_chunk_to_execute = optarg;
+    break;
+@
+
+@<operations after mounting file system@=
+if (to_execute_specific_chunk) {
+    if (!chunk_of_name_exist(name_of_chunk_to_execute)) {
+        fprintf(stderr, "Unknown chunk: %s\n", name_of_chunk_to_print);
+        exit(1);
+    }
+    Str cc;
     puts(raw_string(cc));
     free_str(&cc);
 
@@ -2316,6 +2359,7 @@ int main(int argc, char *argv[])
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <limits.h>
 #include <errno.h>
 #include <signal.h>

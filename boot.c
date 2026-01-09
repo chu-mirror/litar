@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <limits.h>
 #include <errno.h>
 #include <signal.h>
@@ -135,6 +136,8 @@ bool to_print_version_info;
 
 bool to_print_specific_chunk;
 
+bool to_execute_specific_chunk;
+
 char *archive_name = NULL;
 
 HashTable file_to_mmap_addr = NULL;
@@ -176,6 +179,8 @@ pid_t fuse_pid;
 char version[] = "dev";
 
 char *name_of_chunk_to_print;
+
+char *name_of_chunk_to_execute;
 
 void
 print_usage()
@@ -530,6 +535,63 @@ expanded_content_of_block(Block blk)
     return ect;
 }
 
+pid_t
+run_filter(Chunk flt, int in, int out)
+{
+    pid_t pid;
+    if ((pid = fork()) < 0) {
+        perror("fork");
+        exit(1);
+    } else if (pid == 0) {
+        if (chdir(mount_point) < 0) {
+            perror("chdir");
+            exit(1);
+        }
+
+        if (dup2(in, STDIN_FILENO) < 0) {
+            perror("dup2");
+            exit(1);
+        }
+        close(in);
+
+        if (dup2(out, STDOUT_FILENO) < 0) {
+            perror("dup2");
+            exit(1);
+        }
+        close(out);
+
+        int fd;
+
+        if ((fd = memfd_create(name_of_chunk(flt), 0)) < 0) {
+            perror("memfd_create");
+            exit(1);
+        }
+
+        do {
+            Str ct;
+            int n, wtn = 0;
+            ct = content_of_chunk(flt);
+
+            while ((n = write(fd, raw_string(ct) + wtn, str_length(ct) - wtn))
+                   > 0) {
+                wtn += n;
+            }
+
+            free_str(&ct);
+        } while (0);
+
+        do {
+            char *name = strdup(name_of_chunk(flt));
+            char *argv[2] = {name, NULL};
+            if (fexecve(fd, argv, environ) < 0) {
+                perror("fexecve");
+                exit(1);
+            }
+        } while (0);
+    }
+    return pid;
+}
+
 void
 transform(Str txt, List flts)
 {
@@ -542,108 +604,64 @@ transform(Str txt, List flts)
 
     int len = length(flts);
 
-    int(*pipes)[2] = NULL;
-    CALLOC(pipes, len);
+    int in, out;
 
-    pid_t *pids = NULL;
-    CALLOC(pids, len);
+    if ((in = memfd_create("file1", 0)) < 0) {
+        perror("memfd_create");
+        exit(1);
+    }
+    do {
+        int n, wtn = 0;
+        while ((n = write(in, raw_string(txt) + wtn, str_length(txt) - wtn))
+               > 0) {
+            wtn += n;
+        }
+        lseek(in, 0, SEEK_SET);
+    } while (0);
 
-    int i = 0;
+    if ((out = memfd_create("file2", 0)) < 0) {
+        perror("memfd_create");
+        exit(1);
+    }
+
     Chunk flt;
     FOREACH (flt, flts) {
-        if (pipe(pipes[i]) < 0) {
-            perror("pipe");
-            goto clean_transform;
-        }
+        pid_t pid;
+        int st;
+        lseek(in, 0, SEEK_SET);
+        lseek(out, 0, SEEK_SET);
+        pid = run_filter(flt, in, out);
 
-        if ((pids[i] = fork()) < 0) {
-            perror("fork");
-            goto clean_transform;
-        } else if (pids[i] == 0) {
-            if (chdir(mount_point) < 0) {
-                perror("chdir");
+        do {
+            int t;
+
+            t = in;
+            in = out;
+            out = t;
+        } while (0);
+        waitpid(pid, &st, 0);
+        if (WIFEXITED(st)) {
+            if (WEXITSTATUS(st) != 0) {
+                fprintf(
+                    stderr,
+                    "filter @<%@> failed, error code: %d\n",
+                    name_of_chunk(flt),
+                    WEXITSTATUS(st)
+                );
                 exit(1);
             }
-
-            int fd;
-
-            if ((fd = memfd_create(name_of_chunk(flt), 0)) < 0) {
-                perror("memfd_create");
-                exit(1);
-            }
-
-            do {
-                Str ct;
-                int n, wtn = 0;
-                ct = content_of_chunk(flt);
-
-                while (
-                    (n = write(fd, raw_string(ct) + wtn, str_length(ct) - wtn))
-                    > 0
-                ) {
-                    wtn += n;
-                }
-
-                free_str(&ct);
-            } while (0);
-
-            if (i == 0) {
-                int txt_fd;
-                int n, wtn = 0;
-                if ((txt_fd = memfd_create("temp", 0)) < 0) {
-                    perror("memfd_create");
-                    goto clean_transform;
-                }
-                while (
-                    (n = write(
-                         txt_fd, raw_string(txt) + wtn, str_length(txt) - wtn
-                     ))
-                    > 0
-                ) {
-                    wtn += n;
-                }
-                lseek(txt_fd, 0, SEEK_SET);
-                if (dup2(txt_fd, STDIN_FILENO) < 0) {
-                    perror("dup2");
-                    goto clean_transform;
-                }
-                close(txt_fd);
-            } else {
-                if (dup2(pipes[i - 1][0], STDIN_FILENO) < 0) {
-                    perror("dup2");
-                    goto clean_transform;
-                }
-            }
-
-            if (dup2(pipes[i][1], STDOUT_FILENO) < 0) {
-                perror("dup2");
-                goto clean_transform;
-            }
-
-            for (int j = 0; j <= i; ++j) {
-                close(pipes[j][0]);
-                close(pipes[j][1]);
-            }
-
-            do {
-                char *name = strdup(name_of_chunk(flt));
-                char *argv[2] = {name, NULL};
-                if (fexecve(fd, argv, environ) < 0) {
-                    perror("fexecve");
-                    exit(1);
-                }
-            } while (0);
+        } else {
+            fprintf(
+                stderr,
+                "filter@<%@> failed, unknown reason",
+                name_of_chunk(flt)
+            );
+            exit(1);
         }
-
-        ++i;
     }
     free_list(&flts);
 
-    for (i = 0; i < len - 1; ++i) {
-        close(pipes[i][0]);
-        close(pipes[i][1]);
-    }
-    close(pipes[len - 1][1]);
+    lseek(in, 0, SEEK_SET);
 
     do {
         int n, rd;
@@ -652,22 +670,14 @@ transform(Str txt, List flts)
         rd = 0;
 
         str_clean(txt);
-        while ((n = read(pipes[len - 1][0], buf, 999)) > 0) {
+        while ((n = read(in, buf, 999)) > 0) {
             buf[n] = '\0';
             str_extend(txt, buf);
         }
 
     } while (0);
 
-    close(pipes[len - 1][0]);
-
-    FREE(pipes);
-    FREE(pids);
-
     return;
-
-clean_transform:
-    exit(1);
 }
 
 static Token
@@ -788,12 +798,13 @@ state_parse_comment_handler(State s, Signal sig)
 
         if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
             List *txts_r;
+            TextRef txt;
             InputFrame ipt;
 
             RENAME(car(input_frames), ipt);
             RENAME(state_local(s), txts_r);
 
-            TextRef txt = NULL;
+            txt = NULL;
             NEW0(txt);
             txt->file = ipt->file;
             txt->start = ipt->pp + 1;
@@ -996,8 +1007,12 @@ state_parse_block_contents_text_handler(State s, Signal sig)
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             TextRef txt;
+            InputFrame ipt;
+
+            RENAME(car(input_frames), ipt);
             RENAME(*state_local(s), txt);
-            ++txt->end;
+
+            txt->end = ipt->cp;
             return s;
         }
 
@@ -1534,6 +1549,11 @@ main(int argc, char *argv[])
                 name_of_chunk_to_print = optarg;
                 break;
 
+            case 'x':
+                to_execute_specific_chunk = true;
+                name_of_chunk_to_execute = optarg;
+                break;
+
             default:
                 print_usage();
                 exit(1);
@@ -1562,7 +1582,7 @@ main(int argc, char *argv[])
 
             if (to_print_version_info) {
 
-                printf("Version %s, built at 2026-01-07T15:52+08:00", version);
+                printf("Version %s, built at 2026-01-09T16:06+08:00", version);
 
                 to_continue = false;
                 break;
@@ -1756,176 +1776,182 @@ main(int argc, char *argv[])
             break;
         }
 
-        RESERVE(do {
-            CALLOC(
-                archive_data, strlen(litar_data) + strlen(archive_name) + 2
-            );
-            strcat(archive_data, litar_data);
-            strcat(archive_data, "/");
-            strcat(archive_data, archive_name);
+        KEEP(RESERVE(do {
+                 CALLOC(
+                     archive_data,
+                     strlen(litar_data) + strlen(archive_name) + 2
+                 );
+                 strcat(archive_data, litar_data);
+                 strcat(archive_data, "/");
+                 strcat(archive_data, archive_name);
 
-            ensure_directory(archive_data);
+                 ensure_directory(archive_data);
 
-            CALLOC(
-                fuse_mount_point, strlen(archive_data) + strlen("/fuse") + 1
-            );
-            strcat(fuse_mount_point, archive_data);
-            strcat(fuse_mount_point, "/fuse");
+                 CALLOC(
+                     fuse_mount_point,
+                     strlen(archive_data) + strlen("/fuse") + 1
+                 );
+                 strcat(fuse_mount_point, archive_data);
+                 strcat(fuse_mount_point, "/fuse");
 
-            ensure_directory(fuse_mount_point);
+                 ensure_directory(fuse_mount_point);
 
-            CALLOC(work_dir, strlen(archive_data) + strlen("/work") + 1);
-            strcat(work_dir, archive_data);
-            strcat(work_dir, "/work");
+                 CALLOC(work_dir, strlen(archive_data) + strlen("/work") + 1);
+                 strcat(work_dir, archive_data);
+                 strcat(work_dir, "/work");
 
-            ensure_directory(work_dir);
-            rmdir(work_dir); /* make sure work_dir is empty */
-            mkdir(work_dir, 0777);
+                 ensure_directory(work_dir);
+                 rmdir(work_dir); /* make sure work_dir is empty */
+                 mkdir(work_dir, 0777);
 
-            if (mount_point == NULL) {
-                CALLOC(
-                    mount_point, strlen(archive_data) + strlen("/overlay") + 2
-                );
-                strcat(mount_point, archive_data);
-                strcat(mount_point, "/overlay");
-            }
-            ensure_directory(mount_point);
+                 if (mount_point == NULL) {
+                     CALLOC(
+                         mount_point,
+                         strlen(archive_data) + strlen("/overlay") + 2
+                     );
+                     strcat(mount_point, archive_data);
+                     strcat(mount_point, "/overlay");
+                 }
+                 ensure_directory(mount_point);
 
-            if (upper_layer == NULL) {
-                CALLOC(
-                    upper_layer, strlen(archive_data) + strlen("/upper") + 1
-                );
-                strcat(upper_layer, archive_data);
-                strcat(upper_layer, "/upper");
-            }
-            ensure_directory(upper_layer);
-        } while (0));
+                 if (upper_layer == NULL) {
+                     CALLOC(
+                         upper_layer,
+                         strlen(archive_data) + strlen("/upper") + 1
+                     );
+                     strcat(upper_layer, archive_data);
+                     strcat(upper_layer, "/upper");
+                 }
+                 ensure_directory(upper_layer);
+             } while (0));
 
-        do {
-            if (pipe(pipe_fuse_to_main) < 0) {
-                perror("pipe");
-                exit(1);
-            }
+             do {
+                 if (pipe(pipe_fuse_to_main) < 0) {
+                     perror("pipe");
+                     exit(1);
+                 }
 
-            uid_t ouid = getuid();
-            uid_t ogid = getgid();
+                 uid_t ouid = getuid();
+                 uid_t ogid = getgid();
 
-            if (unshare(CLONE_NEWUSER | CLONE_NEWNS) == -1) {
-                perror("unshare");
-                exit(1);
-            }
+                 if (unshare(CLONE_NEWUSER | CLONE_NEWNS) == -1) {
+                     perror("unshare");
+                     exit(1);
+                 }
 
-            FILE *setgroups = fopen("/proc/self/setgroups", "w");
-            if (setgroups != NULL) {
-                fprintf(setgroups, "deny");
-            }
-            fclose(setgroups);
+                 FILE *setgroups = fopen("/proc/self/setgroups", "w");
+                 if (setgroups != NULL) {
+                     fprintf(setgroups, "deny");
+                 }
+                 fclose(setgroups);
 
-            FILE *uid_map = fopen("/proc/self/uid_map", "w");
-            if (uid_map == NULL) {
-                fprintf(stderr, "failed to open /proc/self/uid_map\n");
-                exit(1);
-            }
-            fprintf(uid_map, "0 %u 1\n", ouid);
-            fclose(uid_map);
+                 FILE *uid_map = fopen("/proc/self/uid_map", "w");
+                 if (uid_map == NULL) {
+                     fprintf(stderr, "failed to open /proc/self/uid_map\n");
+                     exit(1);
+                 }
+                 fprintf(uid_map, "0 %u 1\n", ouid);
+                 fclose(uid_map);
 
-            FILE *gid_map = fopen("/proc/self/gid_map", "w");
-            if (gid_map == NULL) {
-                fprintf(stderr, "failed to open /proc/self/gid_map\n");
-                exit(1);
-            }
-            fprintf(gid_map, "0 %u 1\n", ogid);
-            fclose(gid_map);
+                 FILE *gid_map = fopen("/proc/self/gid_map", "w");
+                 if (gid_map == NULL) {
+                     fprintf(stderr, "failed to open /proc/self/gid_map\n");
+                     exit(1);
+                 }
+                 fprintf(gid_map, "0 %u 1\n", ogid);
+                 fclose(gid_map);
 
-            if ((fuse_pid = fork()) < 0) {
-                perror("fork");
-                exit(1);
-            } else if (fuse_pid == 0) {
-                close(pipe_fuse_to_main[0]);
+                 if ((fuse_pid = fork()) < 0) {
+                     perror("fork");
+                     exit(1);
+                 } else if (fuse_pid == 0) {
+                     close(pipe_fuse_to_main[0]);
 
-                do {
-                    char msg = 0;
-                    struct fuse_args args = {0, NULL, 0};
-                    struct fuse *fuse_r;
+                     do {
+                         char msg = 0;
+                         struct fuse_args args = {0, NULL, 0};
+                         struct fuse *fuse_r;
 
-                    fuse_opt_add_arg(&args, "debug");
+                         fuse_opt_add_arg(&args, "debug");
 
-                    fuse_r = fuse_new(
-                        &args, &litar_fuse_oper, sizeof(litar_fuse_oper), NULL
-                    );
-                    if (fuse_r == NULL) {
-                        fprintf(stderr, "Can not create fuse\n");
-                        msg = 1;
-                        write(pipe_fuse_to_main[1], &msg, 1);
-                        goto out1;
-                    }
+                         fuse_r = fuse_new(
+                             &args,
+                             &litar_fuse_oper,
+                             sizeof(litar_fuse_oper),
+                             NULL
+                         );
+                         if (fuse_r == NULL) {
+                             fprintf(stderr, "Can not create fuse\n");
+                             msg = 1;
+                             write(pipe_fuse_to_main[1], &msg, 1);
+                             goto out1;
+                         }
 
-                    if (fuse_mount(fuse_r, fuse_mount_point) != 0) {
-                        fprintf(stderr, "Can not mount fuse\n");
-                        msg = 1;
-                        write(pipe_fuse_to_main[1], &msg, 1);
-                        goto out2;
-                    }
+                         if (fuse_mount(fuse_r, fuse_mount_point) != 0) {
+                             fprintf(stderr, "Can not mount fuse\n");
+                             msg = 1;
+                             write(pipe_fuse_to_main[1], &msg, 1);
+                             goto out2;
+                         }
 
-                    write(pipe_fuse_to_main[1], &msg, 1);
+                         write(pipe_fuse_to_main[1], &msg, 1);
 
-                    struct fuse_session *se = fuse_get_session(fuse_r);
-                    if (fuse_set_signal_handlers(se) != 0) {
-                        fprintf(stderr, "Can not register handlers\n");
-                        goto out3;
-                    }
+                         struct fuse_session *se = fuse_get_session(fuse_r);
+                         if (fuse_set_signal_handlers(se) != 0) {
+                             fprintf(stderr, "Can not register handlers\n");
+                             goto out3;
+                         }
 
-                    fuse_loop(fuse_r);
-                    fuse_remove_signal_handlers(se);
+                         fuse_loop(fuse_r);
+                         fuse_remove_signal_handlers(se);
 
-                out3:
-                    fuse_unmount(fuse_r);
+                     out3:
+                         fuse_unmount(fuse_r);
 
-                out2:
-                    fuse_destroy(fuse_r);
+                     out2:
+                         fuse_destroy(fuse_r);
 
-                out1:
-                } while (0);
+                     out1:
+                     } while (0);
 
-                exit(0);
-            }
-            close(pipe_fuse_to_main[1]);
+                     exit(0);
+                 }
+                 close(pipe_fuse_to_main[1]);
 
-            char msg = 1;
+                 char msg = 1;
 
-            read(pipe_fuse_to_main[0], &msg, 1);
-            if (msg != 0) {
-                fprintf(stderr, "Error when mounting fuse\n");
-                exit(1);
-            }
+                 read(pipe_fuse_to_main[0], &msg, 1);
+                 if (msg != 0) {
+                     fprintf(stderr, "Error when mounting fuse\n");
+                     exit(1);
+                 }
 
-            do {
-                Str overlay_opt = NULL;
+                 do {
+                     Str overlay_opt = NULL;
 
-                new_str(&overlay_opt);
-                str_extend(overlay_opt, ",lowerdir=");
-                str_extend(overlay_opt, fuse_mount_point);
-                str_extend(overlay_opt, ",upperdir=");
-                str_extend(overlay_opt, upper_layer);
-                str_extend(overlay_opt, ",workdir=");
-                str_extend(overlay_opt, work_dir);
+                     new_str(&overlay_opt);
+                     str_extend(overlay_opt, ",lowerdir=");
+                     str_extend(overlay_opt, fuse_mount_point);
+                     str_extend(overlay_opt, ",upperdir=");
+                     str_extend(overlay_opt, upper_layer);
+                     str_extend(overlay_opt, ",workdir=");
+                     str_extend(overlay_opt, work_dir);
 
-                if (mount(
-                        "overlay",
-                        mount_point,
-                        "overlay",
-                        0,
-                        raw_string(overlay_opt)
-                    )
-                    < 0) {
-                    perror("mount");
-                    exit(1);
-                }
+                     if (mount(
+                             "overlay",
+                             mount_point,
+                             "overlay",
+                             0,
+                             raw_string(overlay_opt)
+                         )
+                         < 0) {
+                         perror("mount");
+                         exit(1);
+                     }
 
-                free_str(&overlay_opt);
-            } while (0);
-
-        } while (0);
+                     free_str(&overlay_opt);
+                 } while (0);
+             } while (0););
 
         KEEP(do {
             if (to_print_specific_chunk) {
@@ -1937,6 +1963,21 @@ main(int argc, char *argv[])
                 }
                 Str cc;
                 cc = content_of_chunk(chunk_of_name(name_of_chunk_to_print));
+                puts(raw_string(cc));
+                free_str(&cc);
+
+                to_continue = false;
+                break;
+            }
+
+            if (to_execute_specific_chunk) {
+                if (!chunk_of_name_exist(name_of_chunk_to_execute)) {
+                    fprintf(
+                        stderr, "Unknown chunk: %s\n", name_of_chunk_to_print
+                    );
+                    exit(1);
+                }
+                Str cc;
                 puts(raw_string(cc));
                 free_str(&cc);
 

@@ -644,7 +644,7 @@ transform(Str txt, List flts)
             if (WEXITSTATUS(st) != 0) {
                 fprintf(
                     stderr,
-                    "filter @<%@> failed, error code: %d\n",
+                    "filter @<%s@> failed, error code: %d\n",
                     name_of_chunk(flt),
                     WEXITSTATUS(st)
                 );
@@ -653,7 +653,7 @@ transform(Str txt, List flts)
         } else {
             fprintf(
                 stderr,
-                "filter@<%@> failed, unknown reason",
+                "filter @<%s@> failed, unknown reason",
                 name_of_chunk(flt)
             );
             exit(1);
@@ -1257,7 +1257,7 @@ state_parse_block_filters_out(State s, Signal sig)
     chk = chunk_of_name(raw_string(txt));
 
     struct state_parse_block_local *lc_r;
-    RENAME(state_local(state_parse_block), lc_r);
+    RENAME(*state_local(state_parse_block), lc_r);
     block_is_transformed_by(lc_r->block, chk);
 
     free_str((Str *)state_local(s));
@@ -1523,7 +1523,7 @@ main(int argc, char *argv[])
         ensure_directory(litar_data);
     } while (0));
 
-    do {
+    KEEP(do {
         int opt;
 
         while ((opt = getopt(argc, argv, "hvu:m:p:x:")) != -1) {
@@ -1568,7 +1568,7 @@ main(int argc, char *argv[])
                 exit(1);
             }
         }
-    } while (0);
+    } while (0););
 
     do {
         bool to_continue = true;
@@ -1582,7 +1582,7 @@ main(int argc, char *argv[])
 
             if (to_print_version_info) {
 
-                printf("Version %s, built at 2026-01-09T16:06+08:00", version);
+                printf("Version %s, built at 2026-01-14T13:10+08:00", version);
 
                 to_continue = false;
                 break;

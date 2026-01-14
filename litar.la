@@ -262,7 +262,7 @@ It parses options and arguments, executes, then exits.
 @
 
 @<main body of the c program@=
-@<parse command line arguments to set flags and global variables@>
+KEEP(@<parse command line arguments to set flags and global variables@>);
 @<perform operations according to flags@>
 @<close child process and remove directories@>
 @
@@ -1678,7 +1678,7 @@ static State state_parse_block_filters_out(State s, Signal sig)
     chk = chunk_of_name(raw_string(txt));
 
     struct state_parse_block_local *lc_r;
-    RENAME(state_local(state_parse_block), lc_r);
+    RENAME(*state_local(state_parse_block), lc_r);
     block_is_transformed_by(lc_r->block, chk);
 
     free_str((Str *)state_local(s));

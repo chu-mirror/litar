@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
@@ -185,9 +186,8 @@ char *name_of_chunk_to_execute;
 void
 print_usage()
 {
-    printf(
-        "Usage: %s\n", "litar [-h|-v|-u DIR|-m DIR|-p CHUNK|-x CHUNK] ARCHIVE"
-    );
+    printf("Usage:\tlitar [--help|--version] \n\tlitar [-p CHUNK|-x CHUNK] "
+           "ARCHIVE\n");
 }
 
 Chunk
@@ -532,6 +532,7 @@ expanded_content_of_block(Block blk)
     }
 
     free_list(&bcs);
+
     return ect;
 }
 
@@ -702,15 +703,21 @@ next_token(InputFrame ipt)
 
     n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
     if (c == '\100') {
-        tkn->type = TOKEN_CONTROL_CHARACTER;
         n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
-        if (c == EOF || c == '\n' || c == '\t' || c == ' ') {
-            tkn->value = ' ';
-        } else {
-            tkn->value = c;
-        }
-        if (c == '\n') {
+        if (isalpha(c)) {
             n -= ungetc(c, ipt->in) == EOF ? 0 : 1;
+            tkn->type = TOKEN_NORMAL_CHARACTER;
+            tkn->value = '\100';
+        } else {
+            tkn->type = TOKEN_CONTROL_CHARACTER;
+            if (c == EOF || c == '\n' || c == '\t' || c == ' ') {
+                tkn->value = ' ';
+            } else {
+                tkn->value = c;
+            }
+            if (c == '\n') {
+                n -= ungetc(c, ipt->in) == EOF ? 0 : 1;
+            }
         }
     } else if (c == '\n') {
         tkn->type = TOKEN_NEWLINE;
@@ -1524,17 +1531,32 @@ main(int argc, char *argv[])
     } while (0));
 
     KEEP(do {
-        int opt;
+        int opt, option_index;
+        static struct option long_options[] = {
+            {   "help",       no_argument, NULL,   0},
+            {"version",       no_argument, NULL,   0},
+            {  "print", required_argument, NULL, 'p'},
+            {"execute", required_argument, NULL, 'x'},
+        };
 
-        while ((opt = getopt(argc, argv, "hvu:m:p:x:")) != -1) {
+        while (
+            (opt =
+                 getopt_long(argc, argv, "p:x:", long_options, &option_index))
+            != -1
+        ) {
             switch (opt) {
+            case 0:
 
-            case 'h':
-                to_print_help = true;
-                break;
+                if (strcmp(long_options[option_index].name, "help") == 0) {
+                    to_print_help = true;
+                    break;
+                }
 
-            case 'v':
-                to_print_version_info = true;
+                if (strcmp(long_options[option_index].name, "version") == 0) {
+                    to_print_version_info = true;
+                    break;
+                }
+
                 break;
 
             case 'u':
@@ -1582,7 +1604,9 @@ main(int argc, char *argv[])
 
             if (to_print_version_info) {
 
-                printf("Version %s, built at 2026-01-14T13:10+08:00", version);
+                printf(
+                    "Version %s, built at 2026-01-16T14:40+08:00\n", version
+                );
 
                 to_continue = false;
                 break;
@@ -1995,7 +2019,9 @@ main(int argc, char *argv[])
         } while (0););
     } while (0);
 
-    kill(fuse_pid, SIGTERM);
+    if (fuse_pid != 0) {
+        kill(fuse_pid, SIGTERM);
+    }
 
     assert_memory_safety();
     return 0;

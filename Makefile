@@ -17,6 +17,9 @@ litar.c: litar.la boot
 	./boot -p "$@" litar.la > $@
 	clang-format-19 -style=file -i $@
 
+litar.1: litar
+	./litar -p "manpage of litar" litar.la > $@
+
 boot: boot.c
 	$(CC) $(CFLAGS) -o $@ $< `./light/finddeff.py $< ./light/include` $(LIBS)
 

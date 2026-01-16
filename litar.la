@@ -224,13 +224,17 @@ of file name, and inserts the content of that file at the place of @@i.
 
 @<invocation syntax@=
 {
-    "name": "litar",
-    "options": [
-        @<command line options for litar@|remove ending comma@>
+    name => 'litar',
+    usages => [
+        {
+            options => [@<command line options for "litar"@>],
+            arguments => [],
+        },
+        {
+            options => [@<command line options for "litar ARCHIVE"@>],
+            arguments => ['ARCHIVE'],
+        },
     ],
-    "arguments": [
-        "ARCHIVE"
-    ]
 }
 @
 
@@ -239,13 +243,13 @@ of file name, and inserts the content of that file at the place of @@i.
 .SH NAME
 litar \- manage all text in one file
 .SH SYNOPSIS
-@<invocation syntax@|synopsis for manpage@>
+@<manpage synopsis@>
 .SH DESCRIPTION
 .B litar
 deal with a litar archive. It provides all necessary functionalities
 expected from the using of a litar archive.
 .SH OPTIONS
-@<invocation syntax@|options for manpage@>
+@<manpage options@>
 @
 
 # Main body
@@ -271,7 +275,7 @@ KEEP(@<parse command line arguments to set flags and global variables@>);
 void
 print_usage()
 {
-    printf("Usage: %s\n", @<invocation syntax@|usage of invocation syntax@>);
+    printf("@<command line usage@>");
 }
 @
 
@@ -281,18 +285,25 @@ char *archive_name = NULL;
 
 @<parse command line arguments to set flags and global variables@=
 do {
-    int opt;
+    int opt, option_index;
+    static struct option long_options[] = {
+        @<long options@>
+    };
 
     while (
         (
-            opt = getopt(
-                argc,
-                argv,
-                @<invocation syntax@|getopt string for invocation syntax@>
+            opt = getopt_long(
+                argc, argv,
+                "@<getopt string@>",
+                long_options,
+                &option_index
             )
         ) != -1
     ) {
         switch (opt) {
+        case 0:
+            @<cases for long option@>
+            break;
         @<cases for command line option@>
         default:
             print_usage();
@@ -854,6 +865,7 @@ Str expanded_content_of_block(Block blk)
     }
     
     free_list(&bcs);
+
     return ect;
 }
 @
@@ -1078,15 +1090,21 @@ static Token next_token(InputFrame ipt)
 
     n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
     if (c == '\100') {
-        tkn->type = TOKEN_CONTROL_CHARACTER;
         n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
-        if (c == EOF || c == '\n' || c == '\t' || c == ' ') {
-            tkn->value = ' ';
-        } else {
-            tkn->value = c;
-        }
-        if (c == '\n') {
+        if (isalpha(c)) {
             n -= ungetc(c, ipt->in) == EOF ? 0 : 1;
+            tkn->type = TOKEN_NORMAL_CHARACTER;
+            tkn->value = '\100';
+        } else {
+            tkn->type = TOKEN_CONTROL_CHARACTER;
+            if (c == EOF || c == '\n' || c == '\t' || c == ' ') {
+                tkn->value = ' ';
+            } else {
+                tkn->value = c;
+            }
+            if (c == '\n') {
+                n -= ungetc(c, ipt->in) == EOF ? 0 : 1;
+            }
         }
     } else if (c == '\n') {
         tkn->type = TOKEN_NEWLINE;
@@ -1111,15 +1129,20 @@ static Token next_token(InputFrame ipt)
 
 @<model of states@=
 [
-    @<states of parsing@|remove ending comma@>
+    @<states of parsing@>
 ]
 @
 
 litar assumes that when starting parsing it is reading comment.
 
 @<states of parsing@=
-["parse", null],
-["parse_comment", "parse"],
+{
+    name => "parse",
+},
+{
+    name => "parse_comment",
+    parent => "parse",
+},
 @
 
 @<functions@=
@@ -1150,7 +1173,7 @@ echo "} while (0);"
 
 @<global variables@=
 List input_frames;
-@<model of states@|declarations of states@>
+@<declarations of states@>
 @
 
 @<parse input@=
@@ -1164,7 +1187,7 @@ do {
         push(ipt, &input_frames);
     } while (0);
 
-    @<model of states@|initialization of states@>
+    @<initialization of states@>
 
     while (!is_empty_list(input_frames)) {
         Token tkn;
@@ -1191,7 +1214,7 @@ do {
         FREE(tkn);
     }
 
-    @<model of states@|cleaning of states@>
+    @<cleaning of states@>
 } while (0);
 @
 
@@ -1273,10 +1296,22 @@ A block has three basic components, the name of chunk it extends,
 the contents and the filters.
 
 @<states of parsing@=
-["parse_block", "parse"],
-["parse_block_chunk_name", "parse_block"],
-["parse_block_contents", "parse_block"],
-["parse_block_filters", "parse_block"],
+{
+    name => "parse_block",
+    parent => "parse",
+},
+{
+    name => "parse_block_chunk_name",
+    parent => "parse_block",
+},
+{
+    name => "parse_block_contents",
+    parent => "parse_block",
+},
+{
+    name => "parse_block_filters",
+    parent => "parse_block",
+},
 @
 
 The chunk a block extends is one of the following types:
@@ -1415,8 +1450,14 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '=') {
 @
 
 @<states of parsing@=
-["parse_block_contents_text", "parse_block_contents"],
-["parse_block_contents_reference", "parse_block_contents"],
+{
+    name => "parse_block_contents_text",
+    parent => "parse_block_contents",
+},
+{
+    name => "parse_block_contents_reference",
+    parent => "parse_block_contents",
+},
 @
 
 @<functions@=
@@ -1521,8 +1562,14 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
 @
 
 @<states of parsing@=
-["parse_block_contents_reference_name", "parse_block_contents_reference"],
-["parse_block_contents_reference_filters", "parse_block_contents_reference"],
+{
+    name => "parse_block_contents_reference_name",
+    parent => "parse_block_contents_reference",
+},
+{
+    name => "parse_block_contents_reference_filters",
+    parent => "parse_block_contents_reference",
+},
 @
 
 @<functions@=
@@ -2083,18 +2130,22 @@ do {
 
 # User Interface
 
-@<command line options for litar@=
-["Show the usage of litar.", "h"],
+@<command line options for "litar"@=
+{
+    long_opt => 'help',
+    description => 'Show the usage of litar',
+},
 @
 
 @<flags@=
 bool to_print_help;
 @
 
-@<cases for command line option@=
-case 'h':
+@<cases for long option@=
+if (strcmp(long_options[option_index].name, "help") == 0) {
     to_print_help = true;
     break;
+}
 @
 
 @<operations before parsing@=
@@ -2105,18 +2156,22 @@ if (to_print_help) {
 }
 @
 
-@<command line options for litar@=
-["Show the version and build information of litar.", "v"],
+@<command line options for "litar"@=
+{
+    long_opt => 'version',
+    description => 'Print version of current build',
+},
 @
 
 @<flags@=
 bool to_print_version_info;
 @
 
-@<cases for command line option@=
-case 'v':
+@<cases for long option@=
+if (strcmp(long_options[option_index].name, "version") == 0) {
     to_print_version_info = true;
     break;
+}
 @
 
 @<global variables@=
@@ -2132,7 +2187,7 @@ if (to_print_version_info) {
 @
 
 @<print version information@=
-printf("Version %s, built at <build time>", version);
+printf("Version %s, built at <build time>\n", version);
 @
 
 @<command line options for litar@=
@@ -2149,8 +2204,13 @@ case 'm':
     break;
 @
 
-@<command line options for litar@=
-["Print the content of CHUNK in ARCHIVE.", "p", "CHUNK"],
+@<command line options for "litar ARCHIVE"@=
+{
+    long_opt => 'print',
+    opt => 'p',
+    argument => 'CHUNK',
+    description => 'Print the content of CHUNK in ARCHIVE.',
+},
 @
 
 @<global variables@=
@@ -2184,8 +2244,13 @@ if (to_print_specific_chunk) {
 }
 @
 
-@<command line options for litar@=
-["Execute an operation in CHUNK under ARCHIVE.", "x", "CHUNK"],
+@<command line options for "litar ARCHIVE"@=
+{
+    long_opt => 'execute',
+    opt => 'x',
+    argument => 'CHUNK',
+    description => 'Execute a filter CHUNK under ARCHIVE.',
+},
 @
 
 @<flags@=
@@ -2323,7 +2388,9 @@ do {
 # Ending
 
 @<close child process and remove directories@=
-kill(fuse_pid, SIGTERM);
+if (fuse_pid != 0) {
+    kill(fuse_pid, SIGTERM);
+}
 @
 
 # Appendix
@@ -2355,6 +2422,7 @@ int main(int argc, char *argv[])
 #include <stdlib.h>
 #include <ctype.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
@@ -2376,163 +2444,15 @@ int main(int argc, char *argv[])
 #include "state.h"
 @
 
-@<parse invocation syntax@=
-import json
-import sys
-from typing import NamedTuple
+# Basic Script
 
-class Option(NamedTuple):
-    name: str
-    argument: str
-    comment: str
-
-stx = json.load(sys.stdin)
-
-name = stx["name"]
-options = list(map(
-    lambda opt: Option(opt[1], opt[2] if len(opt)==3 else None, opt[0]),
-    stx["options"]
-))
-arguments = stx["arguments"]
-@
-
-@<synopsis for manpage@=#!/usr/bin/python
-@<parse invocation syntax@>
-str = f".B {name}\n"
-
-def opt_to_str(opt):
-    if opt.argument is not None:
-        return f"\\fB\\-{opt[0]}\\fR \\fI{opt[1]}\\fR"
-    else:
-        return f"\\fB\\-{opt[0]}\\fR"
-
-str += "[" + "|".join(map(opt_to_str, options)) + "]"
-for arg in arguments:
-    str += f" \\fI{arg}\\fR"
-print(str)
-@
-
-@<options for manpage@=#!/usr/bin/python
-@<parse invocation syntax@>
-str = ""
-
-def opt_to_str(opt):
-    if opt.argument is None:
-        return f".BR \\-{opt.name}\n"
-    else:
-        return f".BR \\-{opt.name} \" \" \\fI{opt.argument}\\fR\n"
-
-for opt in options:
-    str += ".TP\n"
-    str += opt_to_str(opt)
-    str += opt.comment + "\n"
-
-print(str)
-@
-
-@<usage of invocation syntax@=#!/usr/bin/python
-@<parse invocation syntax@>
-str = "\""
-str += name
-
-def opt_to_str(opt):
-    if opt.argument is not None:
-        return f"-{opt[0]} {opt[1]}"
-    else:
-        return f"-{opt[0]}"
-
-str += " [" + "|".join(map(opt_to_str, options)) + "]"
-
-for arg in arguments:
-    str += " " + arg
-str += "\""
-
-print(str, end="")
-@
-
-@<getopt string for invocation syntax@=#!/usr/bin/python
-@<parse invocation syntax@>
-
-def opt_to_str(opt):
-    if opt.argument is None:
-        return opt.name
-    else:
-        return opt.name + ":"
-
-print("\"" + "".join(map(opt_to_str, options)) + "\"", end="")
-@
-
-@<parse model of states@=
-import json
-import sys
-from typing import NamedTuple
-
-states = {}
-
-class State(NamedTuple):
-    name: str
-    parent: str
-
-def state_to_c_var(st):
-    return f"state_{st.name}"
-
-def state_to_handler(st):
-    return f"{state_to_c_var(st)}_handler"
-
-def state_to_in_func(st):
-    return f"{state_to_c_var(st)}_in"
-
-def state_to_out_func(st):
-    return f"{state_to_c_var(st)}_out"
-
-model = json.load(sys.stdin)
-
-for st in model:
-    states[st[0]] = State(st[0], st[1])
-@
-
-@<declarations of states@=#!/usr/bin/python
-@<parse model of states@>
-
-def state_to_dec(st):
-    return f"State {state_to_c_var(st)};"
-
-str = "\n".join(map(state_to_dec, states.values())) + "\n"
-print(str)
-@
-
-@<initialization of states@=#!/usr/bin/python
-@<parse model of states@>
-
-def state_to_init(st):
-    s = ""
-    s += f"new_state(&{state_to_c_var(st)},"
-    s += f" {state_to_c_var(states[st.parent])}," if st.parent is not None else "root_state,"
-    s += f" STATE_XOR,"
-    s += f" {state_to_handler(st)});\n"
-    s += f"state_register_in_func({state_to_c_var(st)}, {state_to_in_func(st)});\n"
-    s += f"state_register_out_func({state_to_c_var(st)}, {state_to_out_func(st)});\n"
-    return s
-
-str = "\n".join(map(state_to_init, states.values())) + "\n"
-str += f"state_init({state_to_c_var(list(states.values())[0])});\n"
-print(str)
-@
-
-@<cleaning of states@=#!/usr/bin/python
-@<parse model of states@>
-
-def state_to_free(st):
-    s = f"free_state(&{state_to_c_var(st)});"
-    return s
-
-str = f"state_clear({state_to_c_var(list(states.values())[0])});\n"
-str += "\n".join(map(state_to_free, states.values())) + "\n"
-print(str)
-@
-
-@<fill in build time information@=#!/bin/sh
-sed -e "s/<build time>/$(date -Iminute)/g"
+@<evaluate@=#!/bin/sh
+set -e
+temp_file=`mktemp`
+cat - > $temp_file
+chmod +x $temp_file
+$temp_file
+rm $temp_file
 @
 
 @<execute sequentially@=#!/bin/sh
@@ -2541,8 +2461,284 @@ cat -
 echo "} while (0);"
 @
 
-@<remove ending comma@=#!/bin/sh
-sed -z 's/,[[:space:]]$/\n/'
+@<fill in build time information@=#!/bin/sh
+sed -e "s/<build time>/$(date -Iminute)/g"
 @
 
+# Text Processing
+
+@<path to perl interpreter@=#!/bin/sh
+which perl
+@|evaluate@
+
+@<basic perl settings@=#!@<path to perl interpreter@>
+use v5.14;
+use warnings;
+use Text::Template;
+@
+
+# Command Line Interface
+
+The syntax:
+
+{
+    name => COMMAND_NAME,
+    usages => [
+        {
+            options => [
+                {
+                    long_opt => LONG_OPTION,
+                    opt => SHORT_OPTION (optional),
+                    argument => OPTION_ARGUMENT (optional),
+                    description => DESCRIPTION,
+                },
+                ...
+            ],
+            arguments => [
+                ARGUMENT,
+                ...
+            ],
+        },
+        ...
+    ],
+}
+
+@<command line usage@=@<basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub option_to_str {
+    my $opt = $_[0];
+    my $str = '';
+    if ($opt->{opt}) {
+        $str .= "-$opt->{opt}";
+    } else {
+        $str .= "--$opt->{long_opt}";
+    }
+    if ($opt->{argument}) {
+        $str .= " $opt->{argument}";
+    }
+    $str
+}
+
+sub usage_to_str {
+    my $usage = $_[0];
+    my $str = $syntax->{name};
+
+    $str .= ' ';
+    $str .= '[' . (join '|', (map {option_to_str $_} @@{$usage->{options}})) . ']';
+    $str .= ' ';
+    $str .= join ' ', @@{$usage->{arguments}};
+    
+    $str
+}
+
+my @usages = map {usage_to_str $_} @@{$syntax->{usages}};
+my $usages_str = '';
+
+$usages_str .= 'Usage:\t' . (shift @usages);
+while (@usages) {
+    $usages_str .= '\n\t' . (shift @usages);
+}
+$usages_str .= '\n';
+
+print $usages_str;
+@|evaluate@
+
+@<getopt string@=@<basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub option_to_str {
+    my $opt = $_[0];
+    my $str = '';
+    if ($opt->{opt}) {
+        $str = $opt->{opt};
+        if ($opt->{argument}) {
+            $str .= ':';
+        }
+    }
+    $str
+}
+
+my @options = ();
+for my $usage (@@{$syntax->{usages}}) {
+    @options = (@options, @@{$usage->{options}});
+}
+
+print (join "", (map {option_to_str $_} @options));
+@|evaluate@
+
+@<long options@=@<basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+my $count = 256;
+
+sub option_to_longopt {
+    my $opt = $_[0];
+    my $str = '{';
+    if ($opt->{long_opt}) {
+        $str .= '"' . $opt->{long_opt} . '"';
+        if ($opt->{argument}) {
+            $str .= ',required_argument';
+        } else {
+            $str .= ',no_argument';
+        }
+        $str .= ',NULL';
+        if ($opt->{opt}) {
+            $str .= ",'@@{[$opt->{opt}]}'";
+        } else {
+            $str .= ",0";
+        }
+    }
+    $str .= "},"
+}
+
+my @options = ();
+for my $usage (@@{$syntax->{usages}}) {
+    @options = (@options, @@{$usage->{options}});
+}
+
+print (join "", (map {option_to_longopt $_} @options));
+@|evaluate@
+
+@<manpage synopsis@=@<basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub option_to_str {
+    my $opt = $_[0];
+    my $str = '';
+    if ($opt->{opt}) {
+        $str .= '\fB\-' . $opt->{opt} . '\fR';
+    } else {
+        $str .= '\fB\-\-' . $opt->{long_opt} . '\fR';
+    }
+    if ($opt->{argument}) {
+        $str .= ' \fI' . $opt->{argument} . '\fR';
+    }
+    $str
+}
+
+sub usage_to_str {
+    my $usage = $_[0];
+    my $str = ".B $syntax->{name}";
+
+    $str .= "\n";
+    $str .= '[' . (join '|', (map {option_to_str $_} @@{$usage->{options}})) . ']';
+    $str .= "\n";
+    $str .= "@@{[map {'\fI' . $_ . '\fR'} @@{$usage->{arguments}}]}";
+    $str .= "\n";
+    
+    $str
+}
+
+my @usages = map {usage_to_str $_} @@{$syntax->{usages}};
+print join "\n", @usages;
+@|evaluate@
+
+@<manpage options@=@<basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+my $options = '';
+for my $usage (@@{$syntax->{usages}}) {
+    for my $option (@@{$usage->{options}}) {
+        $options .= ".TP\n";
+        if ($option->{opt}) {
+            $options .= '.BR \-' . $option->{opt} . ', " " ';
+        }
+        $options .= '\-\-' . $option->{long_opt};
+        if ($option->{argument}) {
+            $options .= ' " " \fI' . $option->{argument} . '\fR' . "\n";
+        } else {
+            $options .= "\n";
+        }
+        $options .= $option->{description} . "\n";
+    }
+}
+
+print $options;
+@|evaluate@
+
+# State Machine
+
+The model of states:
+
+[
+    {
+        name => NAME_OF_STATE,
+        parent => PARENT_OF_STATE,
+    },
+    ...
+]
+
+@<C structs for state@=
+sub state_to_c_var {
+    "state_$_[0]->{name}"
+}
+
+sub state_to_handler {
+    state_to_c_var($_[0]) . "_handler"
+}
+
+sub state_to_in_func {
+    state_to_c_var($_[0]) . "_in"
+}
+
+sub state_to_out_func {
+    state_to_c_var($_[0]) . "_out"
+}
+
+sub state_to_dec {
+    "State @@{[state_to_c_var($_[0])]};"
+}
+@
+
+@<declarations of states@=@<basic perl settings@>
+@<C structs for state@>
+my $model = @<model of states@>;
+
+print join "\n", map {state_to_dec $_} @@{$model};
+@|evaluate@
+
+@<initialization of states@=@<basic perl settings@>
+@<C structs for state@>
+my $model = @<model of states@>;
+my @model = @@{$model};
+my %states = ();
+
+for my $st (@model) {
+    $states{$st->{name}} = $st;
+}
+
+sub state_to_init {
+    my($st, $s) = ($_[0], "");
+    $s .= "new_state(&@@{[state_to_c_var($st)]},";
+    if ($st->{parent}) {
+        $s .= " @@{[state_to_c_var($states{$st->{parent}})]},";
+    } else {
+        $s .= "root_state,";
+    }
+    $s .= " STATE_XOR,";
+    $s .= " @@{[state_to_handler($st)]});\n";
+    $s .= "state_register_in_func(@@{[state_to_c_var($st)]}, @@{[state_to_in_func($st)]});\n";
+    $s .= "state_register_out_func(@@{[state_to_c_var($st)]}, @@{[state_to_out_func($st)]});\n";
+    $s
+}
+
+my $str = join "\n", map {state_to_init $_} @model;
+$str .= "\nstate_init(@@{[state_to_c_var($model[0])]});\n";
+print $str;
+@|evaluate@
+
+@<cleaning of states@=@<basic perl settings@>
+@<C structs for state@>
+my $model = @<model of states@>;
+my @model = @@{$model};
+
+sub state_to_free {
+    "free_state(&@@{[state_to_c_var($_[0])]});";
+}
+
+my $str = "state_clear(@@{[state_to_c_var($model[0])]});\n";
+$str .= join "\n", map {state_to_free $_} @model;
+print($str);
+@|evaluate@
 

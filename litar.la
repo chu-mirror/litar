@@ -1524,11 +1524,19 @@ static State state_parse_block_contents_text_out(State s, Signal sig)
 if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
     TextRef txt;
     InputFrame ipt;
+    struct state_parse_block_local *lc_r;
 
     RENAME(car(input_frames), ipt);
     RENAME(*state_local(s), txt);
+    RENAME(*state_local(state_parse_block), lc_r);
 
-    txt->end = ipt->cp;
+    if (is_empty_list(contents_of_block(lc_r->block))
+        && (txt->start == txt->end && ipt->pc != 0)
+        && (tkn->type == TOKEN_NEWLINE || (tkn->type == TOKEN_NORMAL_CHARACTER && isspace(tkn->value)))) {
+        txt->start = txt->end = txt->start + 1;
+    } else {
+        txt->end = ipt->cp;
+    }
     return s;
 }
 

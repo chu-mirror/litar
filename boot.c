@@ -1,5 +1,3 @@
-
-
 #define _GNU_SOURCE
 #include <sched.h>
 #include <stdio.h>
@@ -35,38 +33,30 @@ typedef struct mappings_block *Block;
 typedef struct mappings_chunk_ref *ChunkRef;
 
 void normalize_chunk_name(const char *orig, char *norm);
-
 Str content_of_chunk(Chunk chk);
 Str expanded_content_of_block(Block blk);
 void transform(Str txt, List flts);
 
 struct mappings_chunk {
-
     char *chunk_name;
-
     List blocks;
 };
 
 struct mappings_block {
-
     Chunk chunk;
     List filters;
-
     List contents;
 };
 
 struct mappings_chunk_ref {
-
     Chunk chunk;
     List filters;
 };
-
 typedef struct {
     char *file;
     int start;
     int end;
 } *TextRef;
-
 typedef struct {
     enum {
         BLOCK_CONTENT_TEXT,
@@ -77,7 +67,6 @@ typedef struct {
         ChunkRef chunk;
     } value;
 } *BlockContent;
-
 typedef struct {
     enum {
         SECTION_COMMENT,
@@ -88,7 +77,6 @@ typedef struct {
         Block block;
     } content;
 } *Section;
-
 typedef struct {
     enum {
         NODE_DIRECTORY,
@@ -101,7 +89,6 @@ typedef struct {
     } value;
     char *name;
 } *Node;
-
 typedef struct {
     char *file;
     FILE *in;
@@ -120,7 +107,6 @@ typedef struct {
     } type;
     char value;
 } *Token;
-
 struct state_parse_block_local {
     enum {
         CHUNK_TYPE_PLAIN_TEXT,
@@ -132,27 +118,17 @@ struct state_parse_block_local {
 };
 
 bool to_print_help;
-
 bool to_print_version_info;
-
 bool to_print_specific_chunk;
-
 bool to_execute_specific_chunk;
 
 char *archive_name = NULL;
-
 HashTable file_to_mmap_addr = NULL;
-
 HashTable chunk_name_to_chunk = NULL;
-
 List sections;
-
 Node root_node;
-
 List stack_of_chunks_in_tangling = empty_list;
-
 char working_dir[PATH_MAX];
-
 List input_frames;
 State state_parse;
 State state_parse_comment;
@@ -164,23 +140,16 @@ State state_parse_block_contents_text;
 State state_parse_block_contents_reference;
 State state_parse_block_contents_reference_name;
 State state_parse_block_contents_reference_filters;
-
 char *archive_data = NULL;
 char *fuse_mount_point = NULL;
 char *work_dir = NULL;
 char *upper_layer = NULL;
 char *mount_point = NULL;
-
 const char *litar_data = ".litar";
-
 int pipe_fuse_to_main[2];
-
 pid_t fuse_pid;
-
 char version[] = "dev";
-
 char *name_of_chunk_to_print;
-
 char *name_of_chunk_to_execute;
 
 void
@@ -189,7 +158,6 @@ print_usage()
     printf("Usage:\tlitar [--help|--version] \n\tlitar [-p CHUNK|-x CHUNK] "
            "ARCHIVE\n");
 }
-
 Chunk
 chunk_of_name(const char *name)
 {
@@ -229,7 +197,6 @@ name_of_chunk(Chunk chk)
 {
     return chk->chunk_name;
 }
-
 List
 blocks_of_chunk(Chunk chk)
 {
@@ -253,7 +220,6 @@ block_is_transformed_by(Block blk, Chunk flt)
 {
     push(flt, &blk->filters);
 }
-
 List
 contents_of_block(Block blk)
 {
@@ -287,13 +253,11 @@ block_include_chunk(Block blk, ChunkRef cr)
     bcs = cons(bc, bcs);
     blk->contents = bcs;
 }
-
 Chunk
 chunk_extended_by(Block blk)
 {
     return blk->chunk;
 }
-
 List
 filters_of_chunk_ref(ChunkRef ckr)
 {
@@ -317,7 +281,6 @@ chunk_of_chunk_ref(ChunkRef ckr)
 {
     return ckr->chunk;
 }
-
 Node
 node_under_node(const char *file, Node node)
 {
@@ -446,7 +409,6 @@ fetch_text_from(TextRef tr)
     str[len] = '\0';
     return str;
 }
-
 void
 normalize_chunk_name(const char *orig, char *norm)
 {
@@ -465,7 +427,6 @@ normalize_chunk_name(const char *orig, char *norm)
         norm[j - 1] = '\0';
     }
 }
-
 bool
 chunk_is_in_tangling(Chunk chk)
 {
@@ -477,7 +438,6 @@ chunk_is_in_tangling(Chunk chk)
     }
     return false;
 }
-
 Str
 content_of_chunk(Chunk chk)
 {
@@ -535,7 +495,6 @@ expanded_content_of_block(Block blk)
 
     return ect;
 }
-
 pid_t
 run_filter(Chunk flt, int in, int out)
 {
@@ -592,7 +551,6 @@ run_filter(Chunk flt, int in, int out)
     }
     return pid;
 }
-
 void
 transform(Str txt, List flts)
 {
@@ -663,7 +621,6 @@ transform(Str txt, List flts)
     free_list(&flts);
 
     lseek(in, 0, SEEK_SET);
-
     do {
         int n, rd;
         char buf[1000];
@@ -680,7 +637,6 @@ transform(Str txt, List flts)
 
     return;
 }
-
 static Token
 next_token(InputFrame ipt)
 {
@@ -738,7 +694,6 @@ next_token(InputFrame ipt)
 
     return tkn;
 }
-
 static State
 state_parse_in(State s, Signal sig)
 {
@@ -761,7 +716,6 @@ state_parse_out(State s, Signal sig)
 {
     return NULL;
 }
-
 static State
 state_parse_comment_in(State s, Signal sig)
 {
@@ -788,7 +742,6 @@ state_parse_comment_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
-
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             List txts;
@@ -820,7 +773,6 @@ state_parse_comment_handler(State s, Signal sig)
             push(txt, txts_r);
             return s;
         }
-
         if (tkn->type == TOKEN_CONTROL_CHARACTER
             && (tkn->value == '<' || tkn->value == '[' || tkn->value == '(')) {
             return state_parse_block;
@@ -840,7 +792,6 @@ state_parse_comment_out(State s, Signal sig)
     push(sec, &sections);
     return NULL;
 }
-
 static State
 state_parse_block_in(State s, Signal sig)
 {
@@ -874,7 +825,6 @@ state_parse_block_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
-
         if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
             return state_parse_comment;
         }
@@ -913,7 +863,6 @@ state_parse_block_out(State s, Signal sig)
     FREE(*state_local(s));
     return NULL;
 }
-
 static State
 state_parse_block_chunk_name_in(State s, Signal sig)
 {
@@ -926,7 +875,6 @@ state_parse_block_chunk_name_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
-
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             struct state_parse_block_local *lc_r;
@@ -957,7 +905,6 @@ state_parse_block_chunk_name_out(State s, Signal sig)
 {
     return NULL;
 }
-
 static State
 state_parse_block_contents_in(State s, Signal sig)
 {
@@ -970,7 +917,6 @@ state_parse_block_contents_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
-
         if (state_is_active(state_parse_block_contents_text)
             && tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
             return state_parse_block_filters;
@@ -985,7 +931,6 @@ state_parse_block_contents_out(State s, Signal sig)
 {
     return NULL;
 }
-
 static State
 state_parse_block_contents_text_in(State s, Signal sig)
 {
@@ -1010,16 +955,25 @@ state_parse_block_contents_text_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
-
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             TextRef txt;
             InputFrame ipt;
+            struct state_parse_block_local *lc_r;
 
             RENAME(car(input_frames), ipt);
             RENAME(*state_local(s), txt);
+            RENAME(*state_local(state_parse_block), lc_r);
 
-            txt->end = ipt->cp;
+            if (is_empty_list(contents_of_block(lc_r->block))
+                && (txt->start == txt->end && ipt->pc != 0)
+                && (tkn->type == TOKEN_NEWLINE
+                    || (tkn->type == TOKEN_NORMAL_CHARACTER
+                        && isspace(tkn->value)))) {
+                txt->start = txt->end = txt->start + 1;
+            } else {
+                txt->end = ipt->cp;
+            }
             return s;
         }
 
@@ -1065,7 +1019,6 @@ state_parse_block_contents_text_out(State s, Signal sig)
     block_contain_text(lc_r->block, txt);
     return NULL;
 }
-
 static State
 state_parse_block_contents_reference_in(State s, Signal sig)
 {
@@ -1081,7 +1034,6 @@ state_parse_block_contents_reference_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
-
         if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
             return state_parse_block_contents_text;
         }
@@ -1100,7 +1052,6 @@ state_parse_block_contents_reference_out(State s, Signal sig)
     block_include_chunk(lc_r->block, ckr);
     return NULL;
 }
-
 static State
 state_parse_block_contents_reference_name_in(State s, Signal sig)
 {
@@ -1114,7 +1065,6 @@ state_parse_block_contents_reference_name_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
-
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             str_append(*(Str *)state_local(s), tkn->value);
@@ -1147,7 +1097,6 @@ state_parse_block_contents_reference_name_out(State s, Signal sig)
     free_str((Str *)state_local(s));
     return NULL;
 }
-
 static State
 state_parse_block_contents_reference_filters_in(State s, Signal sig)
 {
@@ -1161,7 +1110,6 @@ state_parse_block_contents_reference_filters_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
-
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             str_append(*(Str *)state_local(s), tkn->value);
@@ -1207,7 +1155,6 @@ state_parse_block_contents_reference_filters_out(State s, Signal sig)
     free_str((Str *)state_local(s));
     return NULL;
 }
-
 static State
 state_parse_block_filters_in(State s, Signal sig)
 {
@@ -1221,7 +1168,6 @@ state_parse_block_filters_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
-
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             str_append(*(Str *)state_local(s), tkn->value);
@@ -1270,7 +1216,6 @@ state_parse_block_filters_out(State s, Signal sig)
     free_str((Str *)state_local(s));
     return NULL;
 }
-
 void
 ensure_directory(const char *path)
 {
@@ -1291,7 +1236,6 @@ ensure_directory(const char *path)
         exit(1);
     }
 }
-
 static void *
 litar_fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 {
@@ -1436,7 +1380,6 @@ static const struct fuse_operations litar_fuse_oper = {
     .open = litar_fuse_open,
     .read = litar_fuse_read,
 };
-
 void
 print_section(Section sec)
 {
@@ -1486,7 +1429,6 @@ print_section(Section sec)
         free_list(&lst);
     }
 }
-
 void
 print_node(Node nd, int level)
 {
@@ -1514,22 +1456,17 @@ main(int argc, char *argv[])
 {
     RESERVE(do {
         new_string_hash_table(&file_to_mmap_addr);
-
         new_string_hash_table(&chunk_name_to_chunk);
-
         NEW(root_node);
         root_node->type = NODE_DIRECTORY;
         root_node->value.nodes = empty_list;
         root_node->name = strdup("");
-
         if (getcwd(working_dir, PATH_MAX) == NULL) {
             perror("getcwd");
             exit(1);
         }
-
         ensure_directory(litar_data);
     } while (0));
-
     KEEP(do {
         int opt, option_index;
         static struct option long_options[] = {
@@ -1546,31 +1483,26 @@ main(int argc, char *argv[])
         ) {
             switch (opt) {
             case 0:
-
                 if (strcmp(long_options[option_index].name, "help") == 0) {
                     to_print_help = true;
                     break;
                 }
-
                 if (strcmp(long_options[option_index].name, "version") == 0) {
                     to_print_version_info = true;
                     break;
                 }
 
                 break;
-
             case 'u':
                 upper_layer = optarg;
                 break;
             case 'm':
                 mount_point = optarg;
                 break;
-
             case 'p':
                 to_print_specific_chunk = true;
                 name_of_chunk_to_print = optarg;
                 break;
-
             case 'x':
                 to_execute_specific_chunk = true;
                 name_of_chunk_to_execute = optarg;
@@ -1591,7 +1523,6 @@ main(int argc, char *argv[])
             }
         }
     } while (0););
-
     do {
         bool to_continue = true;
 
@@ -1601,11 +1532,9 @@ main(int argc, char *argv[])
                 to_continue = false;
                 break;
             }
-
             if (to_print_version_info) {
-
                 printf(
-                    "Version %s, built at 2026-01-16T14:40+08:00\n", version
+                    "Version %s, built at 2026-01-16T15:39+08:00\n", version
                 );
 
                 to_continue = false;
@@ -1848,7 +1777,6 @@ main(int argc, char *argv[])
                  }
                  ensure_directory(upper_layer);
              } while (0));
-
              do {
                  if (pipe(pipe_fuse_to_main) < 0) {
                      perror("pipe");
@@ -1890,7 +1818,6 @@ main(int argc, char *argv[])
                      exit(1);
                  } else if (fuse_pid == 0) {
                      close(pipe_fuse_to_main[0]);
-
                      do {
                          char msg = 0;
                          struct fuse_args args = {0, NULL, 0};
@@ -1993,7 +1920,6 @@ main(int argc, char *argv[])
                 to_continue = false;
                 break;
             }
-
             if (to_execute_specific_chunk) {
                 if (!chunk_of_name_exist(name_of_chunk_to_execute)) {
                     fprintf(
@@ -2008,7 +1934,6 @@ main(int argc, char *argv[])
                 to_continue = false;
                 break;
             }
-
             do {
                 printf("Starting executing shell\n");
                 if (execl("/usr/bin/bash", "bash", "-i", NULL) != 0) {

@@ -32,7 +32,7 @@ literate and archive.
 @<syntax of litar@=
 Because a litar archive is supposed to contain text of all types, the syntax of
 itself should be as simple as possible. The syntax of a litar archive is built upon
-control characters, which are @@ followed by a character.
+control characters, which are @@ followed by a non-alphabetic character.
 
 To fully describe all concepts, we shall introduce another term, block.
 In the outermost, there are blocks interleaved with comments.
@@ -216,8 +216,8 @@ other files in the operating system.
 
 Besides these control characters that describes the structure of a litar archive,
 there are some other control characters. They are commands, which influence
-the process of dealing with litar archive. For example, @@i receives an argument
-of file name, and inserts the content of that file at the place of @@i.
+the process of dealing with litar archive. For example, @@. receives an argument
+of file name, and inserts the content of that file at the place of @@..
 @
 
 # Invocation
@@ -459,25 +459,28 @@ consists of none-space words, so "name of chunk" does not
 differ from "  name  of  chunk".
 
 @<function declarations@=
-void normalize_chunk_name(const char *orig, char *norm);
+void normalize(char *norm);
 @
 
 @<functions@=
-void normalize_chunk_name(const char *orig, char *norm)
+void
+normalize(char *norm)
 {
-    int i = 0, j = 0, l = strlen(orig);
+    int i = 0, j = 0, l = strlen(norm);
     while (i < l) {
-        if (isspace(orig[i])) {
+        if (isspace(norm[i])) {
             if (j != 0 && norm[j-1] != ' ') {
                 norm[j++] = ' ';
             }
         } else {
-            norm[j++] = orig[i];
+            norm[j++] = norm[i];
         }
         ++i;
     }
     if (norm[j-1] == ' ') {
         norm[j-1] = '\0';
+    } else {
+        norm[j] = '\0';
     }
 }
 @
@@ -499,7 +502,7 @@ Chunk chunk_of_name(const char *name)
 {
     char *norm;
     norm = strdup(name);
-    normalize_chunk_name(name, norm);
+    normalize(norm);
 
     Chunk chk;
     chk = get_from_hash_table(chunk_name_to_chunk, norm);
@@ -518,7 +521,7 @@ bool chunk_of_name_exist(const char *name)
 {
     char *norm;
     norm = strdup(name);
-    normalize_chunk_name(name, norm);
+    normalize(norm);
 
     Chunk chk;
     chk = get_from_hash_table(chunk_name_to_chunk, norm);
@@ -1063,6 +1066,11 @@ typedef struct {
 } *Token;
 @
 
+@<global variables@=
+List input_frames;
+@<declarations of states@>
+@
+
 @<functions@=
 static Token next_token(InputFrame ipt)
 {
@@ -1070,7 +1078,7 @@ static Token next_token(InputFrame ipt)
     char c;
     int n = 0;
 
-    if (ipt->cp == 0) {
+    if (!ipt->in) {
         if ((ipt->in = fopen(ipt->file, "r")) == NULL) {
             perror(ipt->file);
             exit(1);
@@ -1140,20 +1148,35 @@ litar assumes that when starting parsing it is reading comment.
 },
 @
 
+@<data types@=
+struct state_parse_local {
+    char escaping;
+    Str cache;
+};
+@
+
 @<functions@=
 static State state_parse_in(State s, Signal sig)
 {
+    struct state_parse_local *lc_r = NULL;
+    NEW0(lc_r);
+    *state_local(s) = lc_r;
     return state_parse_comment;
 }
 
 static State state_parse_handler(State s, Signal sig)
 {
+    struct state_parse_local *lc_r;
+    RENAME(*state_local(s), lc_r);
     @<handlings for token "tkn" when "state_parse"@|execute token handlings@>
     return NULL;
 }
 
 static State state_parse_out(State s, Signal sig)
 {
+    struct state_parse_local *lc_r;
+    RENAME(*state_local(s), lc_r);
+    FREE(*state_local(s));
     return NULL;
 }
 @
@@ -1162,13 +1185,10 @@ static State state_parse_out(State s, Signal sig)
 echo "do {"
 echo "Token tkn;"
 echo "RENAME(sig, tkn);"
+echo "InputFrame ipt;"
+echo "RENAME(car(input_frames), ipt);"
 cat -
 echo "} while (0);"
-@
-
-@<global variables@=
-List input_frames;
-@<declarations of states@>
 @
 
 @<parse input@=
@@ -1256,9 +1276,7 @@ static State state_parse_comment_out(State s, Signal sig)
 if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
     List txts;
     TextRef txt;
-    InputFrame ipt;
 
-    RENAME(car(input_frames), ipt);
     RENAME(*state_local(s), txts);
     RENAME(car(txts), txt);
 
@@ -1269,9 +1287,7 @@ if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
 if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
     List *txts_r;
     TextRef txt;
-    InputFrame ipt;
 
-    RENAME(car(input_frames), ipt);
     RENAME(state_local(s), txts_r);
 
     txt = NULL;
@@ -1518,10 +1534,8 @@ static State state_parse_block_contents_text_out(State s, Signal sig)
 @<handlings for token "tkn" when "state_parse_block_contents_text"@=
 if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
     TextRef txt;
-    InputFrame ipt;
     struct state_parse_block_local *lc_r;
 
-    RENAME(car(input_frames), ipt);
     RENAME(*state_local(s), txt);
     RENAME(*state_local(state_parse_block), lc_r);
 
@@ -1546,9 +1560,6 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
 
     txt = NULL;
     NEW0(txt);
-
-    InputFrame ipt;
-    RENAME(car(input_frames), ipt);
 
     txt->file = ipt->file;
     txt->start = ipt->pp+1;
@@ -1761,6 +1772,34 @@ if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
 
     free_str((Str *)state_local(s));
     new_str((Str *)state_local(s));
+    return s;
+}
+@
+
+## Commands
+
+@<handlings for token "tkn" when "state_parse"@=
+if (!lc_r->escaping
+    && ipt->cc == 2
+    && tkn->type == TOKEN_CONTROL_CHARACTER
+    && tkn->value == '.') {
+    lc_r->escaping = '.';
+    new_str(&lc_r->cache);
+    return s;
+}
+if (lc_r->escaping == '.' && tkn->type == TOKEN_NORMAL_CHARACTER) {
+    str_append(lc_r->cache, tkn->value);
+    return s;
+}
+if (lc_r->escaping == '.' && tkn->type == TOKEN_NEWLINE) {
+    InputFrame ipt = NULL;
+    NEW0(ipt);
+    ipt->file = strdup(raw_string(lc_r->cache));
+    normalize(ipt->file);
+    push(ipt, &input_frames);
+
+    free_str(&lc_r->cache);
+    lc_r->escaping = '\0';
     return s;
 }
 @
@@ -2217,6 +2256,7 @@ case 'm':
 
 @<operations after mounting file system@=
 if (mirror_point) {
+    break;
 }
 @
 

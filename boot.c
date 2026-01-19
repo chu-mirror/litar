@@ -8,14 +8,16 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <limits.h>
+#include <errno.h>
+#include <signal.h>
+
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <limits.h>
-#include <errno.h>
-#include <signal.h>
+#include <sys/sendfile.h>
 
 #define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 14)
 #include <fuse.h>
@@ -27,12 +29,13 @@
 #include "atom.h"
 #include "deque.h"
 #include "state.h"
+#include "fileio.h"
 
 typedef struct mappings_chunk *Chunk;
 typedef struct mappings_block *Block;
 typedef struct mappings_chunk_ref *ChunkRef;
 
-void normalize_chunk_name(const char *orig, char *norm);
+void normalize(char *norm);
 Str content_of_chunk(Chunk chk);
 Str expanded_content_of_block(Block blk);
 void transform(Str txt, List flts);
@@ -107,6 +110,10 @@ typedef struct {
     } type;
     char value;
 } *Token;
+struct state_parse_local {
+    char escaping;
+    Str cache;
+};
 struct state_parse_block_local {
     enum {
         CHUNK_TYPE_PLAIN_TEXT,
@@ -119,9 +126,8 @@ struct state_parse_block_local {
 
 bool to_print_help;
 bool to_print_version_info;
-bool to_print_specific_chunk;
-bool to_execute_specific_chunk;
 
+int chosen_usage = -1;
 char *archive_name = NULL;
 HashTable file_to_mmap_addr = NULL;
 HashTable chunk_name_to_chunk = NULL;
@@ -149,21 +155,22 @@ const char *litar_data = ".litar";
 int pipe_fuse_to_main[2];
 pid_t fuse_pid;
 char version[] = "dev";
+char *mirror_point = NULL;
 char *name_of_chunk_to_print;
 char *name_of_chunk_to_execute;
 
 void
 print_usage()
 {
-    printf("Usage:\tlitar [--help|--version] \n\tlitar [-p CHUNK|-x CHUNK] "
-           "ARCHIVE\n");
+    printf("Usage:\tlitar [--help|--version] \n\tlitar [-m DIR|-p CHUNK|-x "
+           "CHUNK] ARCHIVE\n");
 }
 Chunk
 chunk_of_name(const char *name)
 {
     char *norm;
     norm = strdup(name);
-    normalize_chunk_name(name, norm);
+    normalize(norm);
 
     Chunk chk;
     chk = get_from_hash_table(chunk_name_to_chunk, norm);
@@ -183,7 +190,7 @@ chunk_of_name_exist(const char *name)
 {
     char *norm;
     norm = strdup(name);
-    normalize_chunk_name(name, norm);
+    normalize(norm);
 
     Chunk chk;
     chk = get_from_hash_table(chunk_name_to_chunk, norm);
@@ -410,21 +417,23 @@ fetch_text_from(TextRef tr)
     return str;
 }
 void
-normalize_chunk_name(const char *orig, char *norm)
+normalize(char *norm)
 {
-    int i = 0, j = 0, l = strlen(orig);
+    int i = 0, j = 0, l = strlen(norm);
     while (i < l) {
-        if (isspace(orig[i])) {
+        if (isspace(norm[i])) {
             if (j != 0 && norm[j - 1] != ' ') {
                 norm[j++] = ' ';
             }
         } else {
-            norm[j++] = orig[i];
+            norm[j++] = norm[i];
         }
         ++i;
     }
     if (norm[j - 1] == ' ') {
         norm[j - 1] = '\0';
+    } else {
+        norm[j] = '\0';
     }
 }
 bool
@@ -503,22 +512,21 @@ run_filter(Chunk flt, int in, int out)
         perror("fork");
         exit(1);
     } else if (pid == 0) {
-        if (chdir(mount_point) < 0) {
-            perror("chdir");
-            exit(1);
+        if (in != STDIN_FILENO) {
+            if (dup2(in, STDIN_FILENO) < 0) {
+                perror("dup2");
+                exit(1);
+            }
+            close(in);
         }
 
-        if (dup2(in, STDIN_FILENO) < 0) {
-            perror("dup2");
-            exit(1);
+        if (out != STDOUT_FILENO) {
+            if (dup2(out, STDOUT_FILENO) < 0) {
+                perror("dup2");
+                exit(1);
+            }
+            close(out);
         }
-        close(in);
-
-        if (dup2(out, STDOUT_FILENO) < 0) {
-            perror("dup2");
-            exit(1);
-        }
-        close(out);
 
         int fd;
 
@@ -531,23 +539,26 @@ run_filter(Chunk flt, int in, int out)
             Str ct;
             int n, wtn = 0;
             ct = content_of_chunk(flt);
-
-            while ((n = write(fd, raw_string(ct) + wtn, str_length(ct) - wtn))
-                   > 0) {
-                wtn += n;
-            }
-
+            fileio_write_str(fd, ct);
             free_str(&ct);
         } while (0);
 
         do {
             char *name = strdup(name_of_chunk(flt));
             char *argv[2] = {name, NULL};
+
+            if (chdir(mount_point) < 0) {
+                perror("chdir");
+                exit(1);
+            }
+
             if (fexecve(fd, argv, environ) < 0) {
                 perror("fexecve");
                 exit(1);
             }
         } while (0);
+
+        close(fd);
     }
     return pid;
 }
@@ -561,22 +572,13 @@ transform(Str txt, List flts)
     flts = copy_list(flts);
     reverse(&flts);
 
-    int len = length(flts);
-
     int in, out;
 
     if ((in = memfd_create("file1", 0)) < 0) {
         perror("memfd_create");
         exit(1);
     }
-    do {
-        int n, wtn = 0;
-        while ((n = write(in, raw_string(txt) + wtn, str_length(txt) - wtn))
-               > 0) {
-            wtn += n;
-        }
-        lseek(in, 0, SEEK_SET);
-    } while (0);
+    fileio_write_str(in, txt);
 
     if ((out = memfd_create("file2", 0)) < 0) {
         perror("memfd_create");
@@ -589,15 +591,11 @@ transform(Str txt, List flts)
         int st;
         lseek(in, 0, SEEK_SET);
         lseek(out, 0, SEEK_SET);
+        ftruncate(out, 0);
         pid = run_filter(flt, in, out);
 
-        do {
-            int t;
+        SWAP(in, out);
 
-            t = in;
-            in = out;
-            out = t;
-        } while (0);
         waitpid(pid, &st, 0);
         if (WIFEXITED(st)) {
             if (WEXITSTATUS(st) != 0) {
@@ -618,22 +616,14 @@ transform(Str txt, List flts)
             exit(1);
         }
     }
-    free_list(&flts);
 
     lseek(in, 0, SEEK_SET);
-    do {
-        int n, rd;
-        char buf[1000];
+    str_clean(txt);
+    fileio_read_str(in, txt);
 
-        rd = 0;
-
-        str_clean(txt);
-        while ((n = read(in, buf, 999)) > 0) {
-            buf[n] = '\0';
-            str_extend(txt, buf);
-        }
-
-    } while (0);
+    close(in);
+    close(out);
+    free_list(&flts);
 
     return;
 }
@@ -644,7 +634,7 @@ next_token(InputFrame ipt)
     char c;
     int n = 0;
 
-    if (ipt->cp == 0) {
+    if (!ipt->in) {
         if ((ipt->in = fopen(ipt->file, "r")) == NULL) {
             perror(ipt->file);
             exit(1);
@@ -697,15 +687,43 @@ next_token(InputFrame ipt)
 static State
 state_parse_in(State s, Signal sig)
 {
+    struct state_parse_local *lc_r = NULL;
+    NEW0(lc_r);
+    *state_local(s) = lc_r;
     return state_parse_comment;
 }
 
 static State
 state_parse_handler(State s, Signal sig)
 {
+    struct state_parse_local *lc_r;
+    RENAME(*state_local(s), lc_r);
     do {
         Token tkn;
         RENAME(sig, tkn);
+        InputFrame ipt;
+        RENAME(car(input_frames), ipt);
+        if (!lc_r->escaping && ipt->cc == 2
+            && tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '.') {
+            lc_r->escaping = '.';
+            new_str(&lc_r->cache);
+            return s;
+        }
+        if (lc_r->escaping == '.' && tkn->type == TOKEN_NORMAL_CHARACTER) {
+            str_append(lc_r->cache, tkn->value);
+            return s;
+        }
+        if (lc_r->escaping == '.' && tkn->type == TOKEN_NEWLINE) {
+            InputFrame ipt = NULL;
+            NEW0(ipt);
+            ipt->file = strdup(raw_string(lc_r->cache));
+            normalize(ipt->file);
+            push(ipt, &input_frames);
+
+            free_str(&lc_r->cache);
+            lc_r->escaping = '\0';
+            return s;
+        }
     } while (0);
 
     return NULL;
@@ -714,6 +732,9 @@ state_parse_handler(State s, Signal sig)
 static State
 state_parse_out(State s, Signal sig)
 {
+    struct state_parse_local *lc_r;
+    RENAME(*state_local(s), lc_r);
+    FREE(*state_local(s));
     return NULL;
 }
 static State
@@ -742,13 +763,13 @@ state_parse_comment_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
+        InputFrame ipt;
+        RENAME(car(input_frames), ipt);
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             List txts;
             TextRef txt;
-            InputFrame ipt;
 
-            RENAME(car(input_frames), ipt);
             RENAME(*state_local(s), txts);
             RENAME(car(txts), txt);
 
@@ -759,9 +780,7 @@ state_parse_comment_handler(State s, Signal sig)
         if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
             List *txts_r;
             TextRef txt;
-            InputFrame ipt;
 
-            RENAME(car(input_frames), ipt);
             RENAME(state_local(s), txts_r);
 
             txt = NULL;
@@ -825,6 +844,8 @@ state_parse_block_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
+        InputFrame ipt;
+        RENAME(car(input_frames), ipt);
         if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
             return state_parse_comment;
         }
@@ -875,6 +896,8 @@ state_parse_block_chunk_name_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
+        InputFrame ipt;
+        RENAME(car(input_frames), ipt);
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             struct state_parse_block_local *lc_r;
@@ -917,6 +940,8 @@ state_parse_block_contents_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
+        InputFrame ipt;
+        RENAME(car(input_frames), ipt);
         if (state_is_active(state_parse_block_contents_text)
             && tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
             return state_parse_block_filters;
@@ -955,13 +980,13 @@ state_parse_block_contents_text_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
+        InputFrame ipt;
+        RENAME(car(input_frames), ipt);
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             TextRef txt;
-            InputFrame ipt;
             struct state_parse_block_local *lc_r;
 
-            RENAME(car(input_frames), ipt);
             RENAME(*state_local(s), txt);
             RENAME(*state_local(state_parse_block), lc_r);
 
@@ -988,9 +1013,6 @@ state_parse_block_contents_text_handler(State s, Signal sig)
 
             txt = NULL;
             NEW0(txt);
-
-            InputFrame ipt;
-            RENAME(car(input_frames), ipt);
 
             txt->file = ipt->file;
             txt->start = ipt->pp + 1;
@@ -1034,6 +1056,8 @@ state_parse_block_contents_reference_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
+        InputFrame ipt;
+        RENAME(car(input_frames), ipt);
         if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
             return state_parse_block_contents_text;
         }
@@ -1065,6 +1089,8 @@ state_parse_block_contents_reference_name_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
+        InputFrame ipt;
+        RENAME(car(input_frames), ipt);
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             str_append(*(Str *)state_local(s), tkn->value);
@@ -1110,6 +1136,8 @@ state_parse_block_contents_reference_filters_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
+        InputFrame ipt;
+        RENAME(car(input_frames), ipt);
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             str_append(*(Str *)state_local(s), tkn->value);
@@ -1168,6 +1196,8 @@ state_parse_block_filters_handler(State s, Signal sig)
     do {
         Token tkn;
         RENAME(sig, tkn);
+        InputFrame ipt;
+        RENAME(car(input_frames), ipt);
         if (tkn->type == TOKEN_NORMAL_CHARACTER
             || tkn->type == TOKEN_NEWLINE) {
             str_append(*(Str *)state_local(s), tkn->value);
@@ -1467,44 +1497,44 @@ main(int argc, char *argv[])
         }
         ensure_directory(litar_data);
     } while (0));
-    KEEP(do {
+    do {
         int opt, option_index;
         static struct option long_options[] = {
             {   "help",       no_argument, NULL,   0},
             {"version",       no_argument, NULL,   0},
+            { "mirror", required_argument, NULL, 'm'},
             {  "print", required_argument, NULL, 'p'},
             {"execute", required_argument, NULL, 'x'},
         };
 
-        while (
-            (opt =
-                 getopt_long(argc, argv, "p:x:", long_options, &option_index))
-            != -1
-        ) {
+        while ((opt = getopt_long(
+                    argc, argv, "m:p:x:", long_options, &option_index
+                ))
+               != -1) {
             switch (opt) {
             case 0:
                 if (strcmp(long_options[option_index].name, "help") == 0) {
+                    chosen_usage = 0;
                     to_print_help = true;
                     break;
                 }
                 if (strcmp(long_options[option_index].name, "version") == 0) {
+                    chosen_usage = 0;
                     to_print_version_info = true;
                     break;
                 }
 
                 break;
-            case 'u':
-                upper_layer = optarg;
-                break;
             case 'm':
-                mount_point = optarg;
+                chosen_usage = 1;
+                mirror_point = optarg;
                 break;
             case 'p':
-                to_print_specific_chunk = true;
+                chosen_usage = 1;
                 name_of_chunk_to_print = optarg;
                 break;
             case 'x':
-                to_execute_specific_chunk = true;
+                chosen_usage = 1;
                 name_of_chunk_to_execute = optarg;
                 break;
 
@@ -1514,15 +1544,32 @@ main(int argc, char *argv[])
             }
         }
 
-        if (optind < argc) {
+        if (chosen_usage == -1) {
+            print_usage();
+            exit(1);
+        }
+
+        switch (chosen_usage) {
+        case 0:
+            break;
+        case 1:
+            if (argc - optind != 1) {
+                print_usage();
+                exit(1);
+            }
             archive_name = argv[optind];
 
             if (access(archive_name, R_OK) == -1) {
                 perror(archive_name);
                 exit(1);
             }
+            break;
+        default:
+            print_usage();
+            exit(1);
         }
-    } while (0););
+    } while (0);
+    ;
     do {
         bool to_continue = true;
 
@@ -1534,7 +1581,7 @@ main(int argc, char *argv[])
             }
             if (to_print_version_info) {
                 printf(
-                    "Version %s, built at 2026-01-16T15:39+08:00\n", version
+                    "Version %s, built at 2026-01-19T16:34+08:00\n", version
                 );
 
                 to_continue = false;
@@ -1905,7 +1952,10 @@ main(int argc, char *argv[])
              } while (0););
 
         KEEP(do {
-            if (to_print_specific_chunk) {
+            if (mirror_point) {
+                break;
+            }
+            if (name_of_chunk_to_print) {
                 if (!chunk_of_name_exist(name_of_chunk_to_print)) {
                     fprintf(
                         stderr, "Unknown chunk: %s\n", name_of_chunk_to_print
@@ -1916,22 +1966,41 @@ main(int argc, char *argv[])
                 cc = content_of_chunk(chunk_of_name(name_of_chunk_to_print));
                 puts(raw_string(cc));
                 free_str(&cc);
-
-                to_continue = false;
                 break;
             }
-            if (to_execute_specific_chunk) {
+            if (name_of_chunk_to_execute) {
                 if (!chunk_of_name_exist(name_of_chunk_to_execute)) {
                     fprintf(
-                        stderr, "Unknown chunk: %s\n", name_of_chunk_to_print
+                        stderr, "Unknown chunk: %s\n", name_of_chunk_to_execute
                     );
                     exit(1);
                 }
-                Str cc;
-                puts(raw_string(cc));
-                free_str(&cc);
+                Chunk exe;
+                exe = chunk_of_name(name_of_chunk_to_execute);
 
-                to_continue = false;
+                pid_t cld;
+                int st;
+                cld = run_filter(exe, STDIN_FILENO, STDOUT_FILENO);
+                waitpid(cld, &st, 0);
+
+                if (WIFEXITED(st)) {
+                    if (WEXITSTATUS(st) != 0) {
+                        fprintf(
+                            stderr,
+                            "Faled at execute @<%s@>, error code: %d\n",
+                            name_of_chunk_to_execute,
+                            WEXITSTATUS(st)
+                        );
+                        exit(1);
+                    }
+                } else {
+                    fprintf(
+                        stderr,
+                        "Faled at execute @<%s@>, unknown reason\n",
+                        name_of_chunk_to_execute
+                    );
+                    exit(1);
+                }
                 break;
             }
             do {

@@ -934,6 +934,7 @@ run_filter(Chunk flt, int in, int out)
         @<write content of "flt" to "fd"@>
 
         @<execute "fd" under proper conditions@>
+        close(fd);
     }
     return pid;
 }
@@ -990,6 +991,7 @@ transform(Str txt, List flts)
         int st;
         lseek(in, 0, SEEK_SET);
         lseek(out, 0, SEEK_SET);
+        ftruncate(out, 0);
         pid = run_filter(flt, in, out);
 
         SWAP(in, out);

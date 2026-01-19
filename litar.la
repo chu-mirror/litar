@@ -266,7 +266,7 @@ It parses options and arguments, executes, then exits.
 @
 
 @<main body of the c program@=
-KEEP(@<parse command line arguments to set flags and global variables@>);
+@<parse command line arguments to set flags and global variables@>;
 @<perform operations according to flags@>
 @<close child process and remove directories@>
 @
@@ -907,22 +907,21 @@ run_filter(Chunk flt, int in, int out)
         perror("fork");
         exit(1);
     } else if (pid == 0) {
-        if (chdir(mount_point) < 0) {
-            perror("chdir");
-            exit(1);
+        if (in != STDIN_FILENO) {
+            if (dup2(in, STDIN_FILENO) < 0) {
+                perror("dup2");
+                exit(1);
+            }
+            close(in);
         }
 
-        if (dup2(in, STDIN_FILENO) < 0) {
-            perror("dup2");
-            exit(1);
+        if (out != STDOUT_FILENO) {
+            if (dup2(out, STDOUT_FILENO) < 0) {
+                perror("dup2");
+                exit(1);
+            }
+            close(out);
         }
-        close(in);
-
-        if (dup2(out, STDOUT_FILENO) < 0) {
-            perror("dup2");
-            exit(1);
-        }
-        close(out);
 
         int fd;
 
@@ -954,6 +953,12 @@ do {
 do {
     char *name = strdup(name_of_chunk(flt));
     char *argv[2] = {name, NULL};
+
+    if (chdir(mount_point) < 0) {
+        perror("chdir");
+        exit(1);
+    }
+
     if (fexecve(fd, argv, environ) < 0) {
         perror("fexecve");
         exit(1);
@@ -2272,7 +2277,31 @@ case 'x':
 @<operations after mounting file system@=
 if (name_of_chunk_to_execute) {
     if (!chunk_of_name_exist(name_of_chunk_to_execute)) {
-        fprintf(stderr, "Unknown chunk: %s\n", name_of_chunk_to_print);
+        fprintf(stderr, "Unknown chunk: %s\n", name_of_chunk_to_execute);
+        exit(1);
+    }
+    Chunk exe;
+    exe = chunk_of_name(name_of_chunk_to_execute);
+
+    pid_t cld;
+    int st;
+    cld = run_filter(exe, STDIN_FILENO, STDOUT_FILENO);
+    waitpid(cld, &st, 0);
+
+    if (WIFEXITED(st)) {
+        if (WEXITSTATUS(st) != 0) {
+            fprintf(stderr,
+                "Faled at execute @@<%s@@>, error code: %d\n",
+                name_of_chunk_to_execute,
+                WEXITSTATUS(st)
+            );
+            exit(1);
+        }
+    } else {
+        fprintf(stderr,
+            "Faled at execute @@<%s@@>, unknown reason\n",
+            name_of_chunk_to_execute
+        );
         exit(1);
     }
     break;

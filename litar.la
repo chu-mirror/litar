@@ -280,6 +280,7 @@ print_usage()
 @
 
 @<global variables@=
+int chosen_usage = -1;
 char *archive_name = NULL;
 @
 
@@ -311,13 +312,29 @@ do {
         }
     }
 
-    if (optind < argc) {
+    if (chosen_usage == -1) {
+        print_usage();
+        exit(1);
+    }
+
+    switch (chosen_usage) {
+    case 0:
+        break;
+    case 1:
+        if (argc - optind != 1) {
+            print_usage();
+            exit(1);
+        }
         archive_name = argv[optind];
 
         if (access(archive_name, R_OK) == -1) {
             perror(archive_name);
             exit(1);
         }
+        break;
+    default:
+        print_usage();
+        exit(1);
     }
 } while (0);
 @
@@ -927,11 +944,7 @@ do {
     Str ct;
     int n, wtn = 0;
     ct = content_of_chunk(flt);
-
-    while ((n = write(fd, raw_string(ct) + wtn, str_length(ct) - wtn)) > 0) {
-        wtn += n;
-    }
-
+    fileio_write_str(fd, ct);
     free_str(&ct);
 } while (0);
 @
@@ -958,21 +971,13 @@ transform(Str txt, List flts)
     flts = copy_list(flts);
     reverse(&flts);
 
-    int len = length(flts);
-
     int in, out;
 
     if ((in = memfd_create("file1", 0)) < 0) {
         perror("memfd_create");
         exit(1);
     }
-    do {
-        int n, wtn = 0;
-        while ((n = write(in, raw_string(txt) + wtn, str_length(txt) - wtn)) > 0) {
-            wtn += n;
-        }
-        lseek(in, 0, SEEK_SET);
-    } while (0);
+    fileio_write_str(in, txt);
 
     if ((out = memfd_create("file2", 0)) < 0) {
         perror("memfd_create");
@@ -987,13 +992,8 @@ transform(Str txt, List flts)
         lseek(out, 0, SEEK_SET);
         pid = run_filter(flt, in, out);
 
-        do {
-            int t;
+        SWAP(in, out);
 
-            t = in;
-            in = out;
-            out = t;
-        } while (0);
         waitpid(pid, &st, 0);
         if (WIFEXITED(st)) {
             if (WEXITSTATUS(st) != 0) {
@@ -1012,29 +1012,17 @@ transform(Str txt, List flts)
             exit(1);
         }
     }
-    free_list(&flts);
 
     lseek(in, 0, SEEK_SET);
-    @<read from "in" to "txt"@>
+    str_clean(txt);
+    fileio_read_str(in, txt);
+
+    close(in);
+    close(out);
+    free_list(&flts);
 
     return;
 }
-@
-
-@<read from "in" to "txt"@=
-do {
-    int n, rd;
-    char buf[1000];
-
-    rd = 0;
-    
-    str_clean(txt);
-    while ((n = read(in, buf, 999)) > 0) {
-        buf[n] = '\0';
-        str_extend(txt, buf);
-    }
-    
-} while (0);
 @
 
 # Parsing
@@ -2151,6 +2139,7 @@ bool to_print_help;
 
 @<cases for long option@=
 if (strcmp(long_options[option_index].name, "help") == 0) {
+    chosen_usage = 0;
     to_print_help = true;
     break;
 }
@@ -2177,6 +2166,7 @@ bool to_print_version_info;
 
 @<cases for long option@=
 if (strcmp(long_options[option_index].name, "version") == 0) {
+    chosen_usage = 0;
     to_print_version_info = true;
     break;
 }
@@ -2198,18 +2188,29 @@ if (to_print_version_info) {
 printf("Version %s, built at <build time>\n", version);
 @
 
-@<command line options for litar@=
-["Specify the upper layer.", "u", "DIR"],
-["Specify the mount point.", "m", "DIR"],
+@<command line options for "litar ARCHIVE"@=
+{
+    long_opt => 'mirror',
+    opt => 'm',
+    argument => 'DIR',
+    description => 'Mirror the filesystem in ARCHIVE under DIR',
+},
+@
+
+@<global variables@=
+char *mirror_point = NULL;
 @
 
 @<cases for command line option@=
-case 'u':
-    upper_layer = optarg;
-    break;
 case 'm':
-    mount_point = optarg;
+    chosen_usage = 1;
+    mirror_point = optarg;
     break;
+@
+
+@<operations after mounting file system@=
+if (mirror_point) {
+}
 @
 
 @<command line options for "litar ARCHIVE"@=
@@ -2225,19 +2226,15 @@ case 'm':
 char *name_of_chunk_to_print;
 @
 
-@<flags@=
-bool to_print_specific_chunk;
-@
-
 @<cases for command line option@=
 case 'p':
-    to_print_specific_chunk = true;
+    chosen_usage = 1;
     name_of_chunk_to_print = optarg;
     break;
 @
 
 @<operations after mounting file system@=
-if (to_print_specific_chunk) {
+if (name_of_chunk_to_print) {
     if (!chunk_of_name_exist(name_of_chunk_to_print)) {
         fprintf(stderr, "Unknown chunk: %s\n", name_of_chunk_to_print);
         exit(1);
@@ -2246,8 +2243,6 @@ if (to_print_specific_chunk) {
     cc = content_of_chunk(chunk_of_name(name_of_chunk_to_print));
     puts(raw_string(cc));
     free_str(&cc);
-
-    to_continue = false;
     break;
 }
 @
@@ -2261,32 +2256,23 @@ if (to_print_specific_chunk) {
 },
 @
 
-@<flags@=
-bool to_execute_specific_chunk;
-@
-
 @<global variables@=
 char *name_of_chunk_to_execute;
 @
 
 @<cases for command line option@=
 case 'x':
-    to_execute_specific_chunk = true;
+    chosen_usage = 1;
     name_of_chunk_to_execute = optarg;
     break;
 @
 
 @<operations after mounting file system@=
-if (to_execute_specific_chunk) {
+if (name_of_chunk_to_execute) {
     if (!chunk_of_name_exist(name_of_chunk_to_execute)) {
         fprintf(stderr, "Unknown chunk: %s\n", name_of_chunk_to_print);
         exit(1);
     }
-    Str cc;
-    puts(raw_string(cc));
-    free_str(&cc);
-
-    to_continue = false;
     break;
 }
 @
@@ -2431,14 +2417,16 @@ int main(int argc, char *argv[])
 #include <ctype.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <limits.h>
+#include <errno.h>
+#include <signal.h>
+
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <limits.h>
-#include <errno.h>
-#include <signal.h>
+#include <sys/sendfile.h>
 
 #define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 14)
 #include <fuse.h>
@@ -2450,6 +2438,7 @@ int main(int argc, char *argv[])
 #include "atom.h"
 #include "deque.h"
 #include "state.h"
+#include "fileio.h"
 @
 
 # Basic Script

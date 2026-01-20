@@ -147,6 +147,7 @@ sed 's/world/WORLD/'
 ```
 
 The two relations are extended to,
+
 1. a chunk is extended by a block transformed by filters;
 2. a block include a chunk transformed by filters
    at the position of reference to the chunk.
@@ -218,6 +219,107 @@ Besides these control characters that describes the structure of a litar archive
 there are some other control characters. They are commands, which influence
 the process of dealing with litar archive. For example, @@. receives an argument
 of file name, and inserts the content of that file at the place of @@..
+
+There's another important extension for reusability of code. Let's say, a chunk
+defines a general structure for a C program. Then we want to write two seperated
+C program in one litar archive. The final result might look like,
+
+```
+@@<general structure for C program@@=
+@@<includes@@>
+int main(int argc, char *argv)
+{
+    @@<main body of C program@@>
+}
+@@
+
+@@[program1.c@@=
+@@<general structure for C program@@>
+@@
+
+@@[program2.c@@=
+@@<general structure for C program@@>
+@@
+```
+
+It does not work because all extending to the @@<general structure for C program@@>
+reflects on both programs. litar introduce specialization of chunks.
+
+```
+@@<general structure for C program@@=
+@@<includes@@>
+int main(int argc, char *argv)
+{
+    @@<main body of C program@@>
+}
+@@
+
+@@[program1.c@@=
+@@<program1@:general structure for C program@@>
+@@
+
+@@[program2.c@@=
+@@<program2@:general structure for C program@@>
+@@
+
+@@<program1@:includes@@=
+#include <stdio.h>
+@@
+
+@@<progarm1@:main body of C program@@=
+printf("Hello from program1\n");
+@@
+```
+
+Extending through the specialized name does not affect the original chunk.
+
+When a litar archive becomes bigger and bigger, despite that the name of chunks
+is usually a long sentence, names might conflict.
+So litar supports modulizing.
+
+```
+@@- Module 1
+
+@@<chunk@@=
+    The contents.
+@@
+
+@@- Module 2
+
+@@<chunk@@=
+    @@<Module 1@@/chunk@@>
+@@
+```
+
+litar does not stop users from modifying chunks of other modules, in fact,
+it's a powerful way to interact with other modules, but use this feature
+with caution.
+
+litar's internal file system makes use of this module system.
+
+```
+/
+    module 1
+        directory 1
+            file 1
+        directory 2
+        ...
+    module 2
+    ...
+```
+
+A filter is executed under the directory of the module it belongs to.
+So a module is simply a directory in some way, so litar also allows importing
+outside directories.
+
+```
+@@+ toolset
+
+@@<filter@@=#!/bin/sh
+../toolset/tool
+@@
+```
+
 @
 
 # Invocation

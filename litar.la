@@ -255,18 +255,18 @@ int main(int argc, char *argv)
 @@
 
 @@[program1.c@@=
-@@<program1@:general structure for C program@@>
+@@<program1@@:general structure for C program@@>
 @@
 
 @@[program2.c@@=
-@@<program2@:general structure for C program@@>
+@@<program2@@:general structure for C program@@>
 @@
 
-@@<program1@:includes@@=
+@@<program1@@:includes@@=
 #include <stdio.h>
 @@
 
-@@<progarm1@:main body of C program@@=
+@@<progarm1@@:main body of C program@@=
 printf("Hello from program1\n");
 @@
 ```
@@ -318,6 +318,16 @@ outside directories.
 @@<filter@@=#!/bin/sh
 ../toolset/tool
 @@
+```
+
+The final piece of establishing code reusability is @@., which is indroduced before.
+
+```
+@@<chunk@@=
+    @@<module in archive@@/chunk@@>
+@@
+
+@@. archive
 ```
 
 @

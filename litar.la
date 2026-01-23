@@ -607,7 +607,7 @@ normalize(const char *name)
     l = strlen(name);
     while (i < l) {
         if (isspace(name[i])) {
-            if (j != 0 && norm[j-1] != ' ') {
+            if (j != 0 && !isspace(norm[j-1])) {
                 norm[j++] = ' ';
             }
         } else {
@@ -615,7 +615,7 @@ normalize(const char *name)
         }
         ++i;
     }
-    if (norm[j-1] == ' ') {
+    if (isspace(norm[j-1])) {
         norm[j-1] = '\0';
     } else {
         norm[j] = '\0';
@@ -1008,8 +1008,7 @@ chunk_is_file(Chunk chk)
             }
             node = nd;
             f = i+1;
-        }
-        if (path[i] == '\0') {
+        } else if (path[i] == '\0') {
             if ((nd = node_under_node(path+f, node)) == NULL) {
                 NEW(nd);
                 nd->type = NODE_REGULAR;
@@ -1229,6 +1228,13 @@ do {
         exit(1);
     }
 
+    if (flt->chunk->module != module_of_name("")) {
+        if (chdir(flt->chunk->module->name) < 0) {
+            perror("chdir");
+            exit(1);
+        }
+    }
+
     if (fexecve(fd, argv, environ) < 0) {
         perror("fexecve");
         exit(1);
@@ -1409,7 +1415,7 @@ extract_name(State s, Token tkn)
         str_append(cache, '\100');
         return true;
     }
-    if (tkn->type == TOKEN_NORMAL_CHARACTER) {
+    if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
         str_append(cache, tkn->value);
         return true;
     }
@@ -1620,6 +1626,7 @@ static State state_parse_comment_handler(State s, Signal sig)
 {
     Token tkn;
     RENAME(sig, tkn);
+    @<handlings for token "tkn" when "state_parse_comment"@>
     if (extract_text(s, tkn)) {
         return s;
     }
@@ -2205,7 +2212,7 @@ struct state_parse_escaping_local {
 @<functions@=
 static State state_parse_escaping_in(State s, Signal sig)
 {
-    struct state_parse_escaping_local *lc_r;
+    struct state_parse_escaping_local *lc_r = NULL;
 
     NEW0(lc_r);
     lc_r->esc = ((Token)sig)->value;
@@ -2270,6 +2277,8 @@ if (extract_name(s, tkn)) {
 ### Set Module
 
 @<handlings for token "tkn" when "state_parse_comment"@=
+InputFrame ipt;
+RENAME(car(input_frames), ipt);
 if (ipt->cc == 2
     && tkn->type == TOKEN_CONTROL_CHARACTER
     && tkn->value == '-') {
@@ -2941,11 +2950,11 @@ do {
 } while (0);
 @
 
-@<operations after parsing input (DEBUG)@=
+@<operations after parsing input (debug)@=
 @<print nodes@>
 @
 
-@<functions (DEBUG)@=
+@<functions@=
 void print_node(Node nd, int level)
 {
     char *prefix = NULL;
@@ -2965,6 +2974,7 @@ void print_node(Node nd, int level)
     default:
         printf("%s%s\n", prefix, nd->name);
     }
+    FREE(prefix);
 }
 @
 

@@ -1,4 +1,42 @@
+@[README.md@=
 # Introduction
+
+@<introduction of litar@>
+
+# Reference
+
+@<reference of syntax@>
+
+# Install
+
+Make sure that libfuse3 is installed.
+
+In Debian, run:
+
+```
+# apt install libfuse3-dev pkg-config
+```
+
+Comple:
+
+```
+$ make
+```
+
+Test:
+
+```
+$ make hello
+$ ./hello
+```
+
+Install:
+
+```
+# make install
+```
+
+@
 
 @<introduction of litar@=
 Programmers have a lot of text to deal with. They write code,
@@ -29,7 +67,7 @@ A such file is called a litar archive, the name litar is by combining
 literate and archive.
 @
 
-@<syntax of litar@=
+@<reference of syntax@=
 Because a litar archive is supposed to contain text of all types, the syntax of
 itself should be as simple as possible. The syntax of a litar archive is built upon
 control characters, which are @@ followed by a non-alphabetic character.

@@ -26,6 +26,9 @@ boot: boot.c
 litar: litar.c
 	$(CC) $(CFLAGS) -o $@ $< `./light/finddeff.py $< ./light/include` $(LIBS)
 
+release: litar
+	./litar -p "README.md" litar.la > README.md
+
 clean:
 	rm -f litar.c litar hello litar.1 boot
 

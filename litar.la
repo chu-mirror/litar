@@ -745,6 +745,9 @@ equal_func_labels(const void *lbls1, const void *lbls2)
         l1 = cdr(l1);
         l2 = cdr(l2);
     }
+    if (!is_empty_list(l1) || !is_empty_list(l2)) {
+        r = 0;
+    }
     return r;
 }
 
@@ -1071,6 +1074,7 @@ content_of_chunk(ChunkRef ckr)
     }
 
     Str cc = NULL;
+    new_str(&cc);
 
     List remains = ckr->labels, passeds = empty_list;
 
@@ -1089,7 +1093,6 @@ content_of_chunk(ChunkRef ckr)
         reverse(&blks);
 
         Block blk;
-        new_str(&cc);
         push(chk, &stack_of_chunks_in_tangling);
         FOREACH(blk, blks) {
             Str exb = expanded_content_of_block(blk, remains);

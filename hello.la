@@ -1,23 +1,27 @@
 Say hello to all your classmates.
 
 @[hello.c@=
-#include <stdio.h>
+@<hello@:Simple C@/a simple c program@>
+@
 
-int main()
-{
-    @<print hello to every one@>
-}
-@|Scripts@/add comment@
+@<hello@:Simple C@/main body@=
+@<classmates
+    @|Scripts@/greetings for a list of people
+    @|Scripts@/exaggerated version for greetings@>
+@
+
+@[hello2.c@=
+@<hello2@:Simple C@/a simple c program@>
+@
+
+@<hello2@:Simple C@/main body@=
+@<classmates
+    @|Scripts@/greetings for a list of people@>
+@
 
 @<classmates@=
 Alice
 Floyd
-@
-
-@<print hello to every one@=
-@<classmates
-    @|Scripts@/greetings for a list of people
-    @|Scripts@/exaggerated version for greetings@>
 @
 
 @- Scripts
@@ -38,4 +42,16 @@ sed -f sed_script/greet_each.sed
 @<exaggerated version for greetings@=#!/bin/sh
 sed -e 's/Hello,/HELLO!/'
 @
+
+@- Simple C
+
+@<a simple c program@=
+#include <stdio.h>
+
+int main(int argc, char *argv[])
+{
+    @<main body@>
+    return 0;
+}
+@|Scripts@/add comment@
 

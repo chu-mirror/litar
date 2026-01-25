@@ -3158,8 +3158,8 @@ The syntax:
 @<command line usage@=@<basic perl settings@>
 my $syntax = @<invocation syntax@>;
 
-sub option_to_str {
-    my $opt = $_[0];
+sub option_to_str (_) {
+    my $opt = shift;
     my $str = '';
     if ($opt->{opt}) {
         $str .= "-$opt->{opt}";
@@ -3172,19 +3172,19 @@ sub option_to_str {
     $str
 }
 
-sub usage_to_str {
-    my $usage = $_[0];
+sub usage_to_str (_) {
+    my $usage = shift;
     my $str = $syntax->{name};
 
     $str .= ' ';
-    $str .= '[' . (join '|', (map {option_to_str $_} @@{$usage->{options}})) . ']';
+    $str .= '[' . (join '|', map option_to_str, @@{$usage->{options}}) . ']';
     $str .= ' ';
     $str .= join ' ', @@{$usage->{arguments}};
     
     $str
 }
 
-my @usages = map {usage_to_str $_} @@{$syntax->{usages}};
+my @usages = map usage_to_str, @@{$syntax->{usages}};
 my $usages_str = '';
 
 $usages_str .= 'Usage:\t' . (shift @usages);
@@ -3199,8 +3199,8 @@ print $usages_str;
 @<getopt string@=@<basic perl settings@>
 my $syntax = @<invocation syntax@>;
 
-sub option_to_str {
-    my $opt = $_[0];
+sub option_to_str (_) {
+    my $opt = shift;
     my $str = '';
     if ($opt->{opt}) {
         $str = $opt->{opt};
@@ -3216,7 +3216,7 @@ for my $usage (@@{$syntax->{usages}}) {
     @options = (@options, @@{$usage->{options}});
 }
 
-print (join "", (map {option_to_str $_} @options));
+print (join "", map option_to_str, @options);
 @|evaluate@
 
 @<long options@=@<basic perl settings@>
@@ -3224,8 +3224,8 @@ my $syntax = @<invocation syntax@>;
 
 my $count = 256;
 
-sub option_to_longopt {
-    my $opt = $_[0];
+sub option_to_longopt (_) {
+    my $opt = shift;
     my $str = '{';
     if ($opt->{long_opt}) {
         $str .= '"' . $opt->{long_opt} . '"';
@@ -3249,14 +3249,14 @@ for my $usage (@@{$syntax->{usages}}) {
     @options = (@options, @@{$usage->{options}});
 }
 
-print (join "", (map {option_to_longopt $_} @options));
+print (join "", map option_to_longopt, @options);
 @|evaluate@
 
 @<manpage synopsis@=@<basic perl settings@>
 my $syntax = @<invocation syntax@>;
 
-sub option_to_str {
-    my $opt = $_[0];
+sub option_to_str (_) {
+    my $opt = shift;
     my $str = '';
     if ($opt->{opt}) {
         $str .= '\fB\-' . $opt->{opt} . '\fR';
@@ -3269,12 +3269,12 @@ sub option_to_str {
     $str
 }
 
-sub usage_to_str {
-    my $usage = $_[0];
+sub usage_to_str (_) {
+    my $usage = shift;
     my $str = ".B $syntax->{name}";
 
     $str .= "\n";
-    $str .= '[' . (join '|', (map {option_to_str $_} @@{$usage->{options}})) . ']';
+    $str .= '[' . (join '|', map option_to_str, @@{$usage->{options}}) . ']';
     $str .= "\n";
     $str .= "@@{[map {'\fI' . $_ . '\fR'} @@{$usage->{arguments}}]}";
     $str .= "\n";
@@ -3282,7 +3282,7 @@ sub usage_to_str {
     $str
 }
 
-my @usages = map {usage_to_str $_} @@{$syntax->{usages}};
+my @usages = map usage_to_str, @@{$syntax->{usages}};
 print join "\n", @usages;
 @|evaluate@
 
@@ -3338,7 +3338,7 @@ sub state_to_out_func {
     state_to_c_var($_[0]) . "_out"
 }
 
-sub state_to_dec {
+sub state_to_dec (_) {
     "State @@{[state_to_c_var($_[0])]};"
 }
 @
@@ -3347,7 +3347,7 @@ sub state_to_dec {
 @<C structs for state@>
 my $model = @<model of states@>;
 
-print join "\n", map {state_to_dec $_} @@{$model};
+print join "\n", map state_to_dec, @@{$model};
 @|evaluate@
 
 @<initialization of states@=@<basic perl settings@>
@@ -3360,7 +3360,7 @@ for my $st (@model) {
     $states{$st->{name}} = $st;
 }
 
-sub state_to_init {
+sub state_to_init (_) {
     my($st, $s) = ($_[0], "");
     $s .= "new_state(&@@{[state_to_c_var($st)]},";
     if ($st->{parent}) {
@@ -3375,7 +3375,7 @@ sub state_to_init {
     $s
 }
 
-my $str = join "\n", map {state_to_init $_} @model;
+my $str = join "\n", map state_to_init, @model;
 $str .= "\nstate_init(@@{[state_to_c_var($model[0])]});\n";
 print $str;
 @|evaluate@
@@ -3385,12 +3385,12 @@ print $str;
 my $model = @<model of states@>;
 my @model = @@{$model};
 
-sub state_to_free {
+sub state_to_free (_) {
     "free_state(&@@{[state_to_c_var($_[0])]});";
 }
 
 my $str = "state_clear(@@{[state_to_c_var($model[0])]});\n";
-$str .= join "\n", map {state_to_free $_} @model;
+$str .= join "\n", map state_to_free, @model;
 print($str);
 @|evaluate@
 

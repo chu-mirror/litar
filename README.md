@@ -355,7 +355,7 @@ Make sure that libfuse3 is installed.
 In Debian, run:
 
 ```
-# apt install libfuse3-dev pkg-config
+# apt install libfuse3-dev pkg-config libtext-template-perl
 ```
 
 Comple:

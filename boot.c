@@ -26,37 +26,44 @@
 #include "str.h"
 #include "list.h"
 #include "hash_table.h"
+#include "assoc_table.h"
 #include "atom.h"
 #include "deque.h"
 #include "state.h"
 #include "fileio.h"
 
+typedef struct mappings_module *Module;
 typedef struct mappings_chunk *Chunk;
 typedef struct mappings_block *Block;
 typedef struct mappings_chunk_ref *ChunkRef;
 
-void normalize(char *norm);
-Str content_of_chunk(Chunk chk);
-Str expanded_content_of_block(Block blk);
+const char *normalize(const char *name);
+Str content_of_chunk(ChunkRef ckr);
+Str expanded_content_of_block(Block blk, List lbls);
 void transform(Str txt, List flts);
 
+struct mappings_module {
+    const char *name;
+    HashTable chunk_name_to_chunk;
+};
+
 struct mappings_chunk {
-    char *chunk_name;
-    List blocks;
+    Module module;
+    const char *name;
+    AssocTable labels_to_blocks;
 };
 
 struct mappings_block {
-    Chunk chunk;
     List filters;
     List contents;
 };
 
 struct mappings_chunk_ref {
     Chunk chunk;
-    List filters;
+    List labels;
 };
 typedef struct {
-    char *file;
+    const char *file;
     int start;
     int end;
 } *TextRef;
@@ -67,7 +74,10 @@ typedef struct {
     } type;
     union {
         TextRef text;
-        ChunkRef chunk;
+        struct {
+            ChunkRef chunk_ref;
+            List filters;
+        } chunk;
     } value;
 } *BlockContent;
 typedef struct {
@@ -90,10 +100,10 @@ typedef struct {
         List nodes;
         Chunk chunk;
     } value;
-    char *name;
+    const char *name;
 } *Node;
 typedef struct {
-    char *file;
+    const char *file;
     FILE *in;
     /* current position, current column, current row */
     int cp, cc, cr;
@@ -111,8 +121,8 @@ typedef struct {
     char value;
 } *Token;
 struct state_parse_local {
-    char escaping;
-    Str cache;
+    Module module;
+    State state_before_escaping;
 };
 struct state_parse_block_local {
     enum {
@@ -120,8 +130,16 @@ struct state_parse_block_local {
         CHUNK_TYPE_REGULAR_FILE,
         CHUNK_TYPE_EXECUTABLE_FILE
     } chunk_type;
-    Str chunk_name;
+    ChunkRef chunk_ref;
     Block block;
+};
+struct state_parse_block_contents_reference_local {
+    ChunkRef chunk_ref;
+    List filters;
+};
+struct state_parse_escaping_local {
+    char esc;
+    const char *argument;
 };
 
 bool to_print_help;
@@ -130,7 +148,7 @@ bool to_print_version_info;
 int chosen_usage = -1;
 char *archive_name = NULL;
 HashTable file_to_mmap_addr = NULL;
-HashTable chunk_name_to_chunk = NULL;
+HashTable module_name_to_module = NULL;
 List sections;
 Node root_node;
 List stack_of_chunks_in_tangling = empty_list;
@@ -139,13 +157,19 @@ List input_frames;
 State state_parse;
 State state_parse_comment;
 State state_parse_block;
-State state_parse_block_chunk_name;
+State state_parse_block_chunk_ref;
 State state_parse_block_contents;
 State state_parse_block_filters;
+State state_parse_block_chunk_ref_name;
 State state_parse_block_contents_text;
 State state_parse_block_contents_reference;
-State state_parse_block_contents_reference_name;
+State state_parse_block_contents_reference_chunk_ref;
 State state_parse_block_contents_reference_filters;
+State state_parse_block_contents_reference_chunk_ref_name;
+State state_parse_block_contents_reference_filters_name;
+State state_parse_block_filters_name;
+State state_parse_escaping;
+State state_parse_escaping_argument;
 char *archive_data = NULL;
 char *fuse_mount_point = NULL;
 char *work_dir = NULL;
@@ -165,78 +189,117 @@ print_usage()
     printf("Usage:\tlitar [--help|--version] \n\tlitar [-m DIR|-p CHUNK|-x "
            "CHUNK] ARCHIVE\n");
 }
-Chunk
-chunk_of_name(const char *name)
+Module
+module_of_name(const char *name)
 {
-    char *norm;
-    norm = strdup(name);
-    normalize(norm);
+    const char *norm;
+    norm = normalize(name);
+
+    Module mod;
+    mod = get_from_hash_table(module_name_to_module, norm);
+    if (mod == NULL) {
+        RESERVE(NEW0(mod); put_to_hash_table(module_name_to_module, norm, mod);
+                mod->name = norm;);
+    }
+
+    return mod;
+}
+Chunk
+chunk_in_module_of_name(Module mod, const char *name)
+{
+    const char *norm;
+    norm = normalize(name);
+
+    if (!mod->chunk_name_to_chunk) {
+        RESERVE(new_string_hash_table(&mod->chunk_name_to_chunk));
+    }
 
     Chunk chk;
-    chk = get_from_hash_table(chunk_name_to_chunk, norm);
+    chk = get_from_hash_table(mod->chunk_name_to_chunk, norm);
     if (chk == NULL) {
-        NEW0(chk);
-        put_to_hash_table(chunk_name_to_chunk, norm, chk);
-        chk->chunk_name = norm;
-    } else {
-        free(norm);
+        RESERVE(NEW0(chk);
+                put_to_hash_table(mod->chunk_name_to_chunk, norm, chk);
+                chk->name = norm;
+                chk->module = mod;);
     }
 
     return chk;
 }
 
 bool
-chunk_of_name_exist(const char *name)
+chunk_of_name_exist_in_module(const char *name, Module mod)
 {
-    char *norm;
-    norm = strdup(name);
-    normalize(norm);
+    if (!mod->chunk_name_to_chunk) {
+        return false;
+    }
+
+    const char *norm;
+    norm = normalize(name);
 
     Chunk chk;
-    chk = get_from_hash_table(chunk_name_to_chunk, norm);
+    chk = get_from_hash_table(mod->chunk_name_to_chunk, norm);
 
-    free(norm);
     return chk != NULL;
 }
+static int
+equal_func_labels(const void *lbls1, const void *lbls2)
+{
+    List l1, l2;
+    int r = 1;
 
-const char *
-name_of_chunk(Chunk chk)
-{
-    return chk->chunk_name;
+    RENAME(lbls1, l1);
+    RENAME(lbls2, l2);
+
+    while (!is_empty_list(l1) && !is_empty_list(l2)) {
+        r = r && (car(l1) == car(l2));
+        if (!r) {
+            break;
+        }
+        l1 = cdr(l1);
+        l2 = cdr(l2);
+    }
+    if (!is_empty_list(l1) || !is_empty_list(l2)) {
+        r = 0;
+    }
+    return r;
 }
+
 List
-blocks_of_chunk(Chunk chk)
+blocks_of_chunk_ref(ChunkRef ckr)
 {
-    return chk->blocks;
+    Chunk chk = ckr->chunk;
+    List lbls = ckr->labels;
+
+    if (!chk->labels_to_blocks) {
+        return empty_list;
+    }
+
+    List blks = get_from_assoc_table(chk->labels_to_blocks, lbls);
+
+    return blks;
 }
+
 void
-block_extend_chunk(Block blk, Chunk chk)
+block_extend_chunk_ref(Block blk, ChunkRef ckr)
 {
-    List blks = blocks_of_chunk(chk);
+    Chunk chk = ckr->chunk;
+    List lbls = ckr->labels;
+    if (!chk->labels_to_blocks) {
+        new_assoc_table(&chk->labels_to_blocks, equal_func_labels);
+    }
+    List blks = blocks_of_chunk_ref(ckr);
     blks = cons(blk, blks);
-    chk->blocks = blks;
-    blk->chunk = chk;
-}
-List
-filters_of_block(Block blk)
-{
-    return blk->filters;
+    put_to_assoc_table(chk->labels_to_blocks, lbls, blks);
 }
 void
 block_is_transformed_by(Block blk, Chunk flt)
 {
     push(flt, &blk->filters);
 }
-List
-contents_of_block(Block blk)
-{
-    return blk->contents;
-}
-
 void
 block_contain_text(Block blk, TextRef tr)
 {
-    List bcs = contents_of_block(blk);
+    List bcs = blk->contents;
     BlockContent bc = NULL;
 
     NEW0(bc);
@@ -248,45 +311,24 @@ block_contain_text(Block blk, TextRef tr)
 }
 
 void
-block_include_chunk(Block blk, ChunkRef cr)
+block_include_chunk_ref_with_filters(Block blk, ChunkRef ckr, List flts)
 {
-    List bcs = contents_of_block(blk);
+    List bcs = blk->contents;
     BlockContent bc = NULL;
 
     NEW0(bc);
     bc->type = BLOCK_CONTENT_CHUNK;
-    bc->value.chunk = cr;
+    bc->value.chunk.chunk_ref = ckr;
+    bc->value.chunk.filters = flts;
 
     bcs = cons(bc, bcs);
     blk->contents = bcs;
 }
-Chunk
-chunk_extended_by(Block blk)
-{
-    return blk->chunk;
-}
-List
-filters_of_chunk_ref(ChunkRef ckr)
-{
-    return ckr->filters;
-}
-
 void
-chunk_ref_reference_to(ChunkRef ckr, Chunk chk)
+chunk_ref_is_specialized_by(ChunkRef ckr, const char *lbl)
 {
-    ckr->chunk = chk;
-}
-
-void
-chunk_ref_is_transformed_by(ChunkRef ckr, Chunk flt)
-{
-    push(flt, &ckr->filters);
-}
-
-Chunk
-chunk_of_chunk_ref(ChunkRef ckr)
-{
-    return ckr->chunk;
+    const char *norm = normalize(lbl);
+    push((void *)norm, &ckr->labels);
 }
 Node
 node_under_node(const char *file, Node node)
@@ -307,9 +349,11 @@ node_under_node(const char *file, Node node)
 Node
 node_of_path(const char *path)
 {
-    char *path_t = strdup(path);
+    char *path_t = NULL;
     Node node = root_node;
     int i = 0, f = i, l = strlen(path);
+
+    STRDUP(path, path_t);
 
     if (path[0] == '/') {
         ++i;
@@ -327,40 +371,67 @@ node_of_path(const char *path)
         ++i;
     }
 
-    free(path_t);
+    FREE(path_t);
     return node;
+}
+
+char *
+path_of_chunk(Chunk chk)
+{
+    Str path = NULL;
+
+    new_str(&path);
+    if (chk->module != module_of_name("")) {
+        str_extend(path, chk->module->name);
+        str_extend(path, "/");
+    }
+    str_extend(path, chk->name);
+
+    char *pt = NULL;
+    STRDUP(raw_string(path), pt);
+
+    free_str(&path);
+    return pt;
 }
 
 Node
 node_of_chunk(Chunk chk)
 {
-    return node_of_path(name_of_chunk(chk));
+    char *path = path_of_chunk(chk);
+    Node nd = node_of_path(path);
+
+    FREE(path);
+
+    return nd;
 }
 
 void
 chunk_is_file(Chunk chk)
 {
-    char *name = strdup(name_of_chunk(chk));
+    char *path;
     Node node = root_node, nd;
-    int i = 0, f = i, l = strlen(name);
+    int i = 0, f = i, l;
+
+    path = path_of_chunk(chk);
+    l = strlen(path);
+
     while (f < l) {
-        if (name[i] == '/') {
-            name[i] = '\0';
-            if ((nd = node_under_node(name + f, node)) == NULL) {
+        if (path[i] == '/') {
+            path[i] = '\0';
+            if ((nd = node_under_node(path + f, node)) == NULL) {
                 NEW(nd);
                 nd->type = NODE_DIRECTORY;
-                nd->name = strdup(name + f);
+                nd->name = atom_str(path + f);
                 nd->value.nodes = empty_list;
                 push(nd, &node->value.nodes);
             }
             node = nd;
             f = i + 1;
-        }
-        if (name[i] == '\0') {
-            if ((nd = node_under_node(name + f, node)) == NULL) {
+        } else if (path[i] == '\0') {
+            if ((nd = node_under_node(path + f, node)) == NULL) {
                 NEW(nd);
                 nd->type = NODE_REGULAR;
-                nd->name = strdup(name + f);
+                nd->name = atom_str(path + f);
                 nd->value.chunk = chk;
                 push(nd, &node->value.nodes);
             }
@@ -368,7 +439,7 @@ chunk_is_file(Chunk chk)
         }
         ++i;
     }
-    free(name);
+    FREE(path);
 }
 
 void
@@ -416,25 +487,37 @@ fetch_text_from(TextRef tr)
     str[len] = '\0';
     return str;
 }
-void
-normalize(char *norm)
+const char *
+normalize(const char *name)
 {
-    int i = 0, j = 0, l = strlen(norm);
+    int i = 0, j = 0, l = strlen(name);
+    char *norm = NULL;
+
+    STRDUP(name, norm);
+
+    l = strlen(name);
     while (i < l) {
-        if (isspace(norm[i])) {
-            if (j != 0 && norm[j - 1] != ' ') {
+        if (isspace(name[i])) {
+            if (j != 0 && !isspace(norm[j - 1])) {
                 norm[j++] = ' ';
             }
         } else {
-            norm[j++] = norm[i];
+            norm[j++] = name[i];
         }
         ++i;
     }
-    if (norm[j - 1] == ' ') {
+    if (isspace(norm[j - 1])) {
         norm[j - 1] = '\0';
     } else {
         norm[j] = '\0';
     }
+
+    const char *a;
+    RESERVE(a = atom_str(norm));
+
+    FREE(norm);
+
+    return a;
 }
 bool
 chunk_is_in_tangling(Chunk chk)
@@ -448,38 +531,61 @@ chunk_is_in_tangling(Chunk chk)
     return false;
 }
 Str
-content_of_chunk(Chunk chk)
+content_of_chunk(ChunkRef ckr)
 {
+    Chunk chk = ckr->chunk;
     if (chunk_is_in_tangling(chk)) {
-        fprintf(stderr, "Recursively include \"%s\"\n", name_of_chunk(chk));
+        fprintf(stderr, "Recursively include \"%s\"\n", chk->name);
         exit(1);
     }
 
     Str cc = NULL;
-    List blks = copy_list(blocks_of_chunk(chk));
-    Block blk;
-
-    reverse(&blks);
-
-    push(chk, &stack_of_chunks_in_tangling);
     new_str(&cc);
-    FOREACH (blk, blks) {
-        Str exb = expanded_content_of_block(blk);
-        transform(exb, blk->filters);
-        str_extend(cc, raw_string(exb));
-        free_str(&exb);
-    }
-    pop(&stack_of_chunks_in_tangling);
 
-    free_list(&blks);
+    List remains = ckr->labels, passeds = empty_list;
+
+    do {
+        List blks;
+        ChunkRef ckr = NULL;
+        NEW0(ckr);
+
+        reverse(&passeds);
+        ckr->chunk = chk;
+        ckr->labels = passeds;
+        blks = copy_list(blocks_of_chunk_ref(ckr));
+        reverse(&passeds);
+        FREE(ckr);
+
+        reverse(&blks);
+
+        Block blk;
+        push(chk, &stack_of_chunks_in_tangling);
+        FOREACH (blk, blks) {
+            Str exb = expanded_content_of_block(blk, remains);
+            transform(exb, blk->filters);
+            str_extend(cc, raw_string(exb));
+            free_str(&exb);
+        }
+        pop(&stack_of_chunks_in_tangling);
+
+        free_list(&blks);
+        if (is_empty_list(remains)) {
+            break;
+        }
+        push(car(remains), &passeds);
+        remains = cdr(remains);
+    } while (true);
+
+    free_list(&passeds);
+
     return cc;
 }
 
 Str
-expanded_content_of_block(Block blk)
+expanded_content_of_block(Block blk, List lbls)
 {
     Str ect = NULL;
-    List bcs = copy_list(contents_of_block(blk));
+    List bcs = copy_list(blk->contents);
     BlockContent bc;
 
     reverse(&bcs);
@@ -493,10 +599,23 @@ expanded_content_of_block(Block blk)
             FREE(txt);
         }
         if (bc->type == BLOCK_CONTENT_CHUNK) {
-            Str cc = content_of_chunk(bc->value.chunk->chunk);
-            transform(cc, filters_of_chunk_ref(bc->value.chunk));
+            List l1, l2, l;
+
+            l1 = copy_list(lbls);
+            l2 = copy_list(bc->value.chunk.chunk_ref->labels);
+            l = append(&l1, &l2);
+
+            ChunkRef ckr = NULL;
+            MOVE(bc->value.chunk.chunk_ref, ckr);
+            ckr->labels = l;
+            Str cc = content_of_chunk(ckr);
+            FREE(ckr);
+
+            transform(cc, bc->value.chunk.filters);
             str_extend(ect, raw_string(cc));
+
             free_str(&cc);
+            free_list(&l);
         }
     }
 
@@ -505,7 +624,7 @@ expanded_content_of_block(Block blk)
     return ect;
 }
 pid_t
-run_filter(Chunk flt, int in, int out)
+run_filter(ChunkRef flt, int in, int out)
 {
     pid_t pid;
     if ((pid = fork()) < 0) {
@@ -530,7 +649,7 @@ run_filter(Chunk flt, int in, int out)
 
         int fd;
 
-        if ((fd = memfd_create(name_of_chunk(flt), 0)) < 0) {
+        if ((fd = memfd_create(flt->chunk->name, 0)) < 0) {
             perror("memfd_create");
             exit(1);
         }
@@ -544,12 +663,19 @@ run_filter(Chunk flt, int in, int out)
         } while (0);
 
         do {
-            char *name = strdup(name_of_chunk(flt));
+            char *name = strdup(flt->chunk->name);
             char *argv[2] = {name, NULL};
 
             if (chdir(mount_point) < 0) {
                 perror("chdir");
                 exit(1);
+            }
+
+            if (flt->chunk->module != module_of_name("")) {
+                if (chdir(flt->chunk->module->name) < 0) {
+                    perror("chdir");
+                    exit(1);
+                }
             }
 
             if (fexecve(fd, argv, environ) < 0) {
@@ -585,7 +711,7 @@ transform(Str txt, List flts)
         exit(1);
     }
 
-    Chunk flt;
+    ChunkRef flt;
     FOREACH (flt, flts) {
         pid_t pid;
         int st;
@@ -602,7 +728,7 @@ transform(Str txt, List flts)
                 fprintf(
                     stderr,
                     "filter @<%s@> failed, error code: %d\n",
-                    name_of_chunk(flt),
+                    flt->chunk->name,
                     WEXITSTATUS(st)
                 );
                 exit(1);
@@ -611,7 +737,7 @@ transform(Str txt, List flts)
             fprintf(
                 stderr,
                 "filter @<%s@> failed, unknown reason",
-                name_of_chunk(flt)
+                flt->chunk->name
             );
             exit(1);
         }
@@ -684,11 +810,111 @@ next_token(InputFrame ipt)
 
     return tkn;
 }
+bool
+extract_name(State s, Token tkn)
+{
+    Str cache;
+    RENAME(*state_local(s), cache);
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
+        str_append(cache, '\100');
+        return true;
+    }
+    if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
+        str_append(cache, tkn->value);
+        return true;
+    }
+    return false;
+}
+
+bool
+extract_text(State s, Token tkn)
+{
+    List cache;
+    RENAME(*state_local(s), cache);
+
+    InputFrame ipt;
+    RENAME(car(input_frames), ipt);
+
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
+        TextRef txt = NULL;
+
+        NEW0(txt);
+        txt->file = ipt->file;
+        txt->start = ipt->cp - 1;
+        txt->end = ipt->cp - 1;
+
+        push(txt, &cache);
+        *state_local(s) = cache;
+
+        return true;
+    }
+    if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
+        TextRef txt;
+
+        if (is_empty_list(cache)) {
+            txt = NULL;
+
+            NEW0(txt);
+            txt->file = ipt->file;
+            txt->start = ipt->pp;
+            txt->end = ipt->pp;
+
+            push(txt, &cache);
+            *state_local(s) = cache;
+        }
+
+        RENAME(car(cache), txt);
+        txt->end = ipt->cp;
+
+        return true;
+    }
+    return false;
+}
+bool
+extract_chunk_ref(State s, State sn, Token tkn)
+{
+    static Module mod;
+
+    ChunkRef ckr;
+    RENAME(*state_local(s), ckr);
+
+    Str cache;
+    RENAME(*state_local(sn), cache);
+
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ':') {
+        push((void *)normalize(raw_string(cache)), &ckr->labels);
+        str_clean(cache);
+        return true;
+    }
+
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '/') {
+        mod = module_of_name(normalize(raw_string(cache)));
+        str_clean(cache);
+        return true;
+    }
+
+    if (tkn->type == TOKEN_CONTROL_CHARACTER
+        && (tkn->value == '>' || tkn->value == '|' || tkn->value == '='
+            || tkn->value == ' ')) {
+        if (mod == module_of_name("") || mod == NULL) {
+            mod = ((struct state_parse_local *)*state_local(state_parse))
+                      ->module;
+        }
+        ckr->chunk =
+            chunk_in_module_of_name(mod, normalize(raw_string(cache)));
+        mod = module_of_name("");
+        str_clean(cache);
+        return false;
+    }
+
+    return false;
+}
 static State
 state_parse_in(State s, Signal sig)
 {
     struct state_parse_local *lc_r = NULL;
     NEW0(lc_r);
+    lc_r->module = module_of_name("");
     *state_local(s) = lc_r;
     return state_parse_comment;
 }
@@ -703,27 +929,6 @@ state_parse_handler(State s, Signal sig)
         RENAME(sig, tkn);
         InputFrame ipt;
         RENAME(car(input_frames), ipt);
-        if (!lc_r->escaping && ipt->cc == 2
-            && tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '.') {
-            lc_r->escaping = '.';
-            new_str(&lc_r->cache);
-            return s;
-        }
-        if (lc_r->escaping == '.' && tkn->type == TOKEN_NORMAL_CHARACTER) {
-            str_append(lc_r->cache, tkn->value);
-            return s;
-        }
-        if (lc_r->escaping == '.' && tkn->type == TOKEN_NEWLINE) {
-            InputFrame ipt = NULL;
-            NEW0(ipt);
-            ipt->file = strdup(raw_string(lc_r->cache));
-            normalize(ipt->file);
-            push(ipt, &input_frames);
-
-            free_str(&lc_r->cache);
-            lc_r->escaping = '\0';
-            return s;
-        }
     } while (0);
 
     return NULL;
@@ -740,64 +945,40 @@ state_parse_out(State s, Signal sig)
 static State
 state_parse_comment_in(State s, Signal sig)
 {
-    InputFrame ipt;
-    RENAME(car(input_frames), ipt);
-
-    TextRef txt = NULL;
-    NEW0(txt);
-    txt->file = ipt->file;
-    txt->start = ipt->cp;
-    txt->end = ipt->cp;
-
-    List txts = empty_list;
-    push(txt, &txts);
-
-    *state_local(s) = txts;
-
+    List cache = empty_list;
+    *state_local(s) = cache;
     return NULL;
 }
 
 static State
 state_parse_comment_handler(State s, Signal sig)
 {
-    do {
-        Token tkn;
-        RENAME(sig, tkn);
-        InputFrame ipt;
-        RENAME(car(input_frames), ipt);
-        if (tkn->type == TOKEN_NORMAL_CHARACTER
-            || tkn->type == TOKEN_NEWLINE) {
-            List txts;
-            TextRef txt;
+    Token tkn;
+    RENAME(sig, tkn);
+    InputFrame ipt;
+    RENAME(car(input_frames), ipt);
+    if (ipt->cc == 2 && tkn->type == TOKEN_CONTROL_CHARACTER
+        && tkn->value == '-') {
+        struct state_parse_local *lc_r;
+        RENAME(*state_local(state_parse), lc_r);
+        lc_r->state_before_escaping = s;
+        return state_parse_escaping;
+    }
+    if (ipt->cc == 2 && tkn->type == TOKEN_CONTROL_CHARACTER
+        && tkn->value == '.') {
+        struct state_parse_local *lc_r;
+        RENAME(*state_local(state_parse), lc_r);
+        lc_r->state_before_escaping = s;
+        return state_parse_escaping;
+    }
 
-            RENAME(*state_local(s), txts);
-            RENAME(car(txts), txt);
-
-            txt->end = ipt->cp;
-            return s;
-        }
-
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-            List *txts_r;
-            TextRef txt;
-
-            RENAME(state_local(s), txts_r);
-
-            txt = NULL;
-            NEW0(txt);
-            txt->file = ipt->file;
-            txt->start = ipt->pp + 1;
-            txt->end = ipt->pp + 1;
-
-            push(txt, txts_r);
-            return s;
-        }
-        if (tkn->type == TOKEN_CONTROL_CHARACTER
-            && (tkn->value == '<' || tkn->value == '[' || tkn->value == '(')) {
-            return state_parse_block;
-        }
-    } while (0);
-
+    if (extract_text(s, tkn)) {
+        return s;
+    }
+    if (tkn->type == TOKEN_CONTROL_CHARACTER
+        && (tkn->value == '<' || tkn->value == '[' || tkn->value == '(')) {
+        return state_parse_block;
+    }
     return NULL;
 }
 
@@ -820,7 +1001,6 @@ state_parse_block_in(State s, Signal sig)
     struct state_parse_block_local *lc_r = NULL;
     NEW0(lc_r);
     NEW0(lc_r->block);
-    new_str(&lc_r->chunk_name);
 
     switch (tkn->value) {
     case '<':
@@ -835,22 +1015,22 @@ state_parse_block_in(State s, Signal sig)
     }
     *state_local(s) = lc_r;
 
-    return state_parse_block_chunk_name;
+    return state_parse_block_chunk_ref;
 }
 
 static State
 state_parse_block_handler(State s, Signal sig)
 {
-    do {
-        Token tkn;
-        RENAME(sig, tkn);
-        InputFrame ipt;
-        RENAME(car(input_frames), ipt);
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
-            return state_parse_comment;
+    Token tkn;
+    RENAME(sig, tkn);
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
+        if (state_is_active(state_parse_block_filters)) {
+            extract_chunk_ref(
+                state_parse_block_filters, state_parse_block_filters_name, tkn
+            );
         }
-    } while (0);
-
+        return state_parse_comment;
+    }
     return NULL;
 }
 
@@ -858,21 +1038,21 @@ static State
 state_parse_block_out(State s, Signal sig)
 {
     struct state_parse_block_local *lc_r;
+    struct state_parse_local *plc_r;
     RENAME(*state_local(s), lc_r);
-
-    Chunk chk;
-    chk = chunk_of_name(raw_string(lc_r->chunk_name));
-    block_extend_chunk(lc_r->block, chk);
+    RENAME(*state_local(state_parse), plc_r);
 
     switch (lc_r->chunk_type) {
     case CHUNK_TYPE_REGULAR_FILE:
-        chunk_is_file(chk);
+        chunk_is_file(lc_r->chunk_ref->chunk);
         break;
     case CHUNK_TYPE_EXECUTABLE_FILE:
-        chunk_is_executable(chk);
+        chunk_is_executable(lc_r->chunk_ref->chunk);
         break;
     default:
     }
+
+    block_extend_chunk_ref(lc_r->block, lc_r->chunk_ref);
 
     Section sec = NULL;
     NEW0(sec);
@@ -880,52 +1060,64 @@ state_parse_block_out(State s, Signal sig)
     sec->content.block = lc_r->block;
     push(sec, &sections);
 
-    free_str(&lc_r->chunk_name);
     FREE(*state_local(s));
     return NULL;
 }
 static State
-state_parse_block_chunk_name_in(State s, Signal sig)
+state_parse_block_chunk_ref_in(State s, Signal sig)
 {
+    NEW0(*(ChunkRef *)state_local(s));
+    return state_parse_block_chunk_ref_name;
+}
+
+static State
+state_parse_block_chunk_ref_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+
+    if (extract_chunk_ref(s, state_parse_block_chunk_ref_name, tkn)) {
+        return s;
+    }
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '=') {
+        return state_parse_block_contents;
+    }
     return NULL;
 }
 
 static State
-state_parse_block_chunk_name_handler(State s, Signal sig)
+state_parse_block_chunk_ref_out(State s, Signal sig)
 {
-    do {
-        Token tkn;
-        RENAME(sig, tkn);
-        InputFrame ipt;
-        RENAME(car(input_frames), ipt);
-        if (tkn->type == TOKEN_NORMAL_CHARACTER
-            || tkn->type == TOKEN_NEWLINE) {
-            struct state_parse_block_local *lc_r;
-            RENAME(*state_local(state_parse_block), lc_r);
+    struct state_parse_block_local *lc_r;
+    RENAME(*state_local(state_parse_block), lc_r);
 
-            str_append(lc_r->chunk_name, tkn->value);
-            return s;
-        }
-
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-            struct state_parse_block_local *lc_r;
-            RENAME(*state_local(state_parse_block), lc_r);
-
-            str_append(lc_r->chunk_name, '\100');
-            return s;
-        }
-
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '=') {
-            return state_parse_block_contents;
-        }
-    } while (0);
-
+    lc_r->chunk_ref = (ChunkRef)*state_local(s);
+    *state_local(s) = NULL;
     return NULL;
 }
 
 static State
-state_parse_block_chunk_name_out(State s, Signal sig)
+state_parse_block_chunk_ref_name_in(State s, Signal sig)
 {
+    new_str((Str *)state_local(s));
+    return NULL;
+}
+
+static State
+state_parse_block_chunk_ref_name_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+    if (extract_name(s, tkn)) {
+        return s;
+    }
+    return NULL;
+}
+
+static State
+state_parse_block_chunk_ref_name_out(State s, Signal sig)
+{
+    free_str((Str *)state_local(s));
     return NULL;
 }
 static State
@@ -937,17 +1129,12 @@ state_parse_block_contents_in(State s, Signal sig)
 static State
 state_parse_block_contents_handler(State s, Signal sig)
 {
-    do {
-        Token tkn;
-        RENAME(sig, tkn);
-        InputFrame ipt;
-        RENAME(car(input_frames), ipt);
-        if (state_is_active(state_parse_block_contents_text)
-            && tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
-            return state_parse_block_filters;
-        }
-    } while (0);
-
+    Token tkn;
+    RENAME(sig, tkn);
+    if (state_is_active(state_parse_block_contents_text)
+        && tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
+        return state_parse_block_filters;
+    }
     return NULL;
 }
 
@@ -959,270 +1146,380 @@ state_parse_block_contents_out(State s, Signal sig)
 static State
 state_parse_block_contents_text_in(State s, Signal sig)
 {
-    TextRef txt = NULL;
-    NEW0(txt);
-
-    InputFrame ipt;
-    RENAME(car(input_frames), ipt);
-
-    txt->file = ipt->file;
-    txt->start = ipt->cp;
-    txt->end = ipt->cp;
-
-    *state_local(s) = txt;
-
+    List cache = empty_list;
+    *state_local(s) = cache;
     return NULL;
 }
 
 static State
 state_parse_block_contents_text_handler(State s, Signal sig)
 {
-    do {
-        Token tkn;
-        RENAME(sig, tkn);
-        InputFrame ipt;
-        RENAME(car(input_frames), ipt);
-        if (tkn->type == TOKEN_NORMAL_CHARACTER
-            || tkn->type == TOKEN_NEWLINE) {
-            TextRef txt;
-            struct state_parse_block_local *lc_r;
+    Token tkn;
+    RENAME(sig, tkn);
+    struct state_parse_block_local *lc_r;
+    RENAME(*state_local(state_parse_block), lc_r);
 
-            RENAME(*state_local(s), txt);
-            RENAME(*state_local(state_parse_block), lc_r);
+    List cache;
+    RENAME(*state_local(s), cache);
 
-            if (is_empty_list(contents_of_block(lc_r->block))
-                && (txt->start == txt->end && ipt->pc != 0)
-                && (tkn->type == TOKEN_NEWLINE
-                    || (tkn->type == TOKEN_NORMAL_CHARACTER
-                        && isspace(tkn->value)))) {
-                txt->start = txt->end = txt->start + 1;
-            } else {
-                txt->end = ipt->cp;
-            }
-            return s;
-        }
+    if (is_empty_list(lc_r->block->contents) && is_empty_list(cache)
+        && (tkn->type == TOKEN_NEWLINE
+            || (tkn->type == TOKEN_NORMAL_CHARACTER && isspace(tkn->value)))) {
+        return s;
+    }
 
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-            struct state_parse_block_local *lc_r;
-            RENAME(*state_local(state_parse_block), lc_r);
+    if (extract_text(s, tkn)) {
+        return s;
+    }
 
-            TextRef txt;
-            RENAME(*state_local(s), txt);
-
-            block_contain_text(lc_r->block, txt);
-
-            txt = NULL;
-            NEW0(txt);
-
-            txt->file = ipt->file;
-            txt->start = ipt->pp + 1;
-            txt->end = ipt->pp + 1;
-
-            *state_local(s) = txt;
-
-            return s;
-        }
-
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
-            return state_parse_block_contents_reference;
-        }
-    } while (0);
-
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
+        return state_parse_block_contents_reference;
+    }
     return NULL;
 }
 
 static State
 state_parse_block_contents_text_out(State s, Signal sig)
 {
+    List txts;
+    RENAME(*state_local(s), txts);
+    reverse(&txts);
+
     struct state_parse_block_local *lc_r;
-    TextRef txt;
-    RENAME(*state_local(s), txt);
     RENAME(*state_local(state_parse_block), lc_r);
-    block_contain_text(lc_r->block, txt);
+
+    TextRef txt;
+    FOREACH (txt, txts) {
+        block_contain_text(lc_r->block, txt);
+    }
+    free_list(&txts);
     return NULL;
 }
 static State
 state_parse_block_contents_reference_in(State s, Signal sig)
 {
-    ChunkRef ckr = NULL;
-    NEW0(ckr);
-    *state_local(s) = ckr;
-    return state_parse_block_contents_reference_name;
+    struct state_parse_block_contents_reference_local *lc_r = NULL;
+    NEW0(lc_r);
+    *state_local(s) = lc_r;
+    return state_parse_block_contents_reference_chunk_ref;
 }
 
 static State
 state_parse_block_contents_reference_handler(State s, Signal sig)
 {
-    do {
-        Token tkn;
-        RENAME(sig, tkn);
-        InputFrame ipt;
-        RENAME(car(input_frames), ipt);
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
-            return state_parse_block_contents_text;
+    Token tkn;
+    RENAME(sig, tkn);
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
+        if (state_is_active(state_parse_block_contents_reference_chunk_ref)) {
+            extract_chunk_ref(
+                state_parse_block_contents_reference_chunk_ref,
+                state_parse_block_contents_reference_chunk_ref_name,
+                tkn
+            );
         }
-    } while (0);
-
+        if (state_is_active(state_parse_block_contents_reference_filters)) {
+            extract_chunk_ref(
+                state_parse_block_contents_reference_filters,
+                state_parse_block_contents_reference_filters_name,
+                tkn
+            );
+        }
+        return state_parse_block_contents_text;
+    }
     return NULL;
 }
 
 static State
 state_parse_block_contents_reference_out(State s, Signal sig)
 {
-    struct state_parse_block_local *lc_r;
-    RENAME(*state_local(state_parse_block), lc_r);
-    ChunkRef ckr;
-    RENAME(*state_local(s), ckr);
-    block_include_chunk(lc_r->block, ckr);
+    struct state_parse_block_local *plc_r;
+    RENAME(*state_local(state_parse_block), plc_r);
+
+    struct state_parse_block_contents_reference_local *lc_r;
+    RENAME(*state_local(s), lc_r);
+
+    block_include_chunk_ref_with_filters(
+        plc_r->block, lc_r->chunk_ref, lc_r->filters
+    );
+    FREE(lc_r);
     return NULL;
 }
 static State
-state_parse_block_contents_reference_name_in(State s, Signal sig)
+state_parse_block_contents_reference_chunk_ref_in(State s, Signal sig)
+{
+    NEW0(*(ChunkRef *)state_local(s));
+    return state_parse_block_contents_reference_chunk_ref_name;
+}
+
+static State
+state_parse_block_contents_reference_chunk_ref_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+    if (extract_chunk_ref(
+            s, state_parse_block_contents_reference_chunk_ref_name, tkn
+        )) {
+        return s;
+    }
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
+        return state_parse_block_contents_reference_filters;
+    }
+    return NULL;
+}
+
+static State
+state_parse_block_contents_reference_chunk_ref_out(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+
+    struct state_parse_block_contents_reference_local *lc_r;
+    RENAME(*state_local(state_parse_block_contents_reference), lc_r);
+    lc_r->chunk_ref = (ChunkRef)*state_local(s);
+    *state_local(s) = NULL;
+    return NULL;
+}
+
+static State
+state_parse_block_contents_reference_chunk_ref_name_in(State s, Signal sig)
 {
     new_str((Str *)state_local(s));
     return NULL;
 }
 
 static State
-state_parse_block_contents_reference_name_handler(State s, Signal sig)
+state_parse_block_contents_reference_chunk_ref_name_handler(
+    State s, Signal sig
+)
 {
-    do {
-        Token tkn;
-        RENAME(sig, tkn);
-        InputFrame ipt;
-        RENAME(car(input_frames), ipt);
-        if (tkn->type == TOKEN_NORMAL_CHARACTER
-            || tkn->type == TOKEN_NEWLINE) {
-            str_append(*(Str *)state_local(s), tkn->value);
-            return s;
-        }
+    Token tkn;
+    RENAME(sig, tkn);
 
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-            str_append(*(Str *)state_local(s), '\100');
-            return s;
-        }
-
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
-            return state_parse_block_contents_reference_filters;
-        }
-    } while (0);
+    if (extract_name(s, tkn)) {
+        return s;
+    }
 
     return NULL;
 }
 
 static State
-state_parse_block_contents_reference_name_out(State s, Signal sig)
+state_parse_block_contents_reference_chunk_ref_name_out(State s, Signal sig)
 {
-    Str txt;
-    RENAME(*state_local(s), txt);
-    Chunk chk;
-    chk = chunk_of_name(raw_string(txt));
-    ChunkRef ckr;
-    RENAME(*state_local(state_parse_block_contents_reference), ckr);
-    chunk_ref_reference_to(ckr, chk);
     free_str((Str *)state_local(s));
     return NULL;
 }
 static State
 state_parse_block_contents_reference_filters_in(State s, Signal sig)
 {
-    new_str((Str *)state_local(s));
-    return NULL;
+    NEW0(*(ChunkRef *)state_local(s));
+    return state_parse_block_contents_reference_filters_name;
 }
 
 static State
 state_parse_block_contents_reference_filters_handler(State s, Signal sig)
 {
-    do {
-        Token tkn;
-        RENAME(sig, tkn);
-        InputFrame ipt;
-        RENAME(car(input_frames), ipt);
-        if (tkn->type == TOKEN_NORMAL_CHARACTER
-            || tkn->type == TOKEN_NEWLINE) {
-            str_append(*(Str *)state_local(s), tkn->value);
-            return s;
-        }
+    Token tkn;
+    RENAME(sig, tkn);
 
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-            str_append(*(Str *)state_local(s), '\100');
-            return s;
-        }
+    if (extract_chunk_ref(
+            s, state_parse_block_contents_reference_filters_name, tkn
+        )) {
+        return s;
+    }
 
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
-            Str txt;
-            RENAME(*state_local(s), txt);
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
+        struct state_parse_block_contents_reference_local *lc_r;
+        RENAME(*state_local(state_parse_block_contents_reference), lc_r);
 
-            Chunk chk;
-            chk = chunk_of_name(raw_string(txt));
+        push(*state_local(s), &lc_r->filters);
 
-            ChunkRef ckr;
-            RENAME(*state_local(state_parse_block_contents_reference), ckr);
-
-            chunk_ref_is_transformed_by(ckr, chk);
-
-            free_str((Str *)state_local(s));
-            new_str((Str *)state_local(s));
-            return s;
-        }
-    } while (0);
-
+        *state_local(s) = NULL;
+        NEW0(*(ChunkRef *)state_local(s));
+        return s;
+    }
     return NULL;
 }
 
 static State
 state_parse_block_contents_reference_filters_out(State s, Signal sig)
 {
-    Str txt;
-    RENAME(*state_local(s), txt);
-    Chunk chk;
-    chk = chunk_of_name(raw_string(txt));
-    ChunkRef ckr;
-    RENAME(*state_local(state_parse_block_contents_reference), ckr);
-    chunk_ref_is_transformed_by(ckr, chk);
-    free_str((Str *)state_local(s));
+    Token tkn;
+    RENAME(sig, tkn);
+
+    struct state_parse_block_contents_reference_local *lc_r;
+    RENAME(*state_local(state_parse_block_contents_reference), lc_r);
+
+    push(*state_local(s), &lc_r->filters);
+
+    *state_local(s) = NULL;
     return NULL;
 }
+
 static State
-state_parse_block_filters_in(State s, Signal sig)
+state_parse_block_contents_reference_filters_name_in(State s, Signal sig)
 {
     new_str((Str *)state_local(s));
     return NULL;
 }
 
 static State
+state_parse_block_contents_reference_filters_name_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+
+    if (extract_name(s, tkn)) {
+        return s;
+    }
+
+    return NULL;
+}
+
+static State
+state_parse_block_contents_reference_filters_name_out(State s, Signal sig)
+{
+    free_str((Str *)state_local(s));
+    return NULL;
+}
+static State
+state_parse_block_filters_in(State s, Signal sig)
+{
+    NEW0(*(ChunkRef *)state_local(s));
+    return state_parse_block_filters_name;
+}
+
+static State
 state_parse_block_filters_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+
+    if (extract_chunk_ref(s, state_parse_block_filters_name, tkn)) {
+        return s;
+    }
+
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
+        struct state_parse_block_local *lc_r;
+        RENAME(*state_local(state_parse_block), lc_r);
+
+        push(*state_local(s), &lc_r->block->filters);
+
+        *state_local(s) = NULL;
+        NEW0(*(ChunkRef *)state_local(s));
+        return s;
+    }
+    return NULL;
+}
+
+static State
+state_parse_block_filters_out(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+
+    struct state_parse_block_local *lc_r;
+    RENAME(*state_local(state_parse_block), lc_r);
+
+    push(*state_local(s), &lc_r->block->filters);
+
+    *state_local(s) = NULL;
+    return NULL;
+}
+
+static State
+state_parse_block_filters_name_in(State s, Signal sig)
+{
+    new_str((Str *)state_local(s));
+    return NULL;
+}
+
+static State
+state_parse_block_filters_name_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+
+    if (extract_name(s, tkn)) {
+        return s;
+    }
+
+    return NULL;
+}
+
+static State
+state_parse_block_filters_name_out(State s, Signal sig)
+{
+    free_str((Str *)state_local(s));
+    return NULL;
+}
+static State
+state_parse_escaping_in(State s, Signal sig)
+{
+    struct state_parse_escaping_local *lc_r = NULL;
+
+    NEW0(lc_r);
+    lc_r->esc = ((Token)sig)->value;
+
+    *state_local(s) = lc_r;
+    return state_parse_escaping_argument;
+}
+
+static State
+state_parse_escaping_handler(State s, Signal sig)
 {
     do {
         Token tkn;
         RENAME(sig, tkn);
         InputFrame ipt;
         RENAME(car(input_frames), ipt);
-        if (tkn->type == TOKEN_NORMAL_CHARACTER
-            || tkn->type == TOKEN_NEWLINE) {
-            str_append(*(Str *)state_local(s), tkn->value);
-            return s;
+        if (tkn->type == TOKEN_NEWLINE) {
+            struct state_parse_local *lc_r;
+            RENAME(*state_local(state_parse), lc_r);
+            return lc_r->state_before_escaping;
         }
+    } while (0);
 
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-            str_append(*(Str *)state_local(s), '\100');
-            return s;
-        }
+    return NULL;
+}
 
-        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '|') {
-            Str txt;
-            RENAME(*state_local(s), txt);
+static State
+state_parse_escaping_out(State s, Signal sig)
+{
+    struct state_parse_escaping_local *lc_r;
+    RENAME(*state_local(s), lc_r);
 
-            Chunk chk;
-            chk = chunk_of_name(raw_string(txt));
+    if (lc_r->esc == '-') {
+        struct state_parse_local *plc_r;
+        RENAME(*state_local(state_parse), plc_r);
+        plc_r->module = module_of_name(lc_r->argument);
+    }
+    if (lc_r->esc == '.') {
+        InputFrame ipt = NULL;
+        NEW0(ipt);
+        ipt->file = normalize(lc_r->argument);
+        push(ipt, &input_frames);
+    }
 
-            struct state_parse_block_local *lc_r;
-            RENAME(state_local(state_parse_block), lc_r);
+    FREE(*state_local(s));
+    return NULL;
+}
 
-            block_is_transformed_by(lc_r->block, chk);
+static State
+state_parse_escaping_argument_in(State s, Signal sig)
+{
+    new_str((Str *)state_local(s));
+    return NULL;
+}
 
-            free_str((Str *)state_local(s));
-            new_str((Str *)state_local(s));
+static State
+state_parse_escaping_argument_handler(State s, Signal sig)
+{
+    do {
+        Token tkn;
+        RENAME(sig, tkn);
+        InputFrame ipt;
+        RENAME(car(input_frames), ipt);
+        if (extract_name(s, tkn)) {
             return s;
         }
     } while (0);
@@ -1231,18 +1528,11 @@ state_parse_block_filters_handler(State s, Signal sig)
 }
 
 static State
-state_parse_block_filters_out(State s, Signal sig)
+state_parse_escaping_argument_out(State s, Signal sig)
 {
-    Str txt;
-    RENAME(*state_local(s), txt);
-
-    Chunk chk;
-    chk = chunk_of_name(raw_string(txt));
-
-    struct state_parse_block_local *lc_r;
-    RENAME(*state_local(state_parse_block), lc_r);
-    block_is_transformed_by(lc_r->block, chk);
-
+    struct state_parse_escaping_local *lc_r;
+    RENAME(*state_local(state_parse_escaping), lc_r);
+    lc_r->argument = normalize(raw_string((Str)*state_local(s)));
     free_str((Str *)state_local(s));
     return NULL;
 }
@@ -1338,8 +1628,13 @@ litar_fuse_getattr(
         break;
     default:
         do {
+            ChunkRef ckr = NULL;
+            NEW0(ckr);
+            ckr->chunk = nd->value.chunk;
+            ckr->labels = empty_list;
             Str ctn;
-            ctn = content_of_chunk(nd->value.chunk);
+            ctn = content_of_chunk(ckr);
+            FREE(ckr);
             stbuf->st_mode = S_IFREG | 0444;
             stbuf->st_nlink = 1;
             stbuf->st_size = strlen(raw_string(ctn));
@@ -1384,9 +1679,14 @@ litar_fuse_read(
         return -ENOENT;
     }
 
-    Str ctn;
+    ChunkRef ckr = NULL;
+    NEW0(ckr);
+    ckr->chunk = nd->value.chunk;
+    ckr->labels = empty_list;
 
-    ctn = content_of_chunk(nd->value.chunk);
+    Str ctn;
+    ctn = content_of_chunk(ckr);
+    FREE(ckr);
 
     size_t len;
     len = strlen(raw_string(ctn));
@@ -1411,55 +1711,6 @@ static const struct fuse_operations litar_fuse_oper = {
     .read = litar_fuse_read,
 };
 void
-print_section(Section sec)
-{
-    if (sec->type == SECTION_COMMENT) {
-        List lst = copy_list(sec->content.comment);
-        reverse(&lst);
-        TextRef txt;
-        FOREACH (txt, lst) {
-            printf(
-                "Comment: (%s, %d, %d)\nContent:\n%s\n",
-                txt->file,
-                txt->start,
-                txt->end,
-                fetch_text_from(txt)
-            );
-        }
-    } else {
-        printf("Block: %s\n", name_of_chunk(sec->content.block->chunk));
-        List lst = copy_list(contents_of_block(sec->content.block));
-        reverse(&lst);
-        do {
-            BlockContent bc;
-            FOREACH (bc, lst) {
-                if (bc->type == BLOCK_CONTENT_TEXT) {
-                    printf(
-                        "\tText: (%s, %d, %d)\n",
-                        bc->value.text->file,
-                        bc->value.text->start,
-                        bc->value.text->end
-                    );
-                } else {
-                    printf(
-                        "\tReference: %s",
-                        name_of_chunk(bc->value.chunk->chunk)
-                    );
-                    List lst2 = copy_list(bc->value.chunk->filters);
-                    reverse(&lst2);
-                    Chunk chk;
-                    FOREACH (chk, lst2) {
-                        printf(" | %s", name_of_chunk(chk));
-                    }
-                    free_list(&lst2);
-                    putchar('\n');
-                }
-            }
-        } while (0);
-        free_list(&lst);
-    }
-}
-void
 print_node(Node nd, int level)
 {
     char *prefix = NULL;
@@ -1479,6 +1730,7 @@ print_node(Node nd, int level)
     default:
         printf("%s%s\n", prefix, nd->name);
     }
+    FREE(prefix);
 }
 
 int
@@ -1486,11 +1738,11 @@ main(int argc, char *argv[])
 {
     RESERVE(do {
         new_string_hash_table(&file_to_mmap_addr);
-        new_string_hash_table(&chunk_name_to_chunk);
+        new_string_hash_table(&module_name_to_module);
         NEW(root_node);
         root_node->type = NODE_DIRECTORY;
         root_node->value.nodes = empty_list;
-        root_node->name = strdup("");
+        root_node->name = atom_str("");
         if (getcwd(working_dir, PATH_MAX) == NULL) {
             perror("getcwd");
             exit(1);
@@ -1581,7 +1833,7 @@ main(int argc, char *argv[])
             }
             if (to_print_version_info) {
                 printf(
-                    "Version %s, built at 2026-01-19T16:34+08:00\n", version
+                    "Version %s, built at 2026-01-26T14:34+08:00\n", version
                 );
 
                 to_continue = false;
@@ -1598,7 +1850,7 @@ main(int argc, char *argv[])
             do {
                 InputFrame ipt = NULL;
                 NEW0(ipt);
-                ipt->file = strdup(archive_name);
+                ipt->file = atom_str(archive_name);
                 push(ipt, &input_frames);
             } while (0);
 
@@ -1631,16 +1883,16 @@ main(int argc, char *argv[])
             state_register_out_func(state_parse_block, state_parse_block_out);
 
             new_state(
-                &state_parse_block_chunk_name,
+                &state_parse_block_chunk_ref,
                 state_parse_block,
                 STATE_XOR,
-                state_parse_block_chunk_name_handler
+                state_parse_block_chunk_ref_handler
             );
             state_register_in_func(
-                state_parse_block_chunk_name, state_parse_block_chunk_name_in
+                state_parse_block_chunk_ref, state_parse_block_chunk_ref_in
             );
             state_register_out_func(
-                state_parse_block_chunk_name, state_parse_block_chunk_name_out
+                state_parse_block_chunk_ref, state_parse_block_chunk_ref_out
             );
 
             new_state(
@@ -1667,6 +1919,21 @@ main(int argc, char *argv[])
             );
             state_register_out_func(
                 state_parse_block_filters, state_parse_block_filters_out
+            );
+
+            new_state(
+                &state_parse_block_chunk_ref_name,
+                state_parse_block_chunk_ref,
+                STATE_XOR,
+                state_parse_block_chunk_ref_name_handler
+            );
+            state_register_in_func(
+                state_parse_block_chunk_ref_name,
+                state_parse_block_chunk_ref_name_in
+            );
+            state_register_out_func(
+                state_parse_block_chunk_ref_name,
+                state_parse_block_chunk_ref_name_out
             );
 
             new_state(
@@ -1700,18 +1967,18 @@ main(int argc, char *argv[])
             );
 
             new_state(
-                &state_parse_block_contents_reference_name,
+                &state_parse_block_contents_reference_chunk_ref,
                 state_parse_block_contents_reference,
                 STATE_XOR,
-                state_parse_block_contents_reference_name_handler
+                state_parse_block_contents_reference_chunk_ref_handler
             );
             state_register_in_func(
-                state_parse_block_contents_reference_name,
-                state_parse_block_contents_reference_name_in
+                state_parse_block_contents_reference_chunk_ref,
+                state_parse_block_contents_reference_chunk_ref_in
             );
             state_register_out_func(
-                state_parse_block_contents_reference_name,
-                state_parse_block_contents_reference_name_out
+                state_parse_block_contents_reference_chunk_ref,
+                state_parse_block_contents_reference_chunk_ref_out
             );
 
             new_state(
@@ -1727,6 +1994,78 @@ main(int argc, char *argv[])
             state_register_out_func(
                 state_parse_block_contents_reference_filters,
                 state_parse_block_contents_reference_filters_out
+            );
+
+            new_state(
+                &state_parse_block_contents_reference_chunk_ref_name,
+                state_parse_block_contents_reference_chunk_ref,
+                STATE_XOR,
+                state_parse_block_contents_reference_chunk_ref_name_handler
+            );
+            state_register_in_func(
+                state_parse_block_contents_reference_chunk_ref_name,
+                state_parse_block_contents_reference_chunk_ref_name_in
+            );
+            state_register_out_func(
+                state_parse_block_contents_reference_chunk_ref_name,
+                state_parse_block_contents_reference_chunk_ref_name_out
+            );
+
+            new_state(
+                &state_parse_block_contents_reference_filters_name,
+                state_parse_block_contents_reference_filters,
+                STATE_XOR,
+                state_parse_block_contents_reference_filters_name_handler
+            );
+            state_register_in_func(
+                state_parse_block_contents_reference_filters_name,
+                state_parse_block_contents_reference_filters_name_in
+            );
+            state_register_out_func(
+                state_parse_block_contents_reference_filters_name,
+                state_parse_block_contents_reference_filters_name_out
+            );
+
+            new_state(
+                &state_parse_block_filters_name,
+                state_parse_block_filters,
+                STATE_XOR,
+                state_parse_block_filters_name_handler
+            );
+            state_register_in_func(
+                state_parse_block_filters_name,
+                state_parse_block_filters_name_in
+            );
+            state_register_out_func(
+                state_parse_block_filters_name,
+                state_parse_block_filters_name_out
+            );
+
+            new_state(
+                &state_parse_escaping,
+                state_parse,
+                STATE_XOR,
+                state_parse_escaping_handler
+            );
+            state_register_in_func(
+                state_parse_escaping, state_parse_escaping_in
+            );
+            state_register_out_func(
+                state_parse_escaping, state_parse_escaping_out
+            );
+
+            new_state(
+                &state_parse_escaping_argument,
+                state_parse_escaping,
+                STATE_XOR,
+                state_parse_escaping_argument_handler
+            );
+            state_register_in_func(
+                state_parse_escaping_argument, state_parse_escaping_argument_in
+            );
+            state_register_out_func(
+                state_parse_escaping_argument,
+                state_parse_escaping_argument_out
             );
 
             state_init(state_parse);
@@ -1747,8 +2086,8 @@ main(int argc, char *argv[])
                         fprintf(
                             stderr,
                             "Unexpected token at row %d column %d of %s\n",
-                            ipt->pr,
-                            ipt->pc,
+                            ipt->pr + 1,
+                            ipt->pc + 1,
                             ipt->file
                         );
                         exit(1);
@@ -1762,13 +2101,19 @@ main(int argc, char *argv[])
             free_state(&state_parse);
             free_state(&state_parse_comment);
             free_state(&state_parse_block);
-            free_state(&state_parse_block_chunk_name);
+            free_state(&state_parse_block_chunk_ref);
             free_state(&state_parse_block_contents);
             free_state(&state_parse_block_filters);
+            free_state(&state_parse_block_chunk_ref_name);
             free_state(&state_parse_block_contents_text);
             free_state(&state_parse_block_contents_reference);
-            free_state(&state_parse_block_contents_reference_name);
+            free_state(&state_parse_block_contents_reference_chunk_ref);
             free_state(&state_parse_block_contents_reference_filters);
+            free_state(&state_parse_block_contents_reference_chunk_ref_name);
+            free_state(&state_parse_block_contents_reference_filters_name);
+            free_state(&state_parse_block_filters_name);
+            free_state(&state_parse_escaping);
+            free_state(&state_parse_escaping_argument);
         } while (0););
 
         KEEP(do {} while (0););
@@ -1956,31 +2301,55 @@ main(int argc, char *argv[])
                 break;
             }
             if (name_of_chunk_to_print) {
-                if (!chunk_of_name_exist(name_of_chunk_to_print)) {
+                if (!chunk_of_name_exist_in_module(
+                        name_of_chunk_to_print, module_of_name("")
+                    )) {
                     fprintf(
                         stderr, "Unknown chunk: %s\n", name_of_chunk_to_print
                     );
                     exit(1);
                 }
+                Chunk chk;
+                chk = chunk_in_module_of_name(
+                    module_of_name(""), name_of_chunk_to_print
+                );
+                ChunkRef ckr = NULL;
+
+                NEW0(ckr);
+                ckr->chunk = chk;
+                ckr->labels = empty_list;
+
                 Str cc;
-                cc = content_of_chunk(chunk_of_name(name_of_chunk_to_print));
+                cc = content_of_chunk(ckr);
+                FREE(ckr);
+
                 puts(raw_string(cc));
                 free_str(&cc);
                 break;
             }
             if (name_of_chunk_to_execute) {
-                if (!chunk_of_name_exist(name_of_chunk_to_execute)) {
+                if (!chunk_of_name_exist_in_module(
+                        name_of_chunk_to_execute, module_of_name("")
+                    )) {
                     fprintf(
                         stderr, "Unknown chunk: %s\n", name_of_chunk_to_execute
                     );
                     exit(1);
                 }
-                Chunk exe;
-                exe = chunk_of_name(name_of_chunk_to_execute);
+                Chunk chk;
+                chk = chunk_in_module_of_name(
+                    module_of_name(""), name_of_chunk_to_execute
+                );
+
+                ChunkRef ckr = NULL;
+                NEW0(ckr);
+                ckr->chunk = chk;
+                ckr->labels = empty_list;
 
                 pid_t cld;
                 int st;
-                cld = run_filter(exe, STDIN_FILENO, STDOUT_FILENO);
+                cld = run_filter(ckr, STDIN_FILENO, STDOUT_FILENO);
+                FREE(ckr);
                 waitpid(cld, &st, 0);
 
                 if (WIFEXITED(st)) {

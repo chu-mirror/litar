@@ -3096,17 +3096,6 @@ int main(int argc, char *argv[])
 #include "fileio.h"
 @
 
-# Basic Script
-
-@<evaluate@=#!/bin/sh
-set -e
-temp_file=`mktemp`
-cat - > $temp_file
-chmod +x $temp_file
-$temp_file
-rm $temp_file
-@
-
 @<execute sequentially@=#!/bin/sh
 echo "do {"
 cat -
@@ -3115,18 +3104,6 @@ echo "} while (0);"
 
 @<fill in build time information@=#!/bin/sh
 sed -e "s/<build time>/$(date -Iminute)/g"
-@
-
-# Text Processing
-
-@<path to perl interpreter@=#!/bin/sh
-which perl
-@|evaluate@
-
-@<basic perl settings@=#!@<path to perl interpreter@>
-use v5.14;
-use warnings;
-use Text::Template;
 @
 
 # Command Line Interface
@@ -3155,7 +3132,7 @@ The syntax:
     ],
 }
 
-@<command line usage@=@<basic perl settings@>
+@<command line usage@=@<Text Processing@/basic perl settings@>
 my $syntax = @<invocation syntax@>;
 
 sub option_to_str (_) {
@@ -3194,9 +3171,9 @@ while (@usages) {
 $usages_str .= '\n';
 
 print $usages_str;
-@|evaluate@
+@|Basics@/evaluate@
 
-@<getopt string@=@<basic perl settings@>
+@<getopt string@=@<Text Processing@/basic perl settings@>
 my $syntax = @<invocation syntax@>;
 
 sub option_to_str (_) {
@@ -3217,9 +3194,9 @@ for my $usage (@@{$syntax->{usages}}) {
 }
 
 print (join "", map option_to_str, @options);
-@|evaluate@
+@|Basics@/evaluate@
 
-@<long options@=@<basic perl settings@>
+@<long options@=@<Text Processing@/basic perl settings@>
 my $syntax = @<invocation syntax@>;
 
 my $count = 256;
@@ -3250,9 +3227,9 @@ for my $usage (@@{$syntax->{usages}}) {
 }
 
 print (join "", map option_to_longopt, @options);
-@|evaluate@
+@|Basics@/evaluate@
 
-@<manpage synopsis@=@<basic perl settings@>
+@<manpage synopsis@=@<Text Processing@/basic perl settings@>
 my $syntax = @<invocation syntax@>;
 
 sub option_to_str (_) {
@@ -3284,9 +3261,9 @@ sub usage_to_str (_) {
 
 my @usages = map usage_to_str, @@{$syntax->{usages}};
 print join "\n", @usages;
-@|evaluate@
+@|Basics@/evaluate@
 
-@<manpage options@=@<basic perl settings@>
+@<manpage options@=@<Text Processing@/basic perl settings@>
 my $syntax = @<invocation syntax@>;
 
 my $options = '';
@@ -3307,7 +3284,7 @@ for my $usage (@@{$syntax->{usages}}) {
 }
 
 print $options;
-@|evaluate@
+@|Basics@/evaluate@
 
 # State Machine
 
@@ -3343,14 +3320,14 @@ sub state_to_dec (_) {
 }
 @
 
-@<declarations of states@=@<basic perl settings@>
+@<declarations of states@=@<Text Processing@/basic perl settings@>
 @<C structs for state@>
 my $model = @<model of states@>;
 
 print join "\n", map state_to_dec, @@{$model};
-@|evaluate@
+@|Basics@/evaluate@
 
-@<initialization of states@=@<basic perl settings@>
+@<initialization of states@=@<Text Processing@/basic perl settings@>
 @<C structs for state@>
 my $model = @<model of states@>;
 my @model = @@{$model};
@@ -3378,9 +3355,9 @@ sub state_to_init (_) {
 my $str = join "\n", map state_to_init, @model;
 $str .= "\nstate_init(@@{[state_to_c_var($model[0])]});\n";
 print $str;
-@|evaluate@
+@|Basics@/evaluate@
 
-@<cleaning of states@=@<basic perl settings@>
+@<cleaning of states@=@<Text Processing@/basic perl settings@>
 @<C structs for state@>
 my $model = @<model of states@>;
 my @model = @@{$model};
@@ -3392,5 +3369,8 @@ sub state_to_free (_) {
 my $str = "state_clear(@@{[state_to_c_var($model[0])]});\n";
 $str .= join "\n", map state_to_free, @model;
 print($str);
-@|evaluate@
+@|Basics@/evaluate@
+
+@. lib/basic.ll
+@. lib/text-processing.ll
 

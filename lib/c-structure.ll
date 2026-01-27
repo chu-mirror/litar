@@ -3,9 +3,9 @@
 @<C module meta information@=
 (
     name => 'default',
-    include_flag_format => '',
+    included_flag_format => '_MODULE_%s',
     @<C module properties@>
-),
+)
 @
 
 @<C module@=
@@ -24,8 +24,20 @@
 @<interface specific macros@>
 @<exported macros@>
 @<exported data type declarations@>
-@<exported global variables@|attach extern@>
-@<exported functions@>
+@<global declarations@>
+@|wrap with included flag@
+
+@<wrap with included flag@=@<Text Processing@/basic perl settings@>
+my %meta = @<C module meta information@>;
+
+printf("#ifndef $meta{included_flag_format}\n", uc($meta{name}));
+printf("#define $meta{included_flag_format}\n", uc($meta{name}));
+
+while (<STDIN>) {
+    print;
+}
+
+print "#endif\n";
 @
 
 @<includes@=
@@ -40,22 +52,28 @@
 @<exported data type declarations@>
 @
 
-@<global variables@=
-@<exported global variables@>
-@
-
 @<data types@=
 @<exported data types@>
 @
 
-@<functions@=
+@<function declarations@=
+@<functions@>
+@|extract function declarations@
+
+@<extract function declarations@=#!/bin/sh
+cproto -s
 @
 
-@<attach extern@=@<Text Processing@/basic perl settings@>
-while (<STDIN>) {
-    chomp;
-    if ($_ != "") {
-        print "extern " . $_ . "\n";
-    }
-}
+@<global declarations@=
+@<global variables@>
+@<functions@>
+@|extract global declarations@
+
+@<extract global declarations@=#!/bin/sh
+cproto -v -e
 @
+
+@[helper@=
+hel
+@
+

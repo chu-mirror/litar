@@ -1082,9 +1082,10 @@ chunk_is_executable(Chunk chk)
 From the definitions above, we can define the content of chunk
 and expanded content of block.
 @<function declarations@=
-Str content_of_chunk(ChunkRef ckr);
-Str expanded_content_of_block(Block blk, List lbls);
-void transform(Str txt, List flts);
+Str content_of_chunk_with_labels(Chunk chk, List lbls);
+Str content_of_chunk_ref(ChunkRef ckr);
+Str expanded_content_of_block_with_labels(Block blk, List lbls);
+void transform_with_labels(Str txt, List flts, List lbls);
 @
 
 litar use a stack to detect recursive including and report it as a severe error.
@@ -1107,9 +1108,8 @@ bool chunk_is_in_tangling(Chunk chk)
 
 @<functions@=
 Str
-content_of_chunk(ChunkRef ckr)
+content_of_chunk_with_labels(Chunk chk, List lbls)
 {
-    Chunk chk = ckr->chunk;
     if (chunk_is_in_tangling(chk)) {
         fprintf(stderr, "Recursively include \"%s\"\n", chk->name);
         exit(1);
@@ -1118,7 +1118,7 @@ content_of_chunk(ChunkRef ckr)
     Str cc = NULL;
     new_str(&cc);
 
-    List remains = ckr->labels, passeds = empty_list;
+    List remains = lbls, passeds = empty_list;
 
     do {
         List blks;
@@ -1137,8 +1137,8 @@ content_of_chunk(ChunkRef ckr)
         Block blk;
         push(chk, &stack_of_chunks_in_tangling);
         FOREACH(blk, blks) {
-            Str exb = expanded_content_of_block(blk, remains);
-            transform(exb, blk->filters);
+            Str exb = expanded_content_of_block_with_labels(blk, remains);
+            transform_with_labels(exb, blk->filters, remains);
             str_extend(cc, raw_string(exb));
             free_str(&exb);
         }
@@ -1158,7 +1158,13 @@ content_of_chunk(ChunkRef ckr)
 }
 
 Str
-expanded_content_of_block(Block blk, List lbls)
+content_of_chunk_ref(ChunkRef ckr)
+{
+    return content_of_chunk_with_labels(ckr->chunk, ckr->labels);
+}
+
+Str
+expanded_content_of_block_with_labels(Block blk, List lbls)
 {
     Str ect = NULL;
     List bcs = copy_list(blk->contents);
@@ -1181,13 +1187,11 @@ expanded_content_of_block(Block blk, List lbls)
             l2 = copy_list(bc->value.chunk.chunk_ref->labels);
             l = append(&l1, &l2);
 
-            ChunkRef ckr = NULL;
-            MOVE(bc->value.chunk.chunk_ref, ckr);
-            ckr->labels = l;
-            Str cc = content_of_chunk(ckr);
-            FREE(ckr);
+            Str cc = content_of_chunk_with_labels(
+                bc->value.chunk.chunk_ref->chunk, l
+            );
 
-            transform(cc, bc->value.chunk.filters);
+            transform_with_labels(cc, bc->value.chunk.filters, lbls);
             str_extend(ect, raw_string(cc));
 
             free_str(&cc);
@@ -1257,7 +1261,7 @@ run_filter(ChunkRef flt, int in, int out)
 do {
     Str ct;
     int n, wtn = 0;
-    ct = content_of_chunk(flt);
+    ct = content_of_chunk_ref(flt);
     fileio_write_str(fd, ct);
     free_str(&ct);
 } while (0);
@@ -1280,6 +1284,11 @@ do {
         }
     }
 
+    if (lseek(fd, 0, SEEK_SET) < 0) {
+        perror("lseek");
+        exit(1);
+    }
+
     if (fexecve(fd, argv, environ) < 0) {
         perror("fexecve");
         exit(1);
@@ -1289,7 +1298,7 @@ do {
 
 @<functions@=
 void
-transform(Str txt, List flts)
+transform_with_labels(Str txt, List flts, List lbls)
 {
     if (flts == empty_list) {
         return;
@@ -1315,10 +1324,22 @@ transform(Str txt, List flts)
     FOREACH (flt, flts) {
         pid_t pid;
         int st;
+
+        ChunkRef ckr = NULL;
+        MOVE(flt, ckr);
+
+        List l1, l2;
+        l1 = copy_list(flt->labels);
+        l2 = copy_list(lbls);
+        ckr->labels = append(&l1, &l2);
+
         lseek(in, 0, SEEK_SET);
         lseek(out, 0, SEEK_SET);
         ftruncate(out, 0);
-        pid = run_filter(flt, in, out);
+        pid = run_filter(ckr, in, out);
+
+        free_list(&ckr->labels);
+        FREE(ckr);
 
         SWAP(in, out);
 
@@ -2548,13 +2569,8 @@ litar_fuse_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *
         break;
     default:
         do {
-            ChunkRef ckr = NULL;
-            NEW0(ckr);
-            ckr->chunk = nd->value.chunk;
-            ckr->labels = empty_list;
             Str ctn;
-            ctn = content_of_chunk(ckr);
-            FREE(ckr);
+            ctn = content_of_chunk_with_labels(nd->value.chunk, empty_list);
             stbuf->st_mode = S_IFREG | 0444;
             stbuf->st_nlink = 1;
             stbuf->st_size = strlen(raw_string(ctn));
@@ -2594,14 +2610,8 @@ litar_fuse_read(const char *path, char *buf, size_t size, off_t offset,
         return -ENOENT;
     }
 
-    ChunkRef ckr = NULL;
-    NEW0(ckr);
-    ckr->chunk = nd->value.chunk;
-    ckr->labels = empty_list;
-
     Str ctn;
-    ctn = content_of_chunk(ckr);
-    FREE(ckr);
+    ctn = content_of_chunk_with_labels(nd->value.chunk, empty_list);
 
     size_t len;
     len = strlen(raw_string(ctn));
@@ -2896,15 +2906,9 @@ if (name_of_chunk_to_print) {
         module_of_name(specified_module_name),
         name_of_chunk_to_print
     );
-    ChunkRef ckr = NULL;
-
-    NEW0(ckr);
-    ckr->chunk = chk;
-    ckr->labels = specified_labels;
 
     Str cc;
-    cc = content_of_chunk(ckr);
-    FREE(ckr);
+    cc = content_of_chunk_with_labels(chk, specified_labels);
 
     puts(raw_string(cc));
     free_str(&cc);

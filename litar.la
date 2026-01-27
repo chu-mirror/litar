@@ -660,7 +660,7 @@ normalize(const char *name)
     }
 
     const char *a;
-    RESERVE(a = atom_str(norm));
+    a = atom_str(norm);
 
     FREE(norm);
 
@@ -810,11 +810,13 @@ block_extend_chunk_ref(Block blk, ChunkRef ckr)
     Chunk chk = ckr->chunk;
     List lbls = ckr->labels;
     if (!chk->labels_to_blocks) {
-        new_assoc_table(&chk->labels_to_blocks, equal_func_labels);
+        RESERVE(new_assoc_table(&chk->labels_to_blocks, equal_func_labels));
     }
     List blks = blocks_of_chunk_ref(ckr);
-    blks = cons(blk, blks);
-    put_to_assoc_table(chk->labels_to_blocks, lbls, blks);
+    RESERVE(
+        push(blk, &blks);
+        put_to_assoc_table(chk->labels_to_blocks, lbls, blks);
+    );
 }
 @
 
@@ -828,7 +830,7 @@ List filters;
 void
 block_is_transformed_by(Block blk, Chunk flt)
 {
-    push(flt, &blk->filters);
+    RESERVE(push(flt, &blk->filters));
 }
 @
 
@@ -861,30 +863,28 @@ List contents;
 void
 block_contain_text(Block blk, TextRef tr)
 {
-    List bcs = blk->contents;
     BlockContent bc = NULL;
 
-    NEW0(bc);
-    bc->type = BLOCK_CONTENT_TEXT;
-    bc->value.text = tr;
-
-    bcs = cons(bc, bcs);
-    blk->contents = bcs;
+    RESERVE(
+        NEW0(bc);
+        bc->type = BLOCK_CONTENT_TEXT;
+        bc->value.text = tr;
+        push(bc, &blk->contents);
+    );
 }
 
 void
 block_include_chunk_ref_with_filters(Block blk, ChunkRef ckr, List flts)
 {
-    List bcs = blk->contents;
     BlockContent bc = NULL;
 
-    NEW0(bc);
-    bc->type = BLOCK_CONTENT_CHUNK;
-    bc->value.chunk.chunk_ref = ckr;
-    bc->value.chunk.filters = flts;
-
-    bcs = cons(bc, bcs);
-    blk->contents = bcs;
+    RESERVE(
+        NEW0(bc);
+        bc->type = BLOCK_CONTENT_CHUNK;
+        bc->value.chunk.chunk_ref = ckr;
+        bc->value.chunk.filters = flts;
+        push(bc, &blk->contents);
+    );
 }
 @
 
@@ -900,7 +900,7 @@ void
 chunk_ref_is_specialized_by(ChunkRef ckr, const char *lbl)
 {
     const char *norm = normalize(lbl);
-    push((void *)norm, &ckr->labels);
+    RESERVE(push((void *)norm, &ckr->labels));
 }
 @
 
@@ -1041,21 +1041,25 @@ chunk_is_file(Chunk chk)
         if (path[i] == '/') {
             path[i] = '\0';
             if ((nd = node_under_node(path+f, node)) == NULL) {
-                NEW(nd);
-                nd->type = NODE_DIRECTORY;
-                nd->name = atom_str(path+f);
-                nd->value.nodes = empty_list;
-                push(nd, &node->value.nodes);
+                RESERVE(
+                    NEW(nd);
+                    nd->type = NODE_DIRECTORY;
+                    nd->name = atom_str(path+f);
+                    nd->value.nodes = empty_list;
+                    push(nd, &node->value.nodes);
+                );
             }
             node = nd;
             f = i+1;
         } else if (path[i] == '\0') {
             if ((nd = node_under_node(path+f, node)) == NULL) {
-                NEW(nd);
-                nd->type = NODE_REGULAR;
-                nd->name = atom_str(path+f);
-                nd->value.chunk = chk;
-                push(nd, &node->value.nodes);
+                RESERVE(
+                    NEW(nd);
+                    nd->type = NODE_REGULAR;
+                    nd->name = atom_str(path+f);
+                    nd->value.chunk = chk;
+                    push(nd, &node->value.nodes);
+                );
             }
             break;
         }
@@ -1473,15 +1477,17 @@ extract_text(State s, Token tkn)
     RENAME(car(input_frames), ipt);
     
     if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-        TextRef txt = NULL;
+        RESERVE(
+            TextRef txt = NULL;
 
-        NEW0(txt);
-        txt->file = ipt->file;
-        txt->start = ipt->cp-1;
-        txt->end = ipt->cp-1;
+            NEW0(txt);
+            txt->file = ipt->file;
+            txt->start = ipt->cp-1;
+            txt->end = ipt->cp-1;
 
-        push(txt, &cache);
-        *state_local(s) = cache;
+            push(txt, &cache);
+            *state_local(s) = cache;
+        );
 
         return true;
     }
@@ -1489,15 +1495,17 @@ extract_text(State s, Token tkn)
         TextRef txt;
         
         if (is_empty_list(cache)) {
-            txt = NULL;
+            RESERVE(
+                txt = NULL;
 
-            NEW0(txt);
-            txt->file = ipt->file;
-            txt->start = ipt->pp;
-            txt->end = ipt->pp;
+                NEW0(txt);
+                txt->file = ipt->file;
+                txt->start = ipt->pp;
+                txt->end = ipt->pp;
 
-            push(txt, &cache);
-            *state_local(s) = cache;
+                push(txt, &cache);
+                *state_local(s) = cache;
+            );
         }
 
         RENAME(car(cache), txt);
@@ -1522,7 +1530,7 @@ extract_chunk_ref(State s, State sn, Token tkn)
     RENAME(*state_local(sn), cache);
 
     if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ':') {
-        push((void *)normalize(raw_string(cache)), &ckr->labels);
+        RESERVE(push((void *)normalize(raw_string(cache)), &ckr->labels));
         str_clean(cache);
         return true;
     }
@@ -1571,6 +1579,7 @@ litar assumes that when starting parsing it is reading comment.
 do {
     input_frames = empty_list;
 
+    print_memgr_count("start parsing");
     do {
         InputFrame ipt = NULL;
         NEW0(ipt);
@@ -1578,7 +1587,10 @@ do {
         push(ipt, &input_frames);
     } while (0);
 
+    print_memgr_count("start initializing state");
     @<initialization of states@>
+
+    print_memgr_count("end initializing state, start reading token");
 
     while (!is_empty_list(input_frames)) {
         Token tkn;
@@ -1592,6 +1604,7 @@ do {
             FREE(ipt);
             pop(&input_frames);
         } else {
+            RESERVE(
             if (!state_handle_signal(state_parse, tkn)) {
                 fprintf(
                     stderr,
@@ -1600,12 +1613,15 @@ do {
                 );
                 exit(1);
             }
+            );
         }
 
         FREE(tkn);
     }
+    print_memgr_count("end reading token, start cleaning state");
 
-    @<cleaning of states@>
+    @<cleaning of states@>;
+    print_memgr_count("end cleaning state");
 } while (0);
 @
 
@@ -1668,6 +1684,7 @@ static State state_parse_comment_handler(State s, Signal sig)
     Token tkn;
     RENAME(sig, tkn);
     @<handlings for token "tkn" when "state_parse_comment"@>
+
     if (extract_text(s, tkn)) {
         return s;
     }
@@ -1681,10 +1698,12 @@ static State state_parse_comment_handler(State s, Signal sig)
 static State state_parse_comment_out(State s, Signal sig)
 {
     Section sec = NULL;
-    NEW0(sec);
-    sec->type = SECTION_COMMENT;
-    sec->content.comment = *state_local(s);
-    push(sec, &sections);
+    RESERVE(
+        NEW0(sec);
+        sec->type = SECTION_COMMENT;
+        sec->content.comment = *state_local(s);
+        push(sec, &sections);
+    );
     return NULL;
 }
 @
@@ -1814,7 +1833,7 @@ static State state_parse_block_out(State s, Signal sig)
 @<functions@=
 static State state_parse_block_chunk_ref_in(State s, Signal sig)
 {
-    NEW0(*(ChunkRef *)state_local(s));
+    RESERVE(NEW0(*(ChunkRef *)state_local(s)));
     return state_parse_block_chunk_ref_name;
 }
 
@@ -2026,7 +2045,7 @@ static State state_parse_block_contents_reference_out(State s, Signal sig)
 @<functions@=
 static State state_parse_block_contents_reference_chunk_ref_in(State s, Signal sig)
 {
-    NEW0(*(ChunkRef *)state_local(s));
+    RESERVE(NEW0(*(ChunkRef *)state_local(s)));
     return state_parse_block_contents_reference_chunk_ref_name;
 }
 
@@ -2090,7 +2109,7 @@ static State state_parse_block_contents_reference_chunk_ref_name_out(State s, Si
 @<functions@=
 static State state_parse_block_contents_reference_filters_in(State s, Signal sig)
 {
-    NEW0(*(ChunkRef *)state_local(s));
+    RESERVE(NEW0(*(ChunkRef *)state_local(s)));
     return state_parse_block_contents_reference_filters_name;
 }
 
@@ -2107,10 +2126,10 @@ static State state_parse_block_contents_reference_filters_handler(State s, Signa
         struct state_parse_block_contents_reference_local *lc_r;
         RENAME(*state_local(state_parse_block_contents_reference), lc_r);
 
-        push(*state_local(s), &lc_r->filters);
+        RESERVE(push(*state_local(s), &lc_r->filters));
 
         *state_local(s) = NULL;
-        NEW0(*(ChunkRef *)state_local(s));
+        RESERVE(NEW0(*(ChunkRef *)state_local(s)));
         return s;
     }
     return NULL;
@@ -2165,7 +2184,7 @@ static State state_parse_block_contents_reference_filters_name_out(State s, Sign
 @<functions@=
 static State state_parse_block_filters_in(State s, Signal sig)
 {
-    NEW0(*(ChunkRef *)state_local(s));
+    RESERVE(NEW0(*(ChunkRef *)state_local(s)));
     return state_parse_block_filters_name;
 }
 
@@ -2185,7 +2204,7 @@ static State state_parse_block_filters_handler(State s, Signal sig)
         push(*state_local(s), &lc_r->block->filters);
 
         *state_local(s) = NULL;
-        NEW0(*(ChunkRef *)state_local(s));
+        RESERVE(NEW0(*(ChunkRef *)state_local(s)));
         return s;
     }
     return NULL;
@@ -2802,29 +2821,44 @@ printf("Version %s, built at <build time>\n", version);
 
 @<command line options for "litar ARCHIVE"@=
 {
-    long_opt => 'mirror',
+    long_opt => 'module',
     opt => 'm',
-    argument => 'DIR',
-    description => 'Mirror the filesystem in ARCHIVE under DIR',
+    hide => 1,
+    argument => 'MODULE',
+    description => 'Specify that CHUNK is in MODULE',
 },
 @
 
 @<global variables@=
-char *mirror_point = NULL;
+const char *specified_module_name = "";
 @
 
 @<cases for command line option@=
 case 'm':
-    chosen_usage = 1;
-    mirror_point = optarg;
+    specified_module_name = optarg;
     break;
 @
 
-@<operations after mounting file system@=
-if (mirror_point) {
-    break;
-}
+@<command line options for "litar ARCHIVE"@=
+{
+    long_opt => 'label',
+    opt => 'l',
+    hide => 1,
+    argument => 'LABEL',
+    description => 'Specify the labels used for specialization',
+},
 @
+
+@<global variables@=
+List specified_labels = empty_list;
+@
+
+@<cases for command line option@=
+case 'l':
+    push((void *)normalize(optarg), &specified_labels);
+    break;
+@
+
 
 @<command line options for "litar ARCHIVE"@=
 {
@@ -2848,17 +2882,25 @@ case 'p':
 
 @<operations after mounting file system@=
 if (name_of_chunk_to_print) {
-    if (!chunk_of_name_exist_in_module(name_of_chunk_to_print, module_of_name(""))) {
+    if (
+        !chunk_of_name_exist_in_module(
+            name_of_chunk_to_print,
+            module_of_name(specified_module_name)
+        )
+    ) {
         fprintf(stderr, "Unknown chunk: %s\n", name_of_chunk_to_print);
         exit(1);
     }
     Chunk chk;
-    chk = chunk_in_module_of_name(module_of_name(""), name_of_chunk_to_print);
+    chk = chunk_in_module_of_name(
+        module_of_name(specified_module_name),
+        name_of_chunk_to_print
+    );
     ChunkRef ckr = NULL;
 
     NEW0(ckr);
     ckr->chunk = chk;
-    ckr->labels = empty_list;
+    ckr->labels = specified_labels;
 
     Str cc;
     cc = content_of_chunk(ckr);
@@ -2892,17 +2934,25 @@ case 'x':
 
 @<operations after mounting file system@=
 if (name_of_chunk_to_execute) {
-    if (!chunk_of_name_exist_in_module(name_of_chunk_to_execute, module_of_name(""))) {
+    if (
+        !chunk_of_name_exist_in_module(
+            name_of_chunk_to_execute,
+            module_of_name(specified_module_name)
+        )
+    ) {
         fprintf(stderr, "Unknown chunk: %s\n", name_of_chunk_to_execute);
         exit(1);
     }
     Chunk chk;
-    chk = chunk_in_module_of_name(module_of_name(""), name_of_chunk_to_execute);
+    chk = chunk_in_module_of_name(
+        module_of_name(specified_module_name),
+        name_of_chunk_to_execute
+    );
 
     ChunkRef ckr = NULL;
     NEW0(ckr);
     ckr->chunk = chk;
-    ckr->labels = empty_list;
+    ckr->labels = specified_labels;
 
     pid_t cld;
     int st;
@@ -3061,6 +3111,7 @@ int main(int argc, char *argv[])
 @
 
 @<includes@=
+#define NDEBUG
 #define _GNU_SOURCE
 #include <sched.h>
 #include <stdio.h>
@@ -3119,6 +3170,7 @@ The syntax:
                     long_opt => LONG_OPTION,
                     opt => SHORT_OPTION (optional),
                     argument => OPTION_ARGUMENT (optional),
+                    hide => HIDE_OR_NOT (optional)
                     description => DESCRIPTION,
                 },
                 ...
@@ -3154,7 +3206,7 @@ sub usage_to_str (_) {
     my $str = $syntax->{name};
 
     $str .= ' ';
-    $str .= '[' . (join '|', map option_to_str, @@{$usage->{options}}) . ']';
+    $str .= '[' . (join '|', map option_to_str, grep {!$_->{hide}} @@{$usage->{options}}) . ']';
     $str .= ' ';
     $str .= join ' ', @@{$usage->{arguments}};
     
@@ -3251,7 +3303,7 @@ sub usage_to_str (_) {
     my $str = ".B $syntax->{name}";
 
     $str .= "\n";
-    $str .= '[' . (join '|', map option_to_str, @@{$usage->{options}}) . ']';
+    $str .= '[' . (join '|', map option_to_str, grep {!$_->{hide}} @@{$usage->{options}}) . ']';
     $str .= "\n";
     $str .= "@@{[map {'\fI' . $_ . '\fR'} @@{$usage->{arguments}}]}";
     $str .= "\n";

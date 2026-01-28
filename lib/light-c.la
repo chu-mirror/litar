@@ -1,0 +1,4 @@
+@. lib/basic.la
+@. lib/text-processing.la
+@. lib/c-structure.la
+

@@ -70,5 +70,5 @@ sed -f sed_script/greet_each.sed
 sed -e 's/Hello,/HELLO!/'
 @
 
-@. lib/c-suit.ls
+@. lib/light-c.la
 

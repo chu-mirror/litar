@@ -3427,6 +3427,6 @@ $str .= join "\n", map state_to_free, @model;
 print($str);
 @|Basics@/evaluate@
 
-@. lib/basic.ls
-@. lib/text-processing.ls
+@. lib/basic.la
+@. lib/text-processing.la
 

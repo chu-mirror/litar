@@ -70,7 +70,5 @@ sed -f sed_script/greet_each.sed
 sed -e 's/Hello,/HELLO!/'
 @
 
-@. lib/basic.ll
-@. lib/text-processing.ll
-@. lib/c-structure.ll
+@. lib/c-suit.ls
 

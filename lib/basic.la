@@ -9,6 +9,16 @@ $temp_file
 rm $temp_file
 @
 
+@<system prerequisites@=
+libfuse3-dev
+pkg-config
+libtext-template-perl
+@
+
+@<install prerequisites@=#!/bin/sh
+sudo apt install @<system prerequisites@|Text Processing@/remove newlines@>
+@
+
 @[helper.md@=
 Help
 @

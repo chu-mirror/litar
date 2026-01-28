@@ -5,23 +5,19 @@ Alice
 Floyd
 @
 
-@<say hello@=#!/usr/bin/perl
-print "hello\n";
-@
-
 @[hello.c@=
-@<hello@:C Module@/C module@>
+@<hello@:light@:C Module@/C module@>
 @
 
-@<hello@:C Module@/C module properties@=
+@<hello@:light@:C Module@/C module properties@=
 name => 'hello',
 @
 
-@<hello@:C Module@/includes@=
+@<hello@:light@:C Module@/includes@=
 #include <stdio.h>
 @
 
-@<hello@:C Module@/functions@=
+@<hello@:light@:C Module@/functions@=
 void print_hello()
 {
     @<classmates
@@ -31,23 +27,18 @@ void print_hello()
 @
 
 @[hello.h@=
-@<hello@:C Module@/C module interface@>
+@<hello@:light@:C Module@/C module interface@>
 @
 
 @[main.c@=
-@<main@:C Module@/C module@>
-int main(int argc, char *argv[])
-{
-    @<main body@>
-    return 0;
-}
+@<main@:Light C@/C executable@>
 @
 
-@<main@:C Module@/includes@=
+@<main@:light@:C Module@/includes@=
 #include "hello.h"
 @
 
-@<main body@=
+@<main@:Light C@/main body@=
 print_hello();
 @
 

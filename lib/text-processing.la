@@ -9,6 +9,12 @@ use v5.14;
 use warnings;
 @
 
+@<remove newlines@=@<Text Processing@/basic perl settings@>
+my @pres = <STDIN>;
+chomp @pres;
+print "@pres";
+@
+
 @[helper.md@=
 help
 @

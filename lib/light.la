@@ -1,4 +1,4 @@
-@- Light C
+@- Light
 
 @<light@:C Module@/macros@=
 /* Give value a new name, and force type casting. */

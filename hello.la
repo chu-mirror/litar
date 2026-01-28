@@ -31,14 +31,14 @@ void print_hello()
 @
 
 @[main.c@=
-@<main@:Light C@/C executable@>
+@<main@:Light@/C executable@>
 @
 
 @<main@:light@:C Module@/includes@=
 #include "hello.h"
 @
 
-@<main@:Light C@/main body@=
+@<main@:Light@/main body@=
 print_hello();
 @
 
@@ -61,5 +61,5 @@ sed -f sed_script/greet_each.sed
 sed -e 's/Hello,/HELLO!/'
 @
 
-@. lib/light-c.la
+@. lib/light.la
 

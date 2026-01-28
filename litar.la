@@ -1185,7 +1185,7 @@ expanded_content_of_block_with_labels(Block blk, List lbls)
 
             l1 = copy_list(lbls);
             l2 = copy_list(bc->value.chunk.chunk_ref->labels);
-            l = append(&l1, &l2);
+            l = append(&l2, &l1);
 
             Str cc = content_of_chunk_with_labels(
                 bc->value.chunk.chunk_ref->chunk, l

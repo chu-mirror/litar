@@ -229,6 +229,3 @@ WhitespaceSensitiveMacros:
 clang-format-19 -style=file
 @
 
-@[helper@=
-hel
-@

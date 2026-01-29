@@ -15,6 +15,3 @@ chomp @pres;
 print "@pres";
 @
 
-@[helper.md@=
-help
-@

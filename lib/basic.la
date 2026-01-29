@@ -19,6 +19,3 @@ libtext-template-perl
 sudo apt install @<system prerequisites@|Text Processing@/remove newlines@>
 @
 
-@[helper.md@=
-Help
-@

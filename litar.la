@@ -1034,6 +1034,19 @@ node_of_chunk(Chunk chk)
 }
 
 void
+there_is_module(Module mod)
+{
+    Node nd;
+    RESERVE(
+        NEW0(nd);
+	nd->type = NODE_DIRECTORY;
+	nd->name = mod->name;
+	nd->value.nodes = empty_list;
+	push(nd, &root_node->value.nodes);
+    );
+}
+
+void
 chunk_is_file(Chunk chk)
 {
     char *path;
@@ -2384,6 +2397,7 @@ if (lc_r->esc == '-') {
     struct state_parse_local *plc_r;
     RENAME(*state_local(state_parse), plc_r);
     plc_r->module = module_of_name(lc_r->argument);
+    there_is_module(plc_r->module);
 }
 @
 

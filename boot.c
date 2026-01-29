@@ -124,7 +124,6 @@ typedef struct {
 } *Token;
 struct state_parse_local {
     Module module;
-    State state_before_escaping;
 };
 struct state_parse_block_local {
     enum {
@@ -139,7 +138,7 @@ struct state_parse_block_contents_reference_local {
     ChunkRef chunk_ref;
     List filters;
 };
-struct state_parse_escaping_local {
+struct state_escape_local {
     char esc;
     const char *argument;
 };
@@ -157,6 +156,7 @@ List stack_of_chunks_in_tangling = empty_list;
 char working_dir[PATH_MAX];
 List input_frames;
 State state_parse;
+State state_escape;
 State state_parse_comment;
 State state_parse_block;
 State state_parse_block_chunk_ref;
@@ -170,8 +170,7 @@ State state_parse_block_contents_reference_filters;
 State state_parse_block_contents_reference_chunk_ref_name;
 State state_parse_block_contents_reference_filters_name;
 State state_parse_block_filters_name;
-State state_parse_escaping;
-State state_parse_escaping_argument;
+State state_escape_argument;
 char *archive_data = NULL;
 char *fuse_mount_point = NULL;
 char *work_dir = NULL;
@@ -400,6 +399,15 @@ node_of_chunk(Chunk chk)
 }
 
 void
+there_is_module(Module mod)
+{
+    Node nd;
+    RESERVE(NEW0(nd); nd->type = NODE_DIRECTORY; nd->name = mod->name;
+            nd->value.nodes = empty_list;
+            push(nd, &root_node->value.nodes););
+}
+
+void
 chunk_is_file(Chunk chk)
 {
     char *path;
@@ -600,7 +608,7 @@ expanded_content_of_block_with_labels(Block blk, List lbls)
 
             l1 = copy_list(lbls);
             l2 = copy_list(bc->value.chunk.chunk_ref->labels);
-            l = append(&l1, &l2);
+            l = append(&l2, &l1);
 
             Str cc = content_of_chunk_with_labels(
                 bc->value.chunk.chunk_ref->chunk, l
@@ -928,6 +936,7 @@ state_parse_in(State s, Signal sig)
     NEW0(lc_r);
     lc_r->module = module_of_name("");
     *state_local(s) = lc_r;
+    state_init(state_escape);
     return state_parse_comment;
 }
 
@@ -936,6 +945,9 @@ state_parse_handler(State s, Signal sig)
 {
     struct state_parse_local *lc_r;
     RENAME(*state_local(s), lc_r);
+    if (state_handle_signal(state_escape, sig)) {
+        return s;
+    }
     do {
         Token tkn;
         RENAME(sig, tkn);
@@ -949,6 +961,7 @@ state_parse_handler(State s, Signal sig)
 static State
 state_parse_out(State s, Signal sig)
 {
+    state_clear(state_escape);
     struct state_parse_local *lc_r;
     RENAME(*state_local(s), lc_r);
     FREE(*state_local(s));
@@ -967,22 +980,6 @@ state_parse_comment_handler(State s, Signal sig)
 {
     Token tkn;
     RENAME(sig, tkn);
-    InputFrame ipt;
-    RENAME(car(input_frames), ipt);
-    if (ipt->cc == 2 && tkn->type == TOKEN_CONTROL_CHARACTER
-        && tkn->value == '-') {
-        struct state_parse_local *lc_r;
-        RENAME(*state_local(state_parse), lc_r);
-        lc_r->state_before_escaping = s;
-        return state_parse_escaping;
-    }
-    if (ipt->cc == 2 && tkn->type == TOKEN_CONTROL_CHARACTER
-        && tkn->value == '.') {
-        struct state_parse_local *lc_r;
-        RENAME(*state_local(state_parse), lc_r);
-        lc_r->state_before_escaping = s;
-        return state_parse_escaping;
-    }
 
     if (extract_text(s, tkn)) {
         return s;
@@ -1464,29 +1461,55 @@ state_parse_block_filters_name_out(State s, Signal sig)
     return NULL;
 }
 static State
-state_parse_escaping_in(State s, Signal sig)
+state_escape_in(State s, Signal sig)
 {
-    struct state_parse_escaping_local *lc_r = NULL;
-
+    struct state_escape_local *lc_r = NULL;
     NEW0(lc_r);
-    lc_r->esc = ((Token)sig)->value;
-
     *state_local(s) = lc_r;
-    return state_parse_escaping_argument;
+    return state_escape_argument;
 }
 
 static State
-state_parse_escaping_handler(State s, Signal sig)
+state_escape_handler(State s, Signal sig)
 {
+    struct state_escape_local *lc_r;
+    RENAME(*state_local(state_escape), lc_r);
     do {
         Token tkn;
         RENAME(sig, tkn);
         InputFrame ipt;
         RENAME(car(input_frames), ipt);
-        if (tkn->type == TOKEN_NEWLINE) {
-            struct state_parse_local *lc_r;
-            RENAME(*state_local(state_parse), lc_r);
-            return lc_r->state_before_escaping;
+        if (lc_r->esc && tkn->type == TOKEN_NEWLINE) {
+            Str argument;
+            RENAME(*state_local(state_escape_argument), argument);
+            lc_r->argument = normalize(raw_string(argument));
+            str_clean(argument);
+
+            if (lc_r->esc == '-') {
+                struct state_parse_local *plc_r;
+                RENAME(*state_local(state_parse), plc_r);
+                plc_r->module = module_of_name(lc_r->argument);
+                there_is_module(plc_r->module);
+            }
+            if (lc_r->esc == '.') {
+                InputFrame ipt = NULL;
+                NEW0(ipt);
+                ipt->file = normalize(lc_r->argument);
+                push(ipt, &input_frames);
+            }
+
+            lc_r->esc = '\0';
+            return s;
+        }
+        if (state_is_active(state_parse_comment) && ipt->cc == 2
+            && tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '-') {
+            lc_r->esc = tkn->value;
+            return state_escape;
+        }
+        if (ipt->cc == 2 && tkn->type == TOKEN_CONTROL_CHARACTER
+            && tkn->value == '.') {
+            lc_r->esc = tkn->value;
+            return state_escape;
         }
     } while (0);
 
@@ -1494,56 +1517,39 @@ state_parse_escaping_handler(State s, Signal sig)
 }
 
 static State
-state_parse_escaping_out(State s, Signal sig)
+state_escape_out(State s, Signal sig)
 {
-    struct state_parse_escaping_local *lc_r;
+    struct state_escape_local *lc_r;
     RENAME(*state_local(s), lc_r);
-
-    if (lc_r->esc == '-') {
-        struct state_parse_local *plc_r;
-        RENAME(*state_local(state_parse), plc_r);
-        plc_r->module = module_of_name(lc_r->argument);
-    }
-    if (lc_r->esc == '.') {
-        InputFrame ipt = NULL;
-        NEW0(ipt);
-        ipt->file = normalize(lc_r->argument);
-        push(ipt, &input_frames);
-    }
-
     FREE(*state_local(s));
     return NULL;
 }
 
 static State
-state_parse_escaping_argument_in(State s, Signal sig)
+state_escape_argument_in(State s, Signal sig)
 {
     new_str((Str *)state_local(s));
     return NULL;
 }
 
 static State
-state_parse_escaping_argument_handler(State s, Signal sig)
+state_escape_argument_handler(State s, Signal sig)
 {
-    do {
-        Token tkn;
-        RENAME(sig, tkn);
-        InputFrame ipt;
-        RENAME(car(input_frames), ipt);
-        if (extract_name(s, tkn)) {
-            return s;
-        }
-    } while (0);
-
+    if (((struct state_escape_local *)*state_local(state_escape))->esc
+        == '\0') {
+        return NULL;
+    }
+    Token tkn;
+    RENAME(sig, tkn);
+    if (extract_name(s, tkn)) {
+        return s;
+    }
     return NULL;
 }
 
 static State
-state_parse_escaping_argument_out(State s, Signal sig)
+state_escape_argument_out(State s, Signal sig)
 {
-    struct state_parse_escaping_local *lc_r;
-    RENAME(*state_local(state_parse_escaping), lc_r);
-    lc_r->argument = normalize(raw_string((Str)*state_local(s)));
     free_str((Str *)state_local(s));
     return NULL;
 }
@@ -1836,7 +1842,7 @@ main(int argc, char *argv[])
             }
             if (to_print_version_info) {
                 printf(
-                    "Version %s, built at 2026-01-27T17:06+08:00\n", version
+                    "Version %s, built at 2026-01-29T13:24+08:00\n", version
                 );
 
                 to_continue = false;
@@ -1864,6 +1870,12 @@ main(int argc, char *argv[])
             );
             state_register_in_func(state_parse, state_parse_in);
             state_register_out_func(state_parse, state_parse_out);
+
+            new_state(
+                &state_escape, root_state, STATE_XOR, state_escape_handler
+            );
+            state_register_in_func(state_escape, state_escape_in);
+            state_register_out_func(state_escape, state_escape_out);
 
             new_state(
                 &state_parse_comment,
@@ -2047,30 +2059,16 @@ main(int argc, char *argv[])
             );
 
             new_state(
-                &state_parse_escaping,
-                state_parse,
+                &state_escape_argument,
+                state_escape,
                 STATE_XOR,
-                state_parse_escaping_handler
+                state_escape_argument_handler
             );
             state_register_in_func(
-                state_parse_escaping, state_parse_escaping_in
+                state_escape_argument, state_escape_argument_in
             );
             state_register_out_func(
-                state_parse_escaping, state_parse_escaping_out
-            );
-
-            new_state(
-                &state_parse_escaping_argument,
-                state_parse_escaping,
-                STATE_XOR,
-                state_parse_escaping_argument_handler
-            );
-            state_register_in_func(
-                state_parse_escaping_argument, state_parse_escaping_argument_in
-            );
-            state_register_out_func(
-                state_parse_escaping_argument,
-                state_parse_escaping_argument_out
+                state_escape_argument, state_escape_argument_out
             );
 
             state_init(state_parse);
@@ -2107,6 +2105,7 @@ main(int argc, char *argv[])
 
             state_clear(state_parse);
             free_state(&state_parse);
+            free_state(&state_escape);
             free_state(&state_parse_comment);
             free_state(&state_parse_block);
             free_state(&state_parse_block_chunk_ref);
@@ -2120,8 +2119,7 @@ main(int argc, char *argv[])
             free_state(&state_parse_block_contents_reference_chunk_ref_name);
             free_state(&state_parse_block_contents_reference_filters_name);
             free_state(&state_parse_block_filters_name);
-            free_state(&state_parse_escaping);
-            free_state(&state_parse_escaping_argument);
+            free_state(&state_escape_argument);
             ;
             print_memgr_count("end cleaning state");
         } while (0););

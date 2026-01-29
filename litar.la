@@ -1475,6 +1475,77 @@ static Token next_token(InputFrame ipt)
 }
 @
 
+@<model of states@=
+[
+    @<states of parsing@>
+]
+@
+
+litar assumes that when starting parsing it is reading comment.
+
+@<states of parsing@=
+{
+    name => "parse",
+},
+{
+    name => "escape",
+},
+{
+    name => "parse_comment",
+    parent => "parse",
+},
+@
+
+@<parse input@=
+do {
+    input_frames = empty_list;
+
+    print_memgr_count("start parsing");
+    do {
+        InputFrame ipt = NULL;
+        NEW0(ipt);
+        ipt->file = atom_str(archive_name);
+        push(ipt, &input_frames);
+    } while (0);
+
+    print_memgr_count("start initializing state");
+    @<initialization of states@>
+
+    print_memgr_count("end initializing state, start reading token");
+
+    while (!is_empty_list(input_frames)) {
+        Token tkn;
+        InputFrame ipt;
+
+        RENAME(car(input_frames), ipt);
+        tkn = next_token(ipt);
+
+        if (tkn->type == TOKEN_EOF) {
+            fclose(ipt->in);
+            FREE(ipt);
+            pop(&input_frames);
+        } else {
+            RESERVE(
+            if (!state_handle_signal(state_parse, tkn)) {
+                fprintf(
+                    stderr,
+                    "Unexpected token at row %d column %d of %s\n",
+                    ipt->pr+1, ipt->pc+1, ipt->file
+                );
+                exit(1);
+            }
+            );
+        }
+
+        FREE(tkn);
+    }
+    print_memgr_count("end reading token, start cleaning state");
+
+    @<cleaning of states@>;
+    print_memgr_count("end cleaning state");
+} while (0);
+@
+
 There are some common patterns will be used many times.
 
 @<functions@=
@@ -1569,7 +1640,7 @@ extract_chunk_ref(State s, State sn, Token tkn)
     }
 
     if (tkn->type == TOKEN_CONTROL_CHARACTER
-        && ( tkn->value == '>' || tkn->value == '|' || tkn->value == '=' || tkn->value == ' ')
+        && (tkn->value == '>' || tkn->value == '|' || tkn->value == '=' || tkn->value == ' ')
         ) {
         if (mod == module_of_name("") || mod == NULL) {
             mod = ((struct state_parse_local *)*state_local(state_parse))->module;
@@ -1584,72 +1655,46 @@ extract_chunk_ref(State s, State sn, Token tkn)
 }
 @
 
-@<model of states@=
-[
-    @<states of parsing@>
-]
+@<data types@=
+struct state_parse_local {
+    @<status when parsing@>
+};
 @
 
-litar assumes that when starting parsing it is reading comment.
-
-@<states of parsing@=
-{
-    name => "parse",
-},
-{
-    name => "parse_comment",
-    parent => "parse",
-},
+@<status when parsing@=
+Module module;
 @
 
-@<parse input@=
-do {
-    input_frames = empty_list;
+@<functions@=
+static State state_parse_in(State s, Signal sig)
+{
+    struct state_parse_local *lc_r = NULL;
+    NEW0(lc_r);
+    lc_r->module = module_of_name("");
+    *state_local(s) = lc_r;
+    state_init(state_escape);
+    return state_parse_comment;
+}
 
-    print_memgr_count("start parsing");
-    do {
-        InputFrame ipt = NULL;
-        NEW0(ipt);
-        ipt->file = atom_str(archive_name);
-        push(ipt, &input_frames);
-    } while (0);
-
-    print_memgr_count("start initializing state");
-    @<initialization of states@>
-
-    print_memgr_count("end initializing state, start reading token");
-
-    while (!is_empty_list(input_frames)) {
-        Token tkn;
-        InputFrame ipt;
-
-        RENAME(car(input_frames), ipt);
-        tkn = next_token(ipt);
-
-        if (tkn->type == TOKEN_EOF) {
-            fclose(ipt->in);
-            FREE(ipt);
-            pop(&input_frames);
-        } else {
-            RESERVE(
-            if (!state_handle_signal(state_parse, tkn)) {
-                fprintf(
-                    stderr,
-                    "Unexpected token at row %d column %d of %s\n",
-                    ipt->pr+1, ipt->pc+1, ipt->file
-                );
-                exit(1);
-            }
-            );
-        }
-
-        FREE(tkn);
+static State state_parse_handler(State s, Signal sig)
+{
+    struct state_parse_local *lc_r;
+    RENAME(*state_local(s), lc_r);
+    if (state_handle_signal(state_escape, sig)) {
+       return s;
     }
-    print_memgr_count("end reading token, start cleaning state");
+    @<handlings for token "tkn" when "state_parse"@|execute token handlings@>
+    return NULL;
+}
 
-    @<cleaning of states@>;
-    print_memgr_count("end cleaning state");
-} while (0);
+static State state_parse_out(State s, Signal sig)
+{
+    state_clear(state_escape);
+    struct state_parse_local *lc_r;
+    RENAME(*state_local(s), lc_r);
+    FREE(*state_local(s));
+    return NULL;
+}
 @
 
 @<execute token handlings@=#!/bin/sh
@@ -1660,40 +1705,6 @@ echo "InputFrame ipt;"
 echo "RENAME(car(input_frames), ipt);"
 cat -
 echo "} while (0);"
-@
-
-@<data types@=
-struct state_parse_local {
-    Module module;
-    State state_before_escaping;
-};
-@
-
-@<functions@=
-static State state_parse_in(State s, Signal sig)
-{
-    struct state_parse_local *lc_r = NULL;
-    NEW0(lc_r);
-    lc_r->module = module_of_name("");
-    *state_local(s) = lc_r;
-    return state_parse_comment;
-}
-
-static State state_parse_handler(State s, Signal sig)
-{
-    struct state_parse_local *lc_r;
-    RENAME(*state_local(s), lc_r);
-    @<handlings for token "tkn" when "state_parse"@|execute token handlings@>
-    return NULL;
-}
-
-static State state_parse_out(State s, Signal sig)
-{
-    struct state_parse_local *lc_r;
-    RENAME(*state_local(s), lc_r);
-    FREE(*state_local(s));
-    return NULL;
-}
 @
 
 ## Parsing comment
@@ -2280,99 +2291,91 @@ static State state_parse_block_filters_name_out(State s, Signal sig)
 
 @<states of parsing@=
 {
-    name => "parse_escaping",
-    parent => "parse",
-},
-{
-    name => "parse_escaping_argument",
-    parent => "parse_escaping",
+    name => "escape_argument",
+    parent => "escape",
 },
 @
 
 @<data types@=
-struct state_parse_escaping_local {
+struct state_escape_local {
     char esc;
     const char *argument;
 };
 @
 
 @<functions@=
-static State state_parse_escaping_in(State s, Signal sig)
+static State state_escape_in(State s, Signal sig)
 {
-    struct state_parse_escaping_local *lc_r = NULL;
-
+    struct state_escape_local *lc_r = NULL;
     NEW0(lc_r);
-    lc_r->esc = ((Token)sig)->value;
-
     *state_local(s) = lc_r;
-    return state_parse_escaping_argument;
+    return state_escape_argument;
 }
 
-static State state_parse_escaping_handler(State s, Signal sig)
+static State state_escape_handler(State s, Signal sig)
 {
-    @<handlings for token "tkn" when "state_parse_escaping"@|execute token handlings@>
+    struct state_escape_local *lc_r;
+    RENAME(*state_local(state_escape), lc_r);
+    @<handlings for token "tkn" when "state_escape"@|execute token handlings@>
     return NULL;
 }
 
-static State state_parse_escaping_out(State s, Signal sig)
+static State state_escape_out(State s, Signal sig)
 {
-    struct state_parse_escaping_local *lc_r;
+    struct state_escape_local *lc_r;
     RENAME(*state_local(s), lc_r);
-
-    @<handle escaping when "lc_r"@>
-
     FREE(*state_local(s));
     return NULL;
 }
 
-static State state_parse_escaping_argument_in(State s, Signal sig)
+static State state_escape_argument_in(State s, Signal sig)
 {
     new_str((Str *)state_local(s));
     return NULL;
 }
 
-static State state_parse_escaping_argument_handler(State s, Signal sig)
+static State state_escape_argument_handler(State s, Signal sig)
 {
-    @<handlings for token "tkn" when "state_parse_escaping_argument"@|execute token handlings@>
+    if (((struct state_escape_local *)*state_local(state_escape))->esc == '\0') {
+        return NULL; 
+    }
+    Token tkn;
+    RENAME(sig, tkn);
+    if (extract_name(s, tkn)) {
+	return s;
+    }
     return NULL;
 }
 
-static State state_parse_escaping_argument_out(State s, Signal sig)
+static State state_escape_argument_out(State s, Signal sig)
 {
-    struct state_parse_escaping_local *lc_r;
-    RENAME(*state_local(state_parse_escaping), lc_r);
-    lc_r->argument = normalize(raw_string((Str)*state_local(s)));
     free_str((Str *)state_local(s));
     return NULL;
 }
 @
 
-@<handlings for token "tkn" when "state_parse_escaping"@=
-if (tkn->type == TOKEN_NEWLINE) {
-    struct state_parse_local *lc_r;
-    RENAME(*state_local(state_parse), lc_r);
-    return lc_r->state_before_escaping;
-}
-@
+@<handlings for token "tkn" when "state_escape"@=
+if (lc_r->esc && tkn->type == TOKEN_NEWLINE) {
+    Str argument;
+    RENAME(*state_local(state_escape_argument), argument);
+    lc_r->argument = normalize(raw_string(argument));
+    str_clean(argument);
 
-@<handlings for token "tkn" when "state_parse_escaping_argument"@=
-if (extract_name(s, tkn)) {
+    @<handle escaping when "lc_r"@>
+    lc_r->esc = '\0';
     return s;
 }
 @
 
 ### Set Module
 
-@<handlings for token "tkn" when "state_parse_comment"@=
-InputFrame ipt;
-RENAME(car(input_frames), ipt);
-if (ipt->cc == 2
+@<handlings for token "tkn" when "state_escape"@=
+if (state_is_active(state_parse_comment)
+    && ipt->cc == 2
     && tkn->type == TOKEN_CONTROL_CHARACTER
     && tkn->value == '-') {
-    struct state_parse_local *lc_r;
-    RENAME(*state_local(state_parse), lc_r);
-    lc_r->state_before_escaping = s;
-    return state_parse_escaping;
+    lc_r->esc = tkn->value;
+    return state_escape;
 }
 @
 
@@ -2386,14 +2389,12 @@ if (lc_r->esc == '-') {
 
 ### Include File
 
-@<handlings for token "tkn" when "state_parse_comment"@=
+@<handlings for token "tkn" when "state_escape"@=
 if (ipt->cc == 2
     && tkn->type == TOKEN_CONTROL_CHARACTER
     && tkn->value == '.') {
-    struct state_parse_local *lc_r;
-    RENAME(*state_local(state_parse), lc_r);
-    lc_r->state_before_escaping = s;
-    return state_parse_escaping;
+    lc_r->esc = tkn->value;
+    return state_escape;
 }
 @
 

@@ -29,10 +29,10 @@ litar: litar.c
 release: litar
 	./litar -p "README.md" litar.la > README.md
 
-hello: hello.la litar
-	./litar -p "hello.c" hello.la > hello.c
-	./litar -p "hello.h" hello.la > hello.h
-	./litar -p "main.c" hello.la > main.c
+hello: examples/hello.la litar
+	./litar -p "hello.c" examples/hello.la > hello.c
+	./litar -p "hello.h" examples/hello.la > hello.h
+	./litar -p "main.c" examples/hello.la > main.c
 	gcc -o hello main.c hello.c
 
 clean:

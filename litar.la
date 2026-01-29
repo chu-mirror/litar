@@ -2480,10 +2480,17 @@ ensure_directory(litar_data);
 
 @<mount file system@=
 RESERVE(do {
-    CALLOC(archive_data, strlen(litar_data)+strlen(archive_name)+2);
+    char *archive_file_name = archive_name, *cp = archive_name;
+    while (*cp) {
+        if (*cp == '/') {
+	    archive_file_name = cp+1;
+	}
+	++cp;
+    }
+    CALLOC(archive_data, strlen(litar_data)+strlen(archive_file_name)+2);
     strcat(archive_data, litar_data);
     strcat(archive_data, "/");
-    strcat(archive_data, archive_name);
+    strcat(archive_data, archive_file_name);
 
     ensure_directory(archive_data);
 

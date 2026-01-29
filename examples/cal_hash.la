@@ -1,0 +1,20 @@
+@[cal_hash.c@=
+@<cal_hash@:Light@/C executable@>
+@
+
+@<cal_hash@:light@:C Module@/include paths@=
+Light/include
+@
+
+@<cal_hash@:light@:C Module@/includes@=
+#include "hash.h"
+@
+
+@<cal_hash@:Light@/main body@=
+char data[100];
+scanf("%s", data);
+print("%X\n", hash_str(data));
+@
+
+@. lib/light.la
+

@@ -1,5 +1,9 @@
 @- Light
 
+@<light@:C Module@/C module properties@=
+included_flag_format => '_LIGHT_%s',
+@
+
 @<light@:C Module@/macros@=
 /* Give value a new name, and force type casting. */
 #define RENAME(old, new) new = (typeof(new))old
@@ -26,19 +30,47 @@
     } while (0)
 @
 
-@<C executable@=
-@<light@:C Module@/C module@>
-int
-main(int argc, char *argv[])
-{
-    @<main body@>
-    return 0;
-}
-@
-
 @<light@:C Module@/includes@=
 #include <stddef.h>
 #include <string.h>
+@
+
+@[src/hash.c@=
+@<hash@:light@:C Module@/C module@>
+@
+
+@[include/hash.h@=
+@<hash@:light@:C Module@/C module interface@>
+@
+
+@<hash@:light@:C Module@/C module properties@=
+name => "hash",
+@
+
+@<hash@:light@:C Module@/interface required includes@=
+#include <stdint.h>
+@
+
+@<hash@:light@:C Module@/functions@=
+uint32_t
+hash(const uint8_t *value, size_t len)
+{
+    const uint32_t p = 257;
+    uint32_t result, p_;
+    int i;
+
+    for (i = 0, p_ = p, result = 0; i < len; ++i) {
+        result += *(value + i) * p_;
+        p_ *= p;
+    }
+    return result;
+}
+
+uint32_t
+hash_str(const char *str)
+{
+    return hash((const uint8_t *)str, strlen(str));
+}
 @
 
 @. lib/basic.la

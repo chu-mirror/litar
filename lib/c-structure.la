@@ -9,9 +9,16 @@ clang-format-19
 (
     name => 'default',
     included_flag_format => '_MODULE_%s',
+    include_paths => [qw(@<include paths@>)],
     @<C module properties@>
 )
 @
+
+@<-I flags@=@<Text Processing@/basic perl settings@>
+my %meta = @<C module meta information@>;
+
+print join " ", map {"-I$_"} @@{ $meta{include_paths} };
+@|Basics@/evaluate@
 
 @<C module@=
 @<include flags@>
@@ -23,6 +30,17 @@ clang-format-19
 @<global variables@>
 @<functions@>
 @|format C code@
+
+@<C executable@=
+@<C module@>
+int
+main(int argc, char *argv[])
+{
+    @<main body@>
+    return 0;
+}
+@|format C code@
+
 
 @<C module interface@=
 @<interface required includes@>
@@ -66,7 +84,7 @@ print "#endif\n";
 @|extract function declarations@
 
 @<extract function declarations@=#!/bin/sh
-cproto -s
+cproto -s @<-I flags@>
 @
 
 @<global declarations@=
@@ -75,7 +93,7 @@ cproto -s
 @|extract global declarations@
 
 @<extract global declarations@=#!/bin/sh
-cproto -v -e
+cproto -v -e @<-I flags@>
 @
 
 @[.clang-format@=

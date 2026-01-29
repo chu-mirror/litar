@@ -6,18 +6,18 @@ Floyd
 @
 
 @[hello.c@=
-@<hello@:light@:C Module@/C module@>
+@<hello@:C Module@/C module@>
 @
 
-@<hello@:light@:C Module@/C module properties@=
+@<hello@:C Module@/C module properties@=
 name => 'hello',
 @
 
-@<hello@:light@:C Module@/includes@=
+@<hello@:C Module@/includes@=
 #include <stdio.h>
 @
 
-@<hello@:light@:C Module@/functions@=
+@<hello@:C Module@/functions@=
 void print_hello()
 {
     @<classmates
@@ -27,18 +27,18 @@ void print_hello()
 @
 
 @[hello.h@=
-@<hello@:light@:C Module@/C module interface@>
+@<hello@:C Module@/C module interface@>
 @
 
 @[main.c@=
-@<main@:Light@/C executable@>
+@<main@:C Module@/C executable@>
 @
 
-@<main@:light@:C Module@/includes@=
+@<main@:C Module@/includes@=
 #include "hello.h"
 @
 
-@<main@:Light@/main body@=
+@<main@:C Module@/main body@=
 print_hello();
 @
 

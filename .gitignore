@@ -7,3 +7,6 @@ litar.c
 hello.h
 hello.c
 main.c
+*~
+show
+*.c

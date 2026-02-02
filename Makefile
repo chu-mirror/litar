@@ -4,6 +4,9 @@ EXEC=litar
 CFLAGS=-g -Ilight/include `pkg-config fuse3 --cflags --libs`
 LIBS=`pkg-config fuse3 --libs`
 
+LIGHT_HEADER=context.h list.h
+LIGHT_SOURCE=context.c list.c
+
 all: litar
 
 .SUFFIXES: .la
@@ -35,6 +38,15 @@ hello: examples/hello.la litar
 	./litar -p "main.c" examples/hello.la > main.c
 	gcc -o hello main.c hello.c
 
+$(LIGHT_HEADER) $(LIGHT_SOURCE): lib/light.la litar
+	./litar -m Light -p $@ lib/light.la > $@
+
+show.c: examples/show-light.la $(LIGHT_HEADER)
+	./litar -p "show.c" examples/show-light.la > show.c
+
+show: show.c $(LIGHT_SOURCE)
+	gcc -o $@ $^
+
 clean:
-	rm -f litar.c litar hello litar.1 boot hello.c hello.h main.c
+	rm -f litar.c litar hello litar.1 boot hello.c hello.h main.c $(LIGHT_HEADER) $(LIGHT_SOURCE)
 

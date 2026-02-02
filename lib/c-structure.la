@@ -41,7 +41,6 @@ main(int argc, char *argv[])
 }
 @|format C code@
 
-
 @<C module interface@=
 @<interface required includes@>
 @<interface specific macros@>
@@ -80,6 +79,7 @@ print "#endif\n";
 @
 
 @<function declarations@=
+@<data type declarations@>
 @<functions@>
 @|extract function declarations@
 
@@ -88,6 +88,7 @@ cproto -s @<-I flags@>
 @
 
 @<global declarations@=
+@<data type declarations@>
 @<global variables@>
 @<functions@>
 @|extract global declarations@

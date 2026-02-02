@@ -1,9 +1,15 @@
 @- Light
 
+Light is a framework mainly for C programming. It reflects
+the author's preferences and customs, which includes how to format code,
+how to manage memory, how to handle exception, etc.
+
+The flags showing that a module was included follow this pattern.
 @<light@:C Module@/C module properties@=
 included_flag_format => '_LIGHT_%s',
 @
 
+There are some idioms to make life a bit easier.
 @<light@:C Module@/macros@=
 /* Give value a new name, and force type casting. */
 #define RENAME(old, new) new = (typeof(new))old
@@ -31,15 +37,358 @@ included_flag_format => '_LIGHT_%s',
 @
 
 @<light@:C Module@/includes@=
-#include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 @
 
-@[src/hash.c@=
+@<light@:C Module@/interface required includes@=
+#include <stddef.h>
+@
+
+The forming of program follows a common pattern,
+you build up a context, then you write program under that context.
+The maintainance of contexts in C program is a hard work.
+It contains allocating of memory, and requiring resources from operating system,
+what's more, the memory or resources allocated must be released at some point.
+This kind of management is a major source of bugs in C programs,
+because C program lacks a garbage collector.
+
+C does not have an explicit notation for contexts, so Light defines its own.
+
+@<context@:light@:C Module@/C module properties@=
+name => 'context',
+@
+
+@[context.c@=
+@<context@:light@:C Module@/C module@>
+@
+
+@[context.h@=
+@<context@:light@:C Module@/C module interface@>
+@
+
+A context can be embedded to another context,
+so the current context is in fact a stack of contexts.
+This might be not correct if the program is multi-threaded. In that case,
+the organization of contexts is like a tree.
+We say the context a context embedded to is the parent context of that context.
+
+A context has a list of resources, the resources must know how to release themselves.
+
+@<context@:light@:C Module@/exported data type declarations@=
+typedef struct context *Context;
+typedef struct resource *Resource;
+@
+
+@<context@:light@:C Module@/data type declarations@=
+struct resource_node;
+@
+
+@<context@:light@:C Module@/data types@=
+struct context {
+    Context parent;
+    struct resource_node *resources;
+};
+
+struct resource {
+    void *identity;
+    void (*clean)(void *);
+};
+
+struct resource_node {
+    struct resource_node *previous;
+    Resource resource;
+};
+@
+
+@<context@:light@:C Module@/global variables@=
+Context _light_top_context;
+@
+
+@<context@:light@:C Module@/functions@=
+void enter_context() {
+    Context ctx;
+    ctx = malloc(sizeof(*ctx));
+    ctx->parent = _light_top_context;
+    ctx->resources = NULL;
+    _light_top_context = ctx;
+}
+
+void new_resource(void *id, void (*cl)(void *)) {
+    Resource res;
+    res = malloc(sizeof(*res));
+    res->identity = id;
+    res->clean = cl;
+
+    struct resource_node *nd;
+    nd = malloc(sizeof(*nd));
+    nd->resource = res;
+    nd->previous = _light_top_context->resources;
+
+    _light_top_context->resources = nd;
+}
+
+void delete_resource(void *id) {
+    struct resource_node *nd, *nd_;
+    for (nd_ = NULL, nd = _light_top_context->resources; nd != NULL; nd_ = nd, nd = nd->previous) {
+	Resource res = nd->resource;
+	if (res->identity == id) {
+	    res->clean(res->identity);
+	    free(res);
+	    if (nd_) {
+		nd_->previous = nd->previous;
+	    } else {
+	        _light_top_context->resources = nd->previous;
+	    }
+	    free(nd);
+	    break;
+	}
+    }
+}
+
+void rename_resource(void *id1, void *id2) {
+    struct resource_node *nd;
+    for (nd = _light_top_context->resources; nd != NULL; nd = nd->previous) {
+        if (nd->resource->identity == id1) {
+	    nd->resource->identity = id2;
+	}
+    }
+}
+
+void exit_context() {
+    Context ctx = _light_top_context;
+
+    struct resource_node *nd, *nd_;
+    for (nd_ = NULL, nd = ctx->resources; nd != NULL; nd_ = nd, nd = nd->previous, free(nd_)) {
+	Resource res = nd->resource;
+	res->clean(res->identity);
+	free(res);
+    }
+
+    _light_top_context = _light_top_context->parent;
+    free(ctx);
+}
+@
+
+@<context@:light@:C Module@/interface specific macros@=
+#define UNDER_CONTEXT(...) do { enter_context(); __VA_ARGS__; exit_context(); } while (0)
+#define ESCAPE(...) \
+    do { \
+	Context __temp_context = _light_top_context; \
+	_light_top_context = _light_top_context->parent; \
+	__VA_ARGS__; \
+	_light_top_context = __temp_context; \
+    } while (0)
+@
+
+@<light@:C Module@/main body@=
+UNDER_CONTEXT(@<main body@>);
+@
+
+@<light@:C Module@/includes@=
+#include "context.h"
+@
+
+Based on the context defined, Light refines the memory management.
+
+@<light@:C Module@/macros@=
+#define NEW(p) do {(p) = (typeof(p))malloc(sizeof *(p)); new_resource(p, free);} while (0)
+#define FREE(p) delete_resource(p)
+#define CALLOC(p, len) \
+    do {(p) = (typeof(p))calloc((len), sizeof *(p)); new_resource(p, free);} while (0)
+#define NEW0(p) CALLOC(p, 1)
+#define REALLOC_ARRAY(p, len) \
+    do { \
+        (typeof(p)) *p_r; \
+	p_r = &(p); \
+	void *p_ = *p_r; \
+	(*p_r) = (typeof(p))reallocarray(*p_r, sizeof *(p), (len)); \
+	rename_resource(p_, *p_r); \
+    } while (0)
+#define MOVE(src, dest) do {NEW(dest); memcpy((dest), (src), sizeof *(dest));} while (0)
+#define MOVE_ARRAY(src, dest, n) \
+    do {CALLOC(dest, n); memcpy((dest), (src), sizeof *(dest) * (n));} while (0)
+#define STRDUP(src, dest) do {(dest) = strdup(src); new_resource(dest, free);} while (0)
+@
+
+@<list@:light@:C Module@/C module properties@=
+name => 'list',
+@
+
+@[list.c@=
+@<list@:light@:C Module@/C module@>
+@
+
+@[list.h@=
+@<list@:light@:C Module@/C module interface@>
+@
+
+@<list@:light@:C Module@/exported data type declarations@=
+typedef struct list *List;
+@
+
+@<list@:light@:C Module@/data types@=
+struct list {
+    struct list *rest;
+    void *first;
+};
+@
+
+The API of list adopts the naming of lisp.
+@<list@:light@:C Module@/functions@=
+List cons(void *ele, List l)
+{
+    List _l = NULL;
+
+    NEW(_l);
+    _l->first = ele;
+    _l->rest = l;
+
+    return _l;
+}
+
+void *car(List l)
+{
+    return l->first;
+}
+
+List cdr(List l)
+{
+    return l->rest;
+}
+@
+
+@<list@:light@:C Module@/functions@=
+size_t length(List l)
+{
+    size_t len;
+
+    for (len = 0; !is_empty_list(l); l = cdr(l)) {
+        ++len;
+    }
+
+    return len;
+}
+@
+
+A list can be easily used as a stack.
+@<list@:light@:C Module@/functions@=
+List push(void *elm, List *l_r)
+{
+    return *l_r = cons(elm, *l_r);
+}
+
+void *pop(List *l_r)
+{
+    List _l = cdr(*l_r);
+    void *v = car(*l_r);
+    (*l_r)->rest = empty_list;
+    FREE(*l_r);
+    *l_r = _l;
+    return v;
+}
+@
+
+Construct a list from other linear structures.
+@<list@:light@:C Module@/functions@=
+List list_from_arr(void *arr, size_t len, size_t size)
+{
+    int i;
+    List l = empty_list;
+    for (i = 0; i < len; ++i) {
+        push(arr + (len - i - 1) * size, &l);
+    }
+    return l;
+}
+
+List copy_list(List l)
+{
+    List _l = empty_list;
+
+    do {
+        List tail, __l;
+        void *elm;
+
+        tail = cons(NULL, empty_list);
+        __l = tail;
+        FOREACH (elm, l) {
+            List nn; /* new node */
+            nn = cons(elm, empty_list);
+            tail->rest = nn;
+            tail = nn;
+        }
+        _l = cdr(__l);
+        FREE(__l);
+    } while (0);
+
+    return _l;
+}
+@
+
+Modify the underlying structure of list.
+
+@<list@:light@:C Module@/functions@=
+void reverse(List *l_r)
+{
+    List l, ll;
+
+    l = *l_r;
+    ll = empty_list;
+
+    while (l != empty_list) {
+        List l_t = l->rest;
+        l->rest = ll;
+        ll = l;
+        l = l_t;
+    }
+
+    *l_r = ll;
+}
+
+List append(List *l1_r, List *l2_r)
+{
+    List l;
+
+    if (is_empty_list(*l1_r)) {
+        l = *l2_r;
+        *l2_r = empty_list;
+        return l;
+    }
+
+    do { /* find tail |l| of |*l1_r| */
+        l = *l1_r;
+        while (!is_empty_list(cdr(l))) {
+            l = cdr(l);
+        }
+        l->rest = *l2_r;
+    } while (0);
+
+    l = *l1_r;
+
+    *l1_r = empty_list;
+    *l2_r = empty_list;
+
+    return l;
+}
+@
+
+@<list@:light@:C Module@/exported macros@=
+#define empty_list NULL
+#define is_empty_list(l) ((l) == NULL)
+#define _LIST(arr, len) list_from_arr((arr), len, sizeof((arr)[0]))
+#define LIST(arr) _LIST((arr), sizeof(arr) / sizeof((arr)[0]))
+#define FOREACH(elm, l)                                           \
+    for (List __light_list_l = (l);                               \
+         !is_empty_list(__light_list_l)                           \
+         && (((elm) = (typeof(elm))car(__light_list_l)) != NULL); \
+         __light_list_l = cdr(__light_list_l))
+@
+
+@[hash.c@=
 @<hash@:light@:C Module@/C module@>
 @
 
-@[include/hash.h@=
+@[hash.h@=
 @<hash@:light@:C Module@/C module interface@>
 @
 

@@ -42,7 +42,7 @@ UNDER_CONTEXT( /* test |push| and |pop| */
     assert(length(l1) == 3);
 );
 
-do { /* test |reverse| */
+UNDER_CONTEXT( /* test |reverse| */
     l1 = _LIST(arr, 6);
     reverse(&l1);
 
@@ -55,9 +55,9 @@ do { /* test |reverse| */
 	    ++i;
 	}
     } while (0);
-} while (0);
+);
 
-do { /* test |append| */
+UNDER_CONTEXT( /* test |append| */
     l1 = _LIST(arr, 3);
     assert(length(l1) == 3);
 
@@ -76,19 +76,20 @@ do { /* test |append| */
 	    ++i;
 	}
     } while (0);
-} while (0);
+);
 
-do { /* test |copy_list| */
+UNDER_CONTEXT( /* test |copy_list| */
+    l1 = _LIST(arr, 6);
+    l2 = copy_list(l1);
+    assert(length(l1) == length(l2));
+
+    List _l2 = l2;
     int *elm;
-    l4 = copy_list(l3);
-    assert(length(l3) == length(l4));
-
-    List _l3 = l3;
-    FOREACH (elm, l4) {
-	assert(elm == car(_l3));
-	_l3 = cdr(_l3);
+    FOREACH (elm, l1) {
+	assert(elm == car(_l2));
+	_l2 = cdr(_l2);
     }
-} while (0);
+);
 @
 
 @<show cases for list (debug)@=

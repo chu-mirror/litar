@@ -19,15 +19,29 @@ printf("All test passed\n");
 @
 
 @<show cases@=
-UNDER_CONTEXT(
+do {
     int arr[6] = {1, 2, 3, 4, 5, 6};
     List l1, l2, l3, l4;
 
     @<show cases for list@>
-);
+} while (0);
 @
 
 @<show cases for list@=
+UNDER_CONTEXT( /* test |push| and |pop| */
+    int *n;
+    l1 = _LIST(arr, 3);
+    RENAME(pop(&l1), n);
+    assert(*n == 1);
+    RENAME(car(l1), n);
+    assert(*n == 2);
+    assert(length(l1) == 2);
+    push(&arr[0], &l1);
+    RENAME(car(l1), n);
+    assert(*n == 1);
+    assert(length(l1) == 3);
+);
+
 do { /* test |reverse| */
     l1 = _LIST(arr, 6);
     reverse(&l1);
@@ -56,16 +70,13 @@ do { /* test |append| */
     do { /* ensure that |l3| has correct elements */
 	int i, *np;
 
-	i = 0;
+	i = 1;
 	FOREACH (np, l3) {
-	    assert(*np == i + 1);
+	    assert(*np == i);
 	    ++i;
 	}
     } while (0);
 } while (0);
-@
-
-@<show cases for list (debug)@=
 
 do { /* test |copy_list| */
     int *elm;
@@ -78,6 +89,9 @@ do { /* test |copy_list| */
 	_l3 = cdr(_l3);
     }
 } while (0);
+@
+
+@<show cases for list (debug)@=
 
 do { /* test |map| */
     int i, *np;
@@ -90,15 +104,6 @@ do { /* test |map| */
 	assert(arr[i] == i + 2);
 	++i;
     }
-} while (0);
-
-do { /* test |push| and |pop| */
-    int n;
-    n = *(int *)pop(&l3);
-    assert(n == 2);
-    assert(length(l3) == 5);
-    push(&arr[0], &l3);
-    assert(length(l3) == 6);
 } while (0);
 
 do { /* test |remove_all| */

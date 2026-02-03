@@ -1,7 +1,7 @@
 @- Light
 
-Light is a framework mainly for C programming. It reflects
-the author's preferences and customs, which includes how to format code,
+Light is a framework mainly for C programming.
+It reflects the author's preferences and customs, which includes how to format code,
 how to manage memory, how to handle exception, etc.
 
 The flags showing that a module was included follow this pattern.
@@ -45,6 +45,108 @@ There are some idioms to make life a bit easier.
 #include <stddef.h>
 @
 
+Light uses hash tables extensively to extend the relations
+between pointers and other entities
+without modify the data structure that the pointer reference to.
+The hash algorithm chosen is Fibonacci Hashing.
+
+@<light@:C Module@/macros@=
+#define GOLDEN_RATIO_64 (0x9E3779B97F4A7C15ULL)
+@
+
+@<light@:C Module@/includes@=
+#include <stdint.h>
+@
+
+@<light@:C Module@/static inline functions@=
+static inline uint64_t _hash_fibonacci(uint64_t v) {
+    return GOLDEN_RATIO_64 * v;
+}
+
+static inline uint64_t _hash_ptr(void *p) {
+    return _hash_fibonacci((uintptr_t)p);
+}
+@
+
+@<light@:C Module@/data types@=
+struct _hash_pointer_ptr_entry {
+    struct _hash_pointer_ptr_entry *next;
+    void *ptr;
+    void *val;
+};
+@
+
+@<light@:C Module@/macros@=
+#define MAPPING_PTR(name) \
+    struct _hash_pointer_ptr_entry *ptr_to_##name[1 << ptr_to_##name##_size];
+@
+
+@<light@:C Module@/static inline functions@=
+static inline struct _hash_pointer_ptr_entry **
+_mapping_find_entry(struct _hash_pointer_ptr_entry **mapping, size_t size, void *k)
+{
+    uint64_t h = _hash_ptr(k);
+    h = h & (1<<size)-1;
+    struct _hash_pointer_ptr_entry *ent, *ent_;
+    ent_ = NULL;
+    ent = mapping[h];
+    while (ent && ent->ptr != k) {
+        ent_ = ent;
+	ent = ent->next;
+    }
+    if (ent && ent_) { /* move the found entry to top of chain */
+        ent_->next = ent;
+	ent->next = mapping[h];
+	mapping[h] = ent;
+    }
+    return &mapping[h];
+}
+
+static inline void _map_ptr_to(struct _hash_pointer_ptr_entry **mapping, size_t size, void *k, void *v)
+{
+    struct _hash_pointer_ptr_entry *ent, **ent_r;
+    ent_r = _mapping_find_entry(mapping, size, k);
+    if (*ent_r && (*ent_r)->ptr == k) {
+        (*ent_r)->val = v;
+    } else {
+        ent = malloc(sizeof(*ent));
+	ent->next = *ent_r;
+	ent->ptr = k;
+	ent->val = v;
+	*ent_r = ent;
+    }
+}
+
+static inline void _unmap_ptr(struct _hash_pointer_ptr_entry **mapping, size_t size, void *k)
+{
+    struct _hash_pointer_ptr_entry **ent_r, *ent;
+    ent_r = _mapping_find_entry(mapping, size, k);
+    if (*ent_r && (*ent_r)->ptr == k) {
+        ent = *ent_r;
+	*ent_r = ent->next;
+	free(ent);
+    }
+}
+
+static inline void *_mapped_by_ptr(struct _hash_pointer_ptr_entry **mapping, size_t size, void *k)
+{
+    struct _hash_pointer_ptr_entry **ent_r;
+    ent_r = _mapping_find_entry(mapping, size, k);
+    if (!*ent_r || (*ent_r)->ptr != k) {
+        return NULL;
+    }
+    return (*ent_r)->val;
+}
+@
+
+Some convenient macros.
+
+@<light@:C Module@/macros@=
+#define map_ptr_to(name, k, v) _map_ptr_to(ptr_to_##name, ptr_to_##name##_size, (k), (v))
+#define unmap_ptr(name, k) _unmap_ptr(ptr_to_##name, ptr_to_##name##_size, (k))
+#define mapped_by_ptr(name, k) _mapped_by_ptr(ptr_to_##name, ptr_to_##name##_size, (k))
+@
+
 The forming of program follows a common pattern,
 you build up a context, then you write program under that context.
 The maintainance of contexts in C program is a hard work.
@@ -71,7 +173,7 @@ A context can be embedded to another context,
 so the current context is in fact a stack of contexts.
 This might be not correct if the program is multi-threaded. In that case,
 the organization of contexts is like a tree.
-We say the context a context embedded to is the parent context of that context.
+The context a context embedded to is the parent context of that context.
 
 A context has a list of resources, the resources must know how to release themselves.
 
@@ -80,11 +182,13 @@ typedef struct context *Context;
 typedef struct resource *Resource;
 @
 
-@<context@:light@:C Module@/data type declarations@=
-struct resource_node;
-@
-
 @<context@:light@:C Module@/data types@=
+struct resource_node {
+    struct resource_node *previous;
+    struct resource_node *next;
+    Resource resource;
+};
+
 struct context {
     Context parent;
     struct resource_node *resources;
@@ -94,15 +198,18 @@ struct resource {
     void *identity;
     void (*clean)(void *);
 };
-
-struct resource_node {
-    struct resource_node *previous;
-    Resource resource;
-};
 @
 
 @<context@:light@:C Module@/global variables@=
 Context _light_top_context;
+@
+
+@<context@:light@:C Module@/macros@=
+#define ptr_to_resource_node_size (12)
+@
+
+@<context@:light@:C Module@/global variables@=
+MAPPING_PTR(resource_node);
 @
 
 @<context@:light@:C Module@/functions@=
@@ -123,36 +230,41 @@ void new_resource(void *id, void (*cl)(void *)) {
     struct resource_node *nd;
     nd = malloc(sizeof(*nd));
     nd->resource = res;
-    nd->previous = _light_top_context->resources;
+    nd->next = _light_top_context->resources;
+    nd->previous = NULL;
+    if (nd->next) {
+	nd->next->previous = nd;
+    }
 
     _light_top_context->resources = nd;
+    map_ptr_to(resource_node, id, nd);
 }
 
 void delete_resource(void *id) {
-    struct resource_node *nd, *nd_;
-    for (nd_ = NULL, nd = _light_top_context->resources; nd != NULL; nd_ = nd, nd = nd->previous) {
-	Resource res = nd->resource;
-	if (res->identity == id) {
-	    res->clean(res->identity);
-	    free(res);
-	    if (nd_) {
-		nd_->previous = nd->previous;
-	    } else {
-	        _light_top_context->resources = nd->previous;
-	    }
-	    free(nd);
-	    break;
-	}
+    struct resource_node *nd;
+    nd = mapped_by_ptr(resource_node, id);
+    if (nd->previous) {
+        nd->previous->next = nd->next;
+    } else {
+        _light_top_context->resources = nd->next;
     }
+    if (nd->next) {
+        nd->next->previous = nd->previous;
+    }
+    
+    unmap_ptr(resource_node, id);
+    Resource res = nd->resource;
+    res->clean(res->identity);
+    free(nd);
 }
 
 void rename_resource(void *id1, void *id2) {
     struct resource_node *nd;
-    for (nd = _light_top_context->resources; nd != NULL; nd = nd->previous) {
-        if (nd->resource->identity == id1) {
-	    nd->resource->identity = id2;
-	}
-    }
+    nd = mapped_by_ptr(resource_node, id1);
+    unmap_ptr(resource_node, id1);
+
+    nd->resource->identity = id2;
+    map_ptr_to(resource_node, id2, nd);
 }
 
 void exit_context() {
@@ -162,6 +274,7 @@ void exit_context() {
     for (nd_ = NULL, nd = ctx->resources; nd != NULL; nd_ = nd, nd = nd->previous, free(nd_)) {
 	Resource res = nd->resource;
 	res->clean(res->identity);
+	unmap_ptr(resource_node, res->identity);
 	free(res);
     }
 

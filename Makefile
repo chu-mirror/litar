@@ -45,7 +45,7 @@ show.c: examples/show-light.la $(LIGHT_HEADER)
 	./litar -p "show.c" examples/show-light.la > show.c
 
 show: show.c $(LIGHT_SOURCE)
-	gcc -o $@ $^
+	gcc -g -o $@ $^
 
 clean:
 	rm -f litar.c litar hello litar.1 boot hello.c hello.h main.c $(LIGHT_HEADER) $(LIGHT_SOURCE)

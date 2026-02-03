@@ -27,6 +27,7 @@ print join " ", map {"-I$_"} @@{ $meta{include_paths} };
 @<data type declarations@>
 @<data types@>
 @<function declarations@>
+@<static inline functions@>
 @<global variables@>
 @<functions@>
 @|format C code@
@@ -47,6 +48,7 @@ main(int argc, char *argv[])
 @<exported macros@>
 @<exported data type declarations@>
 @<global declarations@>
+@<exported static inline functions@>
 @|wrap with included flag@|format C code@
 
 @<wrap with included flag@=@<Text Processing@/basic perl settings@>
@@ -76,6 +78,10 @@ print "#endif\n";
 
 @<data types@=
 @<exported data types@>
+@
+
+@<static inline functions@=
+@<exported static inline functions@>
 @
 
 @<function declarations@=

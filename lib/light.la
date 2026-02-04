@@ -249,7 +249,7 @@ void new_resource(void *id, void (*cl)(void *)) {
     _light_top_context->resources = nd;
     map_ptr_to(resource_node, id, nd);
 #ifndef NDEBUG
-    fprintf(stderr, "New resource: %p, Under: %p\n", id, _light_top_context);
+    fprintf(stderr, "New resource: %p, under: %p\n", id, _light_top_context);
 #endif
 }
 
@@ -268,7 +268,7 @@ void delete_resource(void *id) {
     unmap_ptr(resource_node, id);
     Resource res = nd->resource;
 #ifndef NDEBUG
-    fprintf(stderr, "Free resource: %p, Under: %p\n", res->identity, _light_top_context);
+    fprintf(stderr, "Free resource: %p, under: %p\n", res->identity, _light_top_context);
 #endif
     res->clean(res->identity);
     free(nd);
@@ -281,6 +281,9 @@ void rename_resource(void *id1, void *id2) {
 
     nd->resource->identity = id2;
     map_ptr_to(resource_node, id2, nd);
+#ifndef NDEBUG
+    fprintf(stderr, "Rename resource: %p, to: %p, under: %p\n", id1, id2, _light_top_context);
+#endif
 }
 
 void exit_context() {
@@ -290,7 +293,7 @@ void exit_context() {
     for (nd_ = NULL, nd = ctx->resources; nd != NULL; nd_ = nd, nd = nd->next, free(nd_)) {
 	Resource res = nd->resource;
 #ifndef NDEBUG
-	fprintf(stderr, "Free resource: %p, Under: %p\n", res->identity, _light_top_context);
+	fprintf(stderr, "Free resource: %p, under: %p\n", res->identity, _light_top_context);
 #endif
 	res->clean(res->identity);
 	unmap_ptr(resource_node, res->identity);
@@ -337,23 +340,40 @@ UNDER_CONTEXT(@<main body@>);
 Based on the context defined, Light refines the memory management.
 
 @<light@:C Module@/macros@=
-#define NEW(p) do {(p) = (typeof(p))malloc(sizeof *(p)); new_resource(p, free);} while (0)
+#define NEW(p) \
+    do { \
+        typeof(p) *p_r = &(p); \
+        (*p_r) = (typeof(p))malloc(sizeof *(p)); new_resource(*p_r, free); \
+    } while (0)
 #define FREE(p) delete_resource(p)
 #define CALLOC(p, len) \
-    do {(p) = (typeof(p))calloc((len), sizeof *(p)); new_resource(p, free);} while (0)
+    do { \
+        typeof(p) *p_r = &(p); \
+        (*p_r) = (typeof(p))calloc((len), sizeof *(p)); new_resource(*p_r, free); \
+    } while (0)
 #define NEW0(p) CALLOC(p, 1)
 #define REALLOC_ARRAY(p, len) \
     do { \
-        (typeof(p)) *p_r; \
-	p_r = &(p); \
+        typeof(p) *p_r = &(p); \
 	void *p_ = *p_r; \
 	(*p_r) = (typeof(p))reallocarray(*p_r, sizeof *(p), (len)); \
 	rename_resource(p_, *p_r); \
     } while (0)
-#define MOVE(src, dest) do {NEW(dest); memcpy((dest), (src), sizeof *(dest));} while (0)
+#define MOVE(src, dest) \
+    do { \
+        typeof(dest) *dest_r = &(dest); \
+        NEW(*dest_r); memcpy((*dest_r), (src), sizeof *(dest)); \
+    } while (0)
 #define MOVE_ARRAY(src, dest, n) \
-    do {CALLOC(dest, n); memcpy((dest), (src), sizeof *(dest) * (n));} while (0)
-#define STRDUP(src, dest) do {(dest) = strdup(src); new_resource(dest, free);} while (0)
+    do { \
+        typeof(dest) *dest_r = &(dest); \
+        CALLOC(*dest_r, n); memcpy((*dest_r), (src), sizeof *(dest) * (n)); \
+    } while (0)
+#define STRDUP(src, dest) \
+    do { \
+        typeof(dest) *dest_r = &(dest); \
+        (*dest_t) = strdup(src); new_resource(*dest_t, free); \
+    } while (0)
 @
 
 @<list@:light@:C Module@/C module properties@=

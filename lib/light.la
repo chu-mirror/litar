@@ -77,8 +77,8 @@ static inline uint64_t _hash_ptr(void *p) {
 @
 
 @<light@:C Module@/data types@=
-struct _hash_pointer_ptr_entry {
-    struct _hash_pointer_ptr_entry *next;
+struct _hash_table_ptr_entry {
+    struct _hash_table_ptr_entry *next;
     void *ptr;
     void *val;
 };
@@ -86,16 +86,16 @@ struct _hash_pointer_ptr_entry {
 
 @<light@:C Module@/macros@=
 #define MAPPING_PTR(name) \
-    struct _hash_pointer_ptr_entry *ptr_to_##name[1 << ptr_to_##name##_size];
+    struct _hash_table_ptr_entry *ptr_to_##name[1 << ptr_to_##name##_size]
 @
 
 @<light@:C Module@/static inline functions@=
-static inline struct _hash_pointer_ptr_entry **
-_mapping_find_entry(struct _hash_pointer_ptr_entry **mapping, size_t size, void *k)
+static inline struct _hash_table_ptr_entry **
+_mapping_find_entry(struct _hash_table_ptr_entry **mapping, size_t size, void *k)
 {
     uint64_t h = _hash_ptr(k);
     h = h & (1<<size)-1;
-    struct _hash_pointer_ptr_entry *ent, *ent_;
+    struct _hash_table_ptr_entry *ent, *ent_;
     ent_ = NULL;
     ent = mapping[h];
     while (ent && ent->ptr != k) {
@@ -110,9 +110,9 @@ _mapping_find_entry(struct _hash_pointer_ptr_entry **mapping, size_t size, void 
     return &mapping[h];
 }
 
-static inline void _map_ptr_to(struct _hash_pointer_ptr_entry **mapping, size_t size, void *k, void *v)
+static inline void _map_ptr_to(struct _hash_table_ptr_entry **mapping, size_t size, void *k, void *v)
 {
-    struct _hash_pointer_ptr_entry *ent, **ent_r;
+    struct _hash_table_ptr_entry *ent, **ent_r;
     ent_r = _mapping_find_entry(mapping, size, k);
     if (*ent_r && (*ent_r)->ptr == k) {
         (*ent_r)->val = v;
@@ -125,9 +125,9 @@ static inline void _map_ptr_to(struct _hash_pointer_ptr_entry **mapping, size_t 
     }
 }
 
-static inline void _unmap_ptr(struct _hash_pointer_ptr_entry **mapping, size_t size, void *k)
+static inline void _unmap_ptr(struct _hash_table_ptr_entry **mapping, size_t size, void *k)
 {
-    struct _hash_pointer_ptr_entry **ent_r, *ent;
+    struct _hash_table_ptr_entry **ent_r, *ent;
     ent_r = _mapping_find_entry(mapping, size, k);
     if (*ent_r && (*ent_r)->ptr == k) {
         ent = *ent_r;
@@ -136,9 +136,9 @@ static inline void _unmap_ptr(struct _hash_pointer_ptr_entry **mapping, size_t s
     }
 }
 
-static inline void *_mapped_by_ptr(struct _hash_pointer_ptr_entry **mapping, size_t size, void *k)
+static inline void *_mapped_by_ptr(struct _hash_table_ptr_entry **mapping, size_t size, void *k)
 {
-    struct _hash_pointer_ptr_entry **ent_r;
+    struct _hash_table_ptr_entry **ent_r;
     ent_r = _mapping_find_entry(mapping, size, k);
     if (!*ent_r || (*ent_r)->ptr != k) {
         return NULL;
@@ -216,7 +216,7 @@ Context _light_top_context;
 @
 
 @<context@:light@:C Module@/global variables@=
-MAPPING_PTR(resource_node);
+static MAPPING_PTR(resource_node);
 @
 
 @<context@:light@:C Module@/functions@=

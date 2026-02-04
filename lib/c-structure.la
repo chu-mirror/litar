@@ -94,6 +94,7 @@ cproto -s @<-I flags@>
 @
 
 @<global declarations@=
+@<macros@>
 @<data type declarations@>
 @<global variables@>
 @<functions@>

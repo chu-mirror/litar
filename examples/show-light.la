@@ -6,6 +6,10 @@
 name => "show",
 @
 
+@<show@:light@:C Module@/include paths@=
+Light
+@
+
 @<show@:light@:C Module@/includes@=
 #include <stdio.h>
 #include <assert.h>
@@ -131,10 +135,6 @@ do { /* test |remove_first| */
 	++i;
     }
 } while (0);
-@
-
-@<show@:light@:C Module@/include paths@=
-Light
 @
 
 @. lib/light.la

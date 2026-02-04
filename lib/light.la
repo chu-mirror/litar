@@ -9,6 +9,14 @@ The flags showing that a module was included follow this pattern.
 included_flag_format => '_LIGHT_%s',
 @
 
+Include headers for debugging.
+@<light@:C Module@/includes@=
+#include <assert.h>
+#ifndef NDEBUG
+#include <stdio.h>
+#endif
+@
+
 There are some idioms to make life a bit easier.
 @<light@:C Module@/macros@=
 /* Give value a new name, and force type casting. */
@@ -171,7 +179,7 @@ name => 'context',
 
 A context can be embedded to another context,
 so the current context is in fact a stack of contexts.
-This might be not correct if the program is multi-threaded. In that case,
+This might not be correct if the program is multi-threaded. In that case,
 the organization of contexts is like a tree.
 The context a context embedded to is the parent context of that context.
 
@@ -184,8 +192,7 @@ typedef struct resource *Resource;
 
 @<context@:light@:C Module@/data types@=
 struct resource_node {
-    struct resource_node *previous;
-    struct resource_node *next;
+    struct resource_node *previous, *next;
     Resource resource;
 };
 
@@ -219,6 +226,9 @@ void enter_context() {
     ctx->parent = _light_top_context;
     ctx->resources = NULL;
     _light_top_context = ctx;
+#ifndef NDEBUG
+    fprintf(stderr, "Enter context: %p\n", ctx);
+#endif
 }
 
 void new_resource(void *id, void (*cl)(void *)) {
@@ -238,6 +248,9 @@ void new_resource(void *id, void (*cl)(void *)) {
 
     _light_top_context->resources = nd;
     map_ptr_to(resource_node, id, nd);
+#ifndef NDEBUG
+    fprintf(stderr, "New resource: %p, Under: %p\n", id, _light_top_context);
+#endif
 }
 
 void delete_resource(void *id) {
@@ -254,6 +267,9 @@ void delete_resource(void *id) {
     
     unmap_ptr(resource_node, id);
     Resource res = nd->resource;
+#ifndef NDEBUG
+    fprintf(stderr, "Free resource: %p, Under: %p\n", res->identity, _light_top_context);
+#endif
     res->clean(res->identity);
     free(nd);
 }
@@ -271,8 +287,11 @@ void exit_context() {
     Context ctx = _light_top_context;
 
     struct resource_node *nd, *nd_;
-    for (nd_ = NULL, nd = ctx->resources; nd != NULL; nd_ = nd, nd = nd->previous, free(nd_)) {
+    for (nd_ = NULL, nd = ctx->resources; nd != NULL; nd_ = nd, nd = nd->next, free(nd_)) {
 	Resource res = nd->resource;
+#ifndef NDEBUG
+	fprintf(stderr, "Free resource: %p, Under: %p\n", res->identity, _light_top_context);
+#endif
 	res->clean(res->identity);
 	unmap_ptr(resource_node, res->identity);
 	free(res);
@@ -280,11 +299,24 @@ void exit_context() {
 
     _light_top_context = _light_top_context->parent;
     free(ctx);
+#ifndef NDEBUG
+    fprintf(stderr, "Exit context: %p\n", ctx);
+#endif
 }
 @
 
 @<context@:light@:C Module@/interface specific macros@=
-#define UNDER_CONTEXT(...) do { enter_context(); __VA_ARGS__; exit_context(); } while (0)
+#define UNDER_CONTEXT(...) \
+    do { \
+        enter_context(); \
+	Context _block_top_context = _light_top_context; \
+	__VA_ARGS__; \
+	GO_BACK(); \
+	exit_context(); \
+    } while (0)
+
+#define GO_BACK() do { while (_block_top_context != _light_top_context) exit_context(); } while (0)
+
 #define ESCAPE(...) \
     do { \
 	Context __temp_context = _light_top_context; \

@@ -47,6 +47,7 @@ main(int argc, char *argv[])
 @<interface specific macros@>
 @<exported macros@>
 @<exported data type declarations@>
+@<exported data types@>
 @<global declarations@>
 @<exported static inline functions@>
 @|wrap with included flag@|format C code@
@@ -85,6 +86,7 @@ print "#endif\n";
 @
 
 @<function declarations@=
+@<exported macros@>
 @<data type declarations@>
 @<functions@>
 @|extract function declarations@

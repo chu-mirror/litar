@@ -4,8 +4,8 @@ EXEC=litar
 CFLAGS=-g -Ilight/include `pkg-config fuse3 --cflags --libs`
 LIBS=`pkg-config fuse3 --libs`
 
-LIGHT_HEADER=context.h list.h
-LIGHT_SOURCE=context.c list.c
+LIGHT_HEADER=context.h list.h function.h
+LIGHT_SOURCE=context.c list.c function.c
 
 all: litar
 

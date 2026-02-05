@@ -163,7 +163,7 @@ what's more, the memory or resources allocated must be released at some point.
 This kind of management is a major source of bugs in C programs,
 because C program lacks a garbage collector.
 
-C does not have an explicit notation for contexts, so Light defines its own.
+C only has a minumal support for contexts through stack. Light extends it.
 
 @<context@:light@:C Module@/C module properties@=
 name => 'context',
@@ -190,7 +190,7 @@ typedef struct context *Context;
 typedef struct resource *Resource;
 @
 
-@<context@:light@:C Module@/data types@=
+@<context@:light@:C Module@/exported data types@=
 struct resource_node {
     struct resource_node *previous, *next;
     Resource resource;
@@ -308,6 +308,10 @@ void exit_context() {
 }
 @
 
+Unlike automatical finding of a variable by its name, when using context from Light,
+users have to state explicitly whether some statements are execute under
+the current context or not.
+
 @<context@:light@:C Module@/interface specific macros@=
 #define UNDER_CONTEXT(...) \
     do { \
@@ -331,10 +335,6 @@ void exit_context() {
 
 @<light@:C Module@/main body@=
 UNDER_CONTEXT(@<main body@>);
-@
-
-@<light@:C Module@/includes@=
-#include "context.h"
 @
 
 Based on the context defined, Light refines the memory management.
@@ -376,6 +376,8 @@ Based on the context defined, Light refines the memory management.
     } while (0)
 @
 
+Lists are used everywhere.
+
 @<list@:light@:C Module@/C module properties@=
 name => 'list',
 @
@@ -386,6 +388,10 @@ name => 'list',
 
 @[list.h@=
 @<list@:light@:C Module@/C module interface@>
+@
+
+@<list@:light@:C Module@/includes@=
+#include "context.h"
 @
 
 @<list@:light@:C Module@/exported data type declarations@=
@@ -420,6 +426,15 @@ void *car(List l)
 List cdr(List l)
 {
     return l->rest;
+}
+
+void free_list(List l)
+{
+    while (l) {
+        List _l = l->rest;
+	FREE(l);
+	l = _l;
+    }
 }
 @
 
@@ -534,6 +549,144 @@ List append(List *l1_r, List *l2_r)
     *l2_r = empty_list;
 
     return l;
+}
+@
+
+If a function F is of type X->Y->Z, we now want to get another function by
+passing the first argument x to F, namely F(x). The type of F(x) is Y->Z.
+Such operation is called partial application.
+C does not support partial application through its native type system,
+but it's so convenient, so Light implement similar machanisms.
+The secret is to reorder arguements.
+
+@<function@:light@:C Module@/C module properties@=
+name => 'function',
+@
+
+@[function.c@=
+@<function@:light@:C Module@/C module@>
+@
+
+@[function.h@=
+@<function@:light@:C Module@/C module interface@>
+@
+
+@<function@:light@:C Module@/includes@=
+#include "context.h"
+@
+
+@<function@:light@:C Module@/interface required includes@=
+#include "list.h"
+@
+
+@<function@:light@:C Module@/exported data type declarations@=
+typedef struct function *Function;
+@
+
+@<function@:light@:C Module@/data type declarations@=
+@<list@:light@:C Module@/exported data type declarations@>
+@
+
+@<function@:light@:C Module@/data types@=
+struct function {
+    void *(*func)(void *);
+    int argn;
+    List args;
+    int *mapping;
+};
+@
+
+@<function@:light@:C Module@/functions@=
+Function _new_function(void *(*f)(void *), int argn)
+{
+    Function func;
+    NEW(func);
+    func->func = f;
+    func->argn = argn;
+    func->args = empty_list;
+    CALLOC(func->mapping, argn);
+
+    int i;
+    for (i = 0; i < argn; ++i) {
+        func->mapping[i] = i;
+    }
+    return func;
+}
+
+void shift_arguments(Function func, int n)
+{
+    int p = length(func->args), l = func->argn - p;
+    UNDER_CONTEXT(
+        int *_mapping = func->mapping + p, *dup;
+	MOVE_ARRAY(_mapping, dup, l);
+	int i;
+	for (i = 0; i < l; ++i) {
+	    _mapping[i] = dup[(i+n)%l];
+	}
+    );
+}
+
+void fill_argument(Function func, void *arg)
+{
+    push(arg, &func->args);
+}
+
+void *invoke(Function func, List args)
+{
+
+    void *ret;
+    UNDER_CONTEXT(
+	void *arg;
+	List _args = copy_list(func->args);
+	FOREACH (arg, args) {
+	    push(arg, &_args);
+	}
+	assert(length(_args) == func->argn);
+
+        void **args_;
+	CALLOC(args_, func->argn);
+
+	reverse(&_args);
+
+	int i = 0;
+	FOREACH (arg, _args) {
+	    args_[func->mapping[i]] = arg;
+	    ++i;
+	}
+
+        ESCAPE(ret = func->func(args_));
+    );
+    return ret;
+}
+@
+
+@<function@:light@:C Module@/exported macros@=
+#define DECLARE_FUNCTION(name) \
+    static void *_function_func_##name(void *); \
+    struct _function_args_##name
+
+#define DEFINE_FUNCTION(name, ...) \
+    void *_function_func_##name(void *_args) { \
+        struct _function_args_##name *args; \
+	RENAME(_args, args); \
+	__VA_ARGS__; \
+    }
+#define FUNCTION(name, argn) _new_function(_function_func_##name, argn)
+@
+
+@<list@:light@:C Module@/functions ()@=
+List map(Function func, List l)
+{
+    List _l = empty_list;
+    UNDER_CONTEXT(
+	void *elm;
+	FOREACH (elm, l) {
+	    List args = cons(elm, empty_list);
+	    ESCAPE(push(invoke(func, args), &_l));
+	}
+    );
+    reverse(&_l);
+    return _l;
 }
 @
 

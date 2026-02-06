@@ -661,9 +661,9 @@ void *invoke(Function func, List args)
 @
 
 @<function@:light@:C Module@/exported macros@=
-#define DECLARE_FUNCTION(name) \
+#define DECLARE_FUNCTION(name, ...) \
     static void *_function_func_##name(void *); \
-    struct _function_args_##name
+    struct _function_args_##name {__VA_ARGS__};
 
 #define DEFINE_FUNCTION(name, ...) \
     void *_function_func_##name(void *_args) { \
@@ -671,7 +671,8 @@ void *invoke(Function func, List args)
 	RENAME(_args, args); \
 	__VA_ARGS__; \
     }
-#define FUNCTION(name, argn) _new_function(_function_func_##name, argn)
+#define FUNCTION(name) \
+    _new_function(_function_func_##name, sizeof(struct _function_args_##name)/sizeof(void *))
 @
 
 @<list@:light@:C Module@/functions ()@=

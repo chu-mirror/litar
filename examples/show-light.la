@@ -18,6 +18,7 @@ Light
 #include "context.h"
 #include "list.h"
 #include "function.h"
+#include "higher.h"
 @
 
 @<show@:Light@/main body@=
@@ -130,6 +131,7 @@ DEFINE_FUNCTION(bigger_than,
 @<show cases@=
 UNDER_CONTEXT (
     Function bigger_than_3;
+
     int n = 3, n1 = 1, n2 = 2, n3 = 3, n4 = 4;
 
     bigger_than_3= FUNCTION(bigger_than);
@@ -148,21 +150,32 @@ UNDER_CONTEXT (
 );
 @
 
-@<show cases for list (debug)@=
+@<show cases for list@=
+UNDER_CONTEXT ( /* test |map| */
+    Function bigger_than_3;
 
-do { /* test |map| */
+    int n = 3;
+    bigger_than_3= FUNCTION(bigger_than);
+    shift_arguments(bigger_than_3, 1);
+    fill_argument(bigger_than_3, &n);
+
+    l1 = _LIST(arr, 6);
+    l2 = map(bigger_than_3, l1);
+
     int i, *np;
-
-    map(inc, l3);
-
-    i = 0;
-    FOREACH (np, l3) {
-	assert(*np == i + 2);
-	assert(arr[i] == i + 2);
+    i = 1;
+    FOREACH (np, l2) {
+        if (i > 3) {
+	    assert(*np);
+	} else {
+	    assert(!*np);
+	}
 	++i;
     }
-} while (0);
+);
+@
 
+@<show cases for list (debug)@=
 do { /* test |remove_all| */
     int i, *np;
     remove_all(less_than_4, &l3);

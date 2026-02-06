@@ -707,17 +707,40 @@ void *invoke(Function func, List args)
     _new_function(_function_func_##name, sizeof(struct _function_args_##name)/sizeof(void *))
 @
 
-@<list@:light@:C Module@/functions ()@=
+@<higher@:light@:C Module@/C module properties@=
+name => 'higher',
+@
+
+@[higher.c@=
+@<higher@:light@:C Module@/C module@>
+@
+
+@[higher.h@=
+@<higher@:light@:C Module@/C module interface@>
+@
+
+@<higher@:light@:C Module@/interface required includes@=
+#include "context.h"
+#include "list.h"
+#include "function.h"
+@
+
+@<higher@:light@:C Module@/data type declarations@=
+@<list@:light@:C Module@/exported data type declarations@>
+@<function@:light@:C Module@/exported data type declarations@>
+@
+
+@<higher@:light@:C Module@/functions@=
 List map(Function func, List l)
 {
     List _l = empty_list;
-    UNDER_CONTEXT(
-	void *elm;
-	FOREACH (elm, l) {
+    void *elm;
+    FOREACH (elm, l) {
+        UNDER_CONTEXT(
 	    List args = cons(elm, empty_list);
 	    ESCAPE(push(invoke(func, args), &_l));
-	}
-    );
+	);
+    }
     reverse(&_l);
     return _l;
 }

@@ -198,6 +198,8 @@ struct resource_node {
 
 struct context {
     Context parent;
+    Context active_child;
+    Context sibling;
     struct resource_node *resources;
 };
 
@@ -224,7 +226,10 @@ void enter_context() {
     Context ctx;
     ctx = malloc(sizeof(*ctx));
     ctx->parent = _light_top_context;
+    ctx->active_child = NULL;
+    ctx->sibling = _light_top_context->active_child;
     ctx->resources = NULL;
+    _light_top_context->active_child = ctx;
     _light_top_context = ctx;
 #ifndef NDEBUG
     fprintf(stderr, "Enter context: %p\n", ctx);
@@ -286,8 +291,10 @@ void rename_resource(void *id1, void *id2) {
 #endif
 }
 
-void exit_context() {
-    Context ctx = _light_top_context;
+static void _exit_context(Context ctx) {
+    while (ctx->active_child) {
+        _exit_context(ctx->active_child);
+    }
 
     struct resource_node *nd, *nd_;
     for (nd_ = NULL, nd = ctx->resources; nd != NULL; nd_ = nd, nd = nd->next, free(nd_)) {
@@ -300,11 +307,16 @@ void exit_context() {
 	free(res);
     }
 
-    _light_top_context = _light_top_context->parent;
+    ctx->parent->active_child = ctx->sibling;
+    _light_top_context = ctx->parent;
     free(ctx);
 #ifndef NDEBUG
     fprintf(stderr, "Exit context: %p\n", ctx);
 #endif
+}
+
+void exit_context() {
+    _exit_context(_light_top_context);
 }
 @
 
@@ -334,7 +346,15 @@ the current context or not.
 @
 
 @<light@:C Module@/main body@=
-UNDER_CONTEXT(@<main body@>);
+Context ctx;
+ctx = malloc(sizeof(*ctx));
+ctx->parent = NULL;
+ctx->active_child = NULL;
+ctx->sibling = NULL;
+ctx->resources = NULL;
+_light_top_context = ctx;
+UNDER_CONTEXT(UNDER_CONTEXT(@<main body@>));
+free(ctx);
 @
 
 Based on the context defined, Light refines the memory management.
@@ -552,12 +572,24 @@ List append(List *l1_r, List *l2_r)
 }
 @
 
+@<list@:light@:C Module@/exported macros@=
+#define empty_list NULL
+#define is_empty_list(l) ((l) == NULL)
+#define _LIST(arr, len) list_from_arr((arr), len, sizeof((arr)[0]))
+#define LIST(arr) _LIST((arr), sizeof(arr) / sizeof((arr)[0]))
+#define FOREACH(elm, l)                                           \
+    for (List __light_list_l = (l);                               \
+         !is_empty_list(__light_list_l)                           \
+         && (((elm) = (typeof(elm))car(__light_list_l)) != NULL); \
+         __light_list_l = cdr(__light_list_l))
+@
+
 If a function F is of type X->Y->Z, we now want to get another function by
 passing the first argument x to F, namely F(x). The type of F(x) is Y->Z.
 Such operation is called partial application.
 C does not support partial application through its native type system,
 but it's so convenient, so Light implement similar machanisms.
-The secret is to reorder arguements.
+The secret is to reorder arguments.
 
 @<function@:light@:C Module@/C module properties@=
 name => 'function',
@@ -689,18 +721,6 @@ List map(Function func, List l)
     reverse(&_l);
     return _l;
 }
-@
-
-@<list@:light@:C Module@/exported macros@=
-#define empty_list NULL
-#define is_empty_list(l) ((l) == NULL)
-#define _LIST(arr, len) list_from_arr((arr), len, sizeof((arr)[0]))
-#define LIST(arr) _LIST((arr), sizeof(arr) / sizeof((arr)[0]))
-#define FOREACH(elm, l)                                           \
-    for (List __light_list_l = (l);                               \
-         !is_empty_list(__light_list_l)                           \
-         && (((elm) = (typeof(elm))car(__light_list_l)) != NULL); \
-         __light_list_l = cdr(__light_list_l))
 @
 
 @[hash.c@=

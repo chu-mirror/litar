@@ -14,6 +14,7 @@ Light
 #include <stdio.h>
 #include <assert.h>
 #include <stdbool.h>
+#include <setjmp.h>
 #include "context.h"
 #include "list.h"
 #include "function.h"
@@ -23,6 +24,23 @@ Light
 printf("Testing light\n");
 @<show cases@>
 printf("All test passed\n");
+@
+
+@<show cases@=
+UNDER_CONTEXT(
+    jmp_buf jump_buffer;
+    if (setjmp(jump_buffer) == 0) {
+        UNDER_CONTEXT(
+	    int *n;
+	    NEW(n);
+	    ESCAPE(
+	        UNDER_CONTEXT(
+		    longjmp(jump_buffer, 1);
+		);
+	    );
+	);
+    }
+);
 @
 
 @<show cases@=

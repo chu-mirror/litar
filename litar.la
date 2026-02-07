@@ -410,7 +410,7 @@ The following is also legal.
 }
 @
 
-@<manpage of litar@=
+@[litar.1@=
 .TH LITAR 1
 .SH NAME
 litar \- manage all text in one file
@@ -429,21 +429,22 @@ expected from the using of a litar archive.
 litar follows the common pattern of a command line tool.
 It parses options and arguments, executes, then exits.
 
-@<litar.c@=
-@<a monolithic c program@>
+@[litar.c@=
+@<litar@:C Module@/C executable@>
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 @<flags@>
 @
 
-@<main body of the c program@=
+@<litar@:C Module@/main body@=
+@<initializations of global variables@>
 @<parse command line arguments to set flags and global variables@>;
 @<perform operations according to flags@>
 @<close child process and remove directories@>
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 void
 print_usage()
 {
@@ -451,7 +452,7 @@ print_usage()
 }
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 int chosen_usage = -1;
 char *archive_name = NULL;
 @
@@ -544,18 +545,18 @@ do {
 Concepts illustrated in the previous chapters
 should be represented before the details of implementation.
 
-@<functions@=
+@<litar@:C Module@/functions@=
 @<relations between object@>
 @
 
-@<data type declarations@=
+@<litar@:C Module@/data type declarations@=
 typedef struct mappings_module *Module;
 typedef struct mappings_chunk *Chunk;
 typedef struct mappings_block *Block;
 typedef struct mappings_chunk_ref *ChunkRef;
 @
 
-@<data types@=
+@<litar@:C Module@/data types@=
 struct mappings_module {
     @<mappings from module@>
 };
@@ -576,7 +577,7 @@ struct mappings_chunk_ref {
 To save memory, reference to the original text is represented by some records
 rather than stored to memory. The text can later be fetched through mmap in need.
 
-@<data types@=
+@<litar@:C Module@/data types@=
 typedef struct {
     const char *file;
     int start;
@@ -584,7 +585,7 @@ typedef struct {
 } *TextRef;
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 HashTable file_to_mmap_addr = NULL;
 @
 
@@ -592,7 +593,7 @@ HashTable file_to_mmap_addr = NULL;
 new_string_hash_table(&file_to_mmap_addr);
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 char *
 fetch_text_from(TextRef tr)
 {
@@ -635,11 +636,7 @@ blanks, the names are normalized according to a simple rule.
 The names consists of none-space words, so "name of chunk" does not
 differ from "  name  of  chunk".
 
-@<function declarations@=
-const char *normalize(const char *name);
-@
-
-@<functions@=
+@<litar@:C Module@/functions@=
 const char *
 normalize(const char *name)
 {
@@ -677,7 +674,7 @@ normalize(const char *name)
 There are some named modules and an anonymous module.
 The anonymous module is a module whose name is an empty string.
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 HashTable module_name_to_module = NULL;
 @
 
@@ -843,7 +840,7 @@ block_is_transformed_by(Block blk, Chunk flt)
 The contents of a block may either be a reference to the original text
 or a reference to a chunk and a list of filters.
 
-@<data types@=
+@<litar@:C Module@/data types@=
 typedef struct {
     enum {
         BLOCK_CONTENT_TEXT,
@@ -911,7 +908,7 @@ chunk_ref_is_specialized_by(ChunkRef ckr, const char *lbl)
 @
 
 A litar archive is consists of comments and blocks, we call a comment or a block a section.
-@<data types@=
+@<litar@:C Module@/data types@=
 typedef struct {
     enum {
         SECTION_COMMENT,
@@ -924,14 +921,14 @@ typedef struct {
 } *Section;
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 List sections;
 @
 
 Some chunks may be labeled as files,
 a file system can be built from these file paths.
 
-@<data types@=
+@<litar@:C Module@/data types@=
 typedef struct {
     enum {
         NODE_DIRECTORY,
@@ -946,7 +943,7 @@ typedef struct {
 } *Node;
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 Node root_node;
 @
 
@@ -1100,19 +1097,13 @@ chunk_is_executable(Chunk chk)
 
 From the definitions above, we can define the content of chunk
 and expanded content of block.
-@<function declarations@=
-Str content_of_chunk_with_labels(Chunk chk, List lbls);
-Str content_of_chunk_ref(ChunkRef ckr);
-Str expanded_content_of_block_with_labels(Block blk, List lbls);
-void transform_with_labels(Str txt, List flts, List lbls);
-@
 
 litar use a stack to detect recursive including and report it as a severe error.
-@<global variables@=
+@<litar@:C Module@/global variables@=
 List stack_of_chunks_in_tangling = empty_list;
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 bool chunk_is_in_tangling(Chunk chk)
 {
     Chunk chk_t;
@@ -1125,7 +1116,7 @@ bool chunk_is_in_tangling(Chunk chk)
 }
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 Str
 content_of_chunk_with_labels(Chunk chk, List lbls)
 {
@@ -1224,7 +1215,7 @@ expanded_content_of_block_with_labels(Block blk, List lbls)
 }
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 char working_dir[PATH_MAX];
 @
 
@@ -1235,7 +1226,7 @@ if (getcwd(working_dir, PATH_MAX) == NULL) {
 }
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 pid_t
 run_filter(ChunkRef flt, int in, int out)
 {
@@ -1315,7 +1306,7 @@ do {
 } while (0);
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 void
 transform_with_labels(Str txt, List flts, List lbls)
 {
@@ -1403,7 +1394,7 @@ As a result, the tokens only have four types, control character,
 normal character, newline and EOF,
 and the whole parsing process can be implemented as a finite state machine.
 
-@<data types@=
+@<litar@:C Module@/data types@=
 typedef struct {
     const char *file;
     FILE *in;
@@ -1424,12 +1415,12 @@ typedef struct {
 } *Token;
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 List input_frames;
 @<declarations of states@>
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static Token next_token(InputFrame ipt)
 {
     Token tkn = NULL;
@@ -1561,7 +1552,7 @@ do {
 
 There are some common patterns will be used many times.
 
-@<functions@=
+@<litar@:C Module@/functions@=
 bool
 extract_name(State s, Token tkn)
 {
@@ -1628,7 +1619,7 @@ extract_text(State s, Token tkn)
 }
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 bool
 extract_chunk_ref(State s, State sn, Token tkn)
 {
@@ -1668,7 +1659,7 @@ extract_chunk_ref(State s, State sn, Token tkn)
 }
 @
 
-@<data types@=
+@<litar@:C Module@/data types@=
 struct state_parse_local {
     @<status when parsing@>
 };
@@ -1678,7 +1669,7 @@ struct state_parse_local {
 Module module;
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static State state_parse_in(State s, Signal sig)
 {
     struct state_parse_local *lc_r = NULL;
@@ -1722,7 +1713,7 @@ echo "} while (0);"
 
 ## Parsing comment
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static State state_parse_comment_in(State s, Signal sig)
 {
     List cache = empty_list;
@@ -1789,7 +1780,7 @@ The chunk a block extends is one of the following types:
 2. regular file,
 3. executable file.
 
-@<data types@=
+@<litar@:C Module@/data types@=
 struct state_parse_block_local {
     enum {
         CHUNK_TYPE_PLAIN_TEXT,
@@ -1801,7 +1792,7 @@ struct state_parse_block_local {
 };
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static State state_parse_block_in(State s, Signal sig)
 {
     Token tkn;
@@ -1881,7 +1872,7 @@ static State state_parse_block_out(State s, Signal sig)
 },
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static State state_parse_block_chunk_ref_in(State s, Signal sig)
 {
     RESERVE(NEW0(*(ChunkRef *)state_local(s)));
@@ -1946,7 +1937,7 @@ static State state_parse_block_chunk_ref_name_out(State s, Signal sig)
 },
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static State state_parse_block_contents_in(State s, Signal sig)
 {
     return state_parse_block_contents_text;
@@ -1969,7 +1960,7 @@ static State state_parse_block_contents_out(State s, Signal sig)
 }
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static State state_parse_block_contents_text_in(State s, Signal sig)
 {
     List cache = empty_list;
@@ -2032,14 +2023,14 @@ static State state_parse_block_contents_text_out(State s, Signal sig)
 },
 @
 
-@<data types@=
+@<litar@:C Module@/data types@=
 struct state_parse_block_contents_reference_local {
     ChunkRef chunk_ref;
     List filters;
 };
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static State state_parse_block_contents_reference_in(State s, Signal sig)
 {
     struct state_parse_block_contents_reference_local *lc_r = NULL;
@@ -2093,7 +2084,7 @@ static State state_parse_block_contents_reference_out(State s, Signal sig)
 },
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static State state_parse_block_contents_reference_chunk_ref_in(State s, Signal sig)
 {
     RESERVE(NEW0(*(ChunkRef *)state_local(s)));
@@ -2157,7 +2148,7 @@ static State state_parse_block_contents_reference_chunk_ref_name_out(State s, Si
 },
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static State state_parse_block_contents_reference_filters_in(State s, Signal sig)
 {
     RESERVE(NEW0(*(ChunkRef *)state_local(s)));
@@ -2232,7 +2223,7 @@ static State state_parse_block_contents_reference_filters_name_out(State s, Sign
 },
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static State state_parse_block_filters_in(State s, Signal sig)
 {
     RESERVE(NEW0(*(ChunkRef *)state_local(s)));
@@ -2309,14 +2300,14 @@ static State state_parse_block_filters_name_out(State s, Signal sig)
 },
 @
 
-@<data types@=
+@<litar@:C Module@/data types@=
 struct state_escape_local {
     char esc;
     const char *argument;
 };
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static State state_escape_in(State s, Signal sig)
 {
     struct state_escape_local *lc_r = NULL;
@@ -2431,7 +2422,7 @@ to grant the ability to modify file system to filters.
 The idea is to create an modifiable upper layer above
 the file system from a litar archive.
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 char *archive_data = NULL;
 char *fuse_mount_point = NULL;
 char *work_dir = NULL;
@@ -2447,11 +2438,11 @@ litar reserve the directory ".litar" for the created mount points.
 The mount points are organized under the directory that has a same name
 with the litar archive.
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 const char *litar_data = ".litar";
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 void
 ensure_directory(const char *path)
 {
@@ -2528,11 +2519,11 @@ litar uses version 3.14 to be compatitable with Debian.
 The loop provided by the libfuse is run at a new process.
 The new process communicate with the main process by a pipe.
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 int pipe_fuse_to_main[2];
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 static void *
 litar_fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 {
@@ -2665,7 +2656,7 @@ static const struct fuse_operations litar_fuse_oper = {
 };
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 pid_t fuse_pid;
 @
 
@@ -2841,7 +2832,7 @@ if (strcmp(long_options[option_index].name, "version") == 0) {
 }
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 char version[] = "dev";
 @
 
@@ -2867,7 +2858,7 @@ printf("Version %s, built at <build time>\n", version);
 },
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 const char *specified_module_name = "";
 @
 
@@ -2887,7 +2878,7 @@ case 'm':
 },
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 List specified_labels = empty_list;
 @
 
@@ -2907,7 +2898,7 @@ case 'l':
 },
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 char *name_of_chunk_to_print;
 @
 
@@ -2953,7 +2944,7 @@ if (name_of_chunk_to_print) {
 },
 @
 
-@<global variables@=
+@<litar@:C Module@/global variables@=
 char *name_of_chunk_to_execute;
 @
 
@@ -3077,7 +3068,7 @@ do {
 @<print nodes@>
 @
 
-@<functions@=
+@<litar@:C Module@/functions@=
 void print_node(Node nd, int level)
 {
     char *prefix = NULL;
@@ -3123,28 +3114,19 @@ if (fuse_pid != 0) {
 }
 @
 
-# Appendix
-
-@<a monolithic c program@=
-@<includes@>
-@<data type declarations@>
-@<function declarations@>
-@<data types@>
-@<global variables@>
-@<functions@>
-
-int main(int argc, char *argv[])
-{
-    RESERVE(do {@<initializations of global variables@>} while (0));
-    @<main body of the c program@>
-    assert_memory_safety();
-    return 0;
-}
+@<litar@:C Module@/function declarations@=
+Str expanded_content_of_block_with_labels(Block blk, List lbls);
+void transform_with_labels(Str txt, List flts, List lbls);
 @
 
-@<includes@=
+# Appendix
+
+@<litar@:C Module@/include flags@=
 #define NDEBUG
 #define _GNU_SOURCE
+@
+
+@<litar@:C Module@/includes@=
 #include <sched.h>
 #include <stdio.h>
 #include <string.h>
@@ -3457,4 +3439,5 @@ print($str);
 
 @. lib/basic.la
 @. lib/text-processing.la
+@. lib/c-structure.la
 

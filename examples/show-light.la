@@ -19,6 +19,9 @@ Light
 #include "list.h"
 #include "function.h"
 #include "higher.h"
+#include "array.h"
+#include "str.h"
+#include "hashtable.h"
 @
 
 @<show@:Light@/main body@=
@@ -28,19 +31,20 @@ printf("All test passed\n");
 @
 
 @<show cases@=
-UNDER_CONTEXT(
+UNDER(
     jmp_buf jump_buffer;
     if (setjmp(jump_buffer) == 0) {
-        UNDER_CONTEXT(
+        UNDER(
 	    int *n;
 	    NEW(n);
 	    ESCAPE(
-	        UNDER_CONTEXT(
+	        UNDER(
 		    longjmp(jump_buffer, 1);
 		);
 	    );
 	);
     }
+    printf("Passed setjmp\n");
 );
 @
 
@@ -54,7 +58,7 @@ do {
 @
 
 @<show cases for list@=
-UNDER_CONTEXT( /* test |push| and |pop| */
+UNDER( /* test |push| and |pop| */
     int *n;
     l1 = _LIST(arr, 3);
     RENAME(pop(&l1), n);
@@ -66,10 +70,11 @@ UNDER_CONTEXT( /* test |push| and |pop| */
     RENAME(car(l1), n);
     assert(*n == 1);
     assert(length(l1) == 3);
+    printf("Passed push and pop\n");
 );
 
-UNDER_CONTEXT( /* test |reverse| */
-    l1 = _LIST(arr, 6);
+UNDER( /* test |reverse| */
+    l1 = LIST(arr);
     reverse(&l1);
 
     do {
@@ -81,9 +86,10 @@ UNDER_CONTEXT( /* test |reverse| */
 	    ++i;
 	}
     } while (0);
+    printf("Passed reverse\n");
 );
 
-UNDER_CONTEXT( /* test |append| */
+UNDER( /* test |append| */
     l1 = _LIST(arr, 3);
     assert(length(l1) == 3);
 
@@ -102,9 +108,10 @@ UNDER_CONTEXT( /* test |append| */
 	    ++i;
 	}
     } while (0);
+    printf("Passed reverse\n");
 );
 
-UNDER_CONTEXT( /* test |copy_list| */
+UNDER( /* test |copy_list| */
     l1 = _LIST(arr, 6);
     l2 = copy_list(l1);
     assert(length(l1) == length(l2));
@@ -115,10 +122,11 @@ UNDER_CONTEXT( /* test |copy_list| */
 	assert(elm == car(_l2));
 	_l2 = cdr(_l2);
     }
+    printf("Passed copy_list\n");
 );
 @
 
-@<show@:light@:C Module@/function declarations@=
+@<show@:light@:C Module@/static inline functions@=
 DECLARE_FUNCTION(bigger_than, int *a; int *b;);
 DEFINE_FUNCTION(bigger_than,
     int res, *ret;
@@ -129,7 +137,7 @@ DEFINE_FUNCTION(bigger_than,
 @
 
 @<show cases@=
-UNDER_CONTEXT (
+UNDER(
     Function bigger_than_3;
 
     int n = 3, n1 = 1, n2 = 2, n3 = 3, n4 = 4;
@@ -147,11 +155,12 @@ UNDER_CONTEXT (
     assert(!*res);
     RENAME(invoke(bigger_than_3, cons(&n4, empty_list)), res);
     assert(*res);
+    printf("Passed bigger_than_3\n");
 );
 @
 
 @<show cases for list@=
-UNDER_CONTEXT ( /* test |map| */
+UNDER( /* test |map| */
     Function bigger_than_3;
 
     int n = 3;
@@ -172,9 +181,10 @@ UNDER_CONTEXT ( /* test |map| */
 	}
 	++i;
     }
+    printf("Passed map\n");
 );
 
-UNDER_CONTEXT ( /* test |find| */
+UNDER( /* test |find_first| */
     Function bigger_than_3;
 
     int n = 3;
@@ -185,11 +195,12 @@ UNDER_CONTEXT ( /* test |find| */
     l1 = LIST(arr);
 
     int *res;
-    RENAME(find(bigger_than_3, l1), res);
+    RENAME(find_first(bigger_than_3, l1), res);
     assert(*res == 4);
+    printf("Passed find_first\n");
 );
 
-UNDER_CONTEXT ( /* test |filter| */
+UNDER( /* test |filter| */
     Function bigger_than_3;
 
     int n = 3;
@@ -207,9 +218,10 @@ UNDER_CONTEXT ( /* test |filter| */
         assert(i == *np);
 	++i;
     }
+    printf("Passed filter\n");
 );
 
-UNDER_CONTEXT ( /* test |remove_first| */
+UNDER( /* test |remove_first| */
     Function bigger_than_3;
 
     int n = 3;
@@ -217,17 +229,117 @@ UNDER_CONTEXT ( /* test |remove_first| */
     shift_arguments(bigger_than_3, 1);
     fill_argument(bigger_than_3, &n);
 
+    int *n_;
     l1 = LIST(arr);
-    l2 = remove_first(bigger_than_3, l1);
-    assert(length(l2) == 5);
+    RENAME(remove_first(bigger_than_3, &l1), n_);
+    assert(*n_ == 4);
+    assert(length(l1) == 5);
 
     int i, *np;
     i = 1;
-    FOREACH (np, l2) {
+    FOREACH (np, l1) {
         assert(i == *np);
 	++i;
 	if (i == 4) ++i;
     }
+    printf("Passed remove_first\n");
+);
+
+UNDER(
+    Array arr;
+    int *n;
+    arr = new_array();
+
+    *nth(arr, 0) = VALUE((int8_t)-1);
+    assert(*nth(arr, 0) == VALUE(-1));
+
+    *nth(arr, 1) = VALUE(1);
+    RENAME(nth(arr, 1), n);
+    ++(*n);
+    assert(*nth(arr, 1) == VALUE(2));
+
+    *nth(arr, 2000) = VALUE(1);
+    RENAME(nth(arr, 2000), n);
+    ++(*n);
+    assert(*nth(arr, 2000) == VALUE(2));
+
+    for (int i = 2; i < 2000; ++i) {
+	assert(*nth(arr, i) == VALUE(0));
+    }
+    printf("Passed array\n");
+);
+
+UNDER(
+    Deque q;
+    void *elm;
+
+    q = new_deque();
+    assert(is_empty_deque(q));
+
+    push_back(q, VALUE(1));
+    assert(*nth_of_deque(q, 0) == VALUE(1));
+    assert(!is_empty_deque(q));
+
+    elm = pop_back(q);
+    assert(elm == VALUE(1));
+    assert(is_empty_deque(q));
+
+    int i;
+    for (i = 0; i < 100; ++i) {
+	push_back(q, VALUE(i));
+    }
+    for (i = 0; i < 100; ++i) {
+	push_front(q, VALUE(i));
+    }
+    for (i = 0; i < 100; ++i) {
+	elm = pop_front(q);
+	assert(elm == VALUE(99 - i));
+    }
+    for (i = 0; i < 100; ++i) {
+	elm = pop_front(q);
+	assert(elm == VALUE(i));
+    }
+    assert(is_empty_deque(q));
+    printf("Passed deque\n");
+);
+
+UNDER(
+    Str str = new_str();
+    for (int i = 0; i < 10; ++i) {
+	static char num[2];
+	num[0] = '0';
+	num[0] += i;
+	str_extend(str, num);
+    }
+    assert(strcmp(raw_string(str), "0123456789") == 0);
+    assert(str_length(str) == 10);
+
+    str = new_str();
+    for (int i = 0; i < 10; ++i) {
+	str_extend(str, "Hello");
+    }
+    assert(str_length(str) == 10 * strlen("Hello"));
+    printf("Passed str\n");
+);
+UNDER(
+    HashTable tbl = NULL;
+    tbl = new_string_hash_table();
+
+    put_to_hash_table(tbl, "Chu", "Hello");
+    put_to_hash_table(tbl, "Mzz", "Welcome");
+    assert(strcmp((char *)get_from_hash_table(tbl, "Chu"), "Hello") == 0);
+    assert(
+	strcmp((char *)get_from_hash_table(tbl, "Mzz"), "Welcome") == 0
+    );
+
+    put_to_hash_table(tbl, "Chu", "Welcome");
+    assert(
+	strcmp((char *)get_from_hash_table(tbl, "Chu"), "Welcome") == 0
+    );
+
+    remove_from_hash_table(tbl, "Chu");
+    assert(get_from_hash_table(tbl, "Chu") == NULL);
+    printf("Passed hashtable\n");
 );
 @
 

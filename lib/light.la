@@ -18,7 +18,7 @@ Include headers for debugging.
 @
 
 There are some idioms to make life a bit easier.
-@<light@:C Module@/macros@=
+@<light@:C Module@/exported macros@=
 /* Give value a new name, and force type casting. */
 #define RENAME(old, new) new = (typeof(new))old
 
@@ -44,13 +44,10 @@ There are some idioms to make life a bit easier.
     } while (0)
 @
 
-@<light@:C Module@/includes@=
+@<light@:C Module@/interface required includes@=
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-@
-
-@<light@:C Module@/interface required includes@=
 #include <stddef.h>
 @
 
@@ -326,7 +323,7 @@ users have to state explicitly whether some statements are execute under
 the current context or not.
 
 @<context@:light@:C Module@/interface specific macros@=
-#define UNDER_CONTEXT(...) \
+#define UNDER(...) \
     do { \
         enter_context(); \
 	Context _block_top_context = _light_top_context; \
@@ -354,13 +351,13 @@ ctx->active_child = NULL;
 ctx->sibling = NULL;
 ctx->resources = NULL;
 _light_top_context = ctx;
-UNDER_CONTEXT(UNDER_CONTEXT(@<main body@>));
+UNDER(UNDER(@<main body@>));
 free(ctx);
 @
 
 Based on the context defined, Light refines the memory management.
 
-@<light@:C Module@/macros@=
+@<context@:light@:C Module@/exported macros@=
 #define NEW(p) \
     do { \
         typeof(p) *p_r = &(p); \
@@ -449,6 +446,11 @@ List cdr(List l)
     return l->rest;
 }
 
+List *rest(List l)
+{
+    return &l->rest;
+}
+
 void free_list(List l)
 {
     while (l) {
@@ -506,21 +508,11 @@ List copy_list(List l)
 {
     List _l = empty_list;
 
-    do {
-        List tail, __l;
-        void *elm;
-
-        tail = cons(NULL, empty_list);
-        __l = tail;
-        FOREACH (elm, l) {
-            List nn; /* new node */
-            nn = cons(elm, empty_list);
-            tail->rest = nn;
-            tail = nn;
-        }
-        _l = cdr(__l);
-        FREE(__l);
-    } while (0);
+    void *elm;
+    FOREACH (elm, l) {
+        push(elm, &_l);
+    }
+    reverse(&_l);
 
     return _l;
 }
@@ -574,14 +566,15 @@ List append(List *l1_r, List *l2_r)
 @
 
 @<list@:light@:C Module@/exported macros@=
-#define empty_list NULL
-#define is_empty_list(l) ((l) == NULL)
+#define empty_list VALUE(1)
+#define is_empty_list(l) ((l) == empty_list)
 #define _LIST(arr, len) list_from_arr((arr), len, sizeof((arr)[0]))
 #define LIST(arr) _LIST((arr), sizeof(arr) / sizeof((arr)[0]))
 #define FOREACH(elm, l)                                           \
     for (List __light_list_l = (l);                               \
          !is_empty_list(__light_list_l)                           \
-         && (((elm) = (typeof(elm))car(__light_list_l)) != NULL); \
+	 && (((elm) = (typeof(elm))car(__light_list_l)) != NULL), \
+         !is_empty_list(__light_list_l);                          \
          __light_list_l = cdr(__light_list_l))
 @
 
@@ -649,7 +642,7 @@ Function _new_function(void *(*f)(void *), int argn)
 void shift_arguments(Function func, int n)
 {
     int p = length(func->args), l = func->argn - p;
-    UNDER_CONTEXT(
+    UNDER(
         int *_mapping = func->mapping + p, *dup;
 	MOVE_ARRAY(_mapping, dup, l);
 	int i;
@@ -668,7 +661,7 @@ void *invoke(Function func, List args)
 {
 
     void *ret;
-    UNDER_CONTEXT(
+    UNDER(
 	void *arg;
 	List _args = copy_list(func->args);
 	FOREACH (arg, args) {
@@ -720,8 +713,11 @@ name => 'higher',
 @<higher@:light@:C Module@/C module interface@>
 @
 
-@<higher@:light@:C Module@/interface required includes@=
+@<higher@:light@:C Module@/includes@=
 #include "context.h"
+@
+
+@<higher@:light@:C Module@/interface required includes@=
 #include "list.h"
 #include "function.h"
 @
@@ -737,7 +733,7 @@ List map(Function func, List l)
     List _l = empty_list;
     void *elm;
     FOREACH (elm, l) {
-        UNDER_CONTEXT(
+        UNDER(
 	    List args = cons(elm, empty_list);
 	    ESCAPE(push(invoke(func, args), &_l));
 	);
@@ -746,12 +742,12 @@ List map(Function func, List l)
     return _l;
 }
 
-void *find(Function jdg, List l)
+void *find_first(Function jdg, List l)
 {
-    void *elm;
+    void *elm = NULL;
     FOREACH(elm, l) {
         bool found = false;
-        UNDER_CONTEXT(
+        UNDER(
 	    List args = cons(elm, empty_list);
 	    found = *(bool *)invoke(jdg, args);
 	);
@@ -767,7 +763,7 @@ List filter(Function jdg, List l)
     List _l = empty_list;
     void *elm;
     FOREACH (elm, l) {
-        UNDER_CONTEXT(
+        UNDER(
 	    List args = cons(elm, empty_list);
 	    bool *to_reserve;
 	    RENAME(invoke(jdg, args), to_reserve);
@@ -780,26 +776,355 @@ List filter(Function jdg, List l)
     return _l;
 }
 
-List remove_first(Function jdg, List l)
+void *remove_first(Function jdg, List *l_r)
 {
-    List _l = empty_list;
-    bool found = false;
     void *elm;
-    FOREACH (elm, l) {
-        UNDER_CONTEXT(
+    List *_l_r = l_r;
+    FOREACH (elm, *l_r) {
+	bool found = false;
+        UNDER(
 	    List args = cons(elm, empty_list);
 	    bool *to_remove;
 	    RENAME(invoke(jdg, args), to_remove);
-	    if (found || !*to_remove) {
-	        ESCAPE(push(elm, &_l));
-	    } else {
-		found = true;
-	    }
+	    found = *to_remove;
 	);
+	if (found) {
+	    (*_l_r) = cdr(__light_list_l);
+	    *rest(__light_list_l) = empty_list;
+	    FREE(__light_list_l);
+	    break;
+	}
+	_l_r = rest(*_l_r);
     }
-    reverse(&_l);
-    return _l;
+    return elm;
 }
+@
+
+Some useful generalized functions.
+
+@<higher@:light@:C Module@/exported static inline functions@=
+DECLARE_FUNCTION(pointer_equal, const void *p1; const void *p2;);
+DEFINE_FUNCTION(pointer_equal,
+    bool res, *res_r;
+    res = args->p1 == args->p2;
+    MOVE(&res, res_r);
+    return res_r;
+)
+@
+
+Despite that Light prefers list, C uses array even more.
+Light extends classic C arrays with dynamic size changing.
+
+@<array@:light@:C Module@/C module properties@=
+name => 'array',
+@
+
+@[array.c@=
+@<array@:light@:C Module@/C module@>
+@
+
+@[array.h@=
+@<array@:light@:C Module@/C module interface@>
+@
+
+@<array@:light@:C Module@/includes@=
+#include "context.h"
+@
+
+@<array@:light@:C Module@/data types@=
+struct array {
+    void **elements;
+    int size;
+};
+@
+
+@<array@:light@:C Module@/exported data type declarations@=
+typedef struct array *Array;
+@
+
+@<array@:light@:C Module@/macros@=
+#define INITIAL_ARRAY_SIZE 64
+@
+
+@<array@:light@:C Module@/functions@=
+Array new_array()
+{
+    Array arr;
+    NEW0(arr);
+    arr->size = INITIAL_ARRAY_SIZE;
+    CALLOC(arr->elements, INITIAL_ARRAY_SIZE);
+    return arr;
+}
+
+void free_array(Array arr)
+{
+    FREE(arr->elements);
+    FREE(arr);
+}
+
+void **
+nth(Array arr, int n)
+{
+    if (n < arr->size) {
+        return &arr->elements[n];
+    }
+
+    int _size = arr->size;
+    while (!(n < arr->size)) {
+        arr->size <<= 1;
+    }
+    REALLOC_ARRAY(arr->elements, arr->size);
+
+    ZEROFY(arr->elements + _size, arr->size - _size);
+
+    return &arr->elements[n];
+}
+@
+
+Deque can be implemented above array.
+
+@<array@:light@:C Module@/data types@=
+struct deque {
+    Array array;
+    int head;
+    int tail;
+    int size;
+};
+@
+
+@<array@:light@:C Module@/exported data type declarations@=
+typedef struct deque *Deque;
+@
+
+@<array@:light@:C Module@/static inline functions@=
+static inline int
+next_slot_back(Deque q)
+{
+    return (q->tail + 1) % q->size;
+}
+
+static inline int
+previous_slot_back(Deque q)
+{
+    return (q->tail - 1 + q->size) % q->size;
+}
+
+static inline int
+next_slot_front(Deque q)
+{
+    return (q->head - 1 + q->size) % q->size;
+}
+
+static inline int
+previous_slot_front(Deque q)
+{
+    return (q->head + 1) % q->size;
+}
+
+static inline int
+used_slots(Deque q)
+{
+    return (q->tail - q->head + q->size) % q->size;
+}
+
+static inline int
+is_full_deque(Deque q)
+{
+    return used_slots(q) == q->size - 1;
+}
+@
+
+@<array@:light@:C Module@/functions@=
+static void enlarge_deque(Deque q)
+{
+    int ns = q->size << 1; /* new size */
+    int sht = q->size; /* shift */
+    nth(q->array, ns - 1); /* ensure that array[0..ns) is accessable */
+    if (q->head > q->tail) {
+        memcpy(
+            nth(q->array, q->head) + sht,
+            nth(q->array, q->head),
+            (q->size - q->head) * sizeof(void *)
+        );
+        q->head += sht;
+    }
+    q->size = ns;
+}
+
+Deque new_deque()
+{
+    Deque q;
+    NEW0(q);
+    q->array = new_array();
+    q->head = 0;
+    q->tail = 0;
+    q->size = 2;
+}
+
+void free_deque(Deque q)
+{
+    free_array(q->array);
+    FREE(q);
+}
+
+void clear_deque(Deque q)
+{
+    q->head = 0;
+    q->tail = 0;
+}
+
+int is_empty_deque(Deque q)
+{
+    return q->tail == q->head;
+}
+
+int length_of_deque(Deque q)
+{
+    return used_slots(q);
+}
+
+void push_back(Deque q, void *elm)
+{
+    if (is_full_deque(q)) {
+        enlarge_deque(q);
+    }
+    *nth(q->array, q->tail) = elm;
+    q->tail = next_slot_back(q);
+}
+
+void push_front(Deque q, void *elm)
+{
+    if (is_full_deque(q)) {
+        enlarge_deque(q);
+    }
+    q->head = next_slot_front(q);
+    *nth(q->array, q->head) = elm;
+}
+
+void *pop_back(Deque q)
+{
+    if (is_empty_deque(q)) {
+        return NULL;
+    }
+    q->tail = previous_slot_back(q);
+    return *nth(q->array, q->tail);
+}
+
+void *pop_front(Deque q)
+{
+    if (is_empty_deque(q)) {
+        return NULL;
+    }
+
+    void *elm = *nth(q->array, q->head);
+    q->head = previous_slot_front(q);
+    return elm;
+}
+
+void **nth_of_deque(Deque q, int n)
+{
+    if (n > used_slots(q)) {
+        return NULL;
+    }
+    return nth(q->array, (q->head + n) % q->size);
+}
+
+void *last_value_of_deque(Deque q)
+{
+    return *nth_of_deque(q, used_slots(q) - 1);
+}
+@
+
+Array of char is so important that Light reimplement most logic of array
+just for better optimization.
+
+@<str@:light@:C Module@/C module properties@=
+name => "str",
+@
+
+@[str.c@=
+@<str@:light@:C Module@/C module@>
+@
+
+@[str.h@=
+@<str@:light@:C Module@/C module interface@>
+@
+
+@<str@:light@:C Module@/includes@=
+#include "context.h"
+@ 
+
+@<str@:light@:C Module@/data types@=
+struct str {
+    char *raw_string;
+    int len;
+    int mem_size;
+};
+@
+
+@<str@:light@:C Module@/exported data type declarations@=
+typedef struct str *Str;
+@
+
+@<str@:light@:C Module@/macros@=
+#define INITIAL_MEM_SIZE 32
+@
+
+@<str@:light@:C Module@/functions@=
+Str new_str()
+{
+    Str s;
+    NEW0(s);
+    s->len = 0;
+    s->mem_size = INITIAL_MEM_SIZE;
+    CALLOC(s->raw_string, s->mem_size);
+    return s;
+}
+
+void free_str(Str s)
+{
+    FREE(s->raw_string);
+    FREE(s);
+}
+
+char *raw_string(Str str)
+{
+    return str->raw_string;
+}
+
+int str_length(Str str)
+{
+    return str->len;
+}
+
+void str_extend(Str str, const char *s)
+{
+    int new_len;
+
+    new_len = str->len + strlen(s);
+    while (str->mem_size < new_len) {
+        str->mem_size <<= 1;
+    }
+    REALLOC_ARRAY(str->raw_string, str->mem_size);
+    strcpy(str->raw_string + str->len, s);
+    str->len = new_len;
+}
+
+void str_append(Str str, char c)
+{
+    char s[2] = {c, '\0'};
+    str_extend(str, s);
+}
+
+void str_clean(Str str)
+{
+    str->len = 0;
+    str->raw_string[0] = '\0';
+}
+@
+
+@<hash@:light@:C Module@/C module properties@=
+name => "hash",
 @
 
 @[hash.c@=
@@ -810,12 +1135,12 @@ List remove_first(Function jdg, List l)
 @<hash@:light@:C Module@/C module interface@>
 @
 
-@<hash@:light@:C Module@/C module properties@=
-name => "hash",
-@
-
 @<hash@:light@:C Module@/interface required includes@=
 #include <stdint.h>
+@
+
+@<hash@:light@:C Module@/includes@=
+#include <string.h>
 @
 
 @<hash@:light@:C Module@/functions@=
@@ -837,6 +1162,223 @@ uint32_t
 hash_str(const char *str)
 {
     return hash((const uint8_t *)str, strlen(str));
+}
+@
+
+There are many types of table, but they all share a common basic interface, key value pair.
+Light call such a pair a record.
+
+@<tablerecord@:light@:C Module@/C module properties@=
+name => "tablerecord",
+@
+
+@[tablerecord.c@=
+@<tablerecord@:light@:C Module@/C module@>
+@
+
+@[tablerecord.h@=
+@<tablerecord@:light@:C Module@/C module interface@>
+@
+
+@<tablerecord@:light@:C Module@/exported data types@=
+struct table_record {
+    const void *k;
+    void *v;
+};
+@
+
+@<tablerecord@:light@:C Module@/exported data type declarations@=
+typedef struct table_record *TableRecord;
+@
+
+@<hashtable@:light@:C Module@/C module properties@=
+name => "hashtable",
+@
+
+@[hashtable.c@=
+@<hashtable@:light@:C Module@/C module@>
+@
+
+@[hashtable.h@=
+@<hashtable@:light@:C Module@/C module interface@>
+@
+
+@<hashtable@:light@:C Module@/interface required includes@=
+#include "tablerecord.h"
+@
+
+@<hashtable@:light@:C Module@/includes@=
+#include "context.h"
+#include "higher.h"
+#include "array.h"
+#include "hash.h"
+@
+
+@<hashtable@:light@:C Module@/data types@=
+struct hash_table {
+    Array table;
+    List slots;
+    uint32_t (*hash_func)(const void *);
+    bool (*equal_func)(const void *, const void *);
+};
+@
+
+@<hashtable@:light@:C Module@/exported data type declarations@=
+typedef struct hash_table *HashTable;
+@
+
+@<hashtable@:light@:C Module@/data type declarations@=
+@<list@:light@:C Module@/exported data type declarations@>
+@<array@:light@:C Module@/exported data type declarations@>
+@<function@:light@:C Module@/exported data type declarations@>
+@<tablerecord@:light@:C Module@/exported data type declarations@>
+@
+
+@<hashtable@:light@:C Module@/static inline functions@=
+static inline List *
+record_list(HashTable tbl, const void *key)
+{
+    List *rcds_r;
+    uint32_t hv;
+    hv = tbl->hash_func(key);
+    RENAME(nth(tbl->table, hv), rcds_r);
+    return rcds_r;
+}
+@
+
+@<hashtable@:light@:C Module@/functions@=
+HashTable new_hash_table(uint32_t hf(const void *), bool eq(const void *, const void *))
+{
+    HashTable tbl;
+    NEW0(tbl);
+    tbl->table = new_array();
+    tbl->slots = empty_list;
+    tbl->hash_func = hf;
+    tbl->equal_func = eq;
+    return tbl;
+}
+
+void free_hash_table(HashTable tbl)
+{
+    List *rcds_r; /* records */
+
+    FOREACH (rcds_r, tbl->slots) {
+        TableRecord *rcd_r;
+        FOREACH (rcd_r, *rcds_r) {
+            FREE(rcd_r);
+        }
+        free_list(*rcds_r);
+    }
+    free_list(tbl->slots);
+    free_array(tbl->table);
+    FREE(tbl);
+}
+@
+
+@<hashtable@:light@:C Module@/function declarations@=
+DECLARE_FUNCTION(hash_table_key_is_record, HashTable tbl; const void *key; TableRecord rcd;);
+DEFINE_FUNCTION(hash_table_key_is_record,
+    bool res, *res_r;
+    res = args->tbl->equal_func(args->key, args->rcd->k);
+    MOVE(&res, res_r);
+    return res_r;
+)
+@
+
+@<hashtable@:light@:C Module@/functions@=
+void put_to_hash_table(HashTable tbl, const void *key, void *v)
+{
+    TableRecord rcd;
+
+    List *rcds_r; /* records */
+    rcds_r = record_list(tbl, key);
+
+    if (!*rcds_r) {
+        *rcds_r = empty_list;
+    }
+    UNDER( /* search the already stored keys */
+	Function record_is_of_key = FUNCTION(hash_table_key_is_record);
+	fill_argument(record_is_of_key, tbl);
+	fill_argument(record_is_of_key, (void *)key);
+
+        rcd = find_first(record_is_of_key, *rcds_r);
+    );
+
+    if (!rcd) { /* create a new record */
+	NEW(rcd);
+	rcd->k = key;
+
+        if (!(*rcds_r)) {
+	    *rcds_r = empty_list;
+            push(rcds_r, &tbl->slots);
+        }
+
+        push(rcd, rcds_r);
+    } while (0);
+
+    rcd->v = v;
+}
+
+void *get_from_hash_table(HashTable tbl, const void *key)
+{
+    TableRecord rcd = NULL;
+
+    List rcds; /* records */
+    rcds = *record_list(tbl, key);
+
+    if (rcds) {
+	UNDER( /* search the already stored keys */
+	    Function record_is_of_key = FUNCTION(hash_table_key_is_record);
+	    fill_argument(record_is_of_key, tbl);
+	    fill_argument(record_is_of_key, (void *)key);
+
+	    rcd = find_first(record_is_of_key, rcds);
+	);
+    }
+
+    return rcd ? rcd->v : NULL;
+}
+
+void *remove_from_hash_table(HashTable tbl, const void *key)
+{
+    void *v = NULL;
+
+    List *rcds_r; /* records */
+    rcds_r = record_list(tbl, key);
+
+    if (!*rcds_r) {
+        *rcds_r = empty_list;
+    }
+    UNDER( /* search the already stored keys */
+	Function record_is_of_key = FUNCTION(hash_table_key_is_record);
+	fill_argument(record_is_of_key, tbl);
+	fill_argument(record_is_of_key, (void *)key);
+
+        TableRecord rcd;
+        ESCAPE(rcd = remove_first(record_is_of_key, rcds_r));
+        if (rcd != NULL) {
+            v = rcd->v;
+            FREE(rcd);
+        }
+    );
+    return v;
+}
+@
+
+@<hashtable@:light@:C Module@/functions@=
+static uint32_t hash_func_str(const void *s)
+{
+    return hash_str((const char *)s) % 1024;
+}
+
+static bool equal_func_str(const void *s1, const void *s2)
+{
+    return strcmp((const char *)s1, (const char *)s2) == 0;
+}
+
+HashTable new_string_hash_table()
+{
+    return new_hash_table(hash_func_str, equal_func_str);
 }
 @
 

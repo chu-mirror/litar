@@ -19,6 +19,9 @@ install:
 litar.c: litar.la boot
 	./boot -p "$@" litar.la > $@
 
+litarfs.c: litar.la boot
+	./boot -p "$@" litar.la > $@
+
 litar.1: litar
 	./litar -p $@ litar.la > $@
 
@@ -26,6 +29,9 @@ boot: boot.c
 	$(CC) $(CFLAGS) -o $@ $< `./light/finddeff.py $< ./light/include` $(LIBS)
 
 litar: litar.c
+	$(CC) $(CFLAGS) -o $@ $< `./light/finddeff.py $< ./light/include` $(LIBS)
+
+litarfs: litarfs.c
 	$(CC) $(CFLAGS) -o $@ $< `./light/finddeff.py $< ./light/include` $(LIBS)
 
 release: litar

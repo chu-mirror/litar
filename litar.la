@@ -426,8 +426,33 @@ expected from the using of a litar archive.
 
 # Main body
 
-litar follows the common pattern of a command line tool.
+The complete implementation of litar is divided to two parts, front end and back end.
+The front end follows the common pattern of a command line tool.
 It parses options and arguments, executes, then exits.
+The back end is a server that makes use of libfuse3.
+
+@[litarfs.c@=
+@<litar@:C Module@/C module@>
+
+static struct litarfs_options {
+    const char *archive_name;
+} user_options;
+static struct fuse_opt litarfs_option_specs[] = {
+    {"--archive=%s", offsetof(struct litarfs_options, archive_name), 0},
+};
+
+int main(int argc, char *argv[]) {
+    @<initializations of global variables@>
+    struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+    user_options.archive_name = strdup("litar.la");
+    if (fuse_opt_parse(&args, &user_options, litarfs_option_specs, NULL) < 0) {
+        fprintf(stderr, "Error when parsing arguments\n");
+    }
+    archive_name = (void *)user_options.archive_name;
+    @<parse input@>
+    return fuse_main(args.argc, args.argv, &litar_fuse_oper, NULL);
+}
+@
 
 @[litar.c@=
 @<litar@:C Module@/C executable@>

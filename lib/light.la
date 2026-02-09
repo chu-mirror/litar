@@ -47,6 +47,7 @@ There are some idioms to make life a bit easier.
 @<light@:C Module@/includes@=
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 @
 
 @<light@:C Module@/interface required includes@=
@@ -739,6 +740,61 @@ List map(Function func, List l)
         UNDER_CONTEXT(
 	    List args = cons(elm, empty_list);
 	    ESCAPE(push(invoke(func, args), &_l));
+	);
+    }
+    reverse(&_l);
+    return _l;
+}
+
+void *find(Function jdg, List l)
+{
+    void *elm;
+    FOREACH(elm, l) {
+        bool found = false;
+        UNDER_CONTEXT(
+	    List args = cons(elm, empty_list);
+	    found = *(bool *)invoke(jdg, args);
+	);
+	if (found) {
+	    break;
+	}
+    }
+    return elm;
+}
+
+List filter(Function jdg, List l)
+{
+    List _l = empty_list;
+    void *elm;
+    FOREACH (elm, l) {
+        UNDER_CONTEXT(
+	    List args = cons(elm, empty_list);
+	    bool *to_reserve;
+	    RENAME(invoke(jdg, args), to_reserve);
+	    if (*to_reserve) {
+	        ESCAPE(push(elm, &_l));
+	    }
+	);
+    }
+    reverse(&_l);
+    return _l;
+}
+
+List remove_first(Function jdg, List l)
+{
+    List _l = empty_list;
+    bool found = false;
+    void *elm;
+    FOREACH (elm, l) {
+        UNDER_CONTEXT(
+	    List args = cons(elm, empty_list);
+	    bool *to_remove;
+	    RENAME(invoke(jdg, args), to_remove);
+	    if (found || !*to_remove) {
+	        ESCAPE(push(elm, &_l));
+	    } else {
+		found = true;
+	    }
 	);
     }
     reverse(&_l);

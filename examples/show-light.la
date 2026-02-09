@@ -159,7 +159,7 @@ UNDER_CONTEXT ( /* test |map| */
     shift_arguments(bigger_than_3, 1);
     fill_argument(bigger_than_3, &n);
 
-    l1 = _LIST(arr, 6);
+    l1 = LIST(arr);
     l2 = map(bigger_than_3, l1);
 
     int i, *np;
@@ -173,33 +173,62 @@ UNDER_CONTEXT ( /* test |map| */
 	++i;
     }
 );
-@
 
-@<show cases for list (debug)@=
-do { /* test |remove_all| */
+UNDER_CONTEXT ( /* test |find| */
+    Function bigger_than_3;
+
+    int n = 3;
+    bigger_than_3= FUNCTION(bigger_than);
+    shift_arguments(bigger_than_3, 1);
+    fill_argument(bigger_than_3, &n);
+
+    l1 = LIST(arr);
+
+    int *res;
+    RENAME(find(bigger_than_3, l1), res);
+    assert(*res == 4);
+);
+
+UNDER_CONTEXT ( /* test |filter| */
+    Function bigger_than_3;
+
+    int n = 3;
+    bigger_than_3= FUNCTION(bigger_than);
+    shift_arguments(bigger_than_3, 1);
+    fill_argument(bigger_than_3, &n);
+
+    l1 = LIST(arr);
+    l2 = filter(bigger_than_3, l1);
+    assert(length(l2) == 3);
+
     int i, *np;
-    remove_all(less_than_4, &l3);
-    assert(length(l3) == 4);
-
-    i = 0;
-    FOREACH (np, l3) {
-	assert(*np == i + 4);
+    i = 4;
+    FOREACH (np, l2) {
+        assert(i == *np);
 	++i;
     }
-} while (0);
+);
 
-do { /* test |remove_first| */
+UNDER_CONTEXT ( /* test |remove_first| */
+    Function bigger_than_3;
+
+    int n = 3;
+    bigger_than_3= FUNCTION(bigger_than);
+    shift_arguments(bigger_than_3, 1);
+    fill_argument(bigger_than_3, &n);
+
+    l1 = LIST(arr);
+    l2 = remove_first(bigger_than_3, l1);
+    assert(length(l2) == 5);
+
     int i, *np;
-    push(&arr[0], &l3);
-    assert(remove_first(less_than_4, &l3) == &arr[0]);
-    assert(length(l3) == 4);
-
-    i = 0;
-    FOREACH (np, l3) {
-	assert(*np == i + 4);
+    i = 1;
+    FOREACH (np, l2) {
+        assert(i == *np);
 	++i;
+	if (i == 4) ++i;
     }
-} while (0);
+);
 @
 
 @. lib/light.la

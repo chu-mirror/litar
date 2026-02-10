@@ -1523,6 +1523,189 @@ const char *atom_str(const char *str)
 }
 @
 
+@<state@:light@:C Module@/C module properties@=
+name => "state",
+@
+
+@[state.c@=
+@<state@:light@:C Module@/C module@>
+@
+
+@[state.h@=
+@<state@:light@:C Module@/C module interface@>
+@
+
+@<state@:light@:C Module@/includes@=
+#include "context.h"
+#include "list.h"
+@
+
+@<state@:light@:C Module@/data type declarations@=
+@<list@:light@:C Module@/exported data type declarations@>
+@
+
+@<state@:light@:C Module@/data types@=
+struct state {
+    State parent;
+    StateType type;
+    List children;
+    State active_child;
+    State last_child;
+    State (*handler)(State, Signal);
+    State (*in)(State, Signal);
+    State (*out)(State, Signal);
+    void *local;
+};
+@
+
+@<state@:light@:C Module@/exported data types@=
+enum state_type {
+    STATE_XOR,
+    STATE_AND 
+};
+@
+
+@<state@:light@:C Module@/exported data type declarations@=
+typedef void *Signal;
+typedef struct state *State;
+typedef enum state_type StateType;
+@
+
+@<state@:light@:C Module@/exported macros@=
+#define root_state NULL
+@
+
+@<state@:light@:C Module@/functions@=
+State new_state(State p, StateType t, State (*hd)(State, Signal))
+{
+    State s;
+    NEW0(s);
+    s->parent = p;
+    s->type = t;
+    s->handler = hd;
+    s->children = empty_list;
+    if (p != root_state) {
+        push(s, &p->children);
+    }
+    return s;
+}
+
+void free_state(State s)
+{
+    free_list(s->children);
+    FREE(s);
+}
+
+void
+state_register_in_func(State s, State (*in)(State, Signal))
+{
+    s->in = in;
+}
+
+void
+state_register_out_func(State s, State (*out)(State, Signal))
+{
+    s->out = out;
+}
+@
+
+@<state@:light@:C Module@/functions@=
+static void into_state(State s, Signal sig)
+{
+    if (s->in != NULL) {
+        State cld;
+        cld = s->in(s, sig);
+        s->active_child = cld == NULL ? s->last_child : cld;
+    }
+    if (s->type == STATE_XOR && s->active_child) {
+        into_state(s->active_child, sig);
+    }
+    if (s->type == STATE_AND) {
+        State cld;
+        FOREACH (cld, s->children) {
+            into_state(cld, sig);
+        }
+    }
+}
+
+static void out_state(State s, Signal sig)
+{
+    if (s->type == STATE_XOR && s->active_child) {
+        out_state(s->active_child, sig);
+    }
+    if (s->type == STATE_AND) {
+        State cld;
+        FOREACH (cld, s->children) {
+            out_state(cld, sig);
+        }
+    }
+    if (s->out != NULL) {
+        State cld;
+        cld = s->out(s, sig);
+        s->last_child = cld == NULL ? s->active_child : cld;
+    }
+}
+@
+
+@<state@:light@:C Module@/functions@=
+void state_init(State s)
+{
+    into_state(s, NULL);
+}
+
+void state_clear(State s)
+{
+    out_state(s, NULL);
+}
+
+bool state_handle_signal(State s, Signal sig)
+{
+    State next;
+    bool handled = false;
+
+    next = s->handler == NULL ? NULL : s->handler(s, sig);
+    if (next == NULL) {
+        if (s->type == STATE_XOR && s->active_child != NULL) {
+            handled = state_handle_signal(s->active_child, sig);
+        }
+        if (s->type == STATE_AND) {
+            State cld;
+            FOREACH (cld, s->children) {
+                handled = state_handle_signal(cld, sig) || handled;
+            }
+        }
+    } else {
+        handled = true;
+        assert(next->parent == s->parent);
+        if (next != s) {
+            assert(s->parent != root_state && s->parent->type == STATE_XOR);
+            out_state(s, sig);
+            s->parent->active_child = next;
+            into_state(next, sig);
+        }
+    }
+    return handled;
+}
+
+void **state_local(State s)
+{
+    return &s->local;
+}
+
+bool state_is_active(State s)
+{
+    State _s = s;
+
+    while (_s->parent) {
+        if (_s->parent->type == STATE_XOR && _s->parent->active_child != _s) {
+            return false;
+        }
+        _s = _s->parent;
+    }
+    return true;
+}
+@
+
 @. lib/basic.la
 @. lib/text-processing.la
 @. lib/c-structure.la

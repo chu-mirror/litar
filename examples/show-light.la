@@ -23,6 +23,7 @@ Light
 #include "str.h"
 #include "hashtable.h"
 #include "atom.h"
+#include "state.h"
 @
 
 @<show@:Light@/main body@=
@@ -361,6 +362,255 @@ UNDER(
     assert(a1 == a2);
     assert(strcmp(a1, "Hello") == 0);
     printf("Passed atom\n");
+);
+@
+
+@<show@:light@:C Module@/data type declarations@=
+@<state@:light@:C Module@/exported data type declarations@>
+@
+
+@<show@:light@:C Module@/function declarations@=
+bool state_handle_signal(State s, Signal sig);
+bool state_is_active(State s);
+@
+
+@<show@:light@:C Module@/global variables@=
+int state_signal_forward;
+int state_signal_backward;
+int state_signal_1;
+int state_signal_2;
+
+State state_machine;
+State state1;
+State state11;
+State state12;
+State state2;
+State state21;
+State state22;
+
+struct state_local {
+    int handled_signals;
+    int passed_signals;
+};
+State current_state;
+
+int total_handled_signals;
+@
+
+@<show@:light@:C Module@/functions@=
+static State
+state_in(State s, Signal sig)
+{
+    NEW0(*(struct state_local **)(state_local(s)));
+    return NULL;
+}
+
+static State
+state_out(State s, Signal sig)
+{
+    struct state_local *lc;
+    RENAME(*state_local(s), lc);
+    total_handled_signals += lc->handled_signals;
+    FREE(*state_local(s));
+    return NULL;
+}
+
+static State
+state11_handler(State s, Signal sig)
+{
+    struct state_local *lc;
+    RENAME(*state_local(s), lc);
+
+    if (sig == &state_signal_forward) {
+        ++lc->handled_signals;
+        return state12;
+    }
+    ++lc->passed_signals;
+    return NULL;
+}
+
+static State
+state12_handler(State s, Signal sig)
+{
+    struct state_local *lc;
+    RENAME(*state_local(s), lc);
+
+    if (sig == &state_signal_backward) {
+        ++lc->handled_signals;
+        return state11;
+    }
+
+    ++lc->passed_signals;
+    return NULL;
+}
+
+static State
+state1_in(State s, Signal sig)
+{
+    NEW0(*(struct state_local **)(state_local(s)));
+
+    if (sig == NULL) {
+        return state11;
+    }
+
+    return NULL;
+}
+
+static State
+state1_handler(State s, Signal sig)
+{
+    struct state_local *lc;
+    RENAME(*state_local(s), lc);
+
+    if (sig == &state_signal_forward && state_is_active(state12)) {
+        ++lc->handled_signals;
+        return state2;
+    }
+
+    if (sig == &state_signal_backward && state_is_active(state11)) {
+        ++lc->handled_signals;
+        return state2;
+    }
+
+    ++lc->passed_signals;
+    return NULL;
+}
+
+static State
+state21_handler(State s, Signal sig)
+{
+    struct state_local *lc;
+    RENAME(*state_local(s), lc);
+
+    if (sig == &state_signal_1) {
+        ++lc->handled_signals;
+        return s;
+    }
+
+    ++lc->passed_signals;
+    return NULL;
+}
+
+static State
+state22_handler(State s, Signal sig)
+{
+    struct state_local *lc;
+    RENAME(*state_local(s), lc);
+
+    if (sig == &state_signal_2) {
+        ++lc->handled_signals;
+        return s;
+    }
+
+    ++lc->passed_signals;
+    return NULL;
+}
+
+static State
+state2_handler(State s, Signal sig)
+{
+    struct state_local *lc;
+    RENAME(*state_local(s), lc);
+
+    if (sig == &state_signal_forward) {
+        ++lc->handled_signals;
+        return state1;
+    }
+
+    if (sig == &state_signal_backward) {
+        ++lc->handled_signals;
+        return state1;
+    }
+
+    ++lc->passed_signals;
+    return NULL;
+}
+
+static State
+state_machine_in(State s, Signal sig)
+{
+    NEW0(*(struct state_local **)(state_local(s)));
+
+    if (sig == NULL) {
+        return state1;
+    }
+
+    return NULL;
+}
+@
+
+@<show cases@=
+UNDER( /* test state machine */
+    state_machine = new_state(root_state, STATE_XOR, NULL);
+    state_register_in_func(state_machine, state_machine_in);
+    state_register_out_func(state_machine, state_out);
+
+    state1 = new_state(state_machine, STATE_XOR, state1_handler);
+    state_register_in_func(state1, state1_in);
+    state_register_out_func(state1, state_out);
+
+    state11 = new_state(state1, STATE_XOR, state11_handler);
+    state_register_in_func(state11, state_in);
+    state_register_out_func(state11, state_out);
+
+    state12 = new_state(state1, STATE_XOR, state12_handler);
+    state_register_in_func(state12, state_in);
+    state_register_out_func(state12, state_out);
+
+    state2 = new_state(state_machine, STATE_AND, state2_handler);
+    state_register_in_func(state2, state_in);
+    state_register_out_func(state2, state_out);
+
+    state21 = new_state(state2, STATE_XOR, state21_handler);
+    state_register_in_func(state21, state_in);
+    state_register_out_func(state21, state_out);
+
+    state22 = new_state(state2, STATE_XOR, state22_handler);
+    state_register_in_func(state22, state_in);
+    state_register_out_func(state22, state_out);
+
+    int signals_sent = 0;
+
+    state_init(state_machine);
+    assert(state_is_active(state11));
+
+    assert(state_handle_signal(state_machine, &state_signal_forward));
+    signals_sent++;
+    assert(state_is_active(state12));
+
+    assert(state_handle_signal(state_machine, &state_signal_backward));
+    signals_sent++;
+    assert(state_is_active(state11));
+
+    assert(state_handle_signal(state_machine, &state_signal_forward));
+    signals_sent++;
+    assert(state_is_active(state12));
+
+    assert(state_handle_signal(state_machine, &state_signal_forward));
+    signals_sent++;
+    assert(state_is_active(state2));
+
+    assert(state_handle_signal(state_machine, &state_signal_1));
+    signals_sent++;
+    assert(state_handle_signal(state_machine, &state_signal_1));
+    signals_sent++;
+    assert(state_handle_signal(state_machine, &state_signal_2));
+    signals_sent++;
+
+    struct state_local *lc;
+    RENAME(*state_local(state21), lc);
+    assert(lc->handled_signals == 2);
+
+    RENAME(*state_local(state22), lc);
+    assert(lc->handled_signals == 1);
+
+    assert(state_handle_signal(state_machine, &state_signal_forward));
+    signals_sent++;
+    assert(state_is_active(state12));
+
+    state_clear(state_machine);
+    assert(total_handled_signals == signals_sent);
+    printf("Passed statemachine\n");
 );
 @
 

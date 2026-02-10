@@ -20,7 +20,7 @@ Include headers for debugging.
 There are some idioms to make life a bit easier.
 @<light@:C Module@/exported macros@=
 /* Give value a new name, and force type casting. */
-#define RENAME(old, new) new = (typeof(new))old
+#define RENAME(old, new) (new = (typeof(new))old)
 
 /* Generic data structure usually accept pointers, enable them to handle
  * integers. */
@@ -212,7 +212,9 @@ Context _light_top_context;
 @
 
 @<context@:light@:C Module@/macros@=
+#ifndef ptr_to_resource_node_size
 #define ptr_to_resource_node_size (12)
+#endif
 @
 
 @<context@:light@:C Module@/global variables@=
@@ -1143,18 +1145,21 @@ name => "hash",
 #include <string.h>
 @
 
+Light chooses FNV-1a as the default hash algorithm, the main usage is to calculate keys
+from a set of small values anyway.
+
 @<hash@:light@:C Module@/functions@=
 uint32_t
 hash(const uint8_t *value, size_t len)
 {
-    const uint32_t p = 257;
-    uint32_t result, p_;
-    int i;
+    uint32_t result;
 
-    for (i = 0, p_ = p, result = 0; i < len; ++i) {
-        result += *(value + i) * p_;
-        p_ *= p;
+    int i;
+    for (i = 0, result = 2166136261U; i < len; ++i) {
+        result ^= value[i];
+	result *= 16777619U;
     }
+
     return result;
 }
 
@@ -1217,6 +1222,7 @@ name => "hashtable",
 @<hashtable@:light@:C Module@/data types@=
 struct hash_table {
     Array table;
+    size_t size;
     List slots;
     uint32_t (*hash_func)(const void *);
     bool (*equal_func)(const void *, const void *);
@@ -1241,17 +1247,18 @@ record_list(HashTable tbl, const void *key)
     List *rcds_r;
     uint32_t hv;
     hv = tbl->hash_func(key);
-    RENAME(nth(tbl->table, hv), rcds_r);
+    RENAME(nth(tbl->table, hv % tbl->size), rcds_r);
     return rcds_r;
 }
 @
 
 @<hashtable@:light@:C Module@/functions@=
-HashTable new_hash_table(uint32_t hf(const void *), bool eq(const void *, const void *))
+HashTable new_hash_table(size_t size, uint32_t hf(const void *), bool eq(const void *, const void *))
 {
     HashTable tbl;
     NEW0(tbl);
     tbl->table = new_array();
+    tbl->size = size;
     tbl->slots = empty_list;
     tbl->hash_func = hf;
     tbl->equal_func = eq;
@@ -1368,7 +1375,7 @@ void *remove_from_hash_table(HashTable tbl, const void *key)
 @<hashtable@:light@:C Module@/functions@=
 static uint32_t hash_func_str(const void *s)
 {
-    return hash_str((const char *)s) % 1024;
+    return hash_str((const char *)s);
 }
 
 static bool equal_func_str(const void *s1, const void *s2)
@@ -1376,9 +1383,128 @@ static bool equal_func_str(const void *s1, const void *s2)
     return strcmp((const char *)s1, (const char *)s2) == 0;
 }
 
-HashTable new_string_hash_table()
+HashTable new_string_hash_table(size_t size)
 {
-    return new_hash_table(hash_func_str, equal_func_str);
+    return new_hash_table(size, hash_func_str, equal_func_str);
+}
+@
+
+Sometimes we only want to reserve one copy of data, any following referencing
+to the same data can use that copy. Hash table is a natural choice for this purpose.
+A such copy is usually called an atom.
+
+@<atom@:light@:C Module@/C module properties@=
+name => "atom",
+@
+
+@[atom.c@=
+@<atom@:light@:C Module@/C module@>
+@
+
+@[atom.h@=
+@<atom@:light@:C Module@/C module interface@>
+@
+
+@<atom@:light@:C Module@/includes@=
+#include "context.h"
+#include "hash.h"
+#include "hashtable.h"
+@
+
+@<atom@:light@:C Module@/data type declarations@=
+@<hashtable@:light@:C Module@/exported data type declarations@>
+@
+
+@<atom@:light@:C Module@/data types@=
+struct atom {
+    const uint8_t *block;
+    size_t len;
+};
+@
+
+@<atom@:light@:C Module@/functions@=
+static uint32_t hash_func_atom(const void *a)
+{
+    struct atom *_a;
+    RENAME(a, _a);
+
+    return hash(_a->block, _a->len);
+}
+
+static bool equal_func_atom(const void *a1, const void *a2)
+{
+    struct atom *_a1, *_a2;
+    RENAME(a1, _a1);
+    RENAME(a2, _a2);
+    return _a1->len == _a2->len
+           && memcmp(_a1->block, _a2->block, _a1->len) == 0;
+}
+@
+
+Because of the introducing of context, the management of atoms should be treated carefully.
+Whether they should be global or localized under a context, Light choose the later way.
+
+@<atom@:light@:C Module@/macros@=
+#ifndef ptr_to_atoms_size
+#define ptr_to_atoms_size (6)
+#endif
+@
+
+@<atom@:light@:C Module@/global variables@=
+static MAPPING_PTR(atoms);
+@
+
+@<atom@:light@:C Module@/macros@=
+#ifndef ATOMS_DEFAULT_SIZE
+#define ATOMS_DEFAULT_SIZE (1<<10)
+#endif
+@
+
+@<atom@:light@:C Module@/functions@=
+HashTable new_hash_table(size_t size, uint32_t hf(const void *), bool eq(const void *, const void *));
+
+void init_atoms(size_t size)
+{
+    if (!mapped_by_ptr(atoms, _light_top_context)) {
+        map_ptr_to(atoms, _light_top_context, new_hash_table(size, hash_func_atom, equal_func_atom));
+    }
+}
+
+void *atom(const uint8_t *blk, size_t len)
+{
+    HashTable _atoms;
+    struct atom a;
+    void *p;
+
+    if (!RENAME(mapped_by_ptr(atoms, _light_top_context), _atoms)) {
+        RENAME(new_hash_table(ATOMS_DEFAULT_SIZE, hash_func_atom, equal_func_atom), _atoms);
+        map_ptr_to(atoms, _light_top_context, _atoms);
+    }
+
+    a.block = blk;
+    a.len = len;
+
+    p = get_from_hash_table(_atoms, &a);
+
+    if (p == NULL) {
+        uint8_t *_blk = NULL;
+        MOVE_ARRAY(blk, _blk, len);
+        a.block = _blk;
+
+        struct atom *a_r = NULL;
+        MOVE(&a, a_r);
+	put_to_hash_table(_atoms, a_r, a_r);
+	p = a_r;
+    }
+
+    return p;
+}
+
+const char *atom_str(const char *str)
+{
+    struct atom *a_r;
+    RENAME(atom((const uint8_t *)str, strlen(str) + 1), a_r);
+    return (const char *)(a_r->block);
 }
 @
 

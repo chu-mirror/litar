@@ -22,6 +22,7 @@ Light
 #include "array.h"
 #include "str.h"
 #include "hashtable.h"
+#include "atom.h"
 @
 
 @<show@:Light@/main body@=
@@ -321,9 +322,10 @@ UNDER(
     assert(str_length(str) == 10 * strlen("Hello"));
     printf("Passed str\n");
 );
+
 UNDER(
     HashTable tbl = NULL;
-    tbl = new_string_hash_table();
+    tbl = new_string_hash_table(10);
 
     put_to_hash_table(tbl, "Chu", "Hello");
     put_to_hash_table(tbl, "Mzz", "Welcome");
@@ -340,6 +342,25 @@ UNDER(
     remove_from_hash_table(tbl, "Chu");
     assert(get_from_hash_table(tbl, "Chu") == NULL);
     printf("Passed hashtable\n");
+);
+
+UNDER(
+    char *str1 = NULL, *str2 = NULL;
+    CALLOC(str1, 10);
+    CALLOC(str2, 10);
+    strcpy(str1, "Hello");
+    strcpy(str2, "Hello");
+    assert(str1 != str2);
+
+    const char *a1, *a2;
+    size_t c;
+
+    a1 = atom_str(str1);
+    a2 = atom_str(str2);
+
+    assert(a1 == a2);
+    assert(strcmp(a1, "Hello") == 0);
+    printf("Passed atom\n");
 );
 @
 

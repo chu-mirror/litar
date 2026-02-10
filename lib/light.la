@@ -1470,21 +1470,36 @@ void init_atoms(size_t size)
     }
 }
 
+static void clean_mapping(void *mp)
+{
+    unmap_ptr(atoms, *(Context *)mp);
+    free(mp);
+}
+
+static void new_mapping(Context ctx, HashTable atoms)
+{
+    Context *mp;
+    mp = malloc(sizeof(*mp));
+    *mp = ctx;
+    new_resource(mp, clean_mapping);
+    map_ptr_to(atoms, ctx, atoms);
+}
+
 void *atom(const uint8_t *blk, size_t len)
 {
-    HashTable _atoms;
+    HashTable atoms;
     struct atom a;
     void *p;
 
-    if (!RENAME(mapped_by_ptr(atoms, _light_top_context), _atoms)) {
-        RENAME(new_hash_table(ATOMS_DEFAULT_SIZE, hash_func_atom, equal_func_atom), _atoms);
-        map_ptr_to(atoms, _light_top_context, _atoms);
+    if (!RENAME(mapped_by_ptr(atoms, _light_top_context), atoms)) {
+        RENAME(new_hash_table(ATOMS_DEFAULT_SIZE, hash_func_atom, equal_func_atom), atoms);
+	new_mapping(_light_top_context, atoms);
     }
 
     a.block = blk;
     a.len = len;
 
-    p = get_from_hash_table(_atoms, &a);
+    p = get_from_hash_table(atoms, &a);
 
     if (p == NULL) {
         uint8_t *_blk = NULL;
@@ -1493,7 +1508,7 @@ void *atom(const uint8_t *blk, size_t len)
 
         struct atom *a_r = NULL;
         MOVE(&a, a_r);
-	put_to_hash_table(_atoms, a_r, a_r);
+	put_to_hash_table(atoms, a_r, a_r);
 	p = a_r;
     }
 

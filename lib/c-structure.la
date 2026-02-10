@@ -1,26 +1,26 @@
-@- C Module
+@- C Structure
 
 @<Basics@/system prerequisites@=
 cproto
 clang-format-19
 @
 
-@<C module meta information@=
+@<module meta information@=
 (
     name => 'default',
     included_flag_format => '_MODULE_%s',
     include_paths => [qw(@<include paths@>)],
-    @<C module properties@>
+    @<module properties@>
 )
 @
 
 @<-I flags@=@<Text Processing@/basic perl settings@>
-my %meta = @<C module meta information@>;
+my %meta = @<module meta information@>;
 
 print join " ", map {"-I$_"} @@{ $meta{include_paths} };
 @|Basics@/evaluate@
 
-@<C module@=
+@<module@=
 @<include flags@>
 @<includes@>
 @<macros@>
@@ -32,17 +32,7 @@ print join " ", map {"-I$_"} @@{ $meta{include_paths} };
 @<functions@>
 @|format C code@
 
-@<C executable@=
-@<C module@>
-int
-main(int argc, char *argv[])
-{
-    @<main body@>
-    return 0;
-}
-@|format C code@
-
-@<C module interface@=
+@<module interface@=
 @<interface required includes@>
 @<interface specific macros@>
 @<exported macros@>
@@ -53,7 +43,7 @@ main(int argc, char *argv[])
 @|wrap with included flag@|format C code@
 
 @<wrap with included flag@=@<Text Processing@/basic perl settings@>
-my %meta = @<C module meta information@>;
+my %meta = @<module meta information@>;
 
 printf("#ifndef $meta{included_flag_format}\n", uc($meta{name}));
 printf("#define $meta{included_flag_format}\n", uc($meta{name}));
@@ -253,7 +243,194 @@ WhitespaceSensitiveMacros:
 ...
 @
 
+@<executable@=
+@<module@>
+int
+main(int argc, char *argv[])
+{
+    int returned_value;
+    @<main body@>
+    return returned_value;
+}
+@|format C code@
+
 @<format C code@=#!/bin/sh
 clang-format-19 -style=file
 @
 
+The invocation syntax:
+
+{
+    name => COMMAND_NAME,
+    usages => [
+        {
+            options => [
+                {
+                    long_opt => LONG_OPTION,
+                    opt => SHORT_OPTION (optional),
+                    argument => OPTION_ARGUMENT (optional),
+                    hide => HIDE_OR_NOT (optional)
+                    description => DESCRIPTION,
+                },
+                ...
+            ],
+            arguments => [
+                ARGUMENT,
+                ...
+            ],
+        },
+        ...
+    ],
+}
+
+@<command line usage@=@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub option_to_str (_) {
+    my $opt = shift;
+    my $str = '';
+    if ($opt->{opt}) {
+        $str .= "-$opt->{opt}";
+    } else {
+        $str .= "--$opt->{long_opt}";
+    }
+    if ($opt->{argument}) {
+        $str .= " $opt->{argument}";
+    }
+    $str
+}
+
+sub usage_to_str (_) {
+    my $usage = shift;
+    my $str = $syntax->{name};
+
+    $str .= ' ';
+    $str .= '[' . (join '|', map option_to_str, grep {!$_->{hide}} @@{$usage->{options}}) . ']';
+    $str .= ' ';
+    $str .= join ' ', @@{$usage->{arguments}};
+    
+    $str
+}
+
+my @usages = map usage_to_str, @@{$syntax->{usages}};
+my $usages_str = '';
+
+$usages_str .= 'Usage:\t' . (shift @usages);
+while (@usages) {
+    $usages_str .= '\n\t' . (shift @usages);
+}
+$usages_str .= '\n';
+
+print $usages_str;
+@|Basics@/evaluate@
+
+@<getopt string@=@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub option_to_str (_) {
+    my $opt = shift;
+    my $str = '';
+    if ($opt->{opt}) {
+        $str = $opt->{opt};
+        if ($opt->{argument}) {
+            $str .= ':';
+        }
+    }
+    $str
+}
+
+my @options = ();
+for my $usage (@@{$syntax->{usages}}) {
+    @options = (@options, @@{$usage->{options}});
+}
+
+print (join "", map option_to_str, @options);
+@|Basics@/evaluate@
+
+@<long options@=@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub option_to_longopt (_) {
+    my $opt = shift;
+    my $str = '{';
+    if ($opt->{long_opt}) {
+        $str .= '"' . $opt->{long_opt} . '"';
+        if ($opt->{argument}) {
+            $str .= ',required_argument';
+        } else {
+            $str .= ',no_argument';
+        }
+        $str .= ',NULL';
+        if ($opt->{opt}) {
+            $str .= ",'@@{[$opt->{opt}]}'";
+        } else {
+            $str .= ",0";
+        }
+    }
+    $str .= "},"
+}
+
+my @options = ();
+for my $usage (@@{$syntax->{usages}}) {
+    @options = (@options, @@{$usage->{options}});
+}
+
+print (join "", map option_to_longopt, @options);
+@|Basics@/evaluate@
+
+@<manpage synopsis@=@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub option_to_str (_) {
+    my $opt = shift;
+    my $str = '';
+    if ($opt->{opt}) {
+        $str .= '\fB\-' . $opt->{opt} . '\fR';
+    } else {
+        $str .= '\fB\-\-' . $opt->{long_opt} . '\fR';
+    }
+    if ($opt->{argument}) {
+        $str .= ' \fI' . $opt->{argument} . '\fR';
+    }
+    $str
+}
+
+sub usage_to_str (_) {
+    my $usage = shift;
+    my $str = ".B $syntax->{name}";
+
+    $str .= "\n";
+    $str .= '[' . (join '|', map option_to_str, grep {!$_->{hide}} @@{$usage->{options}}) . ']';
+    $str .= "\n";
+    $str .= "@@{[map {'\fI' . $_ . '\fR'} @@{$usage->{arguments}}]}";
+    $str .= "\n";
+    
+    $str
+}
+
+my @usages = map usage_to_str, @@{$syntax->{usages}};
+print join "\n", @usages;
+@|Basics@/evaluate@
+
+@<manpage options@=@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+my $options = '';
+for my $usage (@@{$syntax->{usages}}) {
+    for my $option (@@{$usage->{options}}) {
+        $options .= ".TP\n";
+        if ($option->{opt}) {
+            $options .= '.BR \-' . $option->{opt} . ', " " ';
+        }
+        $options .= '\-\-' . $option->{long_opt};
+        if ($option->{argument}) {
+            $options .= ' " " \fI' . $option->{argument} . '\fR' . "\n";
+        } else {
+            $options .= "\n";
+        }
+        $options .= $option->{description} . "\n";
+    }
+}
+
+print $options;
+@|Basics@/evaluate@

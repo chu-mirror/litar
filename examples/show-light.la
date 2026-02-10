@@ -1,16 +1,16 @@
 @[show.c@=
-@<show@:light@:C Module@/C executable@>
+@<show@:light@:C Structure@/executable@>
 @
 
-@<show@:light@:C Module@/C module properties@=
+@<show@:light@:C Structure@/module properties@=
 name => "show",
 @
 
-@<show@:light@:C Module@/include paths@=
+@<show@:light@:C Structure@/include paths@=
 Light
 @
 
-@<show@:light@:C Module@/includes@=
+@<show@:light@:C Structure@/includes@=
 #include <stdio.h>
 #include <assert.h>
 #include <stdbool.h>
@@ -128,7 +128,7 @@ UNDER( /* test |copy_list| */
 );
 @
 
-@<show@:light@:C Module@/static inline functions@=
+@<show@:light@:C Structure@/static inline functions@=
 DECLARE_FUNCTION(bigger_than, int *a; int *b;);
 DEFINE_FUNCTION(bigger_than,
     int res, *ret;
@@ -365,16 +365,16 @@ UNDER(
 );
 @
 
-@<show@:light@:C Module@/data type declarations@=
-@<state@:light@:C Module@/exported data type declarations@>
+@<show@:light@:C Structure@/data type declarations@=
+@<state@:light@:C Structure@/exported data type declarations@>
 @
 
-@<show@:light@:C Module@/function declarations@=
+@<show@:light@:C Structure@/function declarations@=
 bool state_handle_signal(State s, Signal sig);
 bool state_is_active(State s);
 @
 
-@<show@:light@:C Module@/global variables@=
+@<show@:light@:C Structure@/global variables@=
 int state_signal_forward;
 int state_signal_backward;
 int state_signal_1;
@@ -397,7 +397,7 @@ State current_state;
 int total_handled_signals;
 @
 
-@<show@:light@:C Module@/functions@=
+@<show@:light@:C Structure@/functions@=
 static State
 state_in(State s, Signal sig)
 {

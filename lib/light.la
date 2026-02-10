@@ -5,12 +5,12 @@ It reflects the author's preferences and customs, which includes how to format c
 how to manage memory, how to handle exception, etc.
 
 The flags showing that a module was included follow this pattern.
-@<light@:C Module@/C module properties@=
+@<light@:C Structure@/module properties@=
 included_flag_format => '_LIGHT_%s',
 @
 
 Include headers for debugging.
-@<light@:C Module@/includes@=
+@<light@:C Structure@/includes@=
 #include <assert.h>
 #ifndef NDEBUG
 #include <stdio.h>
@@ -18,7 +18,7 @@ Include headers for debugging.
 @
 
 There are some idioms to make life a bit easier.
-@<light@:C Module@/exported macros@=
+@<light@:C Structure@/exported macros@=
 /* Give value a new name, and force type casting. */
 #define RENAME(old, new) (new = (typeof(new))old)
 
@@ -44,7 +44,7 @@ There are some idioms to make life a bit easier.
     } while (0)
 @
 
-@<light@:C Module@/interface required includes@=
+@<light@:C Structure@/interface required includes@=
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
@@ -56,15 +56,15 @@ between pointers and other entities
 without modify the data structure that the pointer reference to.
 The hash algorithm chosen is Fibonacci Hashing.
 
-@<light@:C Module@/macros@=
+@<light@:C Structure@/macros@=
 #define GOLDEN_RATIO_64 (0x9E3779B97F4A7C15ULL)
 @
 
-@<light@:C Module@/includes@=
+@<light@:C Structure@/includes@=
 #include <stdint.h>
 @
 
-@<light@:C Module@/static inline functions@=
+@<light@:C Structure@/static inline functions@=
 static inline uint64_t _hash_fibonacci(uint64_t v) {
     return GOLDEN_RATIO_64 * v;
 }
@@ -74,7 +74,7 @@ static inline uint64_t _hash_ptr(void *p) {
 }
 @
 
-@<light@:C Module@/data types@=
+@<light@:C Structure@/data types@=
 struct _hash_table_ptr_entry {
     struct _hash_table_ptr_entry *next;
     void *ptr;
@@ -82,12 +82,12 @@ struct _hash_table_ptr_entry {
 };
 @
 
-@<light@:C Module@/macros@=
+@<light@:C Structure@/macros@=
 #define MAPPING_PTR(name) \
     struct _hash_table_ptr_entry *ptr_to_##name[1 << ptr_to_##name##_size]
 @
 
-@<light@:C Module@/static inline functions@=
+@<light@:C Structure@/static inline functions@=
 static inline struct _hash_table_ptr_entry **
 _mapping_find_entry(struct _hash_table_ptr_entry **mapping, size_t size, void *k)
 {
@@ -147,7 +147,7 @@ static inline void *_mapped_by_ptr(struct _hash_table_ptr_entry **mapping, size_
 
 Some convenient macros.
 
-@<light@:C Module@/macros@=
+@<light@:C Structure@/macros@=
 #define map_ptr_to(name, k, v) _map_ptr_to(ptr_to_##name, ptr_to_##name##_size, (k), (v))
 #define unmap_ptr(name, k) _unmap_ptr(ptr_to_##name, ptr_to_##name##_size, (k))
 #define mapped_by_ptr(name, k) _mapped_by_ptr(ptr_to_##name, ptr_to_##name##_size, (k))
@@ -163,16 +163,16 @@ because C program lacks a garbage collector.
 
 C only has a minumal support for contexts through stack. Light extends it.
 
-@<context@:light@:C Module@/C module properties@=
+@<context@:light@:C Structure@/module properties@=
 name => 'context',
 @
 
 @[context.c@=
-@<context@:light@:C Module@/C module@>
+@<context@:light@:C Structure@/module@>
 @
 
 @[context.h@=
-@<context@:light@:C Module@/C module interface@>
+@<context@:light@:C Structure@/module interface@>
 @
 
 A context can be embedded to another context,
@@ -183,12 +183,12 @@ The context a context embedded to is the parent context of that context.
 
 A context has a list of resources, the resources must know how to release themselves.
 
-@<context@:light@:C Module@/exported data type declarations@=
+@<context@:light@:C Structure@/exported data type declarations@=
 typedef struct context *Context;
 typedef struct resource *Resource;
 @
 
-@<context@:light@:C Module@/exported data types@=
+@<context@:light@:C Structure@/exported data types@=
 struct resource_node {
     struct resource_node *previous, *next;
     Resource resource;
@@ -207,21 +207,21 @@ struct resource {
 };
 @
 
-@<context@:light@:C Module@/global variables@=
+@<context@:light@:C Structure@/global variables@=
 Context _light_top_context;
 @
 
-@<context@:light@:C Module@/macros@=
+@<context@:light@:C Structure@/macros@=
 #ifndef ptr_to_resource_node_size
 #define ptr_to_resource_node_size (12)
 #endif
 @
 
-@<context@:light@:C Module@/global variables@=
+@<context@:light@:C Structure@/global variables@=
 static MAPPING_PTR(resource_node);
 @
 
-@<context@:light@:C Module@/functions@=
+@<context@:light@:C Structure@/functions@=
 void enter_context() {
     Context ctx;
     ctx = malloc(sizeof(*ctx));
@@ -324,7 +324,7 @@ Unlike automatical finding of a variable by its name, when using context from Li
 users have to state explicitly whether some statements are execute under
 the current context or not.
 
-@<context@:light@:C Module@/interface specific macros@=
+@<context@:light@:C Structure@/interface specific macros@=
 #define UNDER(...) \
     do { \
         enter_context(); \
@@ -345,7 +345,7 @@ the current context or not.
     } while (0)
 @
 
-@<light@:C Module@/main body@=
+@<light@:C Structure@/main body@=
 Context ctx;
 ctx = malloc(sizeof(*ctx));
 ctx->parent = NULL;
@@ -359,7 +359,7 @@ free(ctx);
 
 Based on the context defined, Light refines the memory management.
 
-@<context@:light@:C Module@/exported macros@=
+@<context@:light@:C Structure@/exported macros@=
 #define NEW(p) \
     do { \
         typeof(p) *p_r = &(p); \
@@ -398,27 +398,27 @@ Based on the context defined, Light refines the memory management.
 
 Lists are used everywhere.
 
-@<list@:light@:C Module@/C module properties@=
+@<list@:light@:C Structure@/module properties@=
 name => 'list',
 @
 
 @[list.c@=
-@<list@:light@:C Module@/C module@>
+@<list@:light@:C Structure@/module@>
 @
 
 @[list.h@=
-@<list@:light@:C Module@/C module interface@>
+@<list@:light@:C Structure@/module interface@>
 @
 
-@<list@:light@:C Module@/includes@=
+@<list@:light@:C Structure@/includes@=
 #include "context.h"
 @
 
-@<list@:light@:C Module@/exported data type declarations@=
+@<list@:light@:C Structure@/exported data type declarations@=
 typedef struct list *List;
 @
 
-@<list@:light@:C Module@/data types@=
+@<list@:light@:C Structure@/data types@=
 struct list {
     struct list *rest;
     void *first;
@@ -426,7 +426,7 @@ struct list {
 @
 
 The API of list adopts the naming of lisp.
-@<list@:light@:C Module@/functions@=
+@<list@:light@:C Structure@/functions@=
 List cons(void *ele, List l)
 {
     List _l = NULL;
@@ -463,7 +463,7 @@ void free_list(List l)
 }
 @
 
-@<list@:light@:C Module@/functions@=
+@<list@:light@:C Structure@/functions@=
 size_t length(List l)
 {
     size_t len;
@@ -477,7 +477,7 @@ size_t length(List l)
 @
 
 A list can be easily used as a stack.
-@<list@:light@:C Module@/functions@=
+@<list@:light@:C Structure@/functions@=
 List push(void *elm, List *l_r)
 {
     return *l_r = cons(elm, *l_r);
@@ -495,7 +495,7 @@ void *pop(List *l_r)
 @
 
 Construct a list from other linear structures.
-@<list@:light@:C Module@/functions@=
+@<list@:light@:C Structure@/functions@=
 List list_from_arr(void *arr, size_t len, size_t size)
 {
     int i;
@@ -522,7 +522,7 @@ List copy_list(List l)
 
 Modify the underlying structure of list.
 
-@<list@:light@:C Module@/functions@=
+@<list@:light@:C Structure@/functions@=
 void reverse(List *l_r)
 {
     List l, ll;
@@ -567,7 +567,7 @@ List append(List *l1_r, List *l2_r)
 }
 @
 
-@<list@:light@:C Module@/exported macros@=
+@<list@:light@:C Structure@/exported macros@=
 #define empty_list VALUE(1)
 #define is_empty_list(l) ((l) == empty_list)
 #define _LIST(arr, len) list_from_arr((arr), len, sizeof((arr)[0]))
@@ -587,35 +587,35 @@ C does not support partial application through its native type system,
 but it's so convenient, so Light implement similar machanisms.
 The secret is to reorder arguments.
 
-@<function@:light@:C Module@/C module properties@=
+@<function@:light@:C Structure@/module properties@=
 name => 'function',
 @
 
 @[function.c@=
-@<function@:light@:C Module@/C module@>
+@<function@:light@:C Structure@/module@>
 @
 
 @[function.h@=
-@<function@:light@:C Module@/C module interface@>
+@<function@:light@:C Structure@/module interface@>
 @
 
-@<function@:light@:C Module@/includes@=
+@<function@:light@:C Structure@/includes@=
 #include "context.h"
 @
 
-@<function@:light@:C Module@/interface required includes@=
+@<function@:light@:C Structure@/interface required includes@=
 #include "list.h"
 @
 
-@<function@:light@:C Module@/exported data type declarations@=
+@<function@:light@:C Structure@/exported data type declarations@=
 typedef struct function *Function;
 @
 
-@<function@:light@:C Module@/data type declarations@=
-@<list@:light@:C Module@/exported data type declarations@>
+@<function@:light@:C Structure@/data type declarations@=
+@<list@:light@:C Structure@/exported data type declarations@>
 @
 
-@<function@:light@:C Module@/data types@=
+@<function@:light@:C Structure@/data types@=
 struct function {
     void *(*func)(void *);
     int argn;
@@ -624,7 +624,7 @@ struct function {
 };
 @
 
-@<function@:light@:C Module@/functions@=
+@<function@:light@:C Structure@/functions@=
 Function _new_function(void *(*f)(void *), int argn)
 {
     Function func;
@@ -688,7 +688,7 @@ void *invoke(Function func, List args)
 }
 @
 
-@<function@:light@:C Module@/exported macros@=
+@<function@:light@:C Structure@/exported macros@=
 #define DECLARE_FUNCTION(name, ...) \
     static void *_function_func_##name(void *); \
     struct _function_args_##name {__VA_ARGS__};
@@ -703,33 +703,33 @@ void *invoke(Function func, List args)
     _new_function(_function_func_##name, sizeof(struct _function_args_##name)/sizeof(void *))
 @
 
-@<higher@:light@:C Module@/C module properties@=
+@<higher@:light@:C Structure@/module properties@=
 name => 'higher',
 @
 
 @[higher.c@=
-@<higher@:light@:C Module@/C module@>
+@<higher@:light@:C Structure@/module@>
 @
 
 @[higher.h@=
-@<higher@:light@:C Module@/C module interface@>
+@<higher@:light@:C Structure@/module interface@>
 @
 
-@<higher@:light@:C Module@/includes@=
+@<higher@:light@:C Structure@/includes@=
 #include "context.h"
 @
 
-@<higher@:light@:C Module@/interface required includes@=
+@<higher@:light@:C Structure@/interface required includes@=
 #include "list.h"
 #include "function.h"
 @
 
-@<higher@:light@:C Module@/data type declarations@=
-@<list@:light@:C Module@/exported data type declarations@>
-@<function@:light@:C Module@/exported data type declarations@>
+@<higher@:light@:C Structure@/data type declarations@=
+@<list@:light@:C Structure@/exported data type declarations@>
+@<function@:light@:C Structure@/exported data type declarations@>
 @
 
-@<higher@:light@:C Module@/functions@=
+@<higher@:light@:C Structure@/functions@=
 List map(Function func, List l)
 {
     List _l = empty_list;
@@ -804,7 +804,7 @@ void *remove_first(Function jdg, List *l_r)
 
 Some useful generalized functions.
 
-@<higher@:light@:C Module@/exported static inline functions@=
+@<higher@:light@:C Structure@/exported static inline functions@=
 DECLARE_FUNCTION(pointer_equal, const void *p1; const void *p2;);
 DEFINE_FUNCTION(pointer_equal,
     bool res, *res_r;
@@ -817,38 +817,38 @@ DEFINE_FUNCTION(pointer_equal,
 Despite that Light prefers list, C uses array even more.
 Light extends classic C arrays with dynamic size changing.
 
-@<array@:light@:C Module@/C module properties@=
+@<array@:light@:C Structure@/module properties@=
 name => 'array',
 @
 
 @[array.c@=
-@<array@:light@:C Module@/C module@>
+@<array@:light@:C Structure@/module@>
 @
 
 @[array.h@=
-@<array@:light@:C Module@/C module interface@>
+@<array@:light@:C Structure@/module interface@>
 @
 
-@<array@:light@:C Module@/includes@=
+@<array@:light@:C Structure@/includes@=
 #include "context.h"
 @
 
-@<array@:light@:C Module@/data types@=
+@<array@:light@:C Structure@/data types@=
 struct array {
     void **elements;
     int size;
 };
 @
 
-@<array@:light@:C Module@/exported data type declarations@=
+@<array@:light@:C Structure@/exported data type declarations@=
 typedef struct array *Array;
 @
 
-@<array@:light@:C Module@/macros@=
+@<array@:light@:C Structure@/macros@=
 #define INITIAL_ARRAY_SIZE 64
 @
 
-@<array@:light@:C Module@/functions@=
+@<array@:light@:C Structure@/functions@=
 Array new_array()
 {
     Array arr;
@@ -885,7 +885,7 @@ nth(Array arr, int n)
 
 Deque can be implemented above array.
 
-@<array@:light@:C Module@/data types@=
+@<array@:light@:C Structure@/data types@=
 struct deque {
     Array array;
     int head;
@@ -894,11 +894,11 @@ struct deque {
 };
 @
 
-@<array@:light@:C Module@/exported data type declarations@=
+@<array@:light@:C Structure@/exported data type declarations@=
 typedef struct deque *Deque;
 @
 
-@<array@:light@:C Module@/static inline functions@=
+@<array@:light@:C Structure@/static inline functions@=
 static inline int
 next_slot_back(Deque q)
 {
@@ -936,7 +936,7 @@ is_full_deque(Deque q)
 }
 @
 
-@<array@:light@:C Module@/functions@=
+@<array@:light@:C Structure@/functions@=
 static void enlarge_deque(Deque q)
 {
     int ns = q->size << 1; /* new size */
@@ -1040,23 +1040,23 @@ void *last_value_of_deque(Deque q)
 Array of char is so important that Light reimplement most logic of array
 just for better optimization.
 
-@<str@:light@:C Module@/C module properties@=
+@<str@:light@:C Structure@/module properties@=
 name => "str",
 @
 
 @[str.c@=
-@<str@:light@:C Module@/C module@>
+@<str@:light@:C Structure@/module@>
 @
 
 @[str.h@=
-@<str@:light@:C Module@/C module interface@>
+@<str@:light@:C Structure@/module interface@>
 @
 
-@<str@:light@:C Module@/includes@=
+@<str@:light@:C Structure@/includes@=
 #include "context.h"
 @ 
 
-@<str@:light@:C Module@/data types@=
+@<str@:light@:C Structure@/data types@=
 struct str {
     char *raw_string;
     int len;
@@ -1064,15 +1064,15 @@ struct str {
 };
 @
 
-@<str@:light@:C Module@/exported data type declarations@=
+@<str@:light@:C Structure@/exported data type declarations@=
 typedef struct str *Str;
 @
 
-@<str@:light@:C Module@/macros@=
+@<str@:light@:C Structure@/macros@=
 #define INITIAL_MEM_SIZE 32
 @
 
-@<str@:light@:C Module@/functions@=
+@<str@:light@:C Structure@/functions@=
 Str new_str()
 {
     Str s;
@@ -1125,30 +1125,30 @@ void str_clean(Str str)
 }
 @
 
-@<hash@:light@:C Module@/C module properties@=
+@<hash@:light@:C Structure@/module properties@=
 name => "hash",
 @
 
 @[hash.c@=
-@<hash@:light@:C Module@/C module@>
+@<hash@:light@:C Structure@/module@>
 @
 
 @[hash.h@=
-@<hash@:light@:C Module@/C module interface@>
+@<hash@:light@:C Structure@/module interface@>
 @
 
-@<hash@:light@:C Module@/interface required includes@=
+@<hash@:light@:C Structure@/interface required includes@=
 #include <stdint.h>
 @
 
-@<hash@:light@:C Module@/includes@=
+@<hash@:light@:C Structure@/includes@=
 #include <string.h>
 @
 
 Light chooses FNV-1a as the default hash algorithm, the main usage is to calculate keys
 from a set of small values anyway.
 
-@<hash@:light@:C Module@/functions@=
+@<hash@:light@:C Structure@/functions@=
 uint32_t
 hash(const uint8_t *value, size_t len)
 {
@@ -1173,53 +1173,53 @@ hash_str(const char *str)
 There are many types of table, but they all share a common basic interface, key value pair.
 Light call such a pair a record.
 
-@<tablerecord@:light@:C Module@/C module properties@=
+@<tablerecord@:light@:C Structure@/module properties@=
 name => "tablerecord",
 @
 
 @[tablerecord.c@=
-@<tablerecord@:light@:C Module@/C module@>
+@<tablerecord@:light@:C Structure@/module@>
 @
 
 @[tablerecord.h@=
-@<tablerecord@:light@:C Module@/C module interface@>
+@<tablerecord@:light@:C Structure@/module interface@>
 @
 
-@<tablerecord@:light@:C Module@/exported data types@=
+@<tablerecord@:light@:C Structure@/exported data types@=
 struct table_record {
     const void *k;
     void *v;
 };
 @
 
-@<tablerecord@:light@:C Module@/exported data type declarations@=
+@<tablerecord@:light@:C Structure@/exported data type declarations@=
 typedef struct table_record *TableRecord;
 @
 
-@<hashtable@:light@:C Module@/C module properties@=
+@<hashtable@:light@:C Structure@/module properties@=
 name => "hashtable",
 @
 
 @[hashtable.c@=
-@<hashtable@:light@:C Module@/C module@>
+@<hashtable@:light@:C Structure@/module@>
 @
 
 @[hashtable.h@=
-@<hashtable@:light@:C Module@/C module interface@>
+@<hashtable@:light@:C Structure@/module interface@>
 @
 
-@<hashtable@:light@:C Module@/interface required includes@=
+@<hashtable@:light@:C Structure@/interface required includes@=
 #include "tablerecord.h"
 @
 
-@<hashtable@:light@:C Module@/includes@=
+@<hashtable@:light@:C Structure@/includes@=
 #include "context.h"
 #include "higher.h"
 #include "array.h"
 #include "hash.h"
 @
 
-@<hashtable@:light@:C Module@/data types@=
+@<hashtable@:light@:C Structure@/data types@=
 struct hash_table {
     Array table;
     size_t size;
@@ -1229,18 +1229,18 @@ struct hash_table {
 };
 @
 
-@<hashtable@:light@:C Module@/exported data type declarations@=
+@<hashtable@:light@:C Structure@/exported data type declarations@=
 typedef struct hash_table *HashTable;
 @
 
-@<hashtable@:light@:C Module@/data type declarations@=
-@<list@:light@:C Module@/exported data type declarations@>
-@<array@:light@:C Module@/exported data type declarations@>
-@<function@:light@:C Module@/exported data type declarations@>
-@<tablerecord@:light@:C Module@/exported data type declarations@>
+@<hashtable@:light@:C Structure@/data type declarations@=
+@<list@:light@:C Structure@/exported data type declarations@>
+@<array@:light@:C Structure@/exported data type declarations@>
+@<function@:light@:C Structure@/exported data type declarations@>
+@<tablerecord@:light@:C Structure@/exported data type declarations@>
 @
 
-@<hashtable@:light@:C Module@/static inline functions@=
+@<hashtable@:light@:C Structure@/static inline functions@=
 static inline List *
 record_list(HashTable tbl, const void *key)
 {
@@ -1252,7 +1252,7 @@ record_list(HashTable tbl, const void *key)
 }
 @
 
-@<hashtable@:light@:C Module@/functions@=
+@<hashtable@:light@:C Structure@/functions@=
 HashTable new_hash_table(size_t size, uint32_t hf(const void *), bool eq(const void *, const void *))
 {
     HashTable tbl;
@@ -1282,7 +1282,7 @@ void free_hash_table(HashTable tbl)
 }
 @
 
-@<hashtable@:light@:C Module@/function declarations@=
+@<hashtable@:light@:C Structure@/function declarations@=
 DECLARE_FUNCTION(hash_table_key_is_record, HashTable tbl; const void *key; TableRecord rcd;);
 DEFINE_FUNCTION(hash_table_key_is_record,
     bool res, *res_r;
@@ -1292,7 +1292,7 @@ DEFINE_FUNCTION(hash_table_key_is_record,
 )
 @
 
-@<hashtable@:light@:C Module@/functions@=
+@<hashtable@:light@:C Structure@/functions@=
 void put_to_hash_table(HashTable tbl, const void *key, void *v)
 {
     TableRecord rcd;
@@ -1372,7 +1372,7 @@ void *remove_from_hash_table(HashTable tbl, const void *key)
 }
 @
 
-@<hashtable@:light@:C Module@/functions@=
+@<hashtable@:light@:C Structure@/functions@=
 static uint32_t hash_func_str(const void *s)
 {
     return hash_str((const char *)s);
@@ -1393,36 +1393,36 @@ Sometimes we only want to reserve one copy of data, any following referencing
 to the same data can use that copy. Hash table is a natural choice for this purpose.
 A such copy is usually called an atom.
 
-@<atom@:light@:C Module@/C module properties@=
+@<atom@:light@:C Structure@/module properties@=
 name => "atom",
 @
 
 @[atom.c@=
-@<atom@:light@:C Module@/C module@>
+@<atom@:light@:C Structure@/module@>
 @
 
 @[atom.h@=
-@<atom@:light@:C Module@/C module interface@>
+@<atom@:light@:C Structure@/module interface@>
 @
 
-@<atom@:light@:C Module@/includes@=
+@<atom@:light@:C Structure@/includes@=
 #include "context.h"
 #include "hash.h"
 #include "hashtable.h"
 @
 
-@<atom@:light@:C Module@/data type declarations@=
-@<hashtable@:light@:C Module@/exported data type declarations@>
+@<atom@:light@:C Structure@/data type declarations@=
+@<hashtable@:light@:C Structure@/exported data type declarations@>
 @
 
-@<atom@:light@:C Module@/data types@=
+@<atom@:light@:C Structure@/data types@=
 struct atom {
     const uint8_t *block;
     size_t len;
 };
 @
 
-@<atom@:light@:C Module@/functions@=
+@<atom@:light@:C Structure@/functions@=
 static uint32_t hash_func_atom(const void *a)
 {
     struct atom *_a;
@@ -1444,23 +1444,23 @@ static bool equal_func_atom(const void *a1, const void *a2)
 Because of the introducing of context, the management of atoms should be treated carefully.
 Whether they should be global or localized under a context, Light choose the later way.
 
-@<atom@:light@:C Module@/macros@=
+@<atom@:light@:C Structure@/macros@=
 #ifndef ptr_to_atoms_size
 #define ptr_to_atoms_size (6)
 #endif
 @
 
-@<atom@:light@:C Module@/global variables@=
+@<atom@:light@:C Structure@/global variables@=
 static MAPPING_PTR(atoms);
 @
 
-@<atom@:light@:C Module@/macros@=
+@<atom@:light@:C Structure@/macros@=
 #ifndef ATOMS_DEFAULT_SIZE
 #define ATOMS_DEFAULT_SIZE (1<<10)
 #endif
 @
 
-@<atom@:light@:C Module@/functions@=
+@<atom@:light@:C Structure@/functions@=
 HashTable new_hash_table(size_t size, uint32_t hf(const void *), bool eq(const void *, const void *));
 
 void init_atoms(size_t size)
@@ -1523,28 +1523,28 @@ const char *atom_str(const char *str)
 }
 @
 
-@<state@:light@:C Module@/C module properties@=
+@<state@:light@:C Structure@/module properties@=
 name => "state",
 @
 
 @[state.c@=
-@<state@:light@:C Module@/C module@>
+@<state@:light@:C Structure@/module@>
 @
 
 @[state.h@=
-@<state@:light@:C Module@/C module interface@>
+@<state@:light@:C Structure@/module interface@>
 @
 
-@<state@:light@:C Module@/includes@=
+@<state@:light@:C Structure@/includes@=
 #include "context.h"
 #include "list.h"
 @
 
-@<state@:light@:C Module@/data type declarations@=
-@<list@:light@:C Module@/exported data type declarations@>
+@<state@:light@:C Structure@/data type declarations@=
+@<list@:light@:C Structure@/exported data type declarations@>
 @
 
-@<state@:light@:C Module@/data types@=
+@<state@:light@:C Structure@/data types@=
 struct state {
     State parent;
     StateType type;
@@ -1558,24 +1558,24 @@ struct state {
 };
 @
 
-@<state@:light@:C Module@/exported data types@=
+@<state@:light@:C Structure@/exported data types@=
 enum state_type {
     STATE_XOR,
     STATE_AND 
 };
 @
 
-@<state@:light@:C Module@/exported data type declarations@=
+@<state@:light@:C Structure@/exported data type declarations@=
 typedef void *Signal;
 typedef struct state *State;
 typedef enum state_type StateType;
 @
 
-@<state@:light@:C Module@/exported macros@=
+@<state@:light@:C Structure@/exported macros@=
 #define root_state NULL
 @
 
-@<state@:light@:C Module@/functions@=
+@<state@:light@:C Structure@/functions@=
 State new_state(State p, StateType t, State (*hd)(State, Signal))
 {
     State s;
@@ -1609,7 +1609,7 @@ state_register_out_func(State s, State (*out)(State, Signal))
 }
 @
 
-@<state@:light@:C Module@/functions@=
+@<state@:light@:C Structure@/functions@=
 static void into_state(State s, Signal sig)
 {
     if (s->in != NULL) {
@@ -1647,7 +1647,7 @@ static void out_state(State s, Signal sig)
 }
 @
 
-@<state@:light@:C Module@/functions@=
+@<state@:light@:C Structure@/functions@=
 void state_init(State s)
 {
     into_state(s, NULL);
@@ -1705,6 +1705,89 @@ bool state_is_active(State s)
     return true;
 }
 @
+
+The model of states:
+
+[
+    {
+        name => NAME_OF_STATE,
+        parent => PARENT_OF_STATE,
+    },
+    ...
+]
+
+@<C structs for state@=
+sub state_to_c_var {
+    "state_$_[0]->{name}"
+}
+
+sub state_to_handler {
+    state_to_c_var($_[0]) . "_handler"
+}
+
+sub state_to_in_func {
+    state_to_c_var($_[0]) . "_in"
+}
+
+sub state_to_out_func {
+    state_to_c_var($_[0]) . "_out"
+}
+
+sub state_to_dec (_) {
+    "State @@{[state_to_c_var($_[0])]};"
+}
+@
+
+@<declarations of states@=@<Text Processing@/basic perl settings@>
+@<C structs for state@>
+my $model = @<model of states@>;
+
+print join "\n", map state_to_dec, @@{$model};
+@|Basics@/evaluate@
+
+@<initialization of states@=@<Text Processing@/basic perl settings@>
+@<C structs for state@>
+my $model = @<model of states@>;
+my @model = @@{$model};
+my %states = ();
+
+for my $st (@model) {
+    $states{$st->{name}} = $st;
+}
+
+sub state_to_init (_) {
+    my($st, $s) = ($_[0], "");
+    $s .= "new_state(&@@{[state_to_c_var($st)]},";
+    if ($st->{parent}) {
+        $s .= " @@{[state_to_c_var($states{$st->{parent}})]},";
+    } else {
+        $s .= "root_state,";
+    }
+    $s .= " STATE_XOR,";
+    $s .= " @@{[state_to_handler($st)]});\n";
+    $s .= "state_register_in_func(@@{[state_to_c_var($st)]}, @@{[state_to_in_func($st)]});\n";
+    $s .= "state_register_out_func(@@{[state_to_c_var($st)]}, @@{[state_to_out_func($st)]});\n";
+    $s
+}
+
+my $str = join "\n", map state_to_init, @model;
+$str .= "\nstate_init(@@{[state_to_c_var($model[0])]});\n";
+print $str;
+@|Basics@/evaluate@
+
+@<cleaning of states@=@<Text Processing@/basic perl settings@>
+@<C structs for state@>
+my $model = @<model of states@>;
+my @model = @@{$model};
+
+sub state_to_free (_) {
+    "free_state(&@@{[state_to_c_var($_[0])]});";
+}
+
+my $str = "state_clear(@@{[state_to_c_var($model[0])]});\n";
+$str .= join "\n", map state_to_free, @model;
+print($str);
+@|Basics@/evaluate@
 
 @. lib/basic.la
 @. lib/text-processing.la

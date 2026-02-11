@@ -457,14 +457,59 @@ print $option_specs;
 
 @<command line options for "litarfs MOUNT_POINT"@=
 {
+    long_opt => "help",
+    opt => "h",
+    hide => 1,
+    description => "Show help",
+},
+{
+    long_opt => "version",
+    opt => "V",
+    hide => 1,
+    description => "Show version",
+},
+@
+
+@<litarfs@:Light@/main body@=
+struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+new_resource(&args, (void (*)(void *))fuse_opt_free_args);
+
+@<set default values for "user_options"@>
+
+if (fuse_opt_parse(&args, &user_options, litarfs_option_specs, NULL) < 0) {
+    fprintf(stderr, "Error when parsing arguments\n");
+    longjmp(exit_main, 1);
+}
+
+bool to_build_file_system = true;
+
+if (user_options.help) {
+    printf("@<litarfs@:C Structure@/command line usage@>");
+    fuse_opt_add_arg(&args, "--help");
+    to_build_file_system = false;
+}
+
+if (user_options.version) {
+    @<print version information@>
+    fuse_opt_add_arg(&args, "--version");
+    to_build_file_system = false;
+}
+
+if (to_build_file_system) {
+    @<build context for "fuse_main"@>
+    fuse_opt_add_arg(&args, "-s");
+} else {
+    args.argv[0][0] = '\0';
+}
+
+returned = fuse_main(args.argc, args.argv, &litarfs_oper, NULL);
+@
+
+@<command line options for "litarfs MOUNT_POINT"@=
+{
     long_opt => "archive",
     argument => "ARCHIVE",
     description => "Specify the litar archive",
-},
-{
-    long_opt => "help",
-    opt => "h",
-    description => "Show help",
 },
 @
 
@@ -472,27 +517,11 @@ print $option_specs;
 user_options.archive = strdup("archive.la");
 @
 
-@<litarfs@:Light@/main body@=
-struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-@<set default values for "user_options"@>
-if (fuse_opt_parse(&args, &user_options, litarfs_option_specs, NULL) < 0) {
-    fprintf(stderr, "Error when parsing arguments\n");
-    longjmp(exit_main, 1);
-}
-
-if (user_options.help) {
-    printf("@<litarfs@:C Structure@/command line usage@>");
-    int n = fuse_opt_add_arg(&args, "--help");
-    assert(n == 0);
-    args.argv[0][0] = '\0';
-}
-
-returned = fuse_main(args.argc, args.argv, &litarfs_oper, NULL);
-fuse_opt_free_args(&args);
-@
-
 @<litarfs operations@=
 LITARFS_OPER(init),
+@
+
+@<build context for "fuse_main"@=
 @
 
 @<litarfs@:light@:C Structure@/functions@=
@@ -2964,15 +2993,15 @@ char version[] = "dev";
 
 @<operations before parsing@=
 if (to_print_version_info) {
-    @<print version information@|fill in build time information@>
+    @<print version information@>
     to_continue = false;
     break;
 }
 @
 
 @<print version information@=
-printf("Version %s, built at <build time>\n", version);
-@
+printf("Version dev, built at <build time>\n");
+@|fill in build time information@
 
 @<command line options for "litar ARCHIVE"@=
 {

@@ -346,54 +346,178 @@ The following is also legal.
 
 @
 
-@[README.md@=
-# Introduction
+The complete implementation of litar is divided to two parts, front end and back end.
+The front end follows the common pattern of a command line tool.
+It parses options and arguments, executes, then exits.
+The back end is a server that makes use of libfuse3.
 
-@<introduction of litar@>
-
-# Reference
-
-@<reference of syntax@>
-
-# Install
-
-Make sure that libfuse3 is installed.
-
-In Debian, run:
-
-```
-# apt install libfuse3-dev pkg-config libtext-template-perl
-```
-
-If there's a version of litar installed, run:
-
-```
-$ litar -m "Basics" -p "install prerequisites" litar.la | sh
-```
-
-Compile:
-
-```
-$ make
-```
-
-Test:
-
-```
-$ make hello
-$ ./hello
-```
-
-Install:
-
-```
-# make install
-```
+@[litar.c@=
+@<litar@:light@:C Structure@/executable@>
 @
 
-# Invocation
+@[litarfs.c@=
+@<litarfs@:light@:C Structure@/executable@>
+@
 
-@<invocation syntax@=
+They communicate through a socket or the mounted file system.
+Other programs can communicate with the back end too by these two methods.
+
+The back end adopts the framework provided by libfuse3.
+
+@<litarfs@:light@:C Structure@/include flags@=
+#define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 14)
+@
+
+@<litarfs@:light@:C Structure@/includes@=
+#include <fuse.h>
+@
+
+@<litarfs@:light@:C Structure@/data types@=
+struct litarfs_options {
+    @<litarfs user options@>
+};
+@
+
+@<litarfs@:light@:C Structure@/global variables@=
+static struct litarfs_options user_options;
+static struct fuse_opt litarfs_option_specs[] = {
+    @<litarfs user option specs@>
+};
+static const struct fuse_operations litarfs_oper = {
+    @<litarfs operations@>
+};
+@
+
+@<litarfs@:light@:C Structure@/macros@=
+#define LITARFS_OPER(op) .op = litarfs_##op
+@
+
+@<litarfs@:C Structure@/invocation syntax@=
+{
+    name => 'litarfs',
+    usages => [
+        {
+            options => [@<command line options for "litarfs MOUNT_POINT"@>],
+            arguments => ['MOUNT_POINT'],
+        },
+    ],
+}
+@
+
+@<litarfs user options@=@<Text Processing@/basic perl settings@>
+
+my $syntax = @<litarfs@:C Structure@/invocation syntax@>;
+
+sub option_to_c_decl (_) {
+    my $opt = shift;
+    my $c_decl = '';
+    if ($opt->{argument}) {
+        $c_decl .= 'const char *';
+    } else {
+        $c_decl .= 'int ';
+    }
+    $c_decl . lc($opt->{long_opt}) . ';'
+}
+
+my @usages = @@{$syntax->{usages}};
+my $options_decl = join "\n", map option_to_c_decl, @@{$usages[0]->{options}};
+print $options_decl;
+
+@|Basics@/evaluate@
+
+@<litarfs user option specs@=@<Text Processing@/basic perl settings@>
+
+my $syntax = @<litarfs@:C Structure@/invocation syntax@>;
+
+sub option_to_opt_spec (_) {
+    my $opt = shift;
+    my $opt_spec = '';
+    my $p_arg = '';
+    if ($opt->{argument}) {
+        $p_arg = '=%s';
+    }
+    $opt_spec .=
+        "{\"--$opt->{long_opt}$p_arg\", offsetof(struct litarfs_options, $opt->{long_opt}), 1},";
+
+    if ($opt->{argument}) {
+        $p_arg = ' %s';
+    }
+    if ($opt->{opt}) {
+	$opt_spec .=
+	    "\n{\"-$opt->{opt}$p_arg\", offsetof(struct litarfs_options, $opt->{long_opt}), 1},";
+    }
+    $opt_spec
+}
+
+my @usages = @@{$syntax->{usages}};
+my $option_specs = join "\n", map option_to_opt_spec, @@{$usages[0]->{options}};
+print $option_specs;
+
+@|Basics@/evaluate@
+
+@<command line options for "litarfs MOUNT_POINT"@=
+{
+    long_opt => "archive",
+    argument => "ARCHIVE",
+    description => "Specify the litar archive",
+},
+{
+    long_opt => "help",
+    opt => "h",
+    description => "Show help",
+},
+@
+
+@<set default values for "user_options"@=
+user_options.archive = strdup("archive.la");
+@
+
+@<litarfs@:Light@/main body@=
+struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+@<set default values for "user_options"@>
+if (fuse_opt_parse(&args, &user_options, litarfs_option_specs, NULL) < 0) {
+    fprintf(stderr, "Error when parsing arguments\n");
+    longjmp(exit_main, 1);
+}
+
+if (user_options.help) {
+    printf("@<litarfs@:C Structure@/command line usage@>");
+    int n = fuse_opt_add_arg(&args, "--help");
+    assert(n == 0);
+    args.argv[0][0] = '\0';
+}
+
+returned = fuse_main(args.argc, args.argv, &litarfs_oper, NULL);
+fuse_opt_free_args(&args);
+@
+
+@<litarfs operations@=
+LITARFS_OPER(init),
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static void *
+litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
+{
+    (void) conn;
+    (void) cfg;
+}
+@
+
+@<litarfs@:light@:C Structure@/function declarations@=
+static void *litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg);
+@
+
+@<context@:light@:C Structure@/include flags@=
+#define NDEBUG
+@
+
+@<litarfs@:light@:C Structure@/includes@=
+#include <stdio.h>
+#include "context.h"
+@
+
+@<litar@:C Structure@/invocation syntax@=
 {
     name => 'litar',
     usages => [
@@ -414,47 +538,13 @@ Install:
 .SH NAME
 litar \- manage all text in one file
 .SH SYNOPSIS
-@<manpage synopsis@>
+@<litar@:C Structure@/manpage synopsis@>
 .SH DESCRIPTION
 .B litar
 deal with a litar archive. It provides all necessary functionalities
 expected from the using of a litar archive.
 .SH OPTIONS
-@<manpage options@>
-@
-
-# Implementation
-
-The complete implementation of litar is divided to two parts, front end and back end.
-The front end follows the common pattern of a command line tool.
-It parses options and arguments, executes, then exits.
-The back end is a server that makes use of libfuse3.
-
-@[litarfs.c@=
-@<litar@:C Structure@/module@>
-
-static struct litarfs_options {
-    const char *archive_name;
-} user_options;
-static struct fuse_opt litarfs_option_specs[] = {
-    {"--archive=%s", offsetof(struct litarfs_options, archive_name), 0},
-};
-
-int main(int argc, char *argv[]) {
-    @<initializations of global variables@>
-    struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-    user_options.archive_name = strdup("litar.la");
-    if (fuse_opt_parse(&args, &user_options, litarfs_option_specs, NULL) < 0) {
-        fprintf(stderr, "Error when parsing arguments\n");
-    }
-    archive_name = (void *)user_options.archive_name;
-    @<parse input@>
-    return fuse_main(args.argc, args.argv, &litar_fuse_oper, NULL);
-}
-@
-
-@[litar.c@=
-@<litar@:C Structure@/executable@>
+@<litar@:C Structure@/manpage options@>
 @
 
 @<litar@:C Structure@/global variables@=
@@ -3207,273 +3297,49 @@ echo "} while (0);"
 sed -e "s/<build time>/$(date -Iminute)/g"
 @
 
-# Command Line Interface
+@[README.md@=
+# Introduction
 
-The syntax:
+@<introduction of litar@>
 
-{
-    name => COMMAND_NAME,
-    usages => [
-        {
-            options => [
-                {
-                    long_opt => LONG_OPTION,
-                    opt => SHORT_OPTION (optional),
-                    argument => OPTION_ARGUMENT (optional),
-                    hide => HIDE_OR_NOT (optional)
-                    description => DESCRIPTION,
-                },
-                ...
-            ],
-            arguments => [
-                ARGUMENT,
-                ...
-            ],
-        },
-        ...
-    ],
-}
+# Reference
 
-@<command line usage@=@<Text Processing@/basic perl settings@>
-my $syntax = @<invocation syntax@>;
+@<reference of syntax@>
 
-sub option_to_str (_) {
-    my $opt = shift;
-    my $str = '';
-    if ($opt->{opt}) {
-        $str .= "-$opt->{opt}";
-    } else {
-        $str .= "--$opt->{long_opt}";
-    }
-    if ($opt->{argument}) {
-        $str .= " $opt->{argument}";
-    }
-    $str
-}
+# Install
 
-sub usage_to_str (_) {
-    my $usage = shift;
-    my $str = $syntax->{name};
+Make sure that libfuse3 is installed.
 
-    $str .= ' ';
-    $str .= '[' . (join '|', map option_to_str, grep {!$_->{hide}} @@{$usage->{options}}) . ']';
-    $str .= ' ';
-    $str .= join ' ', @@{$usage->{arguments}};
-    
-    $str
-}
+In Debian, run:
 
-my @usages = map usage_to_str, @@{$syntax->{usages}};
-my $usages_str = '';
+```
+# apt install libfuse3-dev pkg-config libtext-template-perl
+```
 
-$usages_str .= 'Usage:\t' . (shift @usages);
-while (@usages) {
-    $usages_str .= '\n\t' . (shift @usages);
-}
-$usages_str .= '\n';
+If there's a version of litar installed, run:
 
-print $usages_str;
-@|Basics@/evaluate@
+```
+$ litar -m "Basics" -p "install prerequisites" litar.la | sh
+```
 
-@<getopt string@=@<Text Processing@/basic perl settings@>
-my $syntax = @<invocation syntax@>;
+Compile:
 
-sub option_to_str (_) {
-    my $opt = shift;
-    my $str = '';
-    if ($opt->{opt}) {
-        $str = $opt->{opt};
-        if ($opt->{argument}) {
-            $str .= ':';
-        }
-    }
-    $str
-}
+```
+$ make
+```
 
-my @options = ();
-for my $usage (@@{$syntax->{usages}}) {
-    @options = (@options, @@{$usage->{options}});
-}
+Test:
 
-print (join "", map option_to_str, @options);
-@|Basics@/evaluate@
+```
+$ make hello
+$ ./hello
+```
 
-@<long options@=@<Text Processing@/basic perl settings@>
-my $syntax = @<invocation syntax@>;
+Install:
 
-my $count = 256;
-
-sub option_to_longopt (_) {
-    my $opt = shift;
-    my $str = '{';
-    if ($opt->{long_opt}) {
-        $str .= '"' . $opt->{long_opt} . '"';
-        if ($opt->{argument}) {
-            $str .= ',required_argument';
-        } else {
-            $str .= ',no_argument';
-        }
-        $str .= ',NULL';
-        if ($opt->{opt}) {
-            $str .= ",'@@{[$opt->{opt}]}'";
-        } else {
-            $str .= ",0";
-        }
-    }
-    $str .= "},"
-}
-
-my @options = ();
-for my $usage (@@{$syntax->{usages}}) {
-    @options = (@options, @@{$usage->{options}});
-}
-
-print (join "", map option_to_longopt, @options);
-@|Basics@/evaluate@
-
-@<manpage synopsis@=@<Text Processing@/basic perl settings@>
-my $syntax = @<invocation syntax@>;
-
-sub option_to_str (_) {
-    my $opt = shift;
-    my $str = '';
-    if ($opt->{opt}) {
-        $str .= '\fB\-' . $opt->{opt} . '\fR';
-    } else {
-        $str .= '\fB\-\-' . $opt->{long_opt} . '\fR';
-    }
-    if ($opt->{argument}) {
-        $str .= ' \fI' . $opt->{argument} . '\fR';
-    }
-    $str
-}
-
-sub usage_to_str (_) {
-    my $usage = shift;
-    my $str = ".B $syntax->{name}";
-
-    $str .= "\n";
-    $str .= '[' . (join '|', map option_to_str, grep {!$_->{hide}} @@{$usage->{options}}) . ']';
-    $str .= "\n";
-    $str .= "@@{[map {'\fI' . $_ . '\fR'} @@{$usage->{arguments}}]}";
-    $str .= "\n";
-    
-    $str
-}
-
-my @usages = map usage_to_str, @@{$syntax->{usages}};
-print join "\n", @usages;
-@|Basics@/evaluate@
-
-@<manpage options@=@<Text Processing@/basic perl settings@>
-my $syntax = @<invocation syntax@>;
-
-my $options = '';
-for my $usage (@@{$syntax->{usages}}) {
-    for my $option (@@{$usage->{options}}) {
-        $options .= ".TP\n";
-        if ($option->{opt}) {
-            $options .= '.BR \-' . $option->{opt} . ', " " ';
-        }
-        $options .= '\-\-' . $option->{long_opt};
-        if ($option->{argument}) {
-            $options .= ' " " \fI' . $option->{argument} . '\fR' . "\n";
-        } else {
-            $options .= "\n";
-        }
-        $options .= $option->{description} . "\n";
-    }
-}
-
-print $options;
-@|Basics@/evaluate@
-
-# State Machine
-
-The model of states:
-
-[
-    {
-        name => NAME_OF_STATE,
-        parent => PARENT_OF_STATE,
-    },
-    ...
-]
-
-@<C structs for state@=
-sub state_to_c_var {
-    "state_$_[0]->{name}"
-}
-
-sub state_to_handler {
-    state_to_c_var($_[0]) . "_handler"
-}
-
-sub state_to_in_func {
-    state_to_c_var($_[0]) . "_in"
-}
-
-sub state_to_out_func {
-    state_to_c_var($_[0]) . "_out"
-}
-
-sub state_to_dec (_) {
-    "State @@{[state_to_c_var($_[0])]};"
-}
+```
+# make install
+```
 @
 
-@<declarations of states@=@<Text Processing@/basic perl settings@>
-@<C structs for state@>
-my $model = @<model of states@>;
-
-print join "\n", map state_to_dec, @@{$model};
-@|Basics@/evaluate@
-
-@<initialization of states@=@<Text Processing@/basic perl settings@>
-@<C structs for state@>
-my $model = @<model of states@>;
-my @model = @@{$model};
-my %states = ();
-
-for my $st (@model) {
-    $states{$st->{name}} = $st;
-}
-
-sub state_to_init (_) {
-    my($st, $s) = ($_[0], "");
-    $s .= "new_state(&@@{[state_to_c_var($st)]},";
-    if ($st->{parent}) {
-        $s .= " @@{[state_to_c_var($states{$st->{parent}})]},";
-    } else {
-        $s .= "root_state,";
-    }
-    $s .= " STATE_XOR,";
-    $s .= " @@{[state_to_handler($st)]});\n";
-    $s .= "state_register_in_func(@@{[state_to_c_var($st)]}, @@{[state_to_in_func($st)]});\n";
-    $s .= "state_register_out_func(@@{[state_to_c_var($st)]}, @@{[state_to_out_func($st)]});\n";
-    $s
-}
-
-my $str = join "\n", map state_to_init, @model;
-$str .= "\nstate_init(@@{[state_to_c_var($model[0])]});\n";
-print $str;
-@|Basics@/evaluate@
-
-@<cleaning of states@=@<Text Processing@/basic perl settings@>
-@<C structs for state@>
-my $model = @<model of states@>;
-my @model = @@{$model};
-
-sub state_to_free (_) {
-    "free_state(&@@{[state_to_c_var($_[0])]});";
-}
-
-my $str = "state_clear(@@{[state_to_c_var($model[0])]});\n";
-$str .= join "\n", map state_to_free, @model;
-print($str);
-@|Basics@/evaluate@
-
-@. lib/basic.la
-@. lib/text-processing.la
-@. lib/c-structure.la
-
+@. lib/light.la

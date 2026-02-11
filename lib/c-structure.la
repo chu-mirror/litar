@@ -248,9 +248,9 @@ WhitespaceSensitiveMacros:
 int
 main(int argc, char *argv[])
 {
-    int returned_value;
+    int returned = 0;
     @<main body@>
-    return returned_value;
+    return returned;
 }
 @|format C code@
 

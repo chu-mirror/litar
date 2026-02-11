@@ -1,7 +1,7 @@
 PREFIX=/usr/local
 EXEC=litar
 
-CFLAGS=-g -Ilight/include `pkg-config fuse3 --cflags --libs`
+CFLAGS=-g `pkg-config fuse3 --cflags --libs`
 LIBS=`pkg-config fuse3 --libs`
 
 LIGHT_HEADER=context.h list.h function.h higher.h \
@@ -28,13 +28,13 @@ litar.1: litar
 	./litar -p $@ litar.la > $@
 
 boot: boot.c
-	$(CC) $(CFLAGS) -o $@ $< `./light/finddeff.py $< ./light/include` $(LIBS)
+	$(CC) $(CFLAGS) -Ilight/include -o $@ $< `./light/finddeff.py $< ./light/include` $(LIBS)
 
-litar: litar.c
-	$(CC) $(CFLAGS) -o $@ $< `./light/finddeff.py $< ./light/include` $(LIBS)
+litar: litar.c $(LIGHT_SOURCE) $(LIGHT_HEADER)
+	$(CC) $(CFLAGS) -o $@ $< $(LIGHT_SOURCE) $(LIBS)
 
-litarfs: litarfs.c
-	$(CC) $(CFLAGS) -o $@ $< `./light/finddeff.py $< ./light/include` $(LIBS)
+litarfs: litarfs.c $(LIGHT_SOURCE) $(LIGHT_HEADER)
+	$(CC) $(CFLAGS) -o $@ $< $(LIGHT_SOURCE) $(LIBS)
 
 release: litar
 	./litar -p "README.md" litar.la > README.md
@@ -45,8 +45,8 @@ hello: examples/hello.la litar
 	./litar -p "main.c" examples/hello.la > main.c
 	gcc -o hello main.c hello.c
 
-$(LIGHT_HEADER) $(LIGHT_SOURCE): lib/light.la litar
-	./litar -m Light -p $@ lib/light.la > $@
+$(LIGHT_HEADER) $(LIGHT_SOURCE): lib/light.la boot
+	./boot -m Light -p $@ litar.la > $@
 
 show.c: examples/show-light.la $(LIGHT_HEADER)
 	./litar -p "show.c" examples/show-light.la > show.c

@@ -345,6 +345,17 @@ the current context or not.
     } while (0)
 @
 
+@<light@:C Structure@/includes@=
+#include <setjmp.h>
+@
+
+@<context@:light@:C Structure@/global variables@=
+jmp_buf exit_main;
+@
+@<context@:light@:C Structure@/global declarations@=
+extern jmp_buf exit_main;
+@
+
 @<light@:C Structure@/main body@=
 Context ctx;
 ctx = malloc(sizeof(*ctx));
@@ -353,7 +364,15 @@ ctx->active_child = NULL;
 ctx->sibling = NULL;
 ctx->resources = NULL;
 _light_top_context = ctx;
-UNDER(UNDER(@<main body@>));
+UNDER(UNDER(
+    @<initializations of main context@>
+    int ext_n;
+    if ((ext_n = setjmp(exit_main)) == 0) {
+	@<main body@>
+    } else {
+        returned = ext_n;
+    }
+));
 free(ctx);
 @
 

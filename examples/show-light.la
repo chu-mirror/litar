@@ -37,14 +37,14 @@ UNDER(
     jmp_buf jump_buffer;
     if (setjmp(jump_buffer) == 0) {
         UNDER(
-	    int *n;
-	    NEW(n);
-	    ESCAPE(
-	        UNDER(
-		    longjmp(jump_buffer, 1);
-		);
-	    );
-	);
+            int *n;
+            NEW(n);
+            ESCAPE(
+                UNDER(
+                    longjmp(jump_buffer, 1);
+                );
+            );
+        );
     }
     printf("Passed setjmp\n");
 );
@@ -80,13 +80,13 @@ UNDER( /* test |reverse| */
     reverse(&l1);
 
     do {
-	int i, *np;
+        int i, *np;
 
-	i = 0;
-	FOREACH (np, l1) {
-	    assert(*np == 6 - i);
-	    ++i;
-	}
+        i = 0;
+        FOREACH (np, l1) {
+            assert(*np == 6 - i);
+            ++i;
+        }
     } while (0);
     printf("Passed reverse\n");
 );
@@ -102,13 +102,13 @@ UNDER( /* test |append| */
     assert(length(l3) == 6);
 
     do { /* ensure that |l3| has correct elements */
-	int i, *np;
+        int i, *np;
 
-	i = 1;
-	FOREACH (np, l3) {
-	    assert(*np == i);
-	    ++i;
-	}
+        i = 1;
+        FOREACH (np, l3) {
+            assert(*np == i);
+            ++i;
+        }
     } while (0);
     printf("Passed reverse\n");
 );
@@ -121,8 +121,8 @@ UNDER( /* test |copy_list| */
     List _l2 = l2;
     int *elm;
     FOREACH (elm, l1) {
-	assert(elm == car(_l2));
-	_l2 = cdr(_l2);
+        assert(elm == car(_l2));
+        _l2 = cdr(_l2);
     }
     printf("Passed copy_list\n");
 );
@@ -177,11 +177,11 @@ UNDER( /* test |map| */
     i = 1;
     FOREACH (np, l2) {
         if (i > 3) {
-	    assert(*np);
-	} else {
-	    assert(!*np);
-	}
-	++i;
+            assert(*np);
+        } else {
+            assert(!*np);
+        }
+        ++i;
     }
     printf("Passed map\n");
 );
@@ -218,7 +218,7 @@ UNDER( /* test |filter| */
     i = 4;
     FOREACH (np, l2) {
         assert(i == *np);
-	++i;
+        ++i;
     }
     printf("Passed filter\n");
 );
@@ -241,8 +241,8 @@ UNDER( /* test |remove_first| */
     i = 1;
     FOREACH (np, l1) {
         assert(i == *np);
-	++i;
-	if (i == 4) ++i;
+        ++i;
+        if (i == 4) ++i;
     }
     printf("Passed remove_first\n");
 );
@@ -266,7 +266,7 @@ UNDER(
     assert(*nth(arr, 2000) == VALUE(2));
 
     for (int i = 2; i < 2000; ++i) {
-	assert(*nth(arr, i) == VALUE(0));
+        assert(*nth(arr, i) == VALUE(0));
     }
     printf("Passed array\n");
 );
@@ -288,18 +288,18 @@ UNDER(
 
     int i;
     for (i = 0; i < 100; ++i) {
-	push_back(q, VALUE(i));
+        push_back(q, VALUE(i));
     }
     for (i = 0; i < 100; ++i) {
-	push_front(q, VALUE(i));
+        push_front(q, VALUE(i));
     }
     for (i = 0; i < 100; ++i) {
-	elm = pop_front(q);
-	assert(elm == VALUE(99 - i));
+        elm = pop_front(q);
+        assert(elm == VALUE(99 - i));
     }
     for (i = 0; i < 100; ++i) {
-	elm = pop_front(q);
-	assert(elm == VALUE(i));
+        elm = pop_front(q);
+        assert(elm == VALUE(i));
     }
     assert(is_empty_deque(q));
     printf("Passed deque\n");
@@ -308,17 +308,17 @@ UNDER(
 UNDER(
     Str str = new_str();
     for (int i = 0; i < 10; ++i) {
-	static char num[2];
-	num[0] = '0';
-	num[0] += i;
-	str_extend(str, num);
+        static char num[2];
+        num[0] = '0';
+        num[0] += i;
+        str_extend(str, num);
     }
     assert(strcmp(raw_string(str), "0123456789") == 0);
     assert(str_length(str) == 10);
 
     str = new_str();
     for (int i = 0; i < 10; ++i) {
-	str_extend(str, "Hello");
+        str_extend(str, "Hello");
     }
     assert(str_length(str) == 10 * strlen("Hello"));
     printf("Passed str\n");
@@ -332,12 +332,12 @@ UNDER(
     put_to_hash_table(tbl, "Mzz", "Welcome");
     assert(strcmp((char *)get_from_hash_table(tbl, "Chu"), "Hello") == 0);
     assert(
-	strcmp((char *)get_from_hash_table(tbl, "Mzz"), "Welcome") == 0
+        strcmp((char *)get_from_hash_table(tbl, "Mzz"), "Welcome") == 0
     );
 
     put_to_hash_table(tbl, "Chu", "Welcome");
     assert(
-	strcmp((char *)get_from_hash_table(tbl, "Chu"), "Welcome") == 0
+        strcmp((char *)get_from_hash_table(tbl, "Chu"), "Welcome") == 0
     );
 
     remove_from_hash_table(tbl, "Chu");

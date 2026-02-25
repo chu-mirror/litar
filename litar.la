@@ -443,8 +443,8 @@ sub option_to_opt_spec (_) {
         $p_arg = ' %s';
     }
     if ($opt->{opt}) {
-	$opt_spec .=
-	    "\n{\"-$opt->{opt}$p_arg\", offsetof(struct litarfs_options, $opt->{long_opt}), 1},";
+        $opt_spec .=
+            "\n{\"-$opt->{opt}$p_arg\", offsetof(struct litarfs_options, $opt->{long_opt}), 1},";
     }
     $opt_spec
 }
@@ -1179,10 +1179,10 @@ there_is_module(Module mod)
     Node nd;
     RESERVE(
         NEW0(nd);
-	nd->type = NODE_DIRECTORY;
-	nd->name = mod->name;
-	nd->value.nodes = empty_list;
-	push(nd, &root_node->value.nodes);
+        nd->type = NODE_DIRECTORY;
+        nd->name = mod->name;
+        nd->value.nodes = empty_list;
+        push(nd, &root_node->value.nodes);
     );
 }
 
@@ -1650,11 +1650,11 @@ do {
     print_memgr_count("start parsing");
     do {
         char path[PATH_MAX+1];
-	char *ptr = realpath(archive_name, path);
-	if (path == NULL) {
-	    perror("realpath");
-	    exit(1);
-	}
+        char *ptr = realpath(archive_name, path);
+        if (path == NULL) {
+            perror("realpath");
+            exit(1);
+        }
         InputFrame ipt = NULL;
         NEW0(ipt);
         ipt->file = atom_str(path);
@@ -2495,7 +2495,7 @@ static State state_escape_argument_handler(State s, Signal sig)
     Token tkn;
     RENAME(sig, tkn);
     if (extract_name(s, tkn)) {
-	return s;
+        return s;
     }
     return NULL;
 }
@@ -2557,8 +2557,8 @@ if (lc_r->esc == '.') {
     char path[PATH_MAX+1];
     char *ptr = realpath(normalize(lc_r->argument), path);
     if (path == NULL) {
-	perror("realpath");
-	exit(1);
+        perror("realpath");
+        exit(1);
     }
     InputFrame ipt = NULL;
     NEW0(ipt);
@@ -2629,9 +2629,9 @@ RESERVE(do {
     char *archive_file_name = archive_name, *cp = archive_name;
     while (*cp) {
         if (*cp == '/') {
-	    archive_file_name = cp+1;
-	}
-	++cp;
+            archive_file_name = cp+1;
+        }
+        ++cp;
     }
     CALLOC(archive_data, strlen(litar_data)+strlen(archive_file_name)+2);
     strcat(archive_data, litar_data);

@@ -98,12 +98,12 @@ _mapping_find_entry(struct _hash_table_ptr_entry **mapping, size_t size, void *k
     ent = mapping[h];
     while (ent && ent->ptr != k) {
         ent_ = ent;
-	ent = ent->next;
+        ent = ent->next;
     }
     if (ent && ent_) { /* move the found entry to top of chain */
         ent_->next = ent;
-	ent->next = mapping[h];
-	mapping[h] = ent;
+        ent->next = mapping[h];
+        mapping[h] = ent;
     }
     return &mapping[h];
 }
@@ -116,10 +116,10 @@ static inline void _map_ptr_to(struct _hash_table_ptr_entry **mapping, size_t si
         (*ent_r)->val = v;
     } else {
         ent = malloc(sizeof(*ent));
-	ent->next = *ent_r;
-	ent->ptr = k;
-	ent->val = v;
-	*ent_r = ent;
+        ent->next = *ent_r;
+        ent->ptr = k;
+        ent->val = v;
+        *ent_r = ent;
     }
 }
 
@@ -129,8 +129,8 @@ static inline void _unmap_ptr(struct _hash_table_ptr_entry **mapping, size_t siz
     ent_r = _mapping_find_entry(mapping, size, k);
     if (*ent_r && (*ent_r)->ptr == k) {
         ent = *ent_r;
-	*ent_r = ent->next;
-	free(ent);
+        *ent_r = ent->next;
+        free(ent);
     }
 }
 
@@ -248,7 +248,7 @@ void new_resource(void *id, void (*cl)(void *)) {
     nd->next = _light_top_context->resources;
     nd->previous = NULL;
     if (nd->next) {
-	nd->next->previous = nd;
+        nd->next->previous = nd;
     }
 
     _light_top_context->resources = nd;
@@ -298,13 +298,13 @@ static void _exit_context(Context ctx) {
 
     struct resource_node *nd, *nd_;
     for (nd_ = NULL, nd = ctx->resources; nd != NULL; nd_ = nd, nd = nd->next, free(nd_)) {
-	Resource res = nd->resource;
+        Resource res = nd->resource;
 #ifndef NDEBUG
-	fprintf(stderr, "Free resource: %p, under: %p\n", res->identity, _light_top_context);
+        fprintf(stderr, "Free resource: %p, under: %p\n", res->identity, _light_top_context);
 #endif
-	res->clean(res->identity);
-	unmap_ptr(resource_node, res->identity);
-	free(res);
+        res->clean(res->identity);
+        unmap_ptr(resource_node, res->identity);
+        free(res);
     }
 
     ctx->parent->active_child = ctx->sibling;
@@ -328,20 +328,20 @@ the current context or not.
 #define UNDER(...) \
     do { \
         enter_context(); \
-	Context _block_top_context = _light_top_context; \
-	__VA_ARGS__; \
-	GO_BACK(); \
-	exit_context(); \
+        Context _block_top_context = _light_top_context; \
+        __VA_ARGS__; \
+        GO_BACK(); \
+        exit_context(); \
     } while (0)
 
 #define GO_BACK() do { while (_block_top_context != _light_top_context) exit_context(); } while (0)
 
 #define ESCAPE(...) \
     do { \
-	Context __temp_context = _light_top_context; \
-	_light_top_context = _light_top_context->parent; \
-	__VA_ARGS__; \
-	_light_top_context = __temp_context; \
+        Context __temp_context = _light_top_context; \
+        _light_top_context = _light_top_context->parent; \
+        __VA_ARGS__; \
+        _light_top_context = __temp_context; \
     } while (0)
 @
 
@@ -368,7 +368,7 @@ UNDER(UNDER(
     @<initializations of main context@>
     int ext_n;
     if ((ext_n = setjmp(exit_main)) == 0) {
-	@<main body@>
+        @<main body@>
     } else {
         returned = ext_n;
     }
@@ -394,9 +394,9 @@ Based on the context defined, Light refines the memory management.
 #define REALLOC_ARRAY(p, len) \
     do { \
         typeof(p) *p_r = &(p); \
-	void *p_ = *p_r; \
-	(*p_r) = (typeof(p))reallocarray(*p_r, sizeof *(p), (len)); \
-	rename_resource(p_, *p_r); \
+        void *p_ = *p_r; \
+        (*p_r) = (typeof(p))reallocarray(*p_r, sizeof *(p), (len)); \
+        rename_resource(p_, *p_r); \
     } while (0)
 #define MOVE(src, dest) \
     do { \
@@ -476,8 +476,8 @@ void free_list(List l)
 {
     while (l) {
         List _l = l->rest;
-	FREE(l);
-	l = _l;
+        FREE(l);
+        l = _l;
     }
 }
 @
@@ -594,7 +594,7 @@ List append(List *l1_r, List *l2_r)
 #define FOREACH(elm, l)                                           \
     for (List __light_list_l = (l);                               \
          !is_empty_list(__light_list_l)                           \
-	 && (((elm) = (typeof(elm))car(__light_list_l)) != NULL), \
+         && (((elm) = (typeof(elm))car(__light_list_l)) != NULL), \
          !is_empty_list(__light_list_l);                          \
          __light_list_l = cdr(__light_list_l))
 @
@@ -665,11 +665,11 @@ void shift_arguments(Function func, int n)
     int p = length(func->args), l = func->argn - p;
     UNDER(
         int *_mapping = func->mapping + p, *dup;
-	MOVE_ARRAY(_mapping, dup, l);
-	int i;
-	for (i = 0; i < l; ++i) {
-	    _mapping[i] = dup[(i+n)%l];
-	}
+        MOVE_ARRAY(_mapping, dup, l);
+        int i;
+        for (i = 0; i < l; ++i) {
+            _mapping[i] = dup[(i+n)%l];
+        }
     );
 }
 
@@ -683,23 +683,23 @@ void *invoke(Function func, List args)
 
     void *ret;
     UNDER(
-	void *arg;
-	List _args = copy_list(func->args);
-	FOREACH (arg, args) {
-	    push(arg, &_args);
-	}
-	assert(length(_args) == func->argn);
+        void *arg;
+        List _args = copy_list(func->args);
+        FOREACH (arg, args) {
+            push(arg, &_args);
+        }
+        assert(length(_args) == func->argn);
 
         void **args_;
-	CALLOC(args_, func->argn);
+        CALLOC(args_, func->argn);
 
-	reverse(&_args);
+        reverse(&_args);
 
-	int i = 0;
-	FOREACH (arg, _args) {
-	    args_[func->mapping[i]] = arg;
-	    ++i;
-	}
+        int i = 0;
+        FOREACH (arg, _args) {
+            args_[func->mapping[i]] = arg;
+            ++i;
+        }
 
         ESCAPE(ret = func->func(args_));
     );
@@ -715,8 +715,8 @@ void *invoke(Function func, List args)
 #define DEFINE_FUNCTION(name, ...) \
     void *_function_func_##name(void *_args) { \
         struct _function_args_##name *args; \
-	RENAME(_args, args); \
-	__VA_ARGS__; \
+        RENAME(_args, args); \
+        __VA_ARGS__; \
     }
 #define FUNCTION(name) \
     _new_function(_function_func_##name, sizeof(struct _function_args_##name)/sizeof(void *))
@@ -755,9 +755,9 @@ List map(Function func, List l)
     void *elm;
     FOREACH (elm, l) {
         UNDER(
-	    List args = cons(elm, empty_list);
-	    ESCAPE(push(invoke(func, args), &_l));
-	);
+            List args = cons(elm, empty_list);
+            ESCAPE(push(invoke(func, args), &_l));
+        );
     }
     reverse(&_l);
     return _l;
@@ -769,12 +769,12 @@ void *find_first(Function jdg, List l)
     FOREACH(elm, l) {
         bool found = false;
         UNDER(
-	    List args = cons(elm, empty_list);
-	    found = *(bool *)invoke(jdg, args);
-	);
-	if (found) {
-	    break;
-	}
+            List args = cons(elm, empty_list);
+            found = *(bool *)invoke(jdg, args);
+        );
+        if (found) {
+            break;
+        }
     }
     return elm;
 }
@@ -785,13 +785,13 @@ List filter(Function jdg, List l)
     void *elm;
     FOREACH (elm, l) {
         UNDER(
-	    List args = cons(elm, empty_list);
-	    bool *to_reserve;
-	    RENAME(invoke(jdg, args), to_reserve);
-	    if (*to_reserve) {
-	        ESCAPE(push(elm, &_l));
-	    }
-	);
+            List args = cons(elm, empty_list);
+            bool *to_reserve;
+            RENAME(invoke(jdg, args), to_reserve);
+            if (*to_reserve) {
+                ESCAPE(push(elm, &_l));
+            }
+        );
     }
     reverse(&_l);
     return _l;
@@ -802,20 +802,20 @@ void *remove_first(Function jdg, List *l_r)
     void *elm;
     List *_l_r = l_r;
     FOREACH (elm, *l_r) {
-	bool found = false;
+        bool found = false;
         UNDER(
-	    List args = cons(elm, empty_list);
-	    bool *to_remove;
-	    RENAME(invoke(jdg, args), to_remove);
-	    found = *to_remove;
-	);
-	if (found) {
-	    (*_l_r) = cdr(__light_list_l);
-	    *rest(__light_list_l) = empty_list;
-	    FREE(__light_list_l);
-	    break;
-	}
-	_l_r = rest(*_l_r);
+            List args = cons(elm, empty_list);
+            bool *to_remove;
+            RENAME(invoke(jdg, args), to_remove);
+            found = *to_remove;
+        );
+        if (found) {
+            (*_l_r) = cdr(__light_list_l);
+            *rest(__light_list_l) = empty_list;
+            FREE(__light_list_l);
+            break;
+        }
+        _l_r = rest(*_l_r);
     }
     return elm;
 }
@@ -1176,7 +1176,7 @@ hash(const uint8_t *value, size_t len)
     int i;
     for (i = 0, result = 2166136261U; i < len; ++i) {
         result ^= value[i];
-	result *= 16777619U;
+        result *= 16777619U;
     }
 
     return result;
@@ -1323,19 +1323,19 @@ void put_to_hash_table(HashTable tbl, const void *key, void *v)
         *rcds_r = empty_list;
     }
     UNDER( /* search the already stored keys */
-	Function record_is_of_key = FUNCTION(hash_table_key_is_record);
-	fill_argument(record_is_of_key, tbl);
-	fill_argument(record_is_of_key, (void *)key);
+        Function record_is_of_key = FUNCTION(hash_table_key_is_record);
+        fill_argument(record_is_of_key, tbl);
+        fill_argument(record_is_of_key, (void *)key);
 
         rcd = find_first(record_is_of_key, *rcds_r);
     );
 
     if (!rcd) { /* create a new record */
-	NEW(rcd);
-	rcd->k = key;
+        NEW(rcd);
+        rcd->k = key;
 
         if (!(*rcds_r)) {
-	    *rcds_r = empty_list;
+            *rcds_r = empty_list;
             push(rcds_r, &tbl->slots);
         }
 
@@ -1353,13 +1353,13 @@ void *get_from_hash_table(HashTable tbl, const void *key)
     rcds = *record_list(tbl, key);
 
     if (rcds) {
-	UNDER( /* search the already stored keys */
-	    Function record_is_of_key = FUNCTION(hash_table_key_is_record);
-	    fill_argument(record_is_of_key, tbl);
-	    fill_argument(record_is_of_key, (void *)key);
+        UNDER( /* search the already stored keys */
+            Function record_is_of_key = FUNCTION(hash_table_key_is_record);
+            fill_argument(record_is_of_key, tbl);
+            fill_argument(record_is_of_key, (void *)key);
 
-	    rcd = find_first(record_is_of_key, rcds);
-	);
+            rcd = find_first(record_is_of_key, rcds);
+        );
     }
 
     return rcd ? rcd->v : NULL;
@@ -1376,9 +1376,9 @@ void *remove_from_hash_table(HashTable tbl, const void *key)
         *rcds_r = empty_list;
     }
     UNDER( /* search the already stored keys */
-	Function record_is_of_key = FUNCTION(hash_table_key_is_record);
-	fill_argument(record_is_of_key, tbl);
-	fill_argument(record_is_of_key, (void *)key);
+        Function record_is_of_key = FUNCTION(hash_table_key_is_record);
+        fill_argument(record_is_of_key, tbl);
+        fill_argument(record_is_of_key, (void *)key);
 
         TableRecord rcd;
         ESCAPE(rcd = remove_first(record_is_of_key, rcds_r));
@@ -1512,7 +1512,7 @@ void *atom(const uint8_t *blk, size_t len)
 
     if (!RENAME(mapped_by_ptr(atoms, _light_top_context), atoms)) {
         RENAME(new_hash_table(ATOMS_DEFAULT_SIZE, hash_func_atom, equal_func_atom), atoms);
-	new_mapping(_light_top_context, atoms);
+        new_mapping(_light_top_context, atoms);
     }
 
     a.block = blk;
@@ -1527,8 +1527,8 @@ void *atom(const uint8_t *blk, size_t len)
 
         struct atom *a_r = NULL;
         MOVE(&a, a_r);
-	put_to_hash_table(atoms, a_r, a_r);
-	p = a_r;
+        put_to_hash_table(atoms, a_r, a_r);
+        p = a_r;
     }
 
     return p;

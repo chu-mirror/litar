@@ -6,13 +6,13 @@ they even spell commands to control computer through shells.
 Basically, all work that programmers do is writing text.
 
 The traditional unit of text is file, text of different types
-is saved in seperated files, but sometimes, it might take
+is saved in seperate files, but sometimes, it might take
 too much energy to create a new file. Like, you want to
 insert a build time information to your code whenever you build
 your program. To do that, you might write a simple sed script and
-put that to Makefile. Here is the problem, sed operate on the whole
+put that to Makefile. Here is a problem, sed operate on the whole
 file, so you have to make sure that the sed script won't influence the other
-parts of the file. To solve that, you might seperate that part of code to a new file,
+parts of the file. To solve that problem, you might move that part of code to a new file,
 use a function to encapsulate it or simply store the information
 in a macro or a variable and pass back to the original file.
 You can see all the extra efforts made here.
@@ -359,8 +359,8 @@ The back end is a server that makes use of libfuse3.
 @<litarfs@:light@:C Structure@/executable@>
 @
 
-They communicate through a socket or the mounted file system.
-Other programs can communicate with the back end too by these two methods.
+They communicate through the mounted file system.
+Other programs can communicate with the back end too by this method.
 
 The back end adopts the framework provided by libfuse3.
 
@@ -481,21 +481,21 @@ if (fuse_opt_parse(&args, &user_options, litarfs_option_specs, NULL) < 0) {
     longjmp(exit_main, 1);
 }
 
-bool to_build_file_system = true;
+bool to_mount_file_system = true;
 
 if (user_options.help) {
     printf("@<litarfs@:C Structure@/command line usage@>");
     fuse_opt_add_arg(&args, "--help");
-    to_build_file_system = false;
+    to_mount_file_system = false;
 }
 
 if (user_options.version) {
     @<print version information@>
     fuse_opt_add_arg(&args, "--version");
-    to_build_file_system = false;
+    to_mount_file_system = false;
 }
 
-if (to_build_file_system) {
+if (to_mount_file_system) {
     @<build context for "fuse_main"@>
     fuse_opt_add_arg(&args, "-s");
 } else {

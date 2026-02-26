@@ -2,10 +2,6 @@
 @<show@:light@:C Structure@/executable@>
 @
 
-@<show@:light@:C Structure@/module properties@=
-name => "show",
-@
-
 @<show@:light@:C Structure@/include paths@=
 Light
 @
@@ -13,16 +9,7 @@ Light
 @<show@:light@:C Structure@/includes@=
 #include <stdio.h>
 #include <assert.h>
-#include <stdbool.h>
-#include <setjmp.h>
-#include "context.h"
-#include "list.h"
-#include "function.h"
-#include "higher.h"
-#include "array.h"
-#include "str.h"
-#include "hashtable.h"
-#include "atom.h"
+#include "light.h"
 #include "state.h"
 @
 
@@ -149,13 +136,13 @@ UNDER(
     fill_argument(bigger_than_3, &n);
 
     int *res;
-    RENAME(invoke(bigger_than_3, cons(&n1, empty_list)), res);
+    RENAME(invoke(bigger_than_3, cons(&n1, NULL)), res);
     assert(!*res);
-    RENAME(invoke(bigger_than_3, cons(&n2, empty_list)), res);
+    RENAME(invoke(bigger_than_3, cons(&n2, NULL)), res);
     assert(!*res);
-    RENAME(invoke(bigger_than_3, cons(&n3, empty_list)), res);
+    RENAME(invoke(bigger_than_3, cons(&n3, NULL)), res);
     assert(!*res);
-    RENAME(invoke(bigger_than_3, cons(&n4, empty_list)), res);
+    RENAME(invoke(bigger_than_3, cons(&n4, NULL)), res);
     assert(*res);
     printf("Passed bigger_than_3\n");
 );
@@ -370,8 +357,8 @@ UNDER(
 @
 
 @<show@:light@:C Structure@/function declarations@=
-bool state_handle_signal(State s, Signal sig);
-bool state_is_active(State s);
+int state_handle_signal(State s, Signal sig);
+int state_is_active(State s);
 @
 
 @<show@:light@:C Structure@/global variables@=

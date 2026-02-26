@@ -1,5 +1,6 @@
 #define NDEBUG
 #define _GNU_SOURCE
+
 #include <sched.h>
 #include <stdio.h>
 #include <string.h>
@@ -37,12 +38,6 @@ typedef struct mappings_module *Module;
 typedef struct mappings_chunk *Chunk;
 typedef struct mappings_block *Block;
 typedef struct mappings_chunk_ref *ChunkRef;
-
-const char *normalize(const char *name);
-Str content_of_chunk_with_labels(Chunk chk, List lbls);
-Str content_of_chunk_ref(ChunkRef ckr);
-Str expanded_content_of_block_with_labels(Block blk, List lbls);
-void transform_with_labels(Str txt, List flts, List lbls);
 
 struct mappings_module {
     const char *name;
@@ -142,6 +137,29 @@ struct state_escape_local {
     char esc;
     const char *argument;
 };
+
+/* stdin */
+void print_usage(void);
+Module module_of_name(const char *name);
+Chunk chunk_in_module_of_name(Module mod, const char *name);
+static int equal_func_labels(const void *lbls1, const void *lbls2);
+void block_extend_chunk_ref(Block blk, ChunkRef ckr);
+void block_is_transformed_by(Block blk, Chunk flt);
+void chunk_ref_is_specialized_by(ChunkRef ckr, const char *lbl);
+char *path_of_chunk(Chunk chk);
+void there_is_module(Module mod);
+void chunk_is_file(Chunk chk);
+void chunk_is_executable(Chunk chk);
+const char *normalize(const char *name);
+void ensure_directory(const char *path);
+static void *
+litar_fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg);
+static int litar_fuse_getattr(
+    const char *path, struct stat *stbuf, struct fuse_file_info *fi
+);
+static int litar_fuse_open(const char *path, struct fuse_file_info *fi);
+Str expanded_content_of_block_with_labels(Block blk, List lbls);
+void transform_with_labels(Str txt, List flts, List lbls);
 
 bool to_print_help;
 bool to_print_version_info;
@@ -1492,9 +1510,15 @@ state_escape_handler(State s, Signal sig)
                 there_is_module(plc_r->module);
             }
             if (lc_r->esc == '.') {
+                char path[PATH_MAX + 1];
+                char *ptr = realpath(normalize(lc_r->argument), path);
+                if (path == NULL) {
+                    perror("realpath");
+                    exit(1);
+                }
                 InputFrame ipt = NULL;
                 NEW0(ipt);
-                ipt->file = normalize(lc_r->argument);
+                ipt->file = atom_str(path);
                 push(ipt, &input_frames);
             }
 
@@ -1742,19 +1766,19 @@ print_node(Node nd, int level)
 int
 main(int argc, char *argv[])
 {
-    RESERVE(do {
-        new_string_hash_table(&file_to_mmap_addr);
-        new_string_hash_table(&module_name_to_module);
-        NEW(root_node);
-        root_node->type = NODE_DIRECTORY;
-        root_node->value.nodes = empty_list;
-        root_node->name = atom_str("");
-        if (getcwd(working_dir, PATH_MAX) == NULL) {
-            perror("getcwd");
-            exit(1);
-        }
-        ensure_directory(litar_data);
-    } while (0));
+    int returned_value = 0;
+    new_string_hash_table(&file_to_mmap_addr);
+    new_string_hash_table(&module_name_to_module);
+    NEW(root_node);
+    root_node->type = NODE_DIRECTORY;
+    root_node->value.nodes = empty_list;
+    root_node->name = atom_str("");
+    if (getcwd(working_dir, PATH_MAX) == NULL) {
+        perror("getcwd");
+        exit(1);
+    }
+    ensure_directory(litar_data);
+
     do {
         int opt, option_index;
         static struct option long_options[] = {
@@ -1842,7 +1866,7 @@ main(int argc, char *argv[])
             }
             if (to_print_version_info) {
                 printf(
-                    "Version %s, built at 2026-01-29T13:24+08:00\n", version
+                    "Version %s, built at 2026-02-26T17:53+08:00\n", version
                 );
 
                 to_continue = false;
@@ -1858,9 +1882,15 @@ main(int argc, char *argv[])
 
             print_memgr_count("start parsing");
             do {
+                char path[PATH_MAX + 1];
+                char *ptr = realpath(archive_name, path);
+                if (path == NULL) {
+                    perror("realpath");
+                    exit(1);
+                }
                 InputFrame ipt = NULL;
                 NEW0(ipt);
-                ipt->file = atom_str(archive_name);
+                ipt->file = atom_str(path);
                 push(ipt, &input_frames);
             } while (0);
 
@@ -2130,13 +2160,20 @@ main(int argc, char *argv[])
         }
 
         KEEP(RESERVE(do {
+                 char *archive_file_name = archive_name, *cp = archive_name;
+                 while (*cp) {
+                     if (*cp == '/') {
+                         archive_file_name = cp + 1;
+                     }
+                     ++cp;
+                 }
                  CALLOC(
                      archive_data,
-                     strlen(litar_data) + strlen(archive_name) + 2
+                     strlen(litar_data) + strlen(archive_file_name) + 2
                  );
                  strcat(archive_data, litar_data);
                  strcat(archive_data, "/");
-                 strcat(archive_data, archive_name);
+                 strcat(archive_data, archive_file_name);
 
                  ensure_directory(archive_data);
 
@@ -2389,6 +2426,7 @@ main(int argc, char *argv[])
         kill(fuse_pid, SIGTERM);
     }
 
-    assert_memory_safety();
-    return 0;
+    return returned_value;
 }
+
+

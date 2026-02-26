@@ -5,20 +5,44 @@ It reflects the author's preferences and customs, which includes how to format c
 how to manage memory, how to handle exception, etc.
 
 The flags showing that a module was included follow this pattern.
-@<light@:C Structure@/module properties@=
+@<light module@:C Structure@/module properties@=
 included_flag_format => '_LIGHT_%s',
 @
 
 Include headers for debugging.
-@<light@:C Structure@/includes@=
+@<light module@:C Structure@/includes@=
 #include <assert.h>
 #ifndef NDEBUG
 #include <stdio.h>
 #endif
 @
 
+The module "basic" is used everywhere when using light.
+
+@<basic@:light module@:C Structure@/module properties@=
+name => 'basic',
+@
+
+@[light.c@=
+@<basic@:light module@:C Structure@/module@>
+@
+
+@[light.h@=
+@<basic@:light module@:C Structure@/module interface@>
+@
+
+Some always to use header files.
+
+@<basic@:light module@:C Structure@/interface required includes@=
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
+#include <stdint.h>
+@
+
 There are some idioms to make life a bit easier.
-@<light@:C Structure@/exported macros@=
+
+@<basic@:light module@:C Structure@/exported macros@=
 /* Give value a new name, and force type casting. */
 #define RENAME(old, new) (new = (typeof(new))old)
 
@@ -44,27 +68,16 @@ There are some idioms to make life a bit easier.
     } while (0)
 @
 
-@<light@:C Structure@/interface required includes@=
-#include <stdlib.h>
-#include <string.h>
-#include <stdbool.h>
-#include <stddef.h>
-@
-
 Light uses hash tables extensively to extend the relations
 between pointers and other entities
 without modify the data structure that the pointer reference to.
 The hash algorithm chosen is Fibonacci Hashing.
 
-@<light@:C Structure@/macros@=
+@<basic@:light module@:C Structure@/macros@=
 #define GOLDEN_RATIO_64 (0x9E3779B97F4A7C15ULL)
 @
 
-@<light@:C Structure@/includes@=
-#include <stdint.h>
-@
-
-@<light@:C Structure@/static inline functions@=
+@<basic@:light module@:C Structure@/static inline functions@=
 static inline uint64_t _hash_fibonacci(uint64_t v) {
     return GOLDEN_RATIO_64 * v;
 }
@@ -74,7 +87,7 @@ static inline uint64_t _hash_ptr(void *p) {
 }
 @
 
-@<light@:C Structure@/data types@=
+@<basic@:light module@:C Structure@/exported data types@=
 struct _hash_table_ptr_entry {
     struct _hash_table_ptr_entry *next;
     void *ptr;
@@ -82,13 +95,13 @@ struct _hash_table_ptr_entry {
 };
 @
 
-@<light@:C Structure@/macros@=
+@<basic@:light module@:C Structure@/exported macros@=
 #define MAPPING_PTR(name) \
     struct _hash_table_ptr_entry *ptr_to_##name[1 << ptr_to_##name##_size]
 @
 
-@<light@:C Structure@/static inline functions@=
-static inline struct _hash_table_ptr_entry **
+@<basic@:light module@:C Structure@/functions@=
+struct _hash_table_ptr_entry **
 _mapping_find_entry(struct _hash_table_ptr_entry **mapping, size_t size, void *k)
 {
     uint64_t h = _hash_ptr(k);
@@ -108,7 +121,7 @@ _mapping_find_entry(struct _hash_table_ptr_entry **mapping, size_t size, void *k
     return &mapping[h];
 }
 
-static inline void _map_ptr_to(struct _hash_table_ptr_entry **mapping, size_t size, void *k, void *v)
+void _map_ptr_to(struct _hash_table_ptr_entry **mapping, size_t size, void *k, void *v)
 {
     struct _hash_table_ptr_entry *ent, **ent_r;
     ent_r = _mapping_find_entry(mapping, size, k);
@@ -123,7 +136,7 @@ static inline void _map_ptr_to(struct _hash_table_ptr_entry **mapping, size_t si
     }
 }
 
-static inline void _unmap_ptr(struct _hash_table_ptr_entry **mapping, size_t size, void *k)
+void _unmap_ptr(struct _hash_table_ptr_entry **mapping, size_t size, void *k)
 {
     struct _hash_table_ptr_entry **ent_r, *ent;
     ent_r = _mapping_find_entry(mapping, size, k);
@@ -134,7 +147,7 @@ static inline void _unmap_ptr(struct _hash_table_ptr_entry **mapping, size_t siz
     }
 }
 
-static inline void *_mapped_by_ptr(struct _hash_table_ptr_entry **mapping, size_t size, void *k)
+void *_mapped_by_ptr(struct _hash_table_ptr_entry **mapping, size_t size, void *k)
 {
     struct _hash_table_ptr_entry **ent_r;
     ent_r = _mapping_find_entry(mapping, size, k);
@@ -147,7 +160,7 @@ static inline void *_mapped_by_ptr(struct _hash_table_ptr_entry **mapping, size_
 
 Some convenient macros.
 
-@<light@:C Structure@/macros@=
+@<basic@:light module@:C Structure@/exported macros@=
 #define map_ptr_to(name, k, v) _map_ptr_to(ptr_to_##name, ptr_to_##name##_size, (k), (v))
 #define unmap_ptr(name, k) _unmap_ptr(ptr_to_##name, ptr_to_##name##_size, (k))
 #define mapped_by_ptr(name, k) _mapped_by_ptr(ptr_to_##name, ptr_to_##name##_size, (k))
@@ -163,18 +176,6 @@ because C program lacks a garbage collector.
 
 C only has a minumal support for contexts through stack. Light extends it.
 
-@<context@:light@:C Structure@/module properties@=
-name => 'context',
-@
-
-@[context.c@=
-@<context@:light@:C Structure@/module@>
-@
-
-@[context.h@=
-@<context@:light@:C Structure@/module interface@>
-@
-
 A context can be embedded to another context,
 so the current context is in fact a stack of contexts.
 This might not be correct if the program is multi-threaded. In that case,
@@ -183,12 +184,12 @@ The context a context embedded to is the parent context of that context.
 
 A context has a list of resources, the resources must know how to release themselves.
 
-@<context@:light@:C Structure@/exported data type declarations@=
+@<basic@:light module@:C Structure@/exported data type declarations@=
 typedef struct context *Context;
 typedef struct resource *Resource;
 @
 
-@<context@:light@:C Structure@/exported data types@=
+@<basic@:light module@:C Structure@/exported data types@=
 struct resource_node {
     struct resource_node *previous, *next;
     Resource resource;
@@ -207,21 +208,21 @@ struct resource {
 };
 @
 
-@<context@:light@:C Structure@/global variables@=
+@<basic@:light module@:C Structure@/global variables@=
 Context _light_top_context;
 @
 
-@<context@:light@:C Structure@/macros@=
+@<basic@:light module@:C Structure@/macros@=
 #ifndef ptr_to_resource_node_size
 #define ptr_to_resource_node_size (12)
 #endif
 @
 
-@<context@:light@:C Structure@/global variables@=
+@<basic@:light module@:C Structure@/global variables@=
 static MAPPING_PTR(resource_node);
 @
 
-@<context@:light@:C Structure@/functions@=
+@<basic@:light module@:C Structure@/functions@=
 void enter_context() {
     Context ctx;
     ctx = malloc(sizeof(*ctx));
@@ -324,7 +325,7 @@ Unlike automatical finding of a variable by its name, when using context from Li
 users have to state explicitly whether some statements are execute under
 the current context or not.
 
-@<context@:light@:C Structure@/interface specific macros@=
+@<basic@:light module@:C Structure@/exported macros@=
 #define UNDER(...) \
     do { \
         enter_context(); \
@@ -345,40 +346,9 @@ the current context or not.
     } while (0)
 @
 
-@<light@:C Structure@/includes@=
-#include <setjmp.h>
-@
-
-@<context@:light@:C Structure@/global variables@=
-jmp_buf exit_main;
-@
-@<context@:light@:C Structure@/global declarations@=
-extern jmp_buf exit_main;
-@
-
-@<light@:C Structure@/main body@=
-Context ctx;
-ctx = malloc(sizeof(*ctx));
-ctx->parent = NULL;
-ctx->active_child = NULL;
-ctx->sibling = NULL;
-ctx->resources = NULL;
-_light_top_context = ctx;
-UNDER(UNDER(
-    @<initializations of main context@>
-    int ext_n;
-    if ((ext_n = setjmp(exit_main)) == 0) {
-        @<main body@>
-    } else {
-        returned = ext_n;
-    }
-));
-free(ctx);
-@
-
 Based on the context defined, Light refines the memory management.
 
-@<context@:light@:C Structure@/exported macros@=
+@<basic@:light module@:C Structure@/exported macros@=
 #define NEW(p) \
     do { \
         typeof(p) *p_r = &(p); \
@@ -415,40 +385,53 @@ Based on the context defined, Light refines the memory management.
     } while (0)
 @
 
+@<light@:C Structure@/includes@=
+#include <setjmp.h>
+@
+
+@<light@:C Structure@/global variables@=
+jmp_buf exit_main;
+@
+
+@<light@:C Structure@/main body@=
+Context ctx;
+ctx = malloc(sizeof(*ctx));
+ctx->parent = NULL;
+ctx->active_child = NULL;
+ctx->sibling = NULL;
+ctx->resources = NULL;
+_light_top_context = ctx;
+UNDER(UNDER(
+    @<initializations of main context@>
+    int ext_n;
+    if ((ext_n = setjmp(exit_main)) == 0) {
+        @<main body@>
+    } else {
+        returned = ext_n;
+    }
+));
+free(ctx);
+@
+
 Lists are used everywhere.
 
-@<list@:light@:C Structure@/module properties@=
-name => 'list',
-@
-
-@[list.c@=
-@<list@:light@:C Structure@/module@>
-@
-
-@[list.h@=
-@<list@:light@:C Structure@/module interface@>
-@
-
-@<list@:light@:C Structure@/includes@=
-#include "context.h"
-@
-
-@<list@:light@:C Structure@/exported data type declarations@=
+@<basic@:light module@:C Structure@/exported data type declarations@=
 typedef struct list *List;
 @
 
-@<list@:light@:C Structure@/data types@=
+@<basic@:light module@:C Structure@/data types@=
 struct list {
     struct list *rest;
     void *first;
 };
 @
 
-The API of list adopts the naming of lisp.
-@<list@:light@:C Structure@/functions@=
+The API of list adopts the conventions from lisp.
+
+@<basic@:light module@:C Structure@/functions@=
 List cons(void *ele, List l)
 {
-    List _l = NULL;
+    List _l;
 
     NEW(_l);
     _l->first = ele;
@@ -482,21 +465,8 @@ void free_list(List l)
 }
 @
 
-@<list@:light@:C Structure@/functions@=
-size_t length(List l)
-{
-    size_t len;
-
-    for (len = 0; !is_empty_list(l); l = cdr(l)) {
-        ++len;
-    }
-
-    return len;
-}
-@
-
 A list can be easily used as a stack.
-@<list@:light@:C Structure@/functions@=
+@<basic@:light module@:C Structure@/functions@=
 List push(void *elm, List *l_r)
 {
     return *l_r = cons(elm, *l_r);
@@ -506,7 +476,6 @@ void *pop(List *l_r)
 {
     List _l = cdr(*l_r);
     void *v = car(*l_r);
-    (*l_r)->rest = empty_list;
     FREE(*l_r);
     *l_r = _l;
     return v;
@@ -514,11 +483,11 @@ void *pop(List *l_r)
 @
 
 Construct a list from other linear structures.
-@<list@:light@:C Structure@/functions@=
+@<basic@:light module@:C Structure@/functions@=
 List list_from_arr(void *arr, size_t len, size_t size)
 {
     int i;
-    List l = empty_list;
+    List l = NULL;
     for (i = 0; i < len; ++i) {
         push(arr + (len - i - 1) * size, &l);
     }
@@ -527,7 +496,7 @@ List list_from_arr(void *arr, size_t len, size_t size)
 
 List copy_list(List l)
 {
-    List _l = empty_list;
+    List _l = NULL;
 
     void *elm;
     FOREACH (elm, l) {
@@ -541,15 +510,15 @@ List copy_list(List l)
 
 Modify the underlying structure of list.
 
-@<list@:light@:C Structure@/functions@=
+@<basic@:light module@:C Structure@/functions@=
 void reverse(List *l_r)
 {
     List l, ll;
 
     l = *l_r;
-    ll = empty_list;
+    ll = NULL;
 
-    while (l != empty_list) {
+    while (l) {
         List l_t = l->rest;
         l->rest = ll;
         ll = l;
@@ -563,15 +532,15 @@ List append(List *l1_r, List *l2_r)
 {
     List l;
 
-    if (is_empty_list(*l1_r)) {
+    if (!*l1_r) {
         l = *l2_r;
-        *l2_r = empty_list;
+        *l2_r = NULL;
         return l;
     }
 
     do { /* find tail |l| of |*l1_r| */
         l = *l1_r;
-        while (!is_empty_list(cdr(l))) {
+        while (cdr(l)) {
             l = cdr(l);
         }
         l->rest = *l2_r;
@@ -579,24 +548,32 @@ List append(List *l1_r, List *l2_r)
 
     l = *l1_r;
 
-    *l1_r = empty_list;
-    *l2_r = empty_list;
+    *l1_r = NULL;
+    *l2_r = NULL;
 
     return l;
 }
 @
 
-@<list@:light@:C Structure@/exported macros@=
-#define empty_list VALUE(1)
-#define is_empty_list(l) ((l) == empty_list)
+@<basic@:light module@:C Structure@/exported macros@=
 #define _LIST(arr, len) list_from_arr((arr), len, sizeof((arr)[0]))
 #define LIST(arr) _LIST((arr), sizeof(arr) / sizeof((arr)[0]))
-#define FOREACH(elm, l)                                           \
-    for (List __light_list_l = (l);                               \
-         !is_empty_list(__light_list_l)                           \
-         && (((elm) = (typeof(elm))car(__light_list_l)) != NULL), \
-         !is_empty_list(__light_list_l);                          \
+#define FOREACH(elm, l)                                      \
+    for (List __light_list_l = (l);                          \
+         __light_list_l && RENAME(car(__light_list_l), elm), \
+         __light_list_l;                                     \
          __light_list_l = cdr(__light_list_l))
+@
+
+@<basic@:light module@:C Structure@/functions@=
+size_t length(List l)
+{
+    size_t len;
+    for (len = 0; l; l = cdr(l)) {
+        ++len;
+    }
+    return len;
+}
 @
 
 If a function F is of type X->Y->Z, we now want to get another function by
@@ -606,35 +583,11 @@ C does not support partial application through its native type system,
 but it's so convenient, so Light implement similar machanisms.
 The secret is to reorder arguments.
 
-@<function@:light@:C Structure@/module properties@=
-name => 'function',
-@
-
-@[function.c@=
-@<function@:light@:C Structure@/module@>
-@
-
-@[function.h@=
-@<function@:light@:C Structure@/module interface@>
-@
-
-@<function@:light@:C Structure@/includes@=
-#include "context.h"
-@
-
-@<function@:light@:C Structure@/interface required includes@=
-#include "list.h"
-@
-
-@<function@:light@:C Structure@/exported data type declarations@=
+@<basic@:light module@:C Structure@/exported data type declarations@=
 typedef struct function *Function;
 @
 
-@<function@:light@:C Structure@/data type declarations@=
-@<list@:light@:C Structure@/exported data type declarations@>
-@
-
-@<function@:light@:C Structure@/data types@=
+@<basic@:light module@:C Structure@/data types@=
 struct function {
     void *(*func)(void *);
     int argn;
@@ -643,14 +596,14 @@ struct function {
 };
 @
 
-@<function@:light@:C Structure@/functions@=
+@<basic@:light module@:C Structure@/functions@=
 Function _new_function(void *(*f)(void *), int argn)
 {
     Function func;
     NEW(func);
     func->func = f;
     func->argn = argn;
-    func->args = empty_list;
+    func->args = NULL;
     CALLOC(func->mapping, argn);
 
     int i;
@@ -707,7 +660,7 @@ void *invoke(Function func, List args)
 }
 @
 
-@<function@:light@:C Structure@/exported macros@=
+@<basic@:light module@:C Structure@/exported macros@=
 #define DECLARE_FUNCTION(name, ...) \
     static void *_function_func_##name(void *); \
     struct _function_args_##name {__VA_ARGS__};
@@ -722,40 +675,14 @@ void *invoke(Function func, List args)
     _new_function(_function_func_##name, sizeof(struct _function_args_##name)/sizeof(void *))
 @
 
-@<higher@:light@:C Structure@/module properties@=
-name => 'higher',
-@
-
-@[higher.c@=
-@<higher@:light@:C Structure@/module@>
-@
-
-@[higher.h@=
-@<higher@:light@:C Structure@/module interface@>
-@
-
-@<higher@:light@:C Structure@/includes@=
-#include "context.h"
-@
-
-@<higher@:light@:C Structure@/interface required includes@=
-#include "list.h"
-#include "function.h"
-@
-
-@<higher@:light@:C Structure@/data type declarations@=
-@<list@:light@:C Structure@/exported data type declarations@>
-@<function@:light@:C Structure@/exported data type declarations@>
-@
-
-@<higher@:light@:C Structure@/functions@=
+@<basic@:light module@:C Structure@/functions@=
 List map(Function func, List l)
 {
-    List _l = empty_list;
+    List _l = NULL;
     void *elm;
     FOREACH (elm, l) {
         UNDER(
-            List args = cons(elm, empty_list);
+            List args = cons(elm, NULL);
             ESCAPE(push(invoke(func, args), &_l));
         );
     }
@@ -767,10 +694,10 @@ void *find_first(Function jdg, List l)
 {
     void *elm = NULL;
     FOREACH(elm, l) {
-        bool found = false;
+        int found = 0;
         UNDER(
-            List args = cons(elm, empty_list);
-            found = *(bool *)invoke(jdg, args);
+            List args = cons(elm, NULL);
+            found = *(int *)invoke(jdg, args);
         );
         if (found) {
             break;
@@ -781,12 +708,12 @@ void *find_first(Function jdg, List l)
 
 List filter(Function jdg, List l)
 {
-    List _l = empty_list;
+    List _l = NULL;
     void *elm;
     FOREACH (elm, l) {
         UNDER(
-            List args = cons(elm, empty_list);
-            bool *to_reserve;
+            List args = cons(elm, NULL);
+            int *to_reserve;
             RENAME(invoke(jdg, args), to_reserve);
             if (*to_reserve) {
                 ESCAPE(push(elm, &_l));
@@ -802,16 +729,16 @@ void *remove_first(Function jdg, List *l_r)
     void *elm;
     List *_l_r = l_r;
     FOREACH (elm, *l_r) {
-        bool found = false;
+        int found = 0;
         UNDER(
-            List args = cons(elm, empty_list);
-            bool *to_remove;
+            List args = cons(elm, NULL);
+            int *to_remove;
             RENAME(invoke(jdg, args), to_remove);
             found = *to_remove;
         );
         if (found) {
             (*_l_r) = cdr(__light_list_l);
-            *rest(__light_list_l) = empty_list;
+            *rest(__light_list_l) = NULL;
             FREE(__light_list_l);
             break;
         }
@@ -823,10 +750,10 @@ void *remove_first(Function jdg, List *l_r)
 
 Some useful generalized functions.
 
-@<higher@:light@:C Structure@/exported static inline functions@=
+@<basic@:light module@:C Structure@/exported static inline functions@=
 DECLARE_FUNCTION(pointer_equal, const void *p1; const void *p2;);
 DEFINE_FUNCTION(pointer_equal,
-    bool res, *res_r;
+    int res, *res_r;
     res = args->p1 == args->p2;
     MOVE(&res, res_r);
     return res_r;
@@ -836,38 +763,22 @@ DEFINE_FUNCTION(pointer_equal,
 Despite that Light prefers list, C uses array even more.
 Light extends classic C arrays with dynamic size changing.
 
-@<array@:light@:C Structure@/module properties@=
-name => 'array',
-@
-
-@[array.c@=
-@<array@:light@:C Structure@/module@>
-@
-
-@[array.h@=
-@<array@:light@:C Structure@/module interface@>
-@
-
-@<array@:light@:C Structure@/includes@=
-#include "context.h"
-@
-
-@<array@:light@:C Structure@/data types@=
+@<basic@:light module@:C Structure@/data types@=
 struct array {
     void **elements;
     int size;
 };
 @
 
-@<array@:light@:C Structure@/exported data type declarations@=
+@<basic@:light module@:C Structure@/exported data type declarations@=
 typedef struct array *Array;
 @
 
-@<array@:light@:C Structure@/macros@=
+@<basic@:light module@:C Structure@/macros@=
 #define INITIAL_ARRAY_SIZE 64
 @
 
-@<array@:light@:C Structure@/functions@=
+@<basic@:light module@:C Structure@/functions@=
 Array new_array()
 {
     Array arr;
@@ -904,7 +815,7 @@ nth(Array arr, int n)
 
 Deque can be implemented above array.
 
-@<array@:light@:C Structure@/data types@=
+@<basic@:light module@:C Structure@/data types@=
 struct deque {
     Array array;
     int head;
@@ -913,11 +824,11 @@ struct deque {
 };
 @
 
-@<array@:light@:C Structure@/exported data type declarations@=
+@<basic@:light module@:C Structure@/exported data type declarations@=
 typedef struct deque *Deque;
 @
 
-@<array@:light@:C Structure@/static inline functions@=
+@<basic@:light module@:C Structure@/static inline functions@=
 static inline int
 next_slot_back(Deque q)
 {
@@ -955,7 +866,7 @@ is_full_deque(Deque q)
 }
 @
 
-@<array@:light@:C Structure@/functions@=
+@<basic@:light module@:C Structure@/functions@=
 static void enlarge_deque(Deque q)
 {
     int ns = q->size << 1; /* new size */
@@ -1059,23 +970,7 @@ void *last_value_of_deque(Deque q)
 Array of char is so important that Light reimplement most logic of array
 just for better optimization.
 
-@<str@:light@:C Structure@/module properties@=
-name => "str",
-@
-
-@[str.c@=
-@<str@:light@:C Structure@/module@>
-@
-
-@[str.h@=
-@<str@:light@:C Structure@/module interface@>
-@
-
-@<str@:light@:C Structure@/includes@=
-#include "context.h"
-@ 
-
-@<str@:light@:C Structure@/data types@=
+@<basic@:light module@:C Structure@/data types@=
 struct str {
     char *raw_string;
     int len;
@@ -1083,15 +978,15 @@ struct str {
 };
 @
 
-@<str@:light@:C Structure@/exported data type declarations@=
+@<basic@:light module@:C Structure@/exported data type declarations@=
 typedef struct str *Str;
 @
 
-@<str@:light@:C Structure@/macros@=
+@<basic@:light module@:C Structure@/macros@=
 #define INITIAL_MEM_SIZE 32
 @
 
-@<str@:light@:C Structure@/functions@=
+@<basic@:light module@:C Structure@/functions@=
 Str new_str()
 {
     Str s;
@@ -1144,122 +1039,38 @@ void str_clean(Str str)
 }
 @
 
-@<hash@:light@:C Structure@/module properties@=
-name => "hash",
-@
-
-@[hash.c@=
-@<hash@:light@:C Structure@/module@>
-@
-
-@[hash.h@=
-@<hash@:light@:C Structure@/module interface@>
-@
-
-@<hash@:light@:C Structure@/interface required includes@=
-#include <stdint.h>
-@
-
-@<hash@:light@:C Structure@/includes@=
-#include <string.h>
-@
-
-Light chooses FNV-1a as the default hash algorithm, the main usage is to calculate keys
-from a set of small values anyway.
-
-@<hash@:light@:C Structure@/functions@=
-uint32_t
-hash(const uint8_t *value, size_t len)
-{
-    uint32_t result;
-
-    int i;
-    for (i = 0, result = 2166136261U; i < len; ++i) {
-        result ^= value[i];
-        result *= 16777619U;
-    }
-
-    return result;
-}
-
-uint32_t
-hash_str(const char *str)
-{
-    return hash((const uint8_t *)str, strlen(str));
-}
-@
-
-There are many types of table, but they all share a common basic interface, key value pair.
+Besides lists, there is another type of data strucutre used everywhere, table.
+There are many types of table, but they all share a common basic unit, key value pair.
 Light call such a pair a record.
 
-@<tablerecord@:light@:C Structure@/module properties@=
-name => "tablerecord",
-@
-
-@[tablerecord.c@=
-@<tablerecord@:light@:C Structure@/module@>
-@
-
-@[tablerecord.h@=
-@<tablerecord@:light@:C Structure@/module interface@>
-@
-
-@<tablerecord@:light@:C Structure@/exported data types@=
+@<basic@:light module@:C Structure@/data types@=
 struct table_record {
     const void *k;
     void *v;
 };
 @
 
-@<tablerecord@:light@:C Structure@/exported data type declarations@=
+@<basic@:light module@:C Structure@/data type declarations@=
 typedef struct table_record *TableRecord;
 @
 
-@<hashtable@:light@:C Structure@/module properties@=
-name => "hashtable",
-@
+Hashtable is the most common implementation of table.
 
-@[hashtable.c@=
-@<hashtable@:light@:C Structure@/module@>
-@
-
-@[hashtable.h@=
-@<hashtable@:light@:C Structure@/module interface@>
-@
-
-@<hashtable@:light@:C Structure@/interface required includes@=
-#include "tablerecord.h"
-@
-
-@<hashtable@:light@:C Structure@/includes@=
-#include "context.h"
-#include "higher.h"
-#include "array.h"
-#include "hash.h"
-@
-
-@<hashtable@:light@:C Structure@/data types@=
+@<basic@:light module@:C Structure@/data types@=
 struct hash_table {
     Array table;
     size_t size;
     List slots;
     uint32_t (*hash_func)(const void *);
-    bool (*equal_func)(const void *, const void *);
+    int (*equal_func)(const void *, const void *);
 };
 @
 
-@<hashtable@:light@:C Structure@/exported data type declarations@=
+@<basic@:light module@:C Structure@/exported data type declarations@=
 typedef struct hash_table *HashTable;
 @
 
-@<hashtable@:light@:C Structure@/data type declarations@=
-@<list@:light@:C Structure@/exported data type declarations@>
-@<array@:light@:C Structure@/exported data type declarations@>
-@<function@:light@:C Structure@/exported data type declarations@>
-@<tablerecord@:light@:C Structure@/exported data type declarations@>
-@
-
-@<hashtable@:light@:C Structure@/static inline functions@=
+@<basic@:light module@:C Structure@/static inline functions@=
 static inline List *
 record_list(HashTable tbl, const void *key)
 {
@@ -1271,14 +1082,14 @@ record_list(HashTable tbl, const void *key)
 }
 @
 
-@<hashtable@:light@:C Structure@/functions@=
-HashTable new_hash_table(size_t size, uint32_t hf(const void *), bool eq(const void *, const void *))
+@<basic@:light module@:C Structure@/functions@=
+HashTable new_hash_table(size_t size, uint32_t hf(const void *), int eq(const void *, const void *))
 {
     HashTable tbl;
     NEW0(tbl);
     tbl->table = new_array();
     tbl->size = size;
-    tbl->slots = empty_list;
+    tbl->slots = NULL;
     tbl->hash_func = hf;
     tbl->equal_func = eq;
     return tbl;
@@ -1301,17 +1112,17 @@ void free_hash_table(HashTable tbl)
 }
 @
 
-@<hashtable@:light@:C Structure@/function declarations@=
+@<basic@:light module@:C Structure@/static inline functions@=
 DECLARE_FUNCTION(hash_table_key_is_record, HashTable tbl; const void *key; TableRecord rcd;);
 DEFINE_FUNCTION(hash_table_key_is_record,
-    bool res, *res_r;
+    int res, *res_r;
     res = args->tbl->equal_func(args->key, args->rcd->k);
     MOVE(&res, res_r);
     return res_r;
 )
 @
 
-@<hashtable@:light@:C Structure@/functions@=
+@<basic@:light module@:C Structure@/functions@=
 void put_to_hash_table(HashTable tbl, const void *key, void *v)
 {
     TableRecord rcd;
@@ -1319,9 +1130,6 @@ void put_to_hash_table(HashTable tbl, const void *key, void *v)
     List *rcds_r; /* records */
     rcds_r = record_list(tbl, key);
 
-    if (!*rcds_r) {
-        *rcds_r = empty_list;
-    }
     UNDER( /* search the already stored keys */
         Function record_is_of_key = FUNCTION(hash_table_key_is_record);
         fill_argument(record_is_of_key, tbl);
@@ -1333,14 +1141,9 @@ void put_to_hash_table(HashTable tbl, const void *key, void *v)
     if (!rcd) { /* create a new record */
         NEW(rcd);
         rcd->k = key;
-
-        if (!(*rcds_r)) {
-            *rcds_r = empty_list;
-            push(rcds_r, &tbl->slots);
-        }
-
         push(rcd, rcds_r);
-    } while (0);
+        push(rcds_r, &tbl->slots);
+    }
 
     rcd->v = v;
 }
@@ -1352,15 +1155,13 @@ void *get_from_hash_table(HashTable tbl, const void *key)
     List rcds; /* records */
     rcds = *record_list(tbl, key);
 
-    if (rcds) {
-        UNDER( /* search the already stored keys */
-            Function record_is_of_key = FUNCTION(hash_table_key_is_record);
-            fill_argument(record_is_of_key, tbl);
-            fill_argument(record_is_of_key, (void *)key);
+    UNDER( /* search the already stored keys */
+        Function record_is_of_key = FUNCTION(hash_table_key_is_record);
+        fill_argument(record_is_of_key, tbl);
+        fill_argument(record_is_of_key, (void *)key);
 
-            rcd = find_first(record_is_of_key, rcds);
-        );
-    }
+        rcd = find_first(record_is_of_key, rcds);
+    );
 
     return rcd ? rcd->v : NULL;
 }
@@ -1372,9 +1173,6 @@ void *remove_from_hash_table(HashTable tbl, const void *key)
     List *rcds_r; /* records */
     rcds_r = record_list(tbl, key);
 
-    if (!*rcds_r) {
-        *rcds_r = empty_list;
-    }
     UNDER( /* search the already stored keys */
         Function record_is_of_key = FUNCTION(hash_table_key_is_record);
         fill_argument(record_is_of_key, tbl);
@@ -1382,7 +1180,7 @@ void *remove_from_hash_table(HashTable tbl, const void *key)
 
         TableRecord rcd;
         ESCAPE(rcd = remove_first(record_is_of_key, rcds_r));
-        if (rcd != NULL) {
+        if (rcd) {
             v = rcd->v;
             FREE(rcd);
         }
@@ -1391,13 +1189,13 @@ void *remove_from_hash_table(HashTable tbl, const void *key)
 }
 @
 
-@<hashtable@:light@:C Structure@/functions@=
+@<basic@:light module@:C Structure@/functions@=
 static uint32_t hash_func_str(const void *s)
 {
     return hash_str((const char *)s);
 }
 
-static bool equal_func_str(const void *s1, const void *s2)
+static int equal_func_str(const void *s1, const void *s2)
 {
     return strcmp((const char *)s1, (const char *)s2) == 0;
 }
@@ -1408,40 +1206,43 @@ HashTable new_string_hash_table(size_t size)
 }
 @
 
+Light chooses FNV-1a as the default hash algorithm, the main usage is to calculate keys
+from a set of small values anyway.
+
+@<basic@:light module@:C Structure@/exported static inline functions@=
+static inline uint32_t
+hash(const uint8_t *value, size_t len)
+{
+    uint32_t result;
+
+    int i;
+    for (i = 0, result = 2166136261U; i < len; ++i) {
+        result ^= value[i];
+        result *= 16777619U;
+    }
+
+    return result;
+}
+
+static inline uint32_t
+hash_str(const char *str)
+{
+    return hash((const uint8_t *)str, strlen(str));
+}
+@
+
 Sometimes we only want to reserve one copy of data, any following referencing
 to the same data can use that copy. Hash table is a natural choice for this purpose.
 A such copy is usually called an atom.
 
-@<atom@:light@:C Structure@/module properties@=
-name => "atom",
-@
-
-@[atom.c@=
-@<atom@:light@:C Structure@/module@>
-@
-
-@[atom.h@=
-@<atom@:light@:C Structure@/module interface@>
-@
-
-@<atom@:light@:C Structure@/includes@=
-#include "context.h"
-#include "hash.h"
-#include "hashtable.h"
-@
-
-@<atom@:light@:C Structure@/data type declarations@=
-@<hashtable@:light@:C Structure@/exported data type declarations@>
-@
-
-@<atom@:light@:C Structure@/data types@=
+@<basic@:light module@:C Structure@/data types@=
 struct atom {
     const uint8_t *block;
     size_t len;
 };
 @
 
-@<atom@:light@:C Structure@/functions@=
+@<basic@:light module@:C Structure@/functions@=
 static uint32_t hash_func_atom(const void *a)
 {
     struct atom *_a;
@@ -1450,7 +1251,7 @@ static uint32_t hash_func_atom(const void *a)
     return hash(_a->block, _a->len);
 }
 
-static bool equal_func_atom(const void *a1, const void *a2)
+static int equal_func_atom(const void *a1, const void *a2)
 {
     struct atom *_a1, *_a2;
     RENAME(a1, _a1);
@@ -1463,25 +1264,23 @@ static bool equal_func_atom(const void *a1, const void *a2)
 Because of the introducing of context, the management of atoms should be treated carefully.
 Whether they should be global or localized under a context, Light choose the later way.
 
-@<atom@:light@:C Structure@/macros@=
+@<basic@:light module@:C Structure@/macros@=
 #ifndef ptr_to_atoms_size
 #define ptr_to_atoms_size (6)
 #endif
 @
 
-@<atom@:light@:C Structure@/global variables@=
+@<basic@:light module@:C Structure@/global variables@=
 static MAPPING_PTR(atoms);
 @
 
-@<atom@:light@:C Structure@/macros@=
+@<basic@:light module@:C Structure@/macros@=
 #ifndef ATOMS_DEFAULT_SIZE
 #define ATOMS_DEFAULT_SIZE (1<<10)
 #endif
 @
 
-@<atom@:light@:C Structure@/functions@=
-HashTable new_hash_table(size_t size, uint32_t hf(const void *), bool eq(const void *, const void *));
-
+@<basic@:light module@:C Structure@/functions@=
 void init_atoms(size_t size)
 {
     if (!mapped_by_ptr(atoms, _light_top_context)) {
@@ -1542,28 +1341,27 @@ const char *atom_str(const char *str)
 }
 @
 
-@<state@:light@:C Structure@/module properties@=
+@<state@:light module@:C Structure@/module properties@=
 name => "state",
 @
 
 @[state.c@=
-@<state@:light@:C Structure@/module@>
+@<state@:light module@:C Structure@/module@>
 @
 
 @[state.h@=
-@<state@:light@:C Structure@/module interface@>
+@<state@:light module@:C Structure@/module interface@>
 @
 
-@<state@:light@:C Structure@/includes@=
-#include "context.h"
-#include "list.h"
+@<state@:light module@:C Structure@/includes@=
+#include "light.h"
 @
 
-@<state@:light@:C Structure@/data type declarations@=
+@<state@:light module@:C Structure@/data type declarations@=
 @<list@:light@:C Structure@/exported data type declarations@>
 @
 
-@<state@:light@:C Structure@/data types@=
+@<state@:light module@:C Structure@/data types@=
 struct state {
     State parent;
     StateType type;
@@ -1577,24 +1375,24 @@ struct state {
 };
 @
 
-@<state@:light@:C Structure@/exported data types@=
+@<state@:light module@:C Structure@/exported data types@=
 enum state_type {
     STATE_XOR,
     STATE_AND 
 };
 @
 
-@<state@:light@:C Structure@/exported data type declarations@=
+@<state@:light module@:C Structure@/exported data type declarations@=
 typedef void *Signal;
 typedef struct state *State;
 typedef enum state_type StateType;
 @
 
-@<state@:light@:C Structure@/exported macros@=
+@<state@:light module@:C Structure@/exported macros@=
 #define root_state NULL
 @
 
-@<state@:light@:C Structure@/functions@=
+@<state@:light module@:C Structure@/functions@=
 State new_state(State p, StateType t, State (*hd)(State, Signal))
 {
     State s;
@@ -1602,7 +1400,7 @@ State new_state(State p, StateType t, State (*hd)(State, Signal))
     s->parent = p;
     s->type = t;
     s->handler = hd;
-    s->children = empty_list;
+    s->children = NULL;
     if (p != root_state) {
         push(s, &p->children);
     }
@@ -1628,7 +1426,7 @@ state_register_out_func(State s, State (*out)(State, Signal))
 }
 @
 
-@<state@:light@:C Structure@/functions@=
+@<state@:light module@:C Structure@/functions@=
 static void into_state(State s, Signal sig)
 {
     if (s->in != NULL) {
@@ -1666,7 +1464,7 @@ static void out_state(State s, Signal sig)
 }
 @
 
-@<state@:light@:C Structure@/functions@=
+@<state@:light module@:C Structure@/functions@=
 void state_init(State s)
 {
     into_state(s, NULL);
@@ -1677,10 +1475,10 @@ void state_clear(State s)
     out_state(s, NULL);
 }
 
-bool state_handle_signal(State s, Signal sig)
+int state_handle_signal(State s, Signal sig)
 {
     State next;
-    bool handled = false;
+    int handled = 0;
 
     next = s->handler == NULL ? NULL : s->handler(s, sig);
     if (next == NULL) {
@@ -1694,7 +1492,7 @@ bool state_handle_signal(State s, Signal sig)
             }
         }
     } else {
-        handled = true;
+        handled = 1;
         assert(next->parent == s->parent);
         if (next != s) {
             assert(s->parent != root_state && s->parent->type == STATE_XOR);
@@ -1711,17 +1509,17 @@ void **state_local(State s)
     return &s->local;
 }
 
-bool state_is_active(State s)
+int state_is_active(State s)
 {
     State _s = s;
 
     while (_s->parent) {
         if (_s->parent->type == STATE_XOR && _s->parent->active_child != _s) {
-            return false;
+            return 0;
         }
         _s = _s->parent;
     }
-    return true;
+    return 1;
 }
 @
 

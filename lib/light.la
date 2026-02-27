@@ -1123,7 +1123,7 @@ DEFINE_FUNCTION(hash_table_key_is_record,
 @
 
 @<basic@:light module@:C Structure@/functions@=
-void put_to_hash_table(HashTable tbl, const void *key, void *v)
+void *put_to_hash_table(HashTable tbl, const void *key, void *v)
 {
     TableRecord rcd;
 
@@ -1139,13 +1139,16 @@ void put_to_hash_table(HashTable tbl, const void *key, void *v)
     );
 
     if (!rcd) { /* create a new record */
-        NEW(rcd);
+        NEW0(rcd);
         rcd->k = key;
         push(rcd, rcds_r);
         push(rcds_r, &tbl->slots);
     }
 
+    void *orig = rcd->v;
     rcd->v = v;
+
+    return orig;
 }
 
 void *get_from_hash_table(HashTable tbl, const void *key)

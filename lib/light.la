@@ -814,7 +814,7 @@ List map(Function func, List l)
 
 void *find_first(Function jdg, List l)
 {
-    void *elm = NULL;
+    void *elm, *ret = NULL;
     FOREACH(elm, l) {
         int found = 0;
         UNDER(
@@ -822,10 +822,11 @@ void *find_first(Function jdg, List l)
             found = *(int *)invoke(jdg, args);
         );
         if (found) {
+            ret = elm;
             break;
         }
     }
-    return elm;
+    return ret;
 }
 
 List filter(Function jdg, List l)
@@ -1238,10 +1239,15 @@ void free_hash_table(HashTable tbl)
 @
 
 @<basic@:light module@:C Structure@/static inline functions@=
-DECLARE_FUNCTION(hash_table_key_is_record, HashTable tbl; const void *key; TableRecord rcd;);
-DEFINE_FUNCTION(hash_table_key_is_record,
+DECLARE_FUNCTION(key_equal_record_key,
+    int (*eq)(const void *, const void *);
+    const void *key;
+    TableRecord rcd;
+)
+
+DEFINE_FUNCTION(key_equal_record_key,
     int res, *res_r;
-    res = args->tbl->equal_func(args->key, args->rcd->k);
+    res = args->eq(args->key, args->rcd->k);
     MOVE(&res, res_r);
     return res_r;
 )
@@ -1256,8 +1262,8 @@ void *put_to_hash_table(HashTable tbl, const void *key, void *v)
     rcds_r = record_list(tbl, key);
 
     UNDER( /* search the already stored keys */
-        Function record_is_of_key = FUNCTION(hash_table_key_is_record);
-        fill_argument(record_is_of_key, tbl);
+        Function record_is_of_key = FUNCTION(key_equal_record_key);
+        fill_argument(record_is_of_key, tbl->equal_func);
         fill_argument(record_is_of_key, (void *)key);
 
         rcd = find_first(record_is_of_key, *rcds_r);
@@ -1284,8 +1290,8 @@ void *get_from_hash_table(HashTable tbl, const void *key)
     rcds = *record_list(tbl, key);
 
     UNDER( /* search the already stored keys */
-        Function record_is_of_key = FUNCTION(hash_table_key_is_record);
-        fill_argument(record_is_of_key, tbl);
+        Function record_is_of_key = FUNCTION(key_equal_record_key);
+        fill_argument(record_is_of_key, tbl->equal_func);
         fill_argument(record_is_of_key, (void *)key);
 
         rcd = find_first(record_is_of_key, rcds);
@@ -1302,8 +1308,8 @@ void *remove_from_hash_table(HashTable tbl, const void *key)
     rcds_r = record_list(tbl, key);
 
     UNDER( /* search the already stored keys */
-        Function record_is_of_key = FUNCTION(hash_table_key_is_record);
-        fill_argument(record_is_of_key, tbl);
+        Function record_is_of_key = FUNCTION(key_equal_record_key);
+        fill_argument(record_is_of_key, tbl->equal_func);
         fill_argument(record_is_of_key, (void *)key);
 
         TableRecord rcd;
@@ -1356,6 +1362,106 @@ static inline uint32_t
 hash_str(const char *str)
 {
     return hash((const uint8_t *)str, strlen(str));
+}
+@
+
+A list can be used as a table.
+
+@<basic@:light module@:C Structure@/data types@=
+struct assoc_table {
+    List records;
+    int (*equal_func)(const void *, const void *);
+};
+@
+
+@<basic@:light module@:C Structure@/exported data type declarations@=
+typedef struct assoc_table *AssocTable;
+@
+
+@<basic@:light module@:C Structure@/functions@=
+AssocTable new_assoc_table(int eq(const void *, const void *))
+{
+    AssocTable tbl;
+    NEW(tbl);
+    tbl->records = NULL;
+    tbl->equal_func = eq;
+    return tbl;
+}
+
+void free_assoc_table(AssocTable tbl)
+{
+    TableRecord rcd;
+    FOREACH (rcd, tbl->records) {
+        FREE(rcd);
+    }
+
+    free_list(tbl->records);
+    FREE(tbl);
+}
+
+void put_to_assoc_table(AssocTable tbl, const void *key, void *v)
+{
+    TableRecord rcd;
+    UNDER(
+        Function record_is_of_key = FUNCTION(key_equal_record_key);
+        fill_argument(record_is_of_key, tbl->equal_func);
+        fill_argument(record_is_of_key, (void *)key);
+
+        rcd = find_first(record_is_of_key, tbl->records);
+    );
+    if (!rcd) {
+        NEW(rcd);
+        rcd->k = key;
+        push(rcd, &tbl->records);
+    }
+    rcd->v = v;
+}
+
+void *get_from_assoc_table(AssocTable tbl, const void *key)
+{
+    TableRecord rcd;
+    void *ret;
+    UNDER(
+        Function record_is_of_key = FUNCTION(key_equal_record_key);
+        fill_argument(record_is_of_key, tbl->equal_func);
+        fill_argument(record_is_of_key, (void *)key);
+
+        rcd = find_first(record_is_of_key, tbl->records);
+    );
+    if (rcd) {
+        ret = rcd->v;
+    } else {
+        ret = NULL;
+    }
+    return ret;
+}
+
+void remove_from_assoc_table(AssocTable tbl, const void *key)
+{
+    UNDER(
+        Function record_is_of_key = FUNCTION(key_equal_record_key);
+        fill_argument(record_is_of_key, tbl->equal_func);
+        fill_argument(record_is_of_key, (void *)key);
+
+        TableRecord rcd;
+        ESCAPE(rcd = remove_first(record_is_of_key, &tbl->records));
+        FREE(rcd);
+    );
+}
+
+static int equal_func_reference(const void *r1, const void *r2)
+{
+    return r1 == r2;
+}
+
+AssocTable new_reference_assoc_table()
+{
+    return new_assoc_table(equal_func_reference);
+}
+
+AssocTable new_string_assoc_table()
+{
+    return new_assoc_table(equal_func_str);
 }
 @
 

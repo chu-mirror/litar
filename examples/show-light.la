@@ -360,7 +360,24 @@ UNDER(
     remove_from_hash_table(tbl, "Chu");
     assert(get_from_hash_table(tbl, "Chu") == NULL);
 );
-printf("Passed hashtable\n");
+printf("Passed hash table\n");
+
+UNDER(
+    AssocTable tbl = new_string_assoc_table();
+
+    put_to_assoc_table(tbl, "Chu", "Hello");
+    put_to_assoc_table(tbl, "Mzz", "Welcome");
+
+    assert(strcmp((char *)get_from_assoc_table(tbl, "Chu"), "Hello") == 0);
+    assert(strcmp((char *)get_from_assoc_table(tbl, "Mzz"), "Welcome") == 0);
+
+    put_to_assoc_table(tbl, "Chu", "Welcome");
+    assert(strcmp((char *)get_from_assoc_table(tbl, "Chu"), "Welcome") == 0);
+
+    remove_from_assoc_table(tbl, "Chu");
+    assert(get_from_assoc_table(tbl, "Chu") == NULL);
+);
+printf("Passed assoc table\n");
 
 UNDER(
     char *str1 = NULL, *str2 = NULL;

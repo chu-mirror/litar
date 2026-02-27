@@ -27,8 +27,8 @@ print join " ", map {"-I$_"} @@{ $meta{include_paths} };
 @<data type declarations@>
 @<data types@>
 @<function declarations@>
-@<static inline functions@>
 @<global variables@>
+@<static inline functions@>
 @<functions@>
 @|format C code@
 

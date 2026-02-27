@@ -9,6 +9,7 @@ Light
 @<show@:light@:C Structure@/includes@=
 #include <stdio.h>
 #include <assert.h>
+#include <unistd.h>
 #include "light.h"
 #include "state.h"
 @
@@ -33,8 +34,8 @@ UNDER(
             );
         );
     }
-    printf("Passed setjmp\n");
 );
+printf("Passed setjmp\n");
 @
 
 @<show cases@=
@@ -59,8 +60,8 @@ UNDER( /* test |push| and |pop| */
     RENAME(car(l1), n);
     assert(*n == 1);
     assert(length(l1) == 3);
-    printf("Passed push and pop\n");
 );
+printf("Passed push and pop\n");
 
 UNDER( /* test |reverse| */
     l1 = LIST(arr);
@@ -75,8 +76,8 @@ UNDER( /* test |reverse| */
             ++i;
         }
     } while (0);
-    printf("Passed reverse\n");
 );
+printf("Passed reverse\n");
 
 UNDER( /* test |append| */
     l1 = _LIST(arr, 3);
@@ -97,8 +98,8 @@ UNDER( /* test |append| */
             ++i;
         }
     } while (0);
-    printf("Passed reverse\n");
 );
+printf("Passed reverse\n");
 
 UNDER( /* test |copy_list| */
     l1 = _LIST(arr, 6);
@@ -111,8 +112,8 @@ UNDER( /* test |copy_list| */
         assert(elm == car(_l2));
         _l2 = cdr(_l2);
     }
-    printf("Passed copy_list\n");
 );
+printf("Passed copy_list\n");
 @
 
 @<show@:light@:C Structure@/static inline functions@=
@@ -144,8 +145,38 @@ UNDER(
     assert(!*res);
     RENAME(invoke(bigger_than_3, cons(&n4, NULL)), res);
     assert(*res);
-    printf("Passed bigger_than_3\n");
 );
+printf("Passed bigger_than_3\n");
+@
+
+@<show@:light@:C Structure@/static inline functions@=
+DECLARE_THREAD(bigger_than_thread, int *a; int *b;);
+DEFINE_THREAD(bigger_than_thread,
+    int res, *ret;
+    res = *args->a > *args->b;
+    MOVE(&res, ret);
+    return ret;
+)
+@
+
+@<show cases@=
+UNDER(
+    Function bigger_than;
+    int n1 = 1, n2 = 2, n3 = 3, n4 = 4;
+
+    bigger_than = THREAD(bigger_than_thread);
+
+    pthread_t thread1, thread2;
+    int *res;
+    assert(!create_thread(&thread1, NULL, bigger_than, cons(&n2, cons(&n1, NULL))));
+    assert(!create_thread(&thread2, NULL, bigger_than, cons(&n1, cons(&n2, NULL))));
+
+    pthread_join(thread1, (void **)&res);
+    assert(*res);
+    pthread_join(thread2, (void **)&res);
+    assert(!*res);
+);
+printf("Passed bigger_than(thread)\n");
 @
 
 @<show cases for list@=
@@ -170,8 +201,8 @@ UNDER( /* test |map| */
         }
         ++i;
     }
-    printf("Passed map\n");
 );
+printf("Passed map\n");
 
 UNDER( /* test |find_first| */
     Function bigger_than_3;
@@ -186,8 +217,8 @@ UNDER( /* test |find_first| */
     int *res;
     RENAME(find_first(bigger_than_3, l1), res);
     assert(*res == 4);
-    printf("Passed find_first\n");
 );
+printf("Passed find_first\n");
 
 UNDER( /* test |filter| */
     Function bigger_than_3;
@@ -207,8 +238,8 @@ UNDER( /* test |filter| */
         assert(i == *np);
         ++i;
     }
-    printf("Passed filter\n");
 );
+printf("Passed filter\n");
 
 UNDER( /* test |remove_first| */
     Function bigger_than_3;
@@ -231,8 +262,8 @@ UNDER( /* test |remove_first| */
         ++i;
         if (i == 4) ++i;
     }
-    printf("Passed remove_first\n");
 );
+printf("Passed remove_first\n");
 
 UNDER(
     Array arr;
@@ -255,8 +286,8 @@ UNDER(
     for (int i = 2; i < 2000; ++i) {
         assert(*nth(arr, i) == VALUE(0));
     }
-    printf("Passed array\n");
 );
+printf("Passed array\n");
 
 UNDER(
     Deque q;
@@ -289,15 +320,14 @@ UNDER(
         assert(elm == VALUE(i));
     }
     assert(is_empty_deque(q));
-    printf("Passed deque\n");
 );
+printf("Passed deque\n");
 
 UNDER(
     Str str = new_str();
     for (int i = 0; i < 10; ++i) {
         static char num[2];
-        num[0] = '0';
-        num[0] += i;
+        num[0] = '0' + i;
         str_extend(str, num);
     }
     assert(strcmp(raw_string(str), "0123456789") == 0);
@@ -308,8 +338,8 @@ UNDER(
         str_extend(str, "Hello");
     }
     assert(str_length(str) == 10 * strlen("Hello"));
-    printf("Passed str\n");
 );
+printf("Passed str\n");
 
 UNDER(
     HashTable tbl = NULL;
@@ -329,8 +359,8 @@ UNDER(
 
     remove_from_hash_table(tbl, "Chu");
     assert(get_from_hash_table(tbl, "Chu") == NULL);
-    printf("Passed hashtable\n");
 );
+printf("Passed hashtable\n");
 
 UNDER(
     char *str1 = NULL, *str2 = NULL;
@@ -348,8 +378,8 @@ UNDER(
 
     assert(a1 == a2);
     assert(strcmp(a1, "Hello") == 0);
-    printf("Passed atom\n");
 );
+printf("Passed atom\n");
 @
 
 @<show@:light@:C Structure@/data type declarations@=
@@ -597,8 +627,8 @@ UNDER( /* test state machine */
 
     state_clear(state_machine);
     assert(total_handled_signals == signals_sent);
-    printf("Passed statemachine\n");
 );
+printf("Passed statemachine\n");
 @
 
 @. lib/light.la

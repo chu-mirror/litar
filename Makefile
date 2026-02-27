@@ -50,7 +50,7 @@ show.c: examples/show-light.la $(LIGHT_HEADER)
 	./boot -p "show.c" examples/show-light.la > show.c
 
 show: show.c $(LIGHT_SOURCE)
-	gcc -g -o $@ $^
+	gcc -g -o $@ $^ -pthread
 
 clean:
 	rm -f litar.c litar hello litar.1 boot hello.c hello.h show show.c main.c \

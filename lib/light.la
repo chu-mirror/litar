@@ -38,6 +38,8 @@ Some always to use header files.
 #include <string.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <threads.h>
+#include <pthread.h>
 @
 
 There are some idioms to make life a bit easier.
@@ -97,11 +99,12 @@ struct _hash_table_ptr_entry {
 
 @<basic@:light module@:C Structure@/exported macros@=
 #define MAPPING_PTR(name) \
-    struct _hash_table_ptr_entry *ptr_to_##name[1 << ptr_to_##name##_size]
+    pthread_mutex_t ptr_to_##name##_mutex = PTHREAD_MUTEX_INITIALIZER; \
+    static struct _hash_table_ptr_entry *ptr_to_##name[1 << ptr_to_##name##_size]
 @
 
 @<basic@:light module@:C Structure@/functions@=
-struct _hash_table_ptr_entry **
+static struct _hash_table_ptr_entry **
 _mapping_find_entry(struct _hash_table_ptr_entry **mapping, size_t size, void *k)
 {
     uint64_t h = _hash_ptr(k);
@@ -121,9 +124,14 @@ _mapping_find_entry(struct _hash_table_ptr_entry **mapping, size_t size, void *k
     return &mapping[h];
 }
 
-void _map_ptr_to(struct _hash_table_ptr_entry **mapping, size_t size, void *k, void *v)
-{
+void _map_ptr_to(
+    struct _hash_table_ptr_entry **mapping,
+    pthread_mutex_t *mutex_r,
+    size_t size,
+    void *k, void *v
+) {
     struct _hash_table_ptr_entry *ent, **ent_r;
+    pthread_mutex_lock(mutex_r);
     ent_r = _mapping_find_entry(mapping, size, k);
     if (*ent_r && (*ent_r)->ptr == k) {
         (*ent_r)->val = v;
@@ -134,36 +142,55 @@ void _map_ptr_to(struct _hash_table_ptr_entry **mapping, size_t size, void *k, v
         ent->val = v;
         *ent_r = ent;
     }
+    pthread_mutex_unlock(mutex_r);
 }
 
-void _unmap_ptr(struct _hash_table_ptr_entry **mapping, size_t size, void *k)
-{
+void _unmap_ptr(
+    struct _hash_table_ptr_entry **mapping,
+    pthread_mutex_t *mutex_r,
+    size_t size,
+    void *k
+) {
     struct _hash_table_ptr_entry **ent_r, *ent;
+    pthread_mutex_lock(mutex_r);
     ent_r = _mapping_find_entry(mapping, size, k);
     if (*ent_r && (*ent_r)->ptr == k) {
         ent = *ent_r;
         *ent_r = ent->next;
         free(ent);
     }
+    pthread_mutex_unlock(mutex_r);
 }
 
-void *_mapped_by_ptr(struct _hash_table_ptr_entry **mapping, size_t size, void *k)
-{
+void *_mapped_by_ptr(
+    struct _hash_table_ptr_entry **mapping,
+    pthread_mutex_t *mutex_r,
+    size_t size,
+    void *k
+) {
+    void *ret;
     struct _hash_table_ptr_entry **ent_r;
+    pthread_mutex_lock(mutex_r);
     ent_r = _mapping_find_entry(mapping, size, k);
     if (!*ent_r || (*ent_r)->ptr != k) {
-        return NULL;
+        ret = NULL;
+    } else {
+        ret = (*ent_r)->val;
     }
-    return (*ent_r)->val;
+    pthread_mutex_unlock(mutex_r);
+    return ret;
 }
 @
 
 Some convenient macros.
 
 @<basic@:light module@:C Structure@/exported macros@=
-#define map_ptr_to(name, k, v) _map_ptr_to(ptr_to_##name, ptr_to_##name##_size, (k), (v))
-#define unmap_ptr(name, k) _unmap_ptr(ptr_to_##name, ptr_to_##name##_size, (k))
-#define mapped_by_ptr(name, k) _mapped_by_ptr(ptr_to_##name, ptr_to_##name##_size, (k))
+#define map_ptr_to(name, k, v) \
+    _map_ptr_to(ptr_to_##name, &ptr_to_##name##_mutex, ptr_to_##name##_size, (k), (v))
+#define unmap_ptr(name, k) \
+    _unmap_ptr(ptr_to_##name, &ptr_to_##name##_mutex, ptr_to_##name##_size, (k))
+#define mapped_by_ptr(name, k) \
+    _mapped_by_ptr(ptr_to_##name, &ptr_to_##name##_mutex, ptr_to_##name##_size, (k))
 @
 
 The forming of program follows a common pattern,
@@ -195,10 +222,14 @@ struct resource_node {
     Resource resource;
 };
 
+struct context_child_node {
+    struct context_child_node *next;
+    Context child;
+};
+
 struct context {
     Context parent;
-    Context active_child;
-    Context sibling;
+    struct context_child_node *children;
     struct resource_node *resources;
 };
 
@@ -208,8 +239,16 @@ struct resource {
 };
 @
 
+Despite that all threads has its own interface to context tree,
+the context tree itself is managed globally.
+
 @<basic@:light module@:C Structure@/global variables@=
-Context _light_top_context;
+thread_local Context _light_top_context;
+static pthread_mutex_t context_tree_mutex = PTHREAD_MUTEX_INITIALIZER;
+@
+
+@<basic@:light module@:C Structure@/global declarations@=
+extern thread_local Context _light_top_context;
 @
 
 @<basic@:light module@:C Structure@/macros@=
@@ -225,15 +264,25 @@ static MAPPING_PTR(resource_node);
 @<basic@:light module@:C Structure@/functions@=
 void enter_context() {
     Context ctx;
+
     ctx = malloc(sizeof(*ctx));
     ctx->parent = _light_top_context;
-    ctx->active_child = NULL;
-    ctx->sibling = _light_top_context->active_child;
+    ctx->children = NULL;
     ctx->resources = NULL;
-    _light_top_context->active_child = ctx;
+
+    struct context_child_node *nd;
+    nd = malloc(sizeof(*nd));
+    nd->child = ctx;
+
+    pthread_mutex_lock(&context_tree_mutex);
+    nd->next = _light_top_context->children;
+    _light_top_context->children = nd;
+    pthread_mutex_unlock(&context_tree_mutex);
+
     _light_top_context = ctx;
+
 #ifndef NDEBUG
-    fprintf(stderr, "Enter context: %p\n", ctx);
+    fprintf(stderr, "Enter context: %p, parent: %p\n", ctx, ctx->parent);
 #endif
 }
 
@@ -246,13 +295,16 @@ void new_resource(void *id, void (*cl)(void *)) {
     struct resource_node *nd;
     nd = malloc(sizeof(*nd));
     nd->resource = res;
-    nd->next = _light_top_context->resources;
     nd->previous = NULL;
+
+    pthread_mutex_lock(&context_tree_mutex);
+    nd->next = _light_top_context->resources;
     if (nd->next) {
         nd->next->previous = nd;
     }
-
     _light_top_context->resources = nd;
+    pthread_mutex_unlock(&context_tree_mutex);
+
     map_ptr_to(resource_node, id, nd);
 #ifndef NDEBUG
     fprintf(stderr, "New resource: %p, under: %p\n", id, _light_top_context);
@@ -261,6 +313,8 @@ void new_resource(void *id, void (*cl)(void *)) {
 
 void delete_resource(void *id) {
     struct resource_node *nd;
+
+    pthread_mutex_lock(&context_tree_mutex);
     nd = mapped_by_ptr(resource_node, id);
     if (nd->previous) {
         nd->previous->next = nd->next;
@@ -270,6 +324,7 @@ void delete_resource(void *id) {
     if (nd->next) {
         nd->next->previous = nd->previous;
     }
+    pthread_mutex_unlock(&context_tree_mutex);
     
     unmap_ptr(resource_node, id);
     Resource res = nd->resource;
@@ -285,7 +340,10 @@ void rename_resource(void *id1, void *id2) {
     nd = mapped_by_ptr(resource_node, id1);
     unmap_ptr(resource_node, id1);
 
+    pthread_mutex_lock(&context_tree_mutex);
     nd->resource->identity = id2;
+    pthread_mutex_unlock(&context_tree_mutex);
+
     map_ptr_to(resource_node, id2, nd);
 #ifndef NDEBUG
     fprintf(stderr, "Rename resource: %p, to: %p, under: %p\n", id1, id2, _light_top_context);
@@ -293,31 +351,52 @@ void rename_resource(void *id1, void *id2) {
 }
 
 static void _exit_context(Context ctx) {
-    while (ctx->active_child) {
-        _exit_context(ctx->active_child);
+    while (ctx->children) {
+        _exit_context(ctx->children->child);
     }
 
     struct resource_node *nd, *nd_;
-    for (nd_ = NULL, nd = ctx->resources; nd != NULL; nd_ = nd, nd = nd->next, free(nd_)) {
+    for (nd_ = NULL, nd = ctx->resources; nd; nd_ = nd, nd = nd->next, free(nd_)) {
         Resource res = nd->resource;
 #ifndef NDEBUG
-        fprintf(stderr, "Free resource: %p, under: %p\n", res->identity, _light_top_context);
+        fprintf(stderr, "Free resource: %p, under: %p\n", res->identity, ctx);
 #endif
         res->clean(res->identity);
         unmap_ptr(resource_node, res->identity);
         free(res);
     }
 
-    ctx->parent->active_child = ctx->sibling;
-    _light_top_context = ctx->parent;
-    free(ctx);
+    do {
+        struct context_child_node *nd, **nd_r;
+
+        nd_r = &ctx->parent->children;
+        nd = ctx->parent->children;
+
+        for (; nd; nd_r = &nd->next, nd = nd->next) {
+            if (nd->child == ctx) {
+                *nd_r = nd->next;
+                free(nd);
+                break;
+            }
+        }
+    } while (0);
+
 #ifndef NDEBUG
-    fprintf(stderr, "Exit context: %p\n", ctx);
+    fprintf(stderr, "Exit context: %p, parent: %p\n", ctx, ctx->parent);
 #endif
+
+    free(ctx);
 }
 
 void exit_context() {
+    Context parent;
+
+    pthread_mutex_lock(&context_tree_mutex);
+    parent = _light_top_context->parent;
     _exit_context(_light_top_context);
+    pthread_mutex_unlock(&context_tree_mutex);
+
+    _light_top_context = parent;
 }
 @
 
@@ -397,8 +476,7 @@ jmp_buf exit_main;
 Context ctx;
 ctx = malloc(sizeof(*ctx));
 ctx->parent = NULL;
-ctx->active_child = NULL;
-ctx->sibling = NULL;
+ctx->children = NULL;
 ctx->resources = NULL;
 _light_top_context = ctx;
 UNDER(UNDER(
@@ -631,29 +709,33 @@ void fill_argument(Function func, void *arg)
     push(arg, &func->args);
 }
 
+static void *structured_args(Function func, List args)
+{
+    void *arg;
+    List _args = copy_list(func->args);
+    FOREACH (arg, args) {
+        push(arg, &_args);
+    }
+    assert(length(_args) == func->argn);
+
+    void **args_;
+    CALLOC(args_, func->argn);
+
+    reverse(&_args);
+
+    int i = 0;
+    FOREACH (arg, _args) {
+        args_[func->mapping[i]] = arg;
+        ++i;
+    }
+    return args_;
+}
+
 void *invoke(Function func, List args)
 {
-
     void *ret;
     UNDER(
-        void *arg;
-        List _args = copy_list(func->args);
-        FOREACH (arg, args) {
-            push(arg, &_args);
-        }
-        assert(length(_args) == func->argn);
-
-        void **args_;
-        CALLOC(args_, func->argn);
-
-        reverse(&_args);
-
-        int i = 0;
-        FOREACH (arg, _args) {
-            args_[func->mapping[i]] = arg;
-            ++i;
-        }
-
+        void *args_ = structured_args(func, args);
         ESCAPE(ret = func->func(args_));
     );
     return ret;
@@ -674,6 +756,46 @@ void *invoke(Function func, List args)
 #define FUNCTION(name) \
     _new_function(_function_func_##name, sizeof(struct _function_args_##name)/sizeof(void *))
 @
+
+Generalized functions are good to define threads.
+
+@<basic@:light module@:C Structure@/exported macros@=
+#define DECLARE_THREAD(name, ...) DECLARE_FUNCTION(name, Context top_context; __VA_ARGS__)
+#define DEFINE_THREAD(name, ...) \
+    DEFINE_FUNCTION(name, _light_top_context = args->top_context; __VA_ARGS__)
+@
+
+@<basic@:light module@:C Structure@/exported static inline functions@=
+static inline Function
+_new_thread(void *(*f)(void *), int argn)
+{
+    Function func;
+    func = _new_function(f, argn);
+    fill_argument(func, _light_top_context);
+    return func;
+}
+@
+
+@<basic@:light module@:C Structure@/exported macros@=
+#define THREAD(name) \
+    _new_thread(_function_func_##name, sizeof(struct _function_args_##name)/sizeof(void *))
+@
+
+@<basic@:light module@:C Structure@/functions@=
+int create_thread(pthread_t *thread, const pthread_attr_t *attr, Function func, List args)
+{
+    int ret;
+    void *args_ = structured_args(func, args);
+    ret = pthread_create(thread, attr, func->func, args_);
+    return ret;
+}
+@
+
+@<basic@:light module@:C Structure@/global declarations@=
+int create_thread(pthread_t *thread, const pthread_attr_t *attr, Function func, List args);
+@
+
+Here are some useful higher-order functions that make use of generalized functions.
 
 @<basic@:light module@:C Structure@/functions@=
 List map(Function func, List l)
@@ -747,6 +869,7 @@ void *remove_first(Function jdg, List *l_r)
     return elm;
 }
 @
+
 
 Some useful generalized functions.
 
@@ -1018,10 +1141,12 @@ void str_extend(Str str, const char *s)
     int new_len;
 
     new_len = str->len + strlen(s);
-    while (str->mem_size < new_len) {
-        str->mem_size <<= 1;
+    if (str->mem_size < new_len) {
+        while (str->mem_size < new_len) {
+            str->mem_size <<= 1;
+        }
+        REALLOC_ARRAY(str->raw_string, str->mem_size);
     }
-    REALLOC_ARRAY(str->raw_string, str->mem_size);
     strcpy(str->raw_string + str->len, s);
     str->len = new_len;
 }

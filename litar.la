@@ -481,18 +481,18 @@ if (fuse_opt_parse(&args, &user_options, litarfs_option_specs, NULL) < 0) {
     longjmp(exit_main, 1);
 }
 
-bool to_mount_file_system = true;
+int to_mount_file_system = 1;
 
 if (user_options.help) {
     printf("@<litarfs@:C Structure@/command line usage@>");
     fuse_opt_add_arg(&args, "--help");
-    to_mount_file_system = false;
+    to_mount_file_system = 0;
 }
 
 if (user_options.version) {
     @<print version information@>
     fuse_opt_add_arg(&args, "--version");
-    to_mount_file_system = false;
+    to_mount_file_system = 0;
 }
 
 if (to_mount_file_system) {
@@ -505,23 +505,548 @@ if (to_mount_file_system) {
 returned = fuse_main(args.argc, args.argv, &litarfs_oper, NULL);
 @
 
-@<command line options for "litarfs MOUNT_POINT"@=
-{
-    long_opt => "archive",
-    argument => "ARCHIVE",
-    description => "Specify the litar archive",
-},
+Before we get into "fuse_main", we should build a proper context for it.
+The context should contain all information needed to build a file system.
+
+Concepts illustrated in the previous chapters
+should be represented before the details of implementation.
+
+@<litarfs@:light@:C Structure@/data type declarations@=
+typedef struct mappings_module *Module;
+typedef struct mappings_chunk *Chunk;
+typedef struct mappings_block *Block;
+typedef struct mappings_chunk_ref *ChunkRef;
 @
 
-@<set default values for "user_options"@=
-user_options.archive = strdup("archive.la");
+@<litarfs@:light@:C Structure@/data types@=
+struct mappings_module {
+    @<mappings from module@>
+};
+
+struct mappings_chunk {
+    @<mappings from chunk@>
+};
+
+struct mappings_block {
+    @<mappings from block@>
+};
+
+struct mappings_chunk_ref {
+    @<mappings from chunk ref@>
+};
+@
+
+There are some named modules and an anonymous module.
+The anonymous module is a module whose name is an empty string.
+
+@<litarfs@:light@:C Structure@/global variables@=
+HashTable module_name_to_module;
+@
+
+@<mappings from module@=
+const char *name;
+@
+
+@<initializations of main context@=
+module_name_to_module = new_string_hash_table(HASH_TABLE_DEFAULT_SIZE);
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+void there_is_module_of_name(const char *name)
+{
+    Module mod;
+    mod = get_from_hash_table(module_name_to_module, name);
+    if (!mod) {
+        NEW0(mod);
+        mod->name = name;
+        put_to_hash_table(module_name_to_module, name, mod);
+    }
+}
+
+Module module_of_name(const char *name)
+{
+    return get_from_hash_table(module_name_to_module, name);
+}
+@
+
+A module contains chunks.
+
+@<mappings from module@=
+HashTable chunk_name_to_chunk;
+@
+
+A chunk belongs to a module, a chunk has a name.
+
+@<mappings from chunk@=
+Module module;
+const char *name;
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+void there_is_chunk_in_module_of_name(Module mod, const char *name)
+{
+    if (!mod->chunk_name_to_chunk) {
+        mod->chunk_name_to_chunk = new_string_hash_table(HASH_TABLE_DEFAULT_SIZE);
+    }
+
+    Chunk chk;
+    chk = get_from_hash_table(mod->chunk_name_to_chunk, name);
+    if (!chk) {
+        NEW0(chk);
+        chk->name = name;
+        chk->module = mod;
+        put_to_hash_table(mod->chunk_name_to_chunk, name, chk);
+    }
+}
+
+Chunk chunk_in_module_of_name(Module mod, const char *name)
+{
+    if (!mod->chunk_name_to_chunk) {
+        return NULL;
+    }
+    return get_from_hash_table(mod->chunk_name_to_chunk, name);
+}
+@
+
+A chunk is specialized by labels.
+
+@<mappings from chunk@=
+AssocTable labels_to_blocks;
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static int equal_func_labels(const void *lbls1, const void *lbls2)
+{
+    List l1, l2;
+    int ret = 1;
+
+    RENAME(lbls1, l1);
+    RENAME(lbls2, l2);
+
+    while (l1 && l2) {
+        ret = ret && (car(l1) == car(l2));
+        if (!ret) {
+            break;
+        }
+        l1 = cdr(l1);
+        l2 = cdr(l2);
+    }
+    if (l1 || l2) {
+        ret = 0;
+    }
+    return ret;
+}
+
+List blocks_of_chunk_specialized_by(Chunk chk, List lbls)
+{
+    if (!chk->labels_to_blocks) {
+        return NULL;
+    }
+    List blks = get_from_assoc_table(chk->labels_to_blocks, lbls);
+    return blks;
+}
+
+void block_extend_chunk_specialized_by(Block blk, Chunk chk, List lbls)
+{
+    if (!chk->labels_to_blocks) {
+        chk->labels_to_blocks = new_assoc_table(equal_func_labels);
+    }
+
+    List blks = blocks_of_chunk_specialized_by(chk, lbls);
+    push(blk, &blks);
+    put_to_assoc_table(chk->labels_to_blocks, lbls, blks);
+}
+
+List blocks_of_chunk_ref(ChunkRef ckr)
+{
+    return blocks_of_chunk_specialized_by(ckr->chunk, ckr->labels);
+}
+
+void block_extend_chunk_ref(Block blk, ChunkRef ckr)
+{
+    block_extend_chunk_specialized_by(blk, ckr->chunk, ckr->labels);
+}
+@
+
+A reference to chunk is consists of a chunk and a list of labels.
+
+@<mappings from chunk ref@=
+Chunk chunk;
+List labels;
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+void chunk_ref_is_specialized_by(ChunkRef ckr, const char *lbl)
+{
+    push((void *)lbl, &ckr->labels);
+}
+@
+
+The contents of a block may either be a reference to the original text
+or a reference to a chunk and a list of filters.
+
+@<litarfs@:light@:C Structure@/data types@=
+typedef struct {
+    enum {
+        BLOCK_CONTENT_TEXT,
+        BLOCK_CONTENT_CHUNK_REF,
+    } type;
+    union {
+        Str text;
+        struct {
+            ChunkRef chunk_ref;
+            List filters;
+        } chunk;
+    } value;
+} *BlockContent;
+@
+
+A block contains a list of contents defined before.
+
+@<mappings from block@=
+List contents;
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+void block_contain_text(Block blk, Str txt)
+{
+    BlockContent bc;
+
+    NEW0(bc);
+    bc->type = BLOCK_CONTENT_TEXT;
+    bc->value.text = txt;
+    push(bc, &blk->contents);
+}
+
+void block_include_chunk_ref_with_filters(Block blk, ChunkRef ckr, List flts)
+{
+    BlockContent bc;
+
+    NEW0(bc);
+    bc->type = BLOCK_CONTENT_CHUNK_REF;
+    bc->value.chunk.chunk_ref = ckr;
+    bc->value.chunk.filters = flts;
+    push(bc, &blk->contents);
+}
+@
+
+A block extending a chunk might be transformed by filters.
+
+@<mappings from block@=
+List filters;
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+void block_is_transformed_by(Block blk, Chunk flt)
+{
+    push(flt, &blk->filters);
+}
+@
+
+A litar archive consists of comments and blocks, we call a comment or a block a section.
+It's necessary to keep the comments and the order between sections.
+And a section belongs to a module and is in a file.
+
+@<litarfs@:light@:C Structure@/data types@=
+typedef struct {
+    enum {
+        SECTION_COMMENT,
+        SECTION_BLOCK,
+    } type;
+    union {
+        List comment; /* A list of TextRef */
+        Block block;
+    } content;
+    Module module;
+    const char *file_path;
+} *Section;
+@
+
+@<litarfs@:C Structure@/global variables@=
+List sections;
+@
+
+Some chunks may be labeled as files,
+a file system can be built from these file paths.
+
+@<litarfs@:light@:C Structure@/data types@=
+typedef struct {
+    enum {
+        NODE_DIRECTORY,
+        NODE_REGULAR,
+        NODE_EXECUTABLE,
+    } type;
+    union {
+        List nodes;
+        Chunk chunk;
+    } value;
+    const char *name;
+} *Node;
+@
+
+@<litarfs@:light@:C Structure@/global variables@=
+Node root_node;
+@
+
+@<initializations of main context@=
+NEW(root_node);
+root_node->type = NODE_DIRECTORY;
+root_node->value.nodes = NULL;
+root_node->name = atom_str("");
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+Node node_of_name_under_node(const char *file, Node node)
+{
+    Node nd;
+    if (node->type != NODE_DIRECTORY) {
+        fprintf(stderr, "Node %s is not directory\n", node->name);
+        exit(1);
+    }
+    FOREACH(nd, node->value.nodes) {
+        if (strcmp(file, nd->name) == 0) {
+            return nd;
+        }
+    }
+    return NULL;
+}
+
+Node node_of_path(const char *path)
+{
+    char *path_t = NULL;
+    Node node = root_node;
+    int i = 0, f = i, l = strlen(path);
+
+    UNDER(
+        STRDUP(path, path_t);
+
+        if (path[0] == '/') {
+            ++i;
+            ++f;
+        }
+
+        while (f < l) {
+            if (path_t[i] == '/' || path_t[i] == '\0') {
+                path_t[i] = '\0';
+                if ((node = node_of_name_under_node(path_t+f, node)) == NULL) {
+                    break;
+                }
+                f = i+1;
+            }
+            ++i;
+        }
+    );
+
+    return node;
+}
+
+char *path_of_chunk(Chunk chk)
+{
+    char *ret;
+    UNDER(
+        Str path;
+        path = new_str();
+        if (chk->module != module_of_name("")) {
+            str_extend(path, chk->module->name);
+            str_extend(path, "/");
+        }
+        str_extend(path, chk->name);
+        ESCAPE(STRDUP(raw_string(path), ret));
+    );
+    return ret;
+}
+
+Node node_of_chunk(Chunk chk)
+{
+    Node nd;
+    UNDER(nd = node_of_path(path_of_chunk(chk)));
+    return nd;
+}
+
+void there_is_module_in_file_system(Module mod)
+{
+    Node nd;
+
+    NEW0(nd);
+    nd->type = NODE_DIRECTORY;
+    nd->name = mod->name;
+    nd->value.nodes = NULL;
+    push(nd, &root_node->value.nodes);
+}
+
+void chunk_is_file(Chunk chk)
+{
+    char *path;
+    Node node = root_node, nd;
+    int i = 0, f = i, l;
+
+    UNDER(
+        path = path_of_chunk(chk);
+        l = strlen(path);
+
+        while (f < l) {
+            if (path[i] == '/') {
+                path[i] = '\0';
+                if ((nd = node_of_name_under_node(path+f, node)) == NULL) {
+                    ESCAPE(
+                        NEW(nd);
+                        nd->type = NODE_DIRECTORY;
+                        nd->name = atom_str(path+f);
+                        nd->value.nodes = NULL;
+                        push(nd, &node->value.nodes);
+                    );
+                }
+                node = nd;
+                f = i+1;
+            } else if (path[i] == '\0') {
+                if ((nd = node_of_name_under_node(path+f, node)) == NULL) {
+                    ESCAPE(
+                        NEW(nd);
+                        nd->type = NODE_REGULAR;
+                        nd->name = atom_str(path+f);
+                        nd->value.chunk = chk;
+                        push(nd, &node->value.nodes);
+                    );
+                }
+                break;
+            }
+            ++i;
+        }
+    );
+}
+
+void chunk_is_executable(Chunk chk)
+{
+    chunk_is_file(chk);
+
+    Node nd;
+    nd = node_of_chunk(chk);
+    nd->type = NODE_EXECUTABLE;
+}
+@
+
+From the definitions above, we can define the content of chunk
+and expanded content of block.
+
+litar use a stack to detect recursive including and report it as a severe error.
+@<litar@:C Structure@/global variables@=
+List stack_of_chunks_in_tangling = empty_list;
+@
+
+@<litar@:C Structure@/functions@=
+bool chunk_is_in_tangling(Chunk chk)
+{
+    Chunk chk_t;
+    FOREACH (chk_t, stack_of_chunks_in_tangling) {
+        if (chk_t == chk) {
+            return true;
+        }
+    }
+    return false;
+}
+@
+
+@<litar@:C Structure@/functions@=
+Str
+content_of_chunk_with_labels(Chunk chk, List lbls)
+{
+    if (chunk_is_in_tangling(chk)) {
+        fprintf(stderr, "Recursively include \"%s\"\n", chk->name);
+        exit(1);
+    }
+
+    Str cc = NULL;
+    new_str(&cc);
+
+    List remains = lbls, passeds = empty_list;
+
+    do {
+        List blks;
+        ChunkRef ckr = NULL;
+        NEW0(ckr);
+
+        reverse(&passeds);
+        ckr->chunk = chk;
+        ckr->labels = passeds;
+        blks = copy_list(blocks_of_chunk_ref(ckr));
+        reverse(&passeds);
+        FREE(ckr);
+
+        reverse(&blks);
+
+        Block blk;
+        push(chk, &stack_of_chunks_in_tangling);
+        FOREACH(blk, blks) {
+            Str exb = expanded_content_of_block_with_labels(blk, remains);
+            transform_with_labels(exb, blk->filters, remains);
+            str_extend(cc, raw_string(exb));
+            free_str(&exb);
+        }
+        pop(&stack_of_chunks_in_tangling);
+
+        free_list(&blks);
+        if (is_empty_list(remains)) {
+            break;
+        }
+        push(car(remains), &passeds);
+        remains = cdr(remains);
+    } while (true);
+
+    free_list(&passeds);
+
+    return cc;
+}
+
+Str
+content_of_chunk_ref(ChunkRef ckr)
+{
+    return content_of_chunk_with_labels(ckr->chunk, ckr->labels);
+}
+
+Str
+expanded_content_of_block_with_labels(Block blk, List lbls)
+{
+    Str ect = NULL;
+    List bcs = copy_list(blk->contents);
+    BlockContent bc;
+
+    reverse(&bcs);
+    
+    new_str(&ect);
+    FOREACH(bc, bcs) {
+        if (bc->type == BLOCK_CONTENT_TEXT) {
+            char *txt;
+            txt = fetch_text_from(bc->value.text);
+            str_extend(ect, txt);
+            FREE(txt);
+        }
+        if (bc->type == BLOCK_CONTENT_CHUNK) {
+            List l1, l2, l;
+
+            l1 = copy_list(lbls);
+            l2 = copy_list(bc->value.chunk.chunk_ref->labels);
+            l = append(&l2, &l1);
+
+            Str cc = content_of_chunk_with_labels(
+                bc->value.chunk.chunk_ref->chunk, l
+            );
+
+            transform_with_labels(cc, bc->value.chunk.filters, lbls);
+            str_extend(ect, raw_string(cc));
+
+            free_str(&cc);
+            free_list(&l);
+        }
+    }
+    
+    free_list(&bcs);
+
+    return ect;
+}
 @
 
 @<litarfs operations@=
 LITARFS_OPER(init),
-@
-
-@<build context for "fuse_main"@=
 @
 
 @<litarfs@:light@:C Structure@/functions@=
@@ -537,13 +1062,29 @@ litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 static void *litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg);
 @
 
-@<context@:light@:C Structure@/include flags@=
+@<command line options for "litarfs MOUNT_POINT"@=
+{
+    long_opt => "archive",
+    opt => "a",
+    argument => "ARCHIVE",
+    description => "Specify the litar archive",
+},
+@
+
+@<set default values for "user_options"@=
+user_options.archive = strdup("archive.la");
+@
+
+@<build context for "fuse_main"@=
+@
+
+@<basic@:light module@:C Structure@/include flags@=
 #define NDEBUG
 @
 
 @<litarfs@:light@:C Structure@/includes@=
 #include <stdio.h>
-#include "context.h"
+#include "light.h"
 @
 
 @<litar@:C Structure@/invocation syntax@=
@@ -685,95 +1226,6 @@ do {
 
 # Concepts
 
-Concepts illustrated in the previous chapters
-should be represented before the details of implementation.
-
-@<litar@:C Structure@/functions@=
-@<relations between object@>
-@
-
-@<litar@:C Structure@/data type declarations@=
-typedef struct mappings_module *Module;
-typedef struct mappings_chunk *Chunk;
-typedef struct mappings_block *Block;
-typedef struct mappings_chunk_ref *ChunkRef;
-@
-
-@<litar@:C Structure@/data types@=
-struct mappings_module {
-    @<mappings from module@>
-};
-
-struct mappings_chunk {
-    @<mappings from chunk@>
-};
-
-struct mappings_block {
-    @<mappings from block@>
-};
-
-struct mappings_chunk_ref {
-    @<mappings from chunk ref@>
-};
-@
-
-To save memory, reference to the original text is represented by some records
-rather than stored to memory. The text can later be fetched through mmap in need.
-
-@<litar@:C Structure@/data types@=
-typedef struct {
-    const char *file;
-    int start;
-    int end;
-} *TextRef;
-@
-
-@<litar@:C Structure@/global variables@=
-HashTable file_to_mmap_addr = NULL;
-@
-
-@<initializations of global variables@=
-new_string_hash_table(&file_to_mmap_addr);
-@
-
-@<litar@:C Structure@/functions@=
-char *
-fetch_text_from(TextRef tr)
-{
-    void *addr;
-
-    addr = get_from_hash_table(file_to_mmap_addr, tr->file);
-    if (addr == NULL) {
-        struct stat sbuf;
-        int f;
-
-        if ((f = open(tr->file, O_RDONLY)) < 0) {
-            perror(tr->file);
-            exit(1);
-        }
-
-        if (fstat(f, &sbuf) < 0) {
-            perror(tr->file);
-            exit(1);
-        }
-
-        addr = mmap(NULL, sbuf.st_size, PROT_READ, MAP_SHARED, f, 0);
-        if (addr == MAP_FAILED) {
-            perror(tr->file);
-            exit(1);
-        }
-        RESERVE(put_to_hash_table(file_to_mmap_addr, tr->file, addr));
-    }
-    
-    char *str = NULL;
-    int len = tr->end - tr->start;
-    CALLOC(str, len+1);
-    memcpy(str, addr + tr->start, len);
-    str[len] = '\0';
-    return str;
-}
-@
-
 There's a lot of names in a litar archive. To avoid potential miss use of
 blanks, the names are normalized according to a simple rule.
 The names consists of none-space words, so "name of chunk" does not
@@ -814,549 +1266,7 @@ normalize(const char *name)
 }
 @
 
-There are some named modules and an anonymous module.
-The anonymous module is a module whose name is an empty string.
 
-@<litar@:C Structure@/global variables@=
-HashTable module_name_to_module = NULL;
-@
-
-@<mappings from module@=
-const char *name;
-@
-
-@<initializations of global variables@=
-new_string_hash_table(&module_name_to_module);
-@
-
-@<relations between object@=
-Module
-module_of_name(const char *name)
-{
-    const char *norm;
-    norm = normalize(name);
-
-    Module mod;
-    mod = get_from_hash_table(module_name_to_module, norm);
-    if (mod == NULL) {
-        RESERVE(
-            NEW0(mod);
-            put_to_hash_table(module_name_to_module, norm, mod);
-            mod->name = norm;
-        );
-    }
-
-    return mod;
-}
-@
-
-A module contains chunks.
-
-@<mappings from module@=
-HashTable chunk_name_to_chunk;
-@
-
-A chunk belongs to a module, a chunk has a name.
-
-@<mappings from chunk@=
-Module module;
-const char *name;
-@
-
-@<relations between object@=
-Chunk
-chunk_in_module_of_name(Module mod, const char *name)
-{
-    const char *norm;
-    norm = normalize(name);
-
-    if (!mod->chunk_name_to_chunk) {
-        RESERVE(new_string_hash_table(&mod->chunk_name_to_chunk));
-    }
-
-    Chunk chk;
-    chk = get_from_hash_table(mod->chunk_name_to_chunk, norm);
-    if (chk == NULL) {
-        RESERVE(
-            NEW0(chk);
-            put_to_hash_table(mod->chunk_name_to_chunk, norm, chk);
-            chk->name = norm;
-            chk->module = mod;
-        );
-    }
-
-    return chk;
-}
-
-bool
-chunk_of_name_exist_in_module(const char *name, Module mod)
-{
-    if (!mod->chunk_name_to_chunk) {
-        return false;
-    }
-
-    const char *norm;
-    norm = normalize(name);
-
-    Chunk chk;
-    chk = get_from_hash_table(mod->chunk_name_to_chunk, norm);
-
-    return chk != NULL;
-}
-@
-
-A chunk is specialized by labels.
-
-@<mappings from chunk@=
-AssocTable labels_to_blocks;
-@
-
-@<relations between object@=
-static int
-equal_func_labels(const void *lbls1, const void *lbls2)
-{
-    List l1, l2;
-    int r = 1;
-
-    RENAME(lbls1, l1);
-    RENAME(lbls2, l2);
-
-    while (!is_empty_list(l1) && !is_empty_list(l2)) {
-        r = r && (car(l1) == car(l2));
-        if (!r) {
-            break;
-        }
-        l1 = cdr(l1);
-        l2 = cdr(l2);
-    }
-    if (!is_empty_list(l1) || !is_empty_list(l2)) {
-        r = 0;
-    }
-    return r;
-}
-
-List
-blocks_of_chunk_ref(ChunkRef ckr)
-{
-    Chunk chk = ckr->chunk;
-    List lbls = ckr->labels;
-
-    if (!chk->labels_to_blocks) {
-        return empty_list;
-    }
-
-    List blks = get_from_assoc_table(chk->labels_to_blocks, lbls);
-
-    return blks;
-}
-
-void
-block_extend_chunk_ref(Block blk, ChunkRef ckr)
-{
-    Chunk chk = ckr->chunk;
-    List lbls = ckr->labels;
-    if (!chk->labels_to_blocks) {
-        RESERVE(new_assoc_table(&chk->labels_to_blocks, equal_func_labels));
-    }
-    List blks = blocks_of_chunk_ref(ckr);
-    RESERVE(
-        push(blk, &blks);
-        put_to_assoc_table(chk->labels_to_blocks, lbls, blks);
-    );
-}
-@
-
-A block extending a chunk might be transformed by filters.
-
-@<mappings from block@=
-List filters;
-@
-
-@<relations between object@=
-void
-block_is_transformed_by(Block blk, Chunk flt)
-{
-    RESERVE(push(flt, &blk->filters));
-}
-@
-
-The contents of a block may either be a reference to the original text
-or a reference to a chunk and a list of filters.
-
-@<litar@:C Structure@/data types@=
-typedef struct {
-    enum {
-        BLOCK_CONTENT_TEXT,
-        BLOCK_CONTENT_CHUNK,
-    } type;
-    union {
-        TextRef text;
-        struct {
-            ChunkRef chunk_ref;
-            List filters;
-        } chunk;
-    } value;
-} *BlockContent;
-@
-
-A block contains a list of contents defined before.
-
-@<mappings from block@=
-List contents;
-@
-
-@<relations between object@=
-void
-block_contain_text(Block blk, TextRef tr)
-{
-    BlockContent bc = NULL;
-
-    RESERVE(
-        NEW0(bc);
-        bc->type = BLOCK_CONTENT_TEXT;
-        bc->value.text = tr;
-        push(bc, &blk->contents);
-    );
-}
-
-void
-block_include_chunk_ref_with_filters(Block blk, ChunkRef ckr, List flts)
-{
-    BlockContent bc = NULL;
-
-    RESERVE(
-        NEW0(bc);
-        bc->type = BLOCK_CONTENT_CHUNK;
-        bc->value.chunk.chunk_ref = ckr;
-        bc->value.chunk.filters = flts;
-        push(bc, &blk->contents);
-    );
-}
-@
-
-A reference to chunk is consists of a chunk and a list of labels.
-
-@<mappings from chunk ref@=
-Chunk chunk;
-List labels;
-@
-
-@<relations between object@=
-void
-chunk_ref_is_specialized_by(ChunkRef ckr, const char *lbl)
-{
-    const char *norm = normalize(lbl);
-    RESERVE(push((void *)norm, &ckr->labels));
-}
-@
-
-A litar archive is consists of comments and blocks, we call a comment or a block a section.
-@<litar@:C Structure@/data types@=
-typedef struct {
-    enum {
-        SECTION_COMMENT,
-        SECTION_BLOCK,
-    } type;
-    union {
-        List comment; /* A list of TextRef */
-        Block block;
-    } content;
-} *Section;
-@
-
-@<litar@:C Structure@/global variables@=
-List sections;
-@
-
-Some chunks may be labeled as files,
-a file system can be built from these file paths.
-
-@<litar@:C Structure@/data types@=
-typedef struct {
-    enum {
-        NODE_DIRECTORY,
-        NODE_REGULAR,
-        NODE_EXECUTABLE,
-    } type;
-    union {
-        List nodes;
-        Chunk chunk;
-    } value;
-    const char *name;
-} *Node;
-@
-
-@<litar@:C Structure@/global variables@=
-Node root_node;
-@
-
-@<initializations of global variables@=
-NEW(root_node);
-root_node->type = NODE_DIRECTORY;
-root_node->value.nodes = empty_list;
-root_node->name = atom_str("");
-@
-
-@<relations between object@=
-Node
-node_under_node(const char *file, Node node)
-{
-    Node nd;
-    if (node->type != NODE_DIRECTORY) {
-        fprintf(stderr, "Node %s is not directory\n", node->name);
-        exit(1);
-    }
-    FOREACH(nd, node->value.nodes) {
-        if (strcmp(file, nd->name) == 0) {
-            return nd;
-        }
-    }
-    return NULL;
-}
-
-Node
-node_of_path(const char *path)
-{
-    char *path_t = NULL;
-    Node node = root_node;
-    int i = 0, f = i, l = strlen(path);
-
-    STRDUP(path, path_t);
-
-    if (path[0] == '/') {
-        ++i;
-        ++f;
-    }
-
-    while (f < l) {
-        if (path_t[i] == '/' || path_t[i] == '\0') {
-            path_t[i] = '\0';
-            if ((node = node_under_node(path_t+f, node)) == NULL) {
-                break;
-            }
-            f = i+1;
-        }
-        ++i;
-    }
-
-    FREE(path_t);
-    return node;
-}
-
-char *
-path_of_chunk(Chunk chk)
-{
-    Str path = NULL;
-
-    new_str(&path);
-    if (chk->module != module_of_name("")) {
-        str_extend(path, chk->module->name);
-        str_extend(path, "/");
-    }
-    str_extend(path, chk->name);
-
-    char *pt = NULL;
-    STRDUP(raw_string(path), pt);
-
-    free_str(&path);
-    return pt;
-}
-
-Node
-node_of_chunk(Chunk chk)
-{
-    char *path = path_of_chunk(chk);
-    Node nd = node_of_path(path);
-
-    FREE(path);
-
-    return nd;
-}
-
-void
-there_is_module(Module mod)
-{
-    Node nd;
-    RESERVE(
-        NEW0(nd);
-        nd->type = NODE_DIRECTORY;
-        nd->name = mod->name;
-        nd->value.nodes = empty_list;
-        push(nd, &root_node->value.nodes);
-    );
-}
-
-void
-chunk_is_file(Chunk chk)
-{
-    char *path;
-    Node node = root_node, nd;
-    int i = 0, f = i, l;
-
-    path = path_of_chunk(chk);
-    l = strlen(path);
-
-    while (f < l) {
-        if (path[i] == '/') {
-            path[i] = '\0';
-            if ((nd = node_under_node(path+f, node)) == NULL) {
-                RESERVE(
-                    NEW(nd);
-                    nd->type = NODE_DIRECTORY;
-                    nd->name = atom_str(path+f);
-                    nd->value.nodes = empty_list;
-                    push(nd, &node->value.nodes);
-                );
-            }
-            node = nd;
-            f = i+1;
-        } else if (path[i] == '\0') {
-            if ((nd = node_under_node(path+f, node)) == NULL) {
-                RESERVE(
-                    NEW(nd);
-                    nd->type = NODE_REGULAR;
-                    nd->name = atom_str(path+f);
-                    nd->value.chunk = chk;
-                    push(nd, &node->value.nodes);
-                );
-            }
-            break;
-        }
-        ++i;
-    }
-    FREE(path);
-}
-
-void
-chunk_is_executable(Chunk chk)
-{
-    chunk_is_file(chk);
-    Node nd;
-
-    nd = node_of_chunk(chk);
-    nd->type = NODE_EXECUTABLE;
-}
-@
-
-From the definitions above, we can define the content of chunk
-and expanded content of block.
-
-litar use a stack to detect recursive including and report it as a severe error.
-@<litar@:C Structure@/global variables@=
-List stack_of_chunks_in_tangling = empty_list;
-@
-
-@<litar@:C Structure@/functions@=
-bool chunk_is_in_tangling(Chunk chk)
-{
-    Chunk chk_t;
-    FOREACH (chk_t, stack_of_chunks_in_tangling) {
-        if (chk_t == chk) {
-            return true;
-        }
-    }
-    return false;
-}
-@
-
-@<litar@:C Structure@/functions@=
-Str
-content_of_chunk_with_labels(Chunk chk, List lbls)
-{
-    if (chunk_is_in_tangling(chk)) {
-        fprintf(stderr, "Recursively include \"%s\"\n", chk->name);
-        exit(1);
-    }
-
-    Str cc = NULL;
-    new_str(&cc);
-
-    List remains = lbls, passeds = empty_list;
-
-    do {
-        List blks;
-        ChunkRef ckr = NULL;
-        NEW0(ckr);
-
-        reverse(&passeds);
-        ckr->chunk = chk;
-        ckr->labels = passeds;
-        blks = copy_list(blocks_of_chunk_ref(ckr));
-        reverse(&passeds);
-        FREE(ckr);
-
-        reverse(&blks);
-
-        Block blk;
-        push(chk, &stack_of_chunks_in_tangling);
-        FOREACH(blk, blks) {
-            Str exb = expanded_content_of_block_with_labels(blk, remains);
-            transform_with_labels(exb, blk->filters, remains);
-            str_extend(cc, raw_string(exb));
-            free_str(&exb);
-        }
-        pop(&stack_of_chunks_in_tangling);
-
-        free_list(&blks);
-        if (is_empty_list(remains)) {
-            break;
-        }
-        push(car(remains), &passeds);
-        remains = cdr(remains);
-    } while (true);
-
-    free_list(&passeds);
-
-    return cc;
-}
-
-Str
-content_of_chunk_ref(ChunkRef ckr)
-{
-    return content_of_chunk_with_labels(ckr->chunk, ckr->labels);
-}
-
-Str
-expanded_content_of_block_with_labels(Block blk, List lbls)
-{
-    Str ect = NULL;
-    List bcs = copy_list(blk->contents);
-    BlockContent bc;
-
-    reverse(&bcs);
-    
-    new_str(&ect);
-    FOREACH(bc, bcs) {
-        if (bc->type == BLOCK_CONTENT_TEXT) {
-            char *txt;
-            txt = fetch_text_from(bc->value.text);
-            str_extend(ect, txt);
-            FREE(txt);
-        }
-        if (bc->type == BLOCK_CONTENT_CHUNK) {
-            List l1, l2, l;
-
-            l1 = copy_list(lbls);
-            l2 = copy_list(bc->value.chunk.chunk_ref->labels);
-            l = append(&l2, &l1);
-
-            Str cc = content_of_chunk_with_labels(
-                bc->value.chunk.chunk_ref->chunk, l
-            );
-
-            transform_with_labels(cc, bc->value.chunk.filters, lbls);
-            str_extend(ect, raw_string(cc));
-
-            free_str(&cc);
-            free_list(&l);
-        }
-    }
-    
-    free_list(&bcs);
-
-    return ect;
-}
-@
 
 @<litar@:C Structure@/global variables@=
 char working_dir[PATH_MAX];

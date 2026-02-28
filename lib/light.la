@@ -460,7 +460,7 @@ Based on the context defined, Light refines the memory management.
 #define STRDUP(src, dest) \
     do { \
         typeof(dest) *dest_r = &(dest); \
-        (*dest_t) = strdup(src); new_resource(*dest_t, free); \
+        (*dest_r) = strdup(src); new_resource(*dest_r, free); \
     } while (0)
 @
 
@@ -1338,6 +1338,12 @@ HashTable new_string_hash_table(size_t size)
 {
     return new_hash_table(size, hash_func_str, equal_func_str);
 }
+@
+
+If a user not sure that how big a hash table might be, 1024 might be a reasonable starting point.
+
+@<basic@:light module@:C Structure@/exported macros@=
+#define HASH_TABLE_DEFAULT_SIZE (1024)
 @
 
 Light chooses FNV-1a as the default hash algorithm, the main usage is to calculate keys

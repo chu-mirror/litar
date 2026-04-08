@@ -93,7 +93,7 @@ for text processing rather than a deliberate literate programming tool.
 As a result, litar will not take in weaving to its kernel.
 
 The major extension is user defined filters.
-Noweb has some similar design decisions, but litar makes use of filters even more.
+Noweb has some similar designs, but litar makes use of filters even more.
 
 The following simple program explains the usage of filter in litar.
 
@@ -130,12 +130,12 @@ Filters can also make effect on blocks. The following program is same with the a
 @@<hello.c@@=
 #include "stdio.h"
 int main() {
-    @@<print hello world@@>
+    @@<print hello world exaggeratedly@@>
     return 0;
 }
 @@
 
-@@<print hello world@@=
+@@<print hello world exaggeratedly@@=
 printf("Hello, world!\n");
 @@|exaggeratedly@@
 
@@ -212,11 +212,6 @@ To be compatible with Unix programming environment, litar uses a technology call
 Filesystem in Userspace (FUSE), which allows litar to create a custom file system
 and mount it. So filters can access the files in a litar archive just like
 other files in the operating system.
-
-Besides these control characters that describes the structure of a litar archive,
-there are some other control characters. They are commands, which influence
-the process of dealing with litar archive. For example, @@. receives an argument
-of file name, and inserts the content of that file at the place of @@..
 
 There's another important extension for reusability of code. Let's say, a chunk
 defines a general structure for a C program. Then we want to write two seperated
@@ -311,7 +306,7 @@ litar's internal file system makes use of this module system.
 ```
 
 A filter is executed under the directory of the module it belongs to.
-So a module is simply a directory in some way, so litar also allows importing
+A module is simply a directory in some way, so litar also allows importing
 outside directories.
 
 ```
@@ -322,7 +317,7 @@ outside directories.
 @@
 ```
 
-The final piece of establishing code reusability is @@., which is indroduced before.
+The final piece of code reusability is @@., which is indroduced before.
 
 ```
 @@<chunk@@=
@@ -344,6 +339,10 @@ The following is also legal.
 
 ```
 
+Besides the control characters that describes the structure of a litar archive,
+there are some other control characters. They are commands, which influence
+the process of dealing with litar archive. For example, @@. receives an argument
+of file name, and inserts the content of that file at the place of @@..
 @
 
 The complete implementation of litar is divided to two parts, front end and back end.
@@ -547,7 +546,7 @@ HashTable module_name_to_module;
 const char *name;
 @
 
-@<initializations of main context@=
+@<litarfs@:Light@/initializations of main context@=
 module_name_to_module = new_string_hash_table(HASH_TABLE_DEFAULT_SIZE);
 @
 
@@ -788,7 +787,7 @@ typedef struct {
 Node root_node;
 @
 
-@<initializations of main context@=
+@<litarfs@:Light@/initializations of main context@=
 NEW(root_node);
 root_node->type = NODE_DIRECTORY;
 root_node->value.nodes = NULL;

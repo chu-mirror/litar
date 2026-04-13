@@ -35,6 +35,7 @@ Some always to use header files.
 
 @<basic@:light module@:C Structure@/interface required includes@=
 #include <stdlib.h>
+#include <ctype.h>
 #include <string.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -117,7 +118,7 @@ _mapping_find_entry(struct _hash_table_ptr_entry **mapping, size_t size, void *k
         ent = ent->next;
     }
     if (ent && ent_) { /* move the found entry to top of chain */
-        ent_->next = ent;
+        ent_->next = ent->next;
         ent->next = mapping[h];
         mapping[h] = ent;
     }
@@ -263,12 +264,17 @@ static MAPPING_PTR(resource_node);
 
 @<basic@:light module@:C Structure@/functions@=
 void enter_context() {
-    Context ctx;
+    struct resource_node *nd_r;
+    nd_r = malloc(sizeof(*nd_r));
+    nd_r->previous = nd_r;
+    nd_r->next = nd_r;
+    nd_r->resource = NULL;
 
+    Context ctx;
     ctx = malloc(sizeof(*ctx));
     ctx->parent = _light_top_context;
     ctx->children = NULL;
-    ctx->resources = NULL;
+    ctx->resources = nd_r;
 
     struct context_child_node *nd;
     nd = malloc(sizeof(*nd));
@@ -292,59 +298,53 @@ void new_resource(void *id, void (*cl)(void *)) {
     res->identity = id;
     res->clean = cl;
 
-    struct resource_node *nd;
-    nd = malloc(sizeof(*nd));
-    nd->resource = res;
-    nd->previous = NULL;
+    struct resource_node *nd_r;
+    nd_r = malloc(sizeof(*nd_r));
+    nd_r->resource = res;
 
     pthread_mutex_lock(&context_tree_mutex);
-    nd->next = _light_top_context->resources;
-    if (nd->next) {
-        nd->next->previous = nd;
-    }
-    _light_top_context->resources = nd;
+    nd_r->previous = _light_top_context->resources;
+    nd_r->next = _light_top_context->resources->next;
+    _light_top_context->resources->next->previous = nd_r;
+    _light_top_context->resources->next = nd_r;
     pthread_mutex_unlock(&context_tree_mutex);
 
-    map_ptr_to(resource_node, id, nd);
+    map_ptr_to(resource_node, id, nd_r);
+
 #ifndef NDEBUG
     fprintf(stderr, "New resource: %p, under: %p\n", id, _light_top_context);
 #endif
 }
 
-void delete_resource(void *id) {
-    struct resource_node *nd;
-
+static void _delete_resource(struct resource_node *nd_r)
+{
     pthread_mutex_lock(&context_tree_mutex);
-    nd = mapped_by_ptr(resource_node, id);
-    if (nd->previous) {
-        nd->previous->next = nd->next;
-    } else {
-        _light_top_context->resources = nd->next;
-    }
-    if (nd->next) {
-        nd->next->previous = nd->previous;
-    }
+    nd_r->previous->next = nd_r->next;
+    nd_r->next->previous = nd_r->previous;
     pthread_mutex_unlock(&context_tree_mutex);
-    
-    unmap_ptr(resource_node, id);
-    Resource res = nd->resource;
+
+    nd_r->resource->clean(nd_r->resource->identity);
+    free(nd_r);
 #ifndef NDEBUG
-    fprintf(stderr, "Free resource: %p, under: %p\n", res->identity, _light_top_context);
+    fprintf(stderr, "Free resource: %p, under: %p\n", nd_r->resource->identity, _light_top_context);
 #endif
-    res->clean(res->identity);
-    free(nd);
+}
+
+void delete_resource(void *id) {
+    _delete_resource(mapped_by_ptr(resource_node, id));
+    unmap_ptr(resource_node, id);
 }
 
 void rename_resource(void *id1, void *id2) {
-    struct resource_node *nd;
-    nd = mapped_by_ptr(resource_node, id1);
+    struct resource_node *nd_r;
+    nd_r = mapped_by_ptr(resource_node, id1);
     unmap_ptr(resource_node, id1);
 
     pthread_mutex_lock(&context_tree_mutex);
-    nd->resource->identity = id2;
+    nd_r->resource->identity = id2;
     pthread_mutex_unlock(&context_tree_mutex);
 
-    map_ptr_to(resource_node, id2, nd);
+    map_ptr_to(resource_node, id2, nd_r);
 #ifndef NDEBUG
     fprintf(stderr, "Rename resource: %p, to: %p, under: %p\n", id1, id2, _light_top_context);
 #endif
@@ -355,20 +355,14 @@ static void _exit_context(Context ctx) {
         _exit_context(ctx->children->child);
     }
 
-    struct resource_node *nd, *nd_;
-    for (nd_ = NULL, nd = ctx->resources; nd; nd_ = nd, nd = nd->next, free(nd_)) {
-        Resource res = nd->resource;
-#ifndef NDEBUG
-        fprintf(stderr, "Free resource: %p, under: %p\n", res->identity, ctx);
-#endif
-        res->clean(res->identity);
-        unmap_ptr(resource_node, res->identity);
-        free(res);
+    while (ctx->resources->next != ctx->resources) {
+        _delete_resource(ctx->resources->next);
     }
 
     do {
         struct context_child_node *nd, **nd_r;
 
+        pthread_mutex_lock(&context_tree_mutex);
         nd_r = &ctx->parent->children;
         nd = ctx->parent->children;
 
@@ -379,12 +373,14 @@ static void _exit_context(Context ctx) {
                 break;
             }
         }
+        pthread_mutex_unlock(&context_tree_mutex);
     } while (0);
 
 #ifndef NDEBUG
     fprintf(stderr, "Exit context: %p, parent: %p\n", ctx, ctx->parent);
 #endif
 
+    free(ctx->resources);
     free(ctx);
 }
 
@@ -393,8 +389,9 @@ void exit_context() {
 
     pthread_mutex_lock(&context_tree_mutex);
     parent = _light_top_context->parent;
-    _exit_context(_light_top_context);
     pthread_mutex_unlock(&context_tree_mutex);
+
+    _exit_context(_light_top_context);
 
     _light_top_context = parent;
 }
@@ -1169,14 +1166,14 @@ Besides lists, there is another type of data strucutre used everywhere, table.
 There are many types of table, but they all share a common basic unit, key value pair.
 Light call such a pair a record.
 
-@<basic@:light module@:C Structure@/data types@=
+@<basic@:light module@:C Structure@/exported data types@=
 struct table_record {
     const void *k;
     void *v;
 };
 @
 
-@<basic@:light module@:C Structure@/data type declarations@=
+@<basic@:light module@:C Structure@/exported data type declarations@=
 typedef struct table_record *TableRecord;
 @
 
@@ -1235,6 +1232,20 @@ void free_hash_table(HashTable tbl)
     free_list(tbl->slots);
     free_array(tbl->table);
     FREE(tbl);
+}
+
+List mappings_of_hash_table(HashTable tbl)
+{
+    List ms = NULL;
+    List *rcds_r; /* records */
+
+    FOREACH (rcds_r, tbl->slots) {
+        TableRecord *rcd_r;
+        FOREACH (rcd_r, *rcds_r) {
+            push(rcd_r, &ms);
+        }
+    }
+    return ms;
 }
 @
 
@@ -1769,6 +1780,7 @@ The model of states:
     {
         name => NAME_OF_STATE,
         parent => PARENT_OF_STATE,
+        type => TYPE_OF_STATE (optional),
     },
     ...
 ]
@@ -1795,16 +1807,16 @@ sub state_to_dec (_) {
 }
 @
 
-@<declarations of states@=@<Text Processing@/basic perl settings@>
+@<declaration of states@=@<Text Processing@/basic perl settings@>
 @<C structs for state@>
-my $model = @<model of states@>;
+my $model = [@<states@>];
 
 print join "\n", map state_to_dec, @@{$model};
 @|Basics@/evaluate@
 
 @<initialization of states@=@<Text Processing@/basic perl settings@>
 @<C structs for state@>
-my $model = @<model of states@>;
+my $model = [@<states@>];
 my @model = @@{$model};
 my %states = ();
 
@@ -1820,7 +1832,11 @@ sub state_to_init (_) {
     } else {
         $s .= "root_state,";
     }
-    $s .= " STATE_XOR,";
+    if ($st->{type} && $st->{type} eq "and") {
+        $s .= " STATE_AND,";
+    } else {
+        $s .= " STATE_XOR,";
+    }
     $s .= " @@{[state_to_handler($st)]});\n";
     $s .= "state_register_in_func(@@{[state_to_c_var($st)]}, @@{[state_to_in_func($st)]});\n";
     $s .= "state_register_out_func(@@{[state_to_c_var($st)]}, @@{[state_to_out_func($st)]});\n";
@@ -1834,7 +1850,7 @@ print $str;
 
 @<cleaning of states@=@<Text Processing@/basic perl settings@>
 @<C structs for state@>
-my $model = @<model of states@>;
+my $model = [@<states@>];
 my @model = @@{$model};
 
 sub state_to_free (_) {

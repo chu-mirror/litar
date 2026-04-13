@@ -357,6 +357,9 @@ UNDER(
         strcmp((char *)get_from_hash_table(tbl, "Chu"), "Welcome") == 0
     );
 
+    List ms = mappings_of_hash_table(tbl);
+    assert(length(ms) == 2);
+
     remove_from_hash_table(tbl, "Chu");
     assert(get_from_hash_table(tbl, "Chu") == NULL);
 );

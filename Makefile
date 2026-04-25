@@ -44,7 +44,7 @@ hello: examples/hello.la litar
 	gcc -o hello main.c hello.c
 
 $(LIGHT_HEADER) $(LIGHT_SOURCE): lib/light.la boot
-	./boot -m Light -p $@ lib/light.la > $@
+	./boot -m Light -p $@ litar.la > $@
 
 show.c: examples/show-light.la $(LIGHT_HEADER)
 	./boot -p "show.c" examples/show-light.la > show.c

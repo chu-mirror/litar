@@ -1609,11 +1609,12 @@ name => "state",
 @
 
 @<state@:light module@:C Structure@/data type declarations@=
-@<list@:light@:C Structure@/exported data type declarations@>
+@<basic@:light module@:C Structure@/exported data type declarations@>
 @
 
 @<state@:light module@:C Structure@/data types@=
 struct state {
+    const char *name;
     State parent;
     StateType type;
     List children;
@@ -1644,10 +1645,11 @@ typedef enum state_type StateType;
 @
 
 @<state@:light module@:C Structure@/functions@=
-State new_state(State p, StateType t, State (*hd)(State, Signal))
+State new_state(const char *sn, State p, StateType t, State (*hd)(State, Signal))
 {
     State s;
     NEW0(s);
+    s->name = sn;
     s->parent = p;
     s->type = t;
     s->handler = hd;
@@ -1680,6 +1682,9 @@ state_register_out_func(State s, State (*out)(State, Signal))
 @<state@:light module@:C Structure@/functions@=
 static void into_state(State s, Signal sig)
 {
+#ifndef NDEBUG
+            fprintf(stderr, "Entering state %s\n", s->name);
+#endif
     if (s->in != NULL) {
         State cld;
         cld = s->in(s, sig);
@@ -1712,6 +1717,9 @@ static void out_state(State s, Signal sig)
         cld = s->out(s, sig);
         s->last_child = cld == NULL ? s->active_child : cld;
     }
+#ifndef NDEBUG
+            fprintf(stderr, "Exited state %s\n", s->name);
+#endif
 }
 @
 
@@ -1730,8 +1738,10 @@ int state_handle_signal(State s, Signal sig)
 {
     State next;
     int handled = 0;
-
     next = s->handler == NULL ? NULL : s->handler(s, sig);
+#ifndef NDEBUG
+    fprintf(stderr, "State %s handling, result: %d\n", s->name, !!next);
+#endif
     if (next == NULL) {
         if (s->type == STATE_XOR && s->active_child != NULL) {
             handled = state_handle_signal(s->active_child, sig);
@@ -1826,7 +1836,8 @@ for my $st (@model) {
 
 sub state_to_init (_) {
     my($st, $s) = ($_[0], "");
-    $s .= "new_state(&@@{[state_to_c_var($st)]},";
+    $s .= "@@{[state_to_c_var($st)]} = new_state(";
+    $s .= "\"$st->{name}\",";
     if ($st->{parent}) {
         $s .= " @@{[state_to_c_var($states{$st->{parent}})]},";
     } else {
@@ -1854,7 +1865,7 @@ my $model = [@<states@>];
 my @model = @@{$model};
 
 sub state_to_free (_) {
-    "free_state(&@@{[state_to_c_var($_[0])]});";
+    "free_state(@@{[state_to_c_var($_[0])]});";
 }
 
 my $str = "state_clear(@@{[state_to_c_var($model[0])]});\n";

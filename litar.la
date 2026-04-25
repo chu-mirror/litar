@@ -1,3 +1,14 @@
+@<basic@:light module@:C Structure@/include flags@=
+#define NDEBUG
+@
+@<state@:light module@:C Structure@/include flags@=
+#define NDEBUG
+@
+@<litarfs@:light@:C Structure@/include flags@=
+#define NDEBUG
+#define SHOW_COMPILE_INFO
+@
+
 @<introduction of litar@=
 Programmers have a lot of text to deal with. They write code,
 they write code to compile code, they write document, they write
@@ -358,6 +369,13 @@ The back end is a server that makes use of libfuse3.
 @<litarfs@:light@:C Structure@/executable@>
 @
 
+@<litarfs@:light@:C Structure@/includes@=
+#include <stdio.h>
+#include <limits.h>
+#include "light.h"
+#include "state.h"
+@
+
 They communicate through the mounted file system.
 Other programs can communicate with the back end too by this method.
 
@@ -504,6 +522,23 @@ if (to_mount_file_system) {
 returned = fuse_main(args.argc, args.argv, &litarfs_oper, NULL);
 @
 
+@<command line options for "litarfs MOUNT_POINT"@=
+{
+    long_opt => "archive",
+    opt => "a",
+    argument => "ARCHIVE",
+    description => "Specify the litar archive",
+},
+@
+
+@<set default values for "user_options"@=
+user_options.archive = strdup("archive.la");
+@
+
+@<build context for "fuse_main"@=
+@
+
+
 Before we get into "fuse_main", we should build a proper context for it.
 The context should contain all information needed to build a file system.
 
@@ -538,33 +573,23 @@ struct mappings_chunk_ref {
 There are some named modules and an anonymous module.
 The anonymous module is a module whose name is an empty string.
 
-@<litarfs@:light@:C Structure@/global variables@=
-HashTable module_name_to_module;
-@
-
 @<mappings from module@=
 const char *name;
-@
-
-@<litarfs@:Light@/initializations of main context@=
-module_name_to_module = new_string_hash_table(HASH_TABLE_DEFAULT_SIZE);
+HashTable modules;
 @
 
 @<litarfs@:light@:C Structure@/functions@=
-void there_is_module_of_name(const char *name)
+Module module_of_name(HashTable modules, const char *name)
 {
     Module mod;
-    mod = get_from_hash_table(module_name_to_module, name);
+    mod = get_from_hash_table(modules, name);
     if (!mod) {
         NEW0(mod);
         mod->name = name;
-        put_to_hash_table(module_name_to_module, name, mod);
+        mod->modules = modules;
+        put_to_hash_table(modules, name, mod);
     }
-}
-
-Module module_of_name(const char *name)
-{
-    return get_from_hash_table(module_name_to_module, name);
+    return mod;
 }
 @
 
@@ -582,20 +607,12 @@ const char *name;
 @
 
 @<litarfs@:light@:C Structure@/functions@=
-void there_is_chunk_in_module_of_name(Module mod, const char *name)
+void there_is_chunk_in_module(Chunk chk, Module mod)
 {
     if (!mod->chunk_name_to_chunk) {
         mod->chunk_name_to_chunk = new_string_hash_table(HASH_TABLE_DEFAULT_SIZE);
     }
-
-    Chunk chk;
-    chk = get_from_hash_table(mod->chunk_name_to_chunk, name);
-    if (!chk) {
-        NEW0(chk);
-        chk->name = name;
-        chk->module = mod;
-        put_to_hash_table(mod->chunk_name_to_chunk, name, chk);
-    }
+    put_to_hash_table(mod->chunk_name_to_chunk, chk->name, chk);
 }
 
 Chunk chunk_in_module_of_name(Module mod, const char *name)
@@ -655,16 +672,6 @@ void block_extend_chunk_specialized_by(Block blk, Chunk chk, List lbls)
     push(blk, &blks);
     put_to_assoc_table(chk->labels_to_blocks, lbls, blks);
 }
-
-List blocks_of_chunk_ref(ChunkRef ckr)
-{
-    return blocks_of_chunk_specialized_by(ckr->chunk, ckr->labels);
-}
-
-void block_extend_chunk_ref(Block blk, ChunkRef ckr)
-{
-    block_extend_chunk_specialized_by(blk, ckr->chunk, ckr->labels);
-}
 @
 
 A reference to chunk is consists of a chunk and a list of labels.
@@ -672,6 +679,23 @@ A reference to chunk is consists of a chunk and a list of labels.
 @<mappings from chunk ref@=
 Chunk chunk;
 List labels;
+@
+
+@<mappings from block@=
+ChunkRef chunk_ref;
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+List blocks_of_chunk_ref(ChunkRef ckr)
+{
+    return blocks_of_chunk_specialized_by(ckr->chunk, ckr->labels);
+}
+
+void block_extend_chunk_ref(Block blk, ChunkRef ckr)
+{
+    blk->chunk_ref = ckr;
+    block_extend_chunk_specialized_by(blk, ckr->chunk, ckr->labels);
+}
 @
 
 @<litarfs@:light@:C Structure@/functions@=
@@ -691,7 +715,7 @@ typedef struct {
         BLOCK_CONTENT_CHUNK_REF,
     } type;
     union {
-        Str text;
+        const char *text;
         struct {
             ChunkRef chunk_ref;
             List filters;
@@ -707,7 +731,7 @@ List contents;
 @
 
 @<litarfs@:light@:C Structure@/functions@=
-void block_contain_text(Block blk, Str txt)
+void block_contain_text(Block blk, const char *txt)
 {
     BlockContent bc;
 
@@ -742,31 +766,25 @@ void block_is_transformed_by(Block blk, Chunk flt)
 }
 @
 
-A litar archive consists of comments and blocks, we call a comment or a block a section.
-It's necessary to keep the comments and the order between sections.
-And a section belongs to a module and is in a file.
-
-@<litarfs@:light@:C Structure@/data types@=
-typedef struct {
-    enum {
-        SECTION_COMMENT,
-        SECTION_BLOCK,
-    } type;
-    union {
-        List comment; /* A list of TextRef */
-        Block block;
-    } content;
-    Module module;
-    const char *file_path;
-} *Section;
-@
-
-@<litarfs@:C Structure@/global variables@=
-List sections;
+We can assign the comment before a block to that block.
+@<mappings from block@=
+const char *comment;
 @
 
 Some chunks may be labeled as files,
 a file system can be built from these file paths.
+
+@<litarfs@:light@:C Structure@/data type declarations@=
+typedef enum {
+    CHUNK_TYPE_NORMAL,
+    CHUNK_TYPE_REGULAR_FILE,
+    CHUNK_TYPE_EXECUTABLE,
+} ChunkType;
+@
+
+@<mappings from chunk@=
+ChunkType type;
+@
 
 @<litarfs@:light@:C Structure@/data types@=
 typedef struct {
@@ -800,7 +818,7 @@ Node node_of_name_under_node(const char *file, Node node)
     Node nd;
     if (node->type != NODE_DIRECTORY) {
         fprintf(stderr, "Node %s is not directory\n", node->name);
-        exit(1);
+        longjmp(exit_main, 1);
     }
     FOREACH(nd, node->value.nodes) {
         if (strcmp(file, nd->name) == 0) {
@@ -810,10 +828,10 @@ Node node_of_name_under_node(const char *file, Node node)
     return NULL;
 }
 
-Node node_of_path(const char *path)
+Node node_of_path(Node root, const char *path)
 {
     char *path_t = NULL;
-    Node node = root_node;
+    Node node = root;
     int i = 0, f = i, l = strlen(path);
 
     UNDER(
@@ -845,7 +863,7 @@ char *path_of_chunk(Chunk chk)
     UNDER(
         Str path;
         path = new_str();
-        if (chk->module != module_of_name("")) {
+        if (chk->module != module_of_name(chk->module->modules, "")) {
             str_extend(path, chk->module->name);
             str_extend(path, "/");
         }
@@ -855,14 +873,14 @@ char *path_of_chunk(Chunk chk)
     return ret;
 }
 
-Node node_of_chunk(Chunk chk)
+Node node_of_chunk(Node root, Chunk chk)
 {
     Node nd;
-    UNDER(nd = node_of_path(path_of_chunk(chk)));
+    UNDER(nd = node_of_path(root, path_of_chunk(chk)));
     return nd;
 }
 
-void there_is_module_in_file_system(Module mod)
+void there_is_module_in_file_system(Node root, Module mod)
 {
     Node nd;
 
@@ -870,13 +888,13 @@ void there_is_module_in_file_system(Module mod)
     nd->type = NODE_DIRECTORY;
     nd->name = mod->name;
     nd->value.nodes = NULL;
-    push(nd, &root_node->value.nodes);
+    push(nd, &root->value.nodes);
 }
 
-void chunk_is_file(Chunk chk)
+void chunk_is_file(Node root, Chunk chk)
 {
     char *path;
-    Node node = root_node, nd;
+    Node node = root, nd;
     int i = 0, f = i, l;
 
     UNDER(
@@ -914,12 +932,12 @@ void chunk_is_file(Chunk chk)
     );
 }
 
-void chunk_is_executable(Chunk chk)
+void chunk_is_executable(Node root, Chunk chk)
 {
-    chunk_is_file(chk);
+    chunk_is_file(root, chk);
 
     Node nd;
-    nd = node_of_chunk(chk);
+    nd = node_of_chunk(root, chk);
     nd->type = NODE_EXECUTABLE;
 }
 @
@@ -928,119 +946,119 @@ From the definitions above, we can define the content of chunk
 and expanded content of block.
 
 litar use a stack to detect recursive including and report it as a severe error.
-@<litar@:C Structure@/global variables@=
-List stack_of_chunks_in_tangling = empty_list;
+@<litarfs@:light@:C Structure@/global variables@=
+List stack_of_chunks_in_tangling = NULL;
 @
 
-@<litar@:C Structure@/functions@=
-bool chunk_is_in_tangling(Chunk chk)
+@<litarfs@:light@:C Structure@/functions@=
+int chunk_is_in_tangling(Chunk chk)
 {
     Chunk chk_t;
     FOREACH (chk_t, stack_of_chunks_in_tangling) {
         if (chk_t == chk) {
-            return true;
+            return 1;
         }
     }
-    return false;
+    return 0;
 }
 @
 
-@<litar@:C Structure@/functions@=
-Str
+@<litarfs@:light@:C Structure@/function declarations@=
+const char *content_of_chunk_with_labels(Chunk chk, List lbls);
+const char *content_of_chunk_ref(ChunkRef ckr);
+const char *expanded_content_of_block_with_labels(Block blk, List lbls);
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+const char *
 content_of_chunk_with_labels(Chunk chk, List lbls)
 {
     if (chunk_is_in_tangling(chk)) {
         fprintf(stderr, "Recursively include \"%s\"\n", chk->name);
-        exit(1);
+        longjmp(exit_main, 1);
     }
 
-    Str cc = NULL;
-    new_str(&cc);
+    char *ret;
 
-    List remains = lbls, passeds = empty_list;
+    UNDER(
+        Str cc = new_str();
+        List remains = lbls, passeds = NULL;
+        do {
+            List blks;
 
-    do {
-        List blks;
-        ChunkRef ckr = NULL;
-        NEW0(ckr);
+            UNDER(
+                reverse(&passeds);
+                blks = copy_list(blocks_of_chunk_specialized_by(chk, passeds));
+                reverse(&passeds);
 
-        reverse(&passeds);
-        ckr->chunk = chk;
-        ckr->labels = passeds;
-        blks = copy_list(blocks_of_chunk_ref(ckr));
-        reverse(&passeds);
-        FREE(ckr);
+                push(chk, &stack_of_chunks_in_tangling);
+                reverse(&blks);
 
-        reverse(&blks);
+                Block blk;
+                FOREACH(blk, blks) {
+                    UNDER(
+                        const char *exb = expanded_content_of_block_with_labels(blk, remains);
+                        // transform_with_labels(exb, blk->filters, remains);
+                        str_extend(cc, exb);
+                    );
+                }
 
-        Block blk;
-        push(chk, &stack_of_chunks_in_tangling);
-        FOREACH(blk, blks) {
-            Str exb = expanded_content_of_block_with_labels(blk, remains);
-            transform_with_labels(exb, blk->filters, remains);
-            str_extend(cc, raw_string(exb));
-            free_str(&exb);
-        }
-        pop(&stack_of_chunks_in_tangling);
+                pop(&stack_of_chunks_in_tangling);
+            );
 
-        free_list(&blks);
-        if (is_empty_list(remains)) {
-            break;
-        }
-        push(car(remains), &passeds);
-        remains = cdr(remains);
-    } while (true);
+            if (!remains) {
+                break;
+            }
+            push(car(remains), &passeds);
+            remains = cdr(remains);
+        } while (1);
+        ESCAPE(STRDUP(raw_string(cc), ret));
+    );
 
-    free_list(&passeds);
-
-    return cc;
+    return ret;
 }
 
-Str
+const char *
 content_of_chunk_ref(ChunkRef ckr)
 {
     return content_of_chunk_with_labels(ckr->chunk, ckr->labels);
 }
 
-Str
+const char *
 expanded_content_of_block_with_labels(Block blk, List lbls)
 {
-    Str ect = NULL;
-    List bcs = copy_list(blk->contents);
-    BlockContent bc;
+    char *ret;
+    UNDER(
+        Str ect = new_str();
+        List bcs = copy_list(blk->contents);
+        reverse(&bcs);
 
-    reverse(&bcs);
-    
-    new_str(&ect);
-    FOREACH(bc, bcs) {
-        if (bc->type == BLOCK_CONTENT_TEXT) {
-            char *txt;
-            txt = fetch_text_from(bc->value.text);
-            str_extend(ect, txt);
-            FREE(txt);
+        BlockContent bc;
+        FOREACH(bc, bcs) {
+            if (bc->type == BLOCK_CONTENT_TEXT) {
+                str_extend(ect, bc->value.text);
+            }
+            if (bc->type == BLOCK_CONTENT_CHUNK_REF) {
+                UNDER(
+                    List l1, l2, l;
+
+                    l1 = copy_list(lbls);
+                    l2 = copy_list(bc->value.chunk.chunk_ref->labels);
+                    l = append(&l2, &l1);
+
+                    const char *cc = content_of_chunk_with_labels(
+                        bc->value.chunk.chunk_ref->chunk, l
+                    );
+
+                    // transform_with_labels(cc, bc->value.chunk.filters, lbls);
+                    str_extend(ect, cc);
+                );
+            }
         }
-        if (bc->type == BLOCK_CONTENT_CHUNK) {
-            List l1, l2, l;
+        ESCAPE(STRDUP(raw_string(ect), ret));
+    );
 
-            l1 = copy_list(lbls);
-            l2 = copy_list(bc->value.chunk.chunk_ref->labels);
-            l = append(&l2, &l1);
-
-            Str cc = content_of_chunk_with_labels(
-                bc->value.chunk.chunk_ref->chunk, l
-            );
-
-            transform_with_labels(cc, bc->value.chunk.filters, lbls);
-            str_extend(ect, raw_string(cc));
-
-            free_str(&cc);
-            free_list(&l);
-        }
-    }
-    
-    free_list(&bcs);
-
-    return ect;
+    return ret;
 }
 @
 
@@ -1061,29 +1079,611 @@ litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 static void *litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg);
 @
 
-@<command line options for "litarfs MOUNT_POINT"@=
+# Parsing
+
+The purpose of parsing is to extract relations between objects of
+a specific domain from unstructured information.
+
+The grammar of litar is designed deliberately to be as simple as possible.
+As a result, the tokens only have four types, control character,
+normal character, newline and EOF,
+and the whole parsing process can be implemented as a finite state machine.
+
+@<litarfs@:light@:C Structure@/data types@=
+typedef struct {
+    const char *file;
+    FILE *in;
+    /* current position, current column, current row */
+    int cp, cc, cr;
+    /* previous position, previous column, previous row */
+    int pp, pc, pr;
+} *InputFrame;
+
+typedef struct {
+    enum {
+        TOKEN_CONTROL_CHARACTER,
+        TOKEN_NORMAL_CHARACTER,
+        TOKEN_NEWLINE,
+        TOKEN_EOF,
+    } type;
+    char value;
+} *Token;
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static Token next_token(InputFrame ipt)
 {
-    long_opt => "archive",
-    opt => "a",
-    argument => "ARCHIVE",
-    description => "Specify the litar archive",
+    Token tkn = NULL;
+    char c;
+    int n = 0;
+
+    if (!ipt->in) {
+        if ((ipt->in = fopen(ipt->file, "r")) == NULL) {
+            perror(ipt->file);
+            longjmp(exit_main, 1);
+        }
+    }
+
+    NEW0(tkn);
+
+    ipt->pp = ipt->cp;
+    ipt->pc = ipt->cc;
+    ipt->pr = ipt->cr;
+
+    n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
+    if (c == '\100') {
+        n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
+        if (isalpha(c)) {
+            n -= ungetc(c, ipt->in) == EOF ? 0 : 1;
+            tkn->type = TOKEN_NORMAL_CHARACTER;
+            tkn->value = '\100';
+        } else {
+            tkn->type = TOKEN_CONTROL_CHARACTER;
+            if (c == EOF || c == '\n' || c == '\t' || c == ' ') {
+                tkn->value = ' ';
+            } else {
+                tkn->value = c;
+            }
+            if (c == '\n') {
+                n -= ungetc(c, ipt->in) == EOF ? 0 : 1;
+            }
+        }
+    } else if (c == '\n') {
+        tkn->type = TOKEN_NEWLINE;
+        tkn->value = '\n';
+        ipt->cp += n;
+        ++ipt->cr;
+        ipt->cc = 0;
+        n = 0;
+    } else if (c == EOF) {
+        tkn->type = TOKEN_EOF;
+        tkn->value = EOF;
+    } else {
+        tkn->type = TOKEN_NORMAL_CHARACTER;
+        tkn->value = c;
+    }
+    ipt->cp += n;
+    ipt->cc += n;
+
+    return tkn;
+}
+@
+
+There's a lot of names in a litar archive. To avoid potential miss use of
+blanks, the names are normalized according to a simple rule.
+The names consists of none-space words, so "name of chunk" does not
+differ from "  name  of  chunk".
+
+@<litarfs@:light@:C Structure@/functions@=
+const char *
+normalize(const char *name)
+{
+    int i = 0, j = 0, l = strlen(name);
+    char *norm = NULL;
+
+    STRDUP(name, norm);
+
+    l = strlen(name);
+    while (i < l) {
+        if (isspace(name[i])) {
+            if (j != 0 && !isspace(norm[j-1])) {
+                norm[j++] = ' ';
+            }
+        } else {
+            norm[j++] = name[i];
+        }
+        ++i;
+    }
+    if (isspace(norm[j-1])) {
+        norm[j-1] = '\0';
+    } else {
+        norm[j] = '\0';
+    }
+
+    const char *a;
+    a = atom_str(norm);
+
+    FREE(norm);
+
+    return a;
+}
+@
+
+@<litarfs@:light@:C Structure@/data type declarations@=
+@<basic@:light module@:C Structure@/exported data type declarations@>
+@<state@:light module@:C Structure@/exported data type declarations@>
+@
+
+@<litarfs@:light@:C Structure@/global variables@=
+@<parse@:Light@/declaration of states@>
+@
+
+There are some common patterns will be used many times.
+
+@<litarfs@:light@:C Structure@/functions@=
+int
+extract_string(State s, Token tkn)
+{
+    Str cache;
+    RENAME(*state_local(s), cache);
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
+        str_append(cache, '\100');
+        return 1;
+    }
+    if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
+        str_append(cache, tkn->value);
+        return 1;
+    }
+    return 0;
+}
+@
+
+@<litarfs@:light@:C Structure@/functions (DEBUG)@=
+bool
+extract_chunk_ref(State s, State sn, Token tkn)
+{
+    static Module mod;
+
+    ChunkRef ckr;
+    RENAME(*state_local(s), ckr);
+
+    Str cache;
+    RENAME(*state_local(sn), cache);
+
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ':') {
+        RESERVE(push((void *)normalize(raw_string(cache)), &ckr->labels));
+        str_clean(cache);
+        return true;
+    }
+
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '/') {
+        mod = module_of_name(normalize(raw_string(cache)));
+        str_clean(cache);
+        return true;
+    }
+
+    if (tkn->type == TOKEN_CONTROL_CHARACTER
+        && (tkn->value == '>' || tkn->value == '|' || tkn->value == '=' || tkn->value == ' ')
+        ) {
+        if (mod == module_of_name("") || mod == NULL) {
+            mod = ((struct state_parse_local *)*state_local(state_parse))->module;
+        }
+        ckr->chunk = chunk_in_module_of_name(mod, normalize(raw_string(cache)));
+        mod = module_of_name("");
+        str_clean(cache);
+        return false;
+    }
+
+    return false;
+}
+@
+
+@<parse@:Light@/states@=
+{
+    name => "compile",
+    type => "and",
 },
 @
 
-@<set default values for "user_options"@=
-user_options.archive = strdup("archive.la");
+@<litarfs@:light@:C Structure@/data types@=
+struct state_compile_local {
+    List input_frames;
+    Module current_module;
+    HashTable modules;
+};
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static State state_compile_in(State s, Signal sig)
+{
+    struct state_compile_local *lc_r;
+    NEW0(lc_r);
+    lc_r->modules = new_string_hash_table(HASH_TABLE_DEFAULT_SIZE);
+    *state_local(s) = lc_r;
+    return NULL;
+}
+
+static State state_compile_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+
+    if (tkn->type == TOKEN_EOF) {
+        struct state_compile_local *lc_r;
+        RENAME(*state_local(s), lc_r);
+
+        InputFrame ipt;
+        RENAME(car(lc_r->input_frames), ipt);
+
+        fclose(ipt->in);
+        FREE(ipt);
+        pop(&lc_r->input_frames);
+
+        return s;
+    }
+    return NULL;
+}
+
+static State state_compile_out(State s, Signal sig)
+{
+    FREE(*state_local(s));
+    return NULL;
+}
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+HashTable
+parse_archive(const char *archive)
+{
+    HashTable ret;
+
+    @<parse@:Light@/initialization of states@>
+
+    struct state_compile_local *lc_r;
+    RENAME(*state_local(state_compile), lc_r);
+
+    do {
+        char path[PATH_MAX+1];
+        char *ptr = realpath(archive, path);
+        if (path == NULL) {
+            perror("realpath");
+            longjmp(exit_main, 1);
+        }
+        InputFrame ipt = NULL;
+        NEW0(ipt);
+        ipt->file = atom_str(path);
+        push(ipt, &lc_r->input_frames);
+    } while (0);
+
+    while (lc_r->input_frames) {
+        Token tkn;
+        InputFrame ipt;
+
+        RENAME(car(lc_r->input_frames), ipt);
+
+        UNDER(
+            tkn = next_token(ipt);
+#ifdef SHOW_COMPILE_INFO
+            if (tkn->type == TOKEN_CONTROL_CHARACTER) {
+                fprintf(stderr, "Handling control character %c\n", tkn->value);
+            } else if (tkn->type == TOKEN_NORMAL_CHARACTER) {
+                fprintf(stderr, "Handling normal character %c\n", tkn->value);
+            } else if (tkn->type == TOKEN_NEWLINE) {
+                fprintf(stderr, "Handling newline\n");
+            } else if (tkn->type == TOKEN_EOF) {
+                fprintf(stderr, "Handling EOF\n");
+            }
+#endif
+            ESCAPE(
+                if (!state_handle_signal(state_compile, tkn)) {
+                    fprintf(
+                        stderr,
+                        "Unexpected token at row %d column %d of %s\n",
+                        ipt->pr+1, ipt->pc+1, ipt->file
+                    );
+                    longjmp(exit_main, 1);
+                }
+            );
+        );
+    }
+    ret = lc_r->modules;
+
+    @<parse@:Light@/cleaning of states@>
+    return ret;
+}
 @
 
 @<build context for "fuse_main"@=
+HashTable modules;
+modules = parse_archive(user_options.archive);
+longjmp(exit_main, 2);
 @
 
-@<basic@:light module@:C Structure@/include flags@=
-#define NDEBUG
+@<parse@:Light@/states@=
+{
+    name => "command",
+    parent => "compile",
+},
+{
+    name => "command_waiting",
+    parent => "command",
+},
 @
 
-@<litarfs@:light@:C Structure@/includes@=
-#include <stdio.h>
-#include "light.h"
+@<litarfs@:light@:C Structure@/global variables@=
+State *control_character_to_state[CHAR_MAX] = {
+    @<mappings from control_character to state@>
+};
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static State state_command_in(State s, Signal sig)
+{
+    return state_command_waiting;
+}
+static State state_command_handler(State s, Signal sig)
+{
+    return NULL;
+}
+static State state_command_out(State s, Signal sig)
+{
+    return NULL;
+}
+
+static State state_command_waiting_in(State s, Signal sig)
+{
+    return NULL;
+}
+static State state_command_waiting_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+    if (tkn->type == TOKEN_CONTROL_CHARACTER) {
+        return *control_character_to_state[tkn->value];
+    }
+    return NULL;
+}
+static State state_command_waiting_out(State s, Signal sig)
+{
+    return NULL;
+}
+@
+
+@<parse@:Light@/states@=
+{
+    name => "command_set_current_module",
+    parent => "command",
+},
+@
+
+@<mappings from control_character to state@=
+['-'] = &state_command_set_current_module,
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static State state_command_set_current_module_in(State s, Signal sig)
+{
+    Str cache = new_str();
+    *state_local(s) = new_str();
+    return NULL;
+}
+static State state_command_set_current_module_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+    if (extract_string(s, tkn)) {
+        if (tkn->type == TOKEN_NEWLINE) {
+            return state_command_waiting;
+        }
+        return s;
+    }
+    return NULL;
+}
+static State state_command_set_current_module_out(State s, Signal sig)
+{
+    Str cache;
+    RENAME(*state_local(s), cache);
+    struct state_compile_local *lc_r;
+    RENAME(*state_local(state_compile), lc_r);
+    lc_r->current_module = module_of_name(lc_r->modules, normalize(raw_string(cache)));
+#ifdef SHOW_COMPILE_INFO
+    fprintf(stderr, "Command: set current module to %s\n", lc_r->current_module->name);
+#endif
+    free_str(cache);
+    return NULL;
+}
+@
+
+@<parse@:Light@/states@=
+{
+    name => "parse",
+    parent => "compile",
+},
+{
+    name => "skip_blanks",
+    parent => "parse",
+},
+{
+    name => "parse_block",
+    parent => "parse",
+},
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static State state_parse_in(State s, Signal sig)
+{
+    return state_skip_blanks;
+}
+static State state_parse_handler(State s, Signal sig)
+{
+    if (!state_is_active(state_command_waiting)) {
+        return s;
+    }
+    Token tkn;
+    RENAME(sig, tkn);
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && *control_character_to_state[tkn->value]) {
+        return s;
+    }
+    return NULL;
+}
+static State state_parse_out(State s, Signal sig)
+{
+    return NULL;
+}
+
+static State state_skip_blanks_in(State s, Signal sig)
+{
+    return NULL;
+}
+static State state_skip_blanks_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+    if (tkn->type == TOKEN_NORMAL_CHARACTER && isspace(tkn->value)) {
+        return s;
+    }
+    if (tkn->type == TOKEN_NEWLINE) {
+        return s;
+    }
+    return state_parse_block;
+}
+static State state_skip_blanks_out(State s, Signal sig)
+{
+    return NULL;
+}
+@
+
+@<parse@:Light@/states@=
+{
+    name => "parse_block_comment",
+    parent => "parse_block",
+},
+{
+    name => "parse_block_chunk_ref",
+    parent => "parse_block",
+},
+{
+    name => "parse_block_content",
+    parent => "parse_block",
+},
+{
+    name => "parse_block_filters",
+    parent => "parse_block",
+},
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static State state_parse_block_in(State s, Signal sig)
+{
+    Block blk;
+    NEW0(blk);
+    *state_local(s) = blk;
+
+    Token tkn;
+    RENAME(sig, tkn);
+    if (tkn->type == TOKEN_CONTROL_CHARACTER &&
+           (tkn->value == '<' || tkn->value == '[' || tkn->value == '(')) {
+        blk->comment = "";
+        return state_parse_block_chunk_ref;
+    }
+    return state_parse_block_comment;
+}
+static State state_parse_block_handler(State s, Signal sig)
+{
+    return NULL;
+}
+static State state_parse_block_out(State s, Signal sig)
+{
+    Block blk;
+    RENAME(*state_local(s), blk);
+
+    struct state_compile_local *lc_r;
+    RENAME(*state_local(state_compile), lc_r);
+
+    if (blk->chunk_ref) {
+        there_is_chunk_in_module(blk->chunk_ref->chunk, lc_r->current_module);
+        block_extend_chunk_ref(blk, blk->chunk_ref);
+    }
+    return NULL;
+}
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static State state_parse_block_comment_in(State s, Signal sig)
+{
+    Str cache = new_str();
+    str_append(cache, ((Token)sig)->value);
+    *state_local(s) = cache;
+    return NULL;
+}
+static State state_parse_block_comment_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+    if (extract_string(s, tkn)) {
+        return s;
+    }
+    if (tkn->type == TOKEN_CONTROL_CHARACTER &&
+           (tkn->value == '<' || tkn->value == '[' || tkn->value == '(')) {
+        return state_parse_block_chunk_ref;
+    }
+    return NULL;
+}
+static State state_parse_block_comment_out(State s, Signal sig)
+{
+    Block blk;
+    RENAME(*state_local(state_parse_block), blk);
+
+    Str cache;
+    RENAME(*state_local(s), cache);
+    char *comment;
+    STRDUP(raw_string(cache), comment);
+#ifdef SHOW_COMPILE_INFO
+    fprintf(stderr, "Got comment:\n%s\n", comment);
+#endif
+    blk->comment = comment;
+    free_str(cache);
+    return NULL;
+}
+
+static State state_parse_block_chunk_ref_in(State s, Signal sig)
+{
+    return NULL;
+}
+static State state_parse_block_chunk_ref_handler(State s, Signal sig)
+{
+    return NULL;
+}
+static State state_parse_block_chunk_ref_out(State s, Signal sig)
+{
+    return NULL;
+}
+
+static State state_parse_block_content_in(State s, Signal sig)
+{
+    return NULL;
+}
+static State state_parse_block_content_handler(State s, Signal sig)
+{
+    return NULL;
+}
+static State state_parse_block_content_out(State s, Signal sig)
+{
+    return NULL;
+}
+
+static State state_parse_block_filters_in(State s, Signal sig)
+{
+    return NULL;
+}
+static State state_parse_block_filters_handler(State s, Signal sig)
+{
+    return NULL;
+}
+static State state_parse_block_filters_out(State s, Signal sig)
+{
+    return NULL;
+}
 @
 
 @<litar@:C Structure@/invocation syntax@=
@@ -1224,46 +1824,6 @@ do {
 @
 
 # Concepts
-
-There's a lot of names in a litar archive. To avoid potential miss use of
-blanks, the names are normalized according to a simple rule.
-The names consists of none-space words, so "name of chunk" does not
-differ from "  name  of  chunk".
-
-@<litar@:C Structure@/functions@=
-const char *
-normalize(const char *name)
-{
-    int i = 0, j = 0, l = strlen(name);
-    char *norm = NULL;
-
-    STRDUP(name, norm);
-
-    l = strlen(name);
-    while (i < l) {
-        if (isspace(name[i])) {
-            if (j != 0 && !isspace(norm[j-1])) {
-                norm[j++] = ' ';
-            }
-        } else {
-            norm[j++] = name[i];
-        }
-        ++i;
-    }
-    if (isspace(norm[j-1])) {
-        norm[j-1] = '\0';
-    } else {
-        norm[j] = '\0';
-    }
-
-    const char *a;
-    a = atom_str(norm);
-
-    FREE(norm);
-
-    return a;
-}
-@
 
 
 
@@ -1436,296 +1996,6 @@ transform_with_labels(Str txt, List flts, List lbls)
 }
 @
 
-# Parsing
-
-The purpose of parsing is to extract relations between objects of
-a specific domain from unstructured information.
-
-The grammar of litar is designed deliberately to be as simple as possible.
-As a result, the tokens only have four types, control character,
-normal character, newline and EOF,
-and the whole parsing process can be implemented as a finite state machine.
-
-@<litar@:C Structure@/data types@=
-typedef struct {
-    const char *file;
-    FILE *in;
-    /* current position, current column, current row */
-    int cp, cc, cr;
-    /* previous position, previous column, previous row */
-    int pp, pc, pr;
-} *InputFrame;
-
-typedef struct {
-    enum {
-        TOKEN_CONTROL_CHARACTER,
-        TOKEN_NORMAL_CHARACTER,
-        TOKEN_NEWLINE,
-        TOKEN_EOF,
-    } type;
-    char value;
-} *Token;
-@
-
-@<litar@:C Structure@/global variables@=
-List input_frames;
-@<declarations of states@>
-@
-
-@<litar@:C Structure@/functions@=
-static Token next_token(InputFrame ipt)
-{
-    Token tkn = NULL;
-    char c;
-    int n = 0;
-
-    if (!ipt->in) {
-        if ((ipt->in = fopen(ipt->file, "r")) == NULL) {
-            perror(ipt->file);
-            exit(1);
-        }
-    }
-
-    NEW0(tkn);
-
-    ipt->pp = ipt->cp;
-    ipt->pc = ipt->cc;
-    ipt->pr = ipt->cr;
-
-    n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
-    if (c == '\100') {
-        n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
-        if (isalpha(c)) {
-            n -= ungetc(c, ipt->in) == EOF ? 0 : 1;
-            tkn->type = TOKEN_NORMAL_CHARACTER;
-            tkn->value = '\100';
-        } else {
-            tkn->type = TOKEN_CONTROL_CHARACTER;
-            if (c == EOF || c == '\n' || c == '\t' || c == ' ') {
-                tkn->value = ' ';
-            } else {
-                tkn->value = c;
-            }
-            if (c == '\n') {
-                n -= ungetc(c, ipt->in) == EOF ? 0 : 1;
-            }
-        }
-    } else if (c == '\n') {
-        tkn->type = TOKEN_NEWLINE;
-        tkn->value = '\n';
-        ipt->cp += n;
-        ++ipt->cr;
-        ipt->cc = 0;
-        n = 0;
-    } else if (c == EOF) {
-        tkn->type = TOKEN_EOF;
-        tkn->value = EOF;
-    } else {
-        tkn->type = TOKEN_NORMAL_CHARACTER;
-        tkn->value = c;
-    }
-    ipt->cp += n;
-    ipt->cc += n;
-
-    return tkn;
-}
-@
-
-@<model of states@=
-[
-    @<states of parsing@>
-]
-@
-
-litar assumes that when starting parsing it is reading comment.
-
-@<states of parsing@=
-{
-    name => "parse",
-},
-{
-    name => "escape",
-},
-{
-    name => "parse_comment",
-    parent => "parse",
-},
-@
-
-@<parse input@=
-do {
-    input_frames = empty_list;
-
-    print_memgr_count("start parsing");
-    do {
-        char path[PATH_MAX+1];
-        char *ptr = realpath(archive_name, path);
-        if (path == NULL) {
-            perror("realpath");
-            exit(1);
-        }
-        InputFrame ipt = NULL;
-        NEW0(ipt);
-        ipt->file = atom_str(path);
-        push(ipt, &input_frames);
-    } while (0);
-
-    print_memgr_count("start initializing state");
-    @<initialization of states@>
-
-    print_memgr_count("end initializing state, start reading token");
-
-    while (!is_empty_list(input_frames)) {
-        Token tkn;
-        InputFrame ipt;
-
-        RENAME(car(input_frames), ipt);
-        tkn = next_token(ipt);
-
-        if (tkn->type == TOKEN_EOF) {
-            fclose(ipt->in);
-            FREE(ipt);
-            pop(&input_frames);
-        } else {
-            RESERVE(
-            if (!state_handle_signal(state_parse, tkn)) {
-                fprintf(
-                    stderr,
-                    "Unexpected token at row %d column %d of %s\n",
-                    ipt->pr+1, ipt->pc+1, ipt->file
-                );
-                exit(1);
-            }
-            );
-        }
-
-        FREE(tkn);
-    }
-    print_memgr_count("end reading token, start cleaning state");
-
-    @<cleaning of states@>;
-    print_memgr_count("end cleaning state");
-} while (0);
-@
-
-There are some common patterns will be used many times.
-
-@<litar@:C Structure@/functions@=
-bool
-extract_name(State s, Token tkn)
-{
-    Str cache;
-    RENAME(*state_local(s), cache);
-    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-        str_append(cache, '\100');
-        return true;
-    }
-    if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
-        str_append(cache, tkn->value);
-        return true;
-    }
-    return false;
-}
-
-bool
-extract_text(State s, Token tkn)
-{
-    List cache;
-    RENAME(*state_local(s), cache);
-
-    InputFrame ipt;
-    RENAME(car(input_frames), ipt);
-    
-    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
-        RESERVE(
-            TextRef txt = NULL;
-
-            NEW0(txt);
-            txt->file = ipt->file;
-            txt->start = ipt->cp-1;
-            txt->end = ipt->cp-1;
-
-            push(txt, &cache);
-            *state_local(s) = cache;
-        );
-
-        return true;
-    }
-    if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
-        TextRef txt;
-        
-        if (is_empty_list(cache)) {
-            RESERVE(
-                txt = NULL;
-
-                NEW0(txt);
-                txt->file = ipt->file;
-                txt->start = ipt->pp;
-                txt->end = ipt->pp;
-
-                push(txt, &cache);
-                *state_local(s) = cache;
-            );
-        }
-
-        RENAME(car(cache), txt);
-        txt->end = ipt->cp;
-
-        return true;
-    }
-    return false;
-}
-@
-
-@<litar@:C Structure@/functions@=
-bool
-extract_chunk_ref(State s, State sn, Token tkn)
-{
-    static Module mod;
-
-    ChunkRef ckr;
-    RENAME(*state_local(s), ckr);
-
-    Str cache;
-    RENAME(*state_local(sn), cache);
-
-    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ':') {
-        RESERVE(push((void *)normalize(raw_string(cache)), &ckr->labels));
-        str_clean(cache);
-        return true;
-    }
-
-    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '/') {
-        mod = module_of_name(normalize(raw_string(cache)));
-        str_clean(cache);
-        return true;
-    }
-
-    if (tkn->type == TOKEN_CONTROL_CHARACTER
-        && (tkn->value == '>' || tkn->value == '|' || tkn->value == '=' || tkn->value == ' ')
-        ) {
-        if (mod == module_of_name("") || mod == NULL) {
-            mod = ((struct state_parse_local *)*state_local(state_parse))->module;
-        }
-        ckr->chunk = chunk_in_module_of_name(mod, normalize(raw_string(cache)));
-        mod = module_of_name("");
-        str_clean(cache);
-        return false;
-    }
-
-    return false;
-}
-@
-
-@<litar@:C Structure@/data types@=
-struct state_parse_local {
-    @<status when parsing@>
-};
-@
-
-@<status when parsing@=
-Module module;
-@
 
 @<litar@:C Structure@/functions@=
 static State state_parse_in(State s, Signal sig)

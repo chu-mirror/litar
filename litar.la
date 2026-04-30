@@ -546,13 +546,17 @@ Concepts illustrated in the previous chapters
 should be represented before the details of implementation.
 
 @<litarfs@:light@:C Structure@/data type declarations@=
+typedef struct mappings_archive *Archive;
 typedef struct mappings_module *Module;
 typedef struct mappings_chunk *Chunk;
 typedef struct mappings_block *Block;
-typedef struct mappings_chunk_ref *ChunkRef;
 @
 
 @<litarfs@:light@:C Structure@/data types@=
+struct mappings_archive {
+    @<mappings from archive@>
+};
+
 struct mappings_module {
     @<mappings from module@>
 };
@@ -564,10 +568,11 @@ struct mappings_chunk {
 struct mappings_block {
     @<mappings from block@>
 };
+@
 
-struct mappings_chunk_ref {
-    @<mappings from chunk ref@>
-};
+@<mappings from archive@=
+HashTable modules;
+List blocks;
 @
 
 There are some named modules and an anonymous module.
@@ -575,19 +580,19 @@ The anonymous module is a module whose name is an empty string.
 
 @<mappings from module@=
 const char *name;
-HashTable modules;
+Archive archive;
 @
 
 @<litarfs@:light@:C Structure@/functions@=
-Module module_of_name(HashTable modules, const char *name)
+Module module_of_name_in_archive(const char *name, Archive ar)
 {
     Module mod;
-    mod = get_from_hash_table(modules, name);
+    mod = get_from_hash_table(ar->modules, name);
     if (!mod) {
         NEW0(mod);
         mod->name = name;
-        mod->modules = modules;
-        put_to_hash_table(modules, name, mod);
+        mod->archive = ar;
+        put_to_hash_table(ar->modules, name, mod);
     }
     return mod;
 }
@@ -607,31 +612,31 @@ const char *name;
 @
 
 @<litarfs@:light@:C Structure@/functions@=
-void there_is_chunk_in_module(Chunk chk, Module mod)
+Chunk chunk_of_name_in_module(const char *name, Module mod)
 {
     if (!mod->chunk_name_to_chunk) {
         mod->chunk_name_to_chunk = new_string_hash_table(HASH_TABLE_DEFAULT_SIZE);
     }
-    put_to_hash_table(mod->chunk_name_to_chunk, chk->name, chk);
-}
-
-Chunk chunk_in_module_of_name(Module mod, const char *name)
-{
-    if (!mod->chunk_name_to_chunk) {
-        return NULL;
+    Chunk chk = get_from_hash_table(mod->chunk_name_to_chunk, name);
+    if (!chk) {
+        Chunk chk;
+        NEW0(chk);
+        chk->name = normalize(name);
+        chk->module = mod;
+        put_to_hash_table(mod->chunk_name_to_chunk, chk->name, chk);
     }
-    return get_from_hash_table(mod->chunk_name_to_chunk, name);
+    return chk;
 }
 @
 
 A chunk is specialized by labels.
 
-@<mappings from chunk@=
-AssocTable labels_to_blocks;
+@<mappings from archive@=
+List collection_of_labels;
 @
 
 @<litarfs@:light@:C Structure@/functions@=
-static int equal_func_labels(const void *lbls1, const void *lbls2)
+static int equal_labels(List lbls1, List lbls2)
 {
     List l1, l2;
     int ret = 1;
@@ -653,21 +658,45 @@ static int equal_func_labels(const void *lbls1, const void *lbls2)
     return ret;
 }
 
+List get_labels_from(List lbls, Archive ar)
+{
+    if (!lbls) {
+        return lbls;
+    }
+
+    List _lbls;
+    FOREACH (_lbls, ar->collection_of_labels) {
+        if (equal_labels(lbls, _lbls)) {
+            return _lbls;
+        }
+    }
+    _lbls = cons(car(lbls), get_labels_from(cdr(lbls), ar));
+    push(_lbls, &ar->collection_of_labels);
+    return _lbls;
+}
+@
+
+@<mappings from chunk@=
+HashTable labels_to_blocks;
+@
+
+@<litarfs@:light@:C Structure@/functions@=
 List blocks_of_chunk_specialized_by(Chunk chk, List lbls)
 {
     if (!chk->labels_to_blocks) {
         return NULL;
     }
-    List blks = get_from_assoc_table(chk->labels_to_blocks, lbls);
+    lbls = get_labels_from(lbls, chk->module->archive);
+    List blks = get_from_hash_table(chk->labels_to_blocks, lbls);
     return blks;
 }
 
 void block_extend_chunk_specialized_by(Block blk, Chunk chk, List lbls)
 {
     if (!chk->labels_to_blocks) {
-        chk->labels_to_blocks = new_assoc_table(equal_func_labels);
+        chk->labels_to_blocks = new_pointer_hash_table(HASH_TABLE_DEFAULT_SIZE);
     }
-
+    lbls = get_labels_from(lbls, chk->module->archive);
     List blks = blocks_of_chunk_specialized_by(chk, lbls);
     push(blk, &blks);
     put_to_assoc_table(chk->labels_to_blocks, lbls, blks);
@@ -676,9 +705,8 @@ void block_extend_chunk_specialized_by(Block blk, Chunk chk, List lbls)
 
 A reference to chunk is consists of a chunk and a list of labels.
 
-@<mappings from chunk ref@=
-Chunk chunk;
-List labels;
+@<litarfs@:light@:C Structure@/data type declarations@=
+typedef struct {Chunk chunk; List labels;} ChunkRef;
 @
 
 @<mappings from block@=
@@ -688,20 +716,13 @@ ChunkRef chunk_ref;
 @<litarfs@:light@:C Structure@/functions@=
 List blocks_of_chunk_ref(ChunkRef ckr)
 {
-    return blocks_of_chunk_specialized_by(ckr->chunk, ckr->labels);
+    return blocks_of_chunk_specialized_by(ckr.chunk, ckr.labels);
 }
 
 void block_extend_chunk_ref(Block blk, ChunkRef ckr)
 {
     blk->chunk_ref = ckr;
-    block_extend_chunk_specialized_by(blk, ckr->chunk, ckr->labels);
-}
-@
-
-@<litarfs@:light@:C Structure@/functions@=
-void chunk_ref_is_specialized_by(ChunkRef ckr, const char *lbl)
-{
-    push((void *)lbl, &ckr->labels);
+    block_extend_chunk_specialized_by(blk, ckr.chunk, ckr.labels);
 }
 @
 
@@ -1221,60 +1242,138 @@ normalize(const char *name)
 There are some common patterns will be used many times.
 
 @<litarfs@:light@:C Structure@/functions@=
-int
-extract_string(State s, Token tkn)
+static State state_parse_text_in(State s, Signal sig)
 {
+    Str cache = new_str();
+    s->local = cache;
+
+    Token tkn;
+    RENAME(sig, tkn);
+    if (tkn->type == TOKEN_NORMAL_CHARACTER) {
+        str_append(cache, tkn->value);
+    }
+
+    return NULL;
+}
+static State state_parse_text_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+
     Str cache;
-    RENAME(*state_local(s), cache);
+    RENAME(s->local, cache);
+
     if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '\100') {
         str_append(cache, '\100');
-        return 1;
+        return s;
     }
     if (tkn->type == TOKEN_NORMAL_CHARACTER || tkn->type == TOKEN_NEWLINE) {
         str_append(cache, tkn->value);
-        return 1;
+        return s;
     }
-    return 0;
+    if (tkn->type == TOKEN_CONTROL_CHARACTER) {
+        return s->parent;
+    }
+    return NULL;
+}
+static State state_parse_text_out(State s, Signal sig)
+{
+    free_str(cache);
+    return NULL;
 }
 @
 
-@<litarfs@:light@:C Structure@/functions (DEBUG)@=
-bool
-extract_chunk_ref(State s, State sn, Token tkn)
+@<litarfs@:light@:C Structure@/data types@=
+struct state_parse_chunk_ref_local {
+    List labels;
+    const char *module_name;
+    const char *chunk_name;
+};
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static inline bool is_chunk_ref_end(Token tkn)
 {
-    static Module mod;
-
-    ChunkRef ckr;
-    RENAME(*state_local(s), ckr);
-
+    return tkn->type == TOKEN_CONTROL_CHARACTER
+        && (tkn->value == '=' || tkn->value == '>' || tkn->value == ' ' || tkn->value == '|');
+}
+static State state_parse_chunk_ref_in(State s, Signal sig)
+{
+    struct state_parse_chunk_ref_local *lc_r;
+    NEW0(lc_r);
+    s->local = lc_r;
+    return NULL;
+}
+static State state_parse_chunk_ref_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+    if (is_chunk_ref_end(tkn)) {
+        return s->parent;
+    }
+    return NULL;
+}
+static State state_parse_chunk_ref_out(State s, Signal sig)
+{
+    struct state_parse_chunk_ref_local *lc_r;
+    RENAME(s->local, lc_r);
+    free_list(lc_r->labels);
+    FREE(lc_r);
+    return NULL;
+}
+static State state_parse_chunk_ref_final(State sc, Signal sig)
+{
     Str cache;
-    RENAME(*state_local(sn), cache);
+    struct state_parse_chunk_ref_local *lc_r;
+    RENAME(sc->local, cache);
+    RENAME(sc->parent->local, lc_r);
 
-    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ':') {
-        RESERVE(push((void *)normalize(raw_string(cache)), &ckr->labels));
-        str_clean(cache);
-        return true;
+    const char *name;
+    name = normalize(raw_string(cache));
+
+    Token tkn;
+    RENAME(sig, tkn);
+    if (
+        tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ':'
+        && !tkn->chunk_name && !tkn->module_name
+    ) {
+        push(name, lc_r->labels);
+        return sc;
     }
-
-    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '/') {
-        mod = module_of_name(normalize(raw_string(cache)));
-        str_clean(cache);
-        return true;
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '/' && !tkn->chunk_name) {
+        lc_r->module_name = name;
+        return sc;
     }
-
-    if (tkn->type == TOKEN_CONTROL_CHARACTER
-        && (tkn->value == '>' || tkn->value == '|' || tkn->value == '=' || tkn->value == ' ')
-        ) {
-        if (mod == module_of_name("") || mod == NULL) {
-            mod = ((struct state_parse_local *)*state_local(state_parse))->module;
-        }
-        ckr->chunk = chunk_in_module_of_name(mod, normalize(raw_string(cache)));
-        mod = module_of_name("");
-        str_clean(cache);
-        return false;
+    if (is_chunk_ref_end(tkn)) {
+        lc_r->chunk_name = name;
+        return sc;
     }
+    return NULL;
+}
+static void state_parse_chunk_ref_callback(State sc, Signal sig)
+{
+    Str cache;
+    struct state_parse_chunk_ref_local *lc_r;
+    RENAME(sc->local, cache);
+    RENAME(sc->parent->local, lc_r);
 
-    return false;
+    const char *name;
+    name = normalize(raw_string(cache));
+
+    Token tkn;
+    RENAME(sig, tkn);
+    if (
+        tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ':'
+        && !tkn->chunk_name && !tkn->module_name
+    ) {
+        push(name, lc_r->labels);
+    }
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '/' && !tkn->chunk_name) {
+        lc_r->module_name = name;
+    }
+    if (is_chunk_ref_end(tkn)) {
+        lc_r->chunk_name = name;
+    }
 }
 @
 
@@ -1282,14 +1381,16 @@ extract_chunk_ref(State s, State sn, Token tkn)
 {
     name => "compile",
     type => "and",
+    has_final => 1,
+    has_callback => 1,
 },
 @
 
 @<litarfs@:light@:C Structure@/data types@=
 struct state_compile_local {
     List input_frames;
-    Module current_module;
     HashTable modules;
+    Archive archive;
 };
 @
 
@@ -1298,8 +1399,9 @@ static State state_compile_in(State s, Signal sig)
 {
     struct state_compile_local *lc_r;
     NEW0(lc_r);
-    lc_r->modules = new_string_hash_table(HASH_TABLE_DEFAULT_SIZE);
-    *state_local(s) = lc_r;
+    NEW0(lc_r->archive);
+    lc_r->archive->modules = new_string_hash_table(HASH_TABLE_DEFAULT_SIZE);
+    s->local = lc_r;
     return NULL;
 }
 
@@ -1310,7 +1412,7 @@ static State state_compile_handler(State s, Signal sig)
 
     if (tkn->type == TOKEN_EOF) {
         struct state_compile_local *lc_r;
-        RENAME(*state_local(s), lc_r);
+        RENAME(s->local, lc_r);
 
         InputFrame ipt;
         RENAME(car(lc_r->input_frames), ipt);
@@ -1326,21 +1428,21 @@ static State state_compile_handler(State s, Signal sig)
 
 static State state_compile_out(State s, Signal sig)
 {
-    FREE(*state_local(s));
+    FREE(s->local);
     return NULL;
 }
 @
 
 @<litarfs@:light@:C Structure@/functions@=
-HashTable
+Archive
 parse_archive(const char *archive)
 {
-    HashTable ret;
+    Archive ret;
 
     @<parse@:Light@/initialization of states@>
 
     struct state_compile_local *lc_r;
-    RENAME(*state_local(state_compile), lc_r);
+    RENAME(state_compile->local, lc_r);
 
     do {
         char path[PATH_MAX+1];
@@ -1386,7 +1488,7 @@ parse_archive(const char *archive)
             );
         );
     }
-    ret = lc_r->modules;
+    ret = lc_r->archive;
 
     @<parse@:Light@/cleaning of states@>
     return ret;
@@ -1403,6 +1505,7 @@ longjmp(exit_main, 2);
 {
     name => "command",
     parent => "compile",
+    init_child => "command_waiting",
 },
 {
     name => "command_waiting",
@@ -1419,7 +1522,7 @@ State *control_character_to_state[CHAR_MAX] = {
 @<litarfs@:light@:C Structure@/functions@=
 static State state_command_in(State s, Signal sig)
 {
-    return state_command_waiting;
+    return NULL;
 }
 static State state_command_handler(State s, Signal sig)
 {
@@ -1464,7 +1567,7 @@ static State state_command_waiting_out(State s, Signal sig)
 static State state_command_set_current_module_in(State s, Signal sig)
 {
     Str cache = new_str();
-    *state_local(s) = new_str();
+    s->local = new_str();
     return NULL;
 }
 static State state_command_set_current_module_handler(State s, Signal sig)
@@ -1482,9 +1585,9 @@ static State state_command_set_current_module_handler(State s, Signal sig)
 static State state_command_set_current_module_out(State s, Signal sig)
 {
     Str cache;
-    RENAME(*state_local(s), cache);
+    RENAME(s->local, cache);
     struct state_compile_local *lc_r;
-    RENAME(*state_local(state_compile), lc_r);
+    RENAME(state_compile->local, lc_r);
     lc_r->current_module = module_of_name(lc_r->modules, normalize(raw_string(cache)));
 #ifdef SHOW_COMPILE_INFO
     fprintf(stderr, "Command: set current module to %s\n", lc_r->current_module->name);
@@ -1496,25 +1599,23 @@ static State state_command_set_current_module_out(State s, Signal sig)
 
 @<parse@:Light@/states@=
 {
-    name => "parse",
-    parent => "compile",
-},
-{
-    name => "skip_blanks",
-    parent => "parse",
-},
-{
     name => "parse_block",
-    parent => "parse",
+    parent => "compile",
+    init_child => "parse_block_comment",
+    has_final => 1,
+    has_callback => 1,
 },
 @
 
 @<litarfs@:light@:C Structure@/functions@=
-static State state_parse_in(State s, Signal sig)
+static State state_parse_block_in(State s, Signal sig)
 {
-    return state_skip_blanks;
+    Block blk;
+    NEW0(blk);
+    s->local = blk;
+    return NULL;
 }
-static State state_parse_handler(State s, Signal sig)
+static State state_parse_block_handler(State s, Signal sig)
 {
     if (!state_is_active(state_command_waiting)) {
         return s;
@@ -1524,32 +1625,26 @@ static State state_parse_handler(State s, Signal sig)
     if (tkn->type == TOKEN_CONTROL_CHARACTER && *control_character_to_state[tkn->value]) {
         return s;
     }
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && (tkn->value == ' ' || tkn->value == '|')) {
+        return s->parent;
+    }
     return NULL;
 }
-static State state_parse_out(State s, Signal sig)
+static State state_parse_block_out(State s, Signal sig)
 {
     return NULL;
 }
+@
 
-static State state_skip_blanks_in(State s, Signal sig)
+@<litarfs@:light@:C Structure@/functions@=
+static State state_compile_final(State sc, Signal sig)
 {
-    return NULL;
-}
-static State state_skip_blanks_handler(State s, Signal sig)
-{
-    Token tkn;
-    RENAME(sig, tkn);
-    if (tkn->type == TOKEN_NORMAL_CHARACTER && isspace(tkn->value)) {
-        return s;
+    if (sc == state_parse_block) {
+        Block blk;
+        RENAME(sc->local, blk);
+        block_extend_chunk_ref(blk, blk->chunk_ref);
+        return state_parse_block;
     }
-    if (tkn->type == TOKEN_NEWLINE) {
-        return s;
-    }
-    return state_parse_block;
-}
-static State state_skip_blanks_out(State s, Signal sig)
-{
-    return NULL;
 }
 @
 
@@ -1557,14 +1652,35 @@ static State state_skip_blanks_out(State s, Signal sig)
 {
     name => "parse_block_comment",
     parent => "parse_block",
+    alias => "parse_text",
 },
 {
     name => "parse_block_chunk_ref",
     parent => "parse_block",
+    alias => "parse_chunk_ref",
+    init_child => "parse_block_chunk_ref_name",
+    has_final => 1,
+    has_callback => 1,
+},
+{
+    name => "parse_block_chunk_ref_name",
+    parent => "parse_block_chunk_ref",
+    alias => "parse_text",
 },
 {
     name => "parse_block_content",
     parent => "parse_block",
+    init_child => "parse_block_content_text",
+},
+{
+    name => "parse_block_content_text",
+    parent => "parse_block_content",
+    alias => "parse_text",
+},
+{
+    name => "parse_block_content_chunk_ref",
+    parent => "parse_block_content",
+    alias => "parse_chunk_ref",
 },
 {
     name => "parse_block_filters",
@@ -1573,103 +1689,37 @@ static State state_skip_blanks_out(State s, Signal sig)
 @
 
 @<litarfs@:light@:C Structure@/functions@=
-static State state_parse_block_in(State s, Signal sig)
-{
-    Block blk;
-    NEW0(blk);
-    *state_local(s) = blk;
-
-    Token tkn;
-    RENAME(sig, tkn);
-    if (tkn->type == TOKEN_CONTROL_CHARACTER &&
-           (tkn->value == '<' || tkn->value == '[' || tkn->value == '(')) {
-        blk->comment = "";
-        return state_parse_block_chunk_ref;
-    }
-    return state_parse_block_comment;
-}
-static State state_parse_block_handler(State s, Signal sig)
-{
-    return NULL;
-}
-static State state_parse_block_out(State s, Signal sig)
-{
-    Block blk;
-    RENAME(*state_local(s), blk);
-
-    struct state_compile_local *lc_r;
-    RENAME(*state_local(state_compile), lc_r);
-
-    if (blk->chunk_ref) {
-        there_is_chunk_in_module(blk->chunk_ref->chunk, lc_r->current_module);
-        block_extend_chunk_ref(blk, blk->chunk_ref);
-    }
-    return NULL;
-}
-@
-
-@<litarfs@:light@:C Structure@/functions@=
-static State state_parse_block_comment_in(State s, Signal sig)
-{
-    Str cache = new_str();
-    str_append(cache, ((Token)sig)->value);
-    *state_local(s) = cache;
-    return NULL;
-}
-static State state_parse_block_comment_handler(State s, Signal sig)
-{
-    Token tkn;
-    RENAME(sig, tkn);
-    if (extract_string(s, tkn)) {
-        return s;
-    }
-    if (tkn->type == TOKEN_CONTROL_CHARACTER &&
-           (tkn->value == '<' || tkn->value == '[' || tkn->value == '(')) {
-        return state_parse_block_chunk_ref;
-    }
-    return NULL;
-}
-static State state_parse_block_comment_out(State s, Signal sig)
-{
-    Block blk;
-    RENAME(*state_local(state_parse_block), blk);
-
-    Str cache;
-    RENAME(*state_local(s), cache);
-    char *comment;
-    STRDUP(raw_string(cache), comment);
-#ifdef SHOW_COMPILE_INFO
-    fprintf(stderr, "Got comment:\n%s\n", comment);
-#endif
-    blk->comment = comment;
-    free_str(cache);
-    return NULL;
-}
-
-static State state_parse_block_chunk_ref_in(State s, Signal sig)
-{
-    return NULL;
-}
-static State state_parse_block_chunk_ref_handler(State s, Signal sig)
-{
-    return NULL;
-}
-static State state_parse_block_chunk_ref_out(State s, Signal sig)
-{
-    return NULL;
-}
-
 static State state_parse_block_content_in(State s, Signal sig)
 {
+    s->local = NULL;
     return NULL;
 }
 static State state_parse_block_content_handler(State s, Signal sig)
 {
+    Token tkn;
+    RENAME(sig, tkn);
+    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
+        return s->parent;
+    }
     return NULL;
 }
 static State state_parse_block_content_out(State s, Signal sig)
 {
     return NULL;
+}
+static State state_parse_block_content_final(State sc, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+
+    if (sc == state_parse_block_content_text) {
+        Str cache;
+        RENAME(sc->local, cache);
+
+        char *text;
+        STRDUP(raw_string(cache), text);
+        push(text, (List *)&sp->local);
+    }
 }
 
 static State state_parse_block_filters_in(State s, Signal sig)
@@ -1685,6 +1735,37 @@ static State state_parse_block_filters_out(State s, Signal sig)
     return NULL;
 }
 @
+
+@<litarfs@:light@:C Structure@/functions@=
+static State state_parse_block_final(State sp, State sc, Signal sig)
+{
+    struct state_compile_local *ccl_r;
+    RENAME(state_compile->local, ccl_r);
+
+    Block blk;
+    RENAME(sp->local, blk);
+    if (sc == state_parse_block_comment) {
+        Str cache;
+        RENAME(sc->local, cache);
+        char *comment;
+        STRDUP(raw_string(cache), comment);
+        blk->comment = comment;
+        return state_parse_block_chunk_ref;
+    }
+
+    if (sc == state_parse_block_chunk_ref) {
+        struct state_parse_chunk_ref_local *lc_r;
+        RENAME(sc->local, lc_r);
+
+        const char *mn = lc_r->module_name ? lc_r->module_name : "";
+        Module mod = module_of_name_in(mn, ccl_r->archive);
+        Chunk chk = chunk_of_name_in_module(lc_r->chunk_name, mod);
+        block_extend_chunk_specialized_by(blk, chk, lc_r->labels);
+        return state_parse_block_content;
+    }
+}
+@
+
 
 @<litar@:C Structure@/invocation syntax@=
 {
@@ -2616,107 +2697,6 @@ static State state_parse_block_filters_name_out(State s, Signal sig)
 {
     free_str((Str *)state_local(s));
     return NULL;
-}
-@
-
-## Escaping
-
-@<states of parsing@=
-{
-    name => "escape_argument",
-    parent => "escape",
-},
-@
-
-@<litar@:C Structure@/data types@=
-struct state_escape_local {
-    char esc;
-    const char *argument;
-};
-@
-
-@<litar@:C Structure@/functions@=
-static State state_escape_in(State s, Signal sig)
-{
-    struct state_escape_local *lc_r = NULL;
-    NEW0(lc_r);
-    *state_local(s) = lc_r;
-    return state_escape_argument;
-}
-
-static State state_escape_handler(State s, Signal sig)
-{
-    struct state_escape_local *lc_r;
-    RENAME(*state_local(state_escape), lc_r);
-    @<handlings for token "tkn" when "state_escape"@|execute token handlings@>
-    return NULL;
-}
-
-static State state_escape_out(State s, Signal sig)
-{
-    struct state_escape_local *lc_r;
-    RENAME(*state_local(s), lc_r);
-    FREE(*state_local(s));
-    return NULL;
-}
-
-static State state_escape_argument_in(State s, Signal sig)
-{
-    new_str((Str *)state_local(s));
-    return NULL;
-}
-
-static State state_escape_argument_handler(State s, Signal sig)
-{
-    if (((struct state_escape_local *)*state_local(state_escape))->esc == '\0') {
-        return NULL; 
-    }
-    Token tkn;
-    RENAME(sig, tkn);
-    if (extract_name(s, tkn)) {
-        return s;
-    }
-    return NULL;
-}
-
-static State state_escape_argument_out(State s, Signal sig)
-{
-    free_str((Str *)state_local(s));
-    return NULL;
-}
-@
-
-@<handlings for token "tkn" when "state_escape"@=
-if (lc_r->esc && tkn->type == TOKEN_NEWLINE) {
-    Str argument;
-    RENAME(*state_local(state_escape_argument), argument);
-    lc_r->argument = normalize(raw_string(argument));
-    str_clean(argument);
-
-    @<handle escaping when "lc_r"@>
-    lc_r->esc = '\0';
-    return s;
-}
-@
-
-### Set Module
-
-@<handlings for token "tkn" when "state_escape"@=
-if (state_is_active(state_parse_comment)
-    && ipt->cc == 2
-    && tkn->type == TOKEN_CONTROL_CHARACTER
-    && tkn->value == '-') {
-    lc_r->esc = tkn->value;
-    return state_escape;
-}
-@
-
-@<handle escaping when "lc_r"@=
-if (lc_r->esc == '-') {
-    struct state_parse_local *plc_r;
-    RENAME(*state_local(state_parse), plc_r);
-    plc_r->module = module_of_name(lc_r->argument);
-    there_is_module(plc_r->module);
 }
 @
 

@@ -709,7 +709,7 @@ void fill_argument(Function func, void *arg)
 static void *structured_args(Function func, List args)
 {
     void *arg;
-    List _args = copy_list(func->args);
+    List _args = copy_list(func->args, NULL);
     FOREACH (arg, args) {
         push(arg, &_args);
     }
@@ -915,6 +915,13 @@ void free_array(Array arr)
     FREE(arr);
 }
 
+Array copy_array(Array arr) {
+    Array narr;
+    MOVE(arr, narr);
+    MOVE(arr->elements, narr->elements);
+    return narr;
+}
+
 void **
 nth(Array arr, int n)
 {
@@ -1020,6 +1027,14 @@ void free_deque(Deque q)
     FREE(q);
 }
 
+Deque copy_deque(Deque q)
+{
+    Deque nq;
+    MOVE(q, nq);
+    nq->array = copy_array(q->array);
+    return nq;
+}
+
 void clear_deque(Deque q)
 {
     q->head = 0;
@@ -1122,6 +1137,14 @@ void free_str(Str s)
 {
     FREE(s->raw_string);
     FREE(s);
+}
+
+Str copy_str(Str s)
+{
+    Str ns;
+    MOVE(s, ns);
+    STRDUP(s->raw_string, ns->raw_string);
+    return ns;
 }
 
 char *raw_string(Str str)
@@ -1348,6 +1371,23 @@ static int equal_func_str(const void *s1, const void *s2)
 HashTable new_string_hash_table(size_t size)
 {
     return new_hash_table(size, hash_func_str, equal_func_str);
+}
+@
+
+@<basic@:light module@:C Structure@/functions@=
+static uint32_t hash_func_ptr(const void *p)
+{
+    return _hash_ptr(s);
+}
+
+static int equal_func_ptr(const void *p1, const void *p2)
+{
+    return p1 == p2;
+}
+
+HashTable new_pointer_hash_table(size_t size)
+{
+    return new_hash_table(size, hash_func_ptr, equal_func_ptr);
 }
 @
 
@@ -1612,25 +1652,26 @@ name => "state",
 @<basic@:light module@:C Structure@/exported data type declarations@>
 @
 
-@<state@:light module@:C Structure@/data types@=
+@<state@:light module@:C Structure@/exported data types@=
+enum state_type {
+    STATE_XOR,
+    STATE_AND 
+};
+
 struct state {
     const char *name;
     State parent;
     StateType type;
     List children;
     State active_child;
+    State init_child;
     State last_child;
     State (*handler)(State, Signal);
     State (*in)(State, Signal);
     State (*out)(State, Signal);
+    State (*final)(State, Signal);
+    void (*callback)(State, Signal);
     void *local;
-};
-@
-
-@<state@:light module@:C Structure@/exported data types@=
-enum state_type {
-    STATE_XOR,
-    STATE_AND 
 };
 @
 
@@ -1665,30 +1706,19 @@ void free_state(State s)
     free_list(s->children);
     FREE(s);
 }
-
-void
-state_register_in_func(State s, State (*in)(State, Signal))
-{
-    s->in = in;
-}
-
-void
-state_register_out_func(State s, State (*out)(State, Signal))
-{
-    s->out = out;
-}
 @
 
 @<state@:light module@:C Structure@/functions@=
 static void into_state(State s, Signal sig)
 {
 #ifndef NDEBUG
-            fprintf(stderr, "Entering state %s\n", s->name);
+    fprintf(stderr, "Entering state %s\n", s->name);
 #endif
     if (s->in != NULL) {
         State cld;
         cld = s->in(s, sig);
-        s->active_child = cld == NULL ? s->last_child : cld;
+        s->active_child = cld ? cld :
+            (s->init_child ? s->init_child : s->last_child);
     }
     if (s->type == STATE_XOR && s->active_child) {
         into_state(s->active_child, sig);
@@ -1712,13 +1742,16 @@ static void out_state(State s, Signal sig)
             out_state(cld, sig);
         }
     }
-    if (s->out != NULL) {
+    if (s->out) {
         State cld;
         cld = s->out(s, sig);
         s->last_child = cld == NULL ? s->active_child : cld;
     }
+    if (s->parent && s->parent->callback) {
+        s->parent->callback(s, sig);
+    }
 #ifndef NDEBUG
-            fprintf(stderr, "Exited state %s\n", s->name);
+    fprintf(stderr, "Exited state %s\n", s->name);
 #endif
 }
 @
@@ -1742,6 +1775,9 @@ int state_handle_signal(State s, Signal sig)
 #ifndef NDEBUG
     fprintf(stderr, "State %s handling, result: %d\n", s->name, !!next);
 #endif
+    if (next == s->parent) {
+        next = s->parent->final(s->parent, s, sig);
+    }
     if (next == NULL) {
         if (s->type == STATE_XOR && s->active_child != NULL) {
             handled = state_handle_signal(s->active_child, sig);
@@ -1754,20 +1790,14 @@ int state_handle_signal(State s, Signal sig)
         }
     } else {
         handled = 1;
-        assert(next->parent == s->parent);
         if (next != s) {
-            assert(s->parent != root_state && s->parent->type == STATE_XOR);
+            assert(next->parent == s->parent);
             out_state(s, sig);
             s->parent->active_child = next;
             into_state(next, sig);
         }
     }
     return handled;
-}
-
-void **state_local(State s)
-{
-    return &s->local;
 }
 
 int state_is_active(State s)
@@ -1789,27 +1819,51 @@ The model of states:
 [
     {
         name => NAME_OF_STATE,
-        parent => PARENT_OF_STATE,
+        parent => NAME_OF_STATE,
         type => TYPE_OF_STATE (optional),
+        alias => NAME_OF_ALIAS (optional),
+        init_child => NAME_OF_STATE (optional),
+        has_final => boolean (optional),
+        has_callback => boolean (optional),
     },
     ...
 ]
 
 @<C structs for state@=
+sub state_name_to_c_var {
+    "state_$_[0]"
+}
+
 sub state_to_c_var {
-    "state_$_[0]->{name}"
+    state_name_to_c_var($_[0]->{name})
+}
+
+sub state_to_common_prefix {
+    if ($_[0]->{alias}) {
+        return state_name_to_c_var($[0]->{alias})
+    } else {
+        return state_to_c_var($_[0])
+    }
 }
 
 sub state_to_handler {
-    state_to_c_var($_[0]) . "_handler"
+    state_to_common_prefix($_[0]) . "_handler"
 }
 
 sub state_to_in_func {
-    state_to_c_var($_[0]) . "_in"
+    state_to_common_prefix($_[0]) . "_in"
 }
 
 sub state_to_out_func {
-    state_to_c_var($_[0]) . "_out"
+    state_to_common_prefix($_[0]) . "_out"
+}
+
+sub state_to_final_func {
+    state_to_common_prefix($_[0]) . "_final"
+}
+
+sub state_to_callback {
+    state_to_common_prefix($_[0]) . "_callback"
 }
 
 sub state_to_dec (_) {
@@ -1849,8 +1903,18 @@ sub state_to_init (_) {
         $s .= " STATE_XOR,";
     }
     $s .= " @@{[state_to_handler($st)]});\n";
-    $s .= "state_register_in_func(@@{[state_to_c_var($st)]}, @@{[state_to_in_func($st)]});\n";
-    $s .= "state_register_out_func(@@{[state_to_c_var($st)]}, @@{[state_to_out_func($st)]});\n";
+    $s .= "@@{[state_to_c_var($st)]}->in = @@{[state_to_in_func($st)]};\n";
+    $s .= "@@{[state_to_c_var($st)]}->out = @@{[state_to_out_func($st)]};\n";
+    if ($st->{init_child}) {
+        $s .=
+            "@@{[state_to_c_var($st)]}->init_child = @@{[state_to_c_var($states{$st->{init_child}})]};\n"
+    }
+    if ($st->{has_final}) {
+        $s .= "@@{[state_to_c_var($st)]}->final = @@{[state_to_final_func($st)]};\n";
+    }
+    if ($st->{has_callback}) {
+        $s .= "@@{[state_to_c_var($st)]}->callback = @@{[state_to_callback($st)]};\n";
+    }
     $s
 }
 

@@ -85,7 +85,7 @@ static inline uint64_t _hash_fibonacci(uint64_t v) {
     return GOLDEN_RATIO_64 * v;
 }
 
-static inline uint64_t _hash_ptr(void *p) {
+static inline uint64_t _hash_ptr(const void *p) {
     return _hash_fibonacci((uintptr_t)p);
 }
 @
@@ -631,6 +631,7 @@ List append(List *l1_r, List *l2_r)
 @
 
 @<basic@:light module@:C Structure@/exported macros@=
+#define empty_list NULL
 #define _LIST(arr, len) list_from_arr((arr), len, sizeof((arr)[0]))
 #define LIST(arr) _LIST((arr), sizeof(arr) / sizeof((arr)[0]))
 #define FOREACH(elm, l)                                      \
@@ -709,7 +710,7 @@ void fill_argument(Function func, void *arg)
 static void *structured_args(Function func, List args)
 {
     void *arg;
-    List _args = copy_list(func->args, NULL);
+    List _args = copy_list(func->args);
     FOREACH (arg, args) {
         push(arg, &_args);
     }
@@ -1377,7 +1378,7 @@ HashTable new_string_hash_table(size_t size)
 @<basic@:light module@:C Structure@/functions@=
 static uint32_t hash_func_ptr(const void *p)
 {
-    return _hash_ptr(s);
+    return _hash_ptr(p);
 }
 
 static int equal_func_ptr(const void *p1, const void *p2)
@@ -1742,13 +1743,13 @@ static void out_state(State s, Signal sig)
             out_state(cld, sig);
         }
     }
+    if (s->parent && s->parent->callback) {
+        s->parent->callback(s, sig);
+    }
     if (s->out) {
         State cld;
         cld = s->out(s, sig);
         s->last_child = cld == NULL ? s->active_child : cld;
-    }
-    if (s->parent && s->parent->callback) {
-        s->parent->callback(s, sig);
     }
 #ifndef NDEBUG
     fprintf(stderr, "Exited state %s\n", s->name);
@@ -1771,12 +1772,14 @@ int state_handle_signal(State s, Signal sig)
 {
     State next;
     int handled = 0;
+    int exited = 0;
     next = s->handler == NULL ? NULL : s->handler(s, sig);
 #ifndef NDEBUG
     fprintf(stderr, "State %s handling, result: %d\n", s->name, !!next);
 #endif
-    if (next == s->parent) {
-        next = s->parent->final(s->parent, s, sig);
+    if (next && next == s->parent) {
+        next = s->parent->final(s, sig);
+        exited = 1;
     }
     if (next == NULL) {
         if (s->type == STATE_XOR && s->active_child != NULL) {
@@ -1790,7 +1793,7 @@ int state_handle_signal(State s, Signal sig)
         }
     } else {
         handled = 1;
-        if (next != s) {
+        if (exited || next != s) {
             assert(next->parent == s->parent);
             out_state(s, sig);
             s->parent->active_child = next;
@@ -1840,7 +1843,7 @@ sub state_to_c_var {
 
 sub state_to_common_prefix {
     if ($_[0]->{alias}) {
-        return state_name_to_c_var($[0]->{alias})
+        return state_name_to_c_var($_[0]->{alias})
     } else {
         return state_to_c_var($_[0])
     }
@@ -1905,10 +1908,6 @@ sub state_to_init (_) {
     $s .= " @@{[state_to_handler($st)]});\n";
     $s .= "@@{[state_to_c_var($st)]}->in = @@{[state_to_in_func($st)]};\n";
     $s .= "@@{[state_to_c_var($st)]}->out = @@{[state_to_out_func($st)]};\n";
-    if ($st->{init_child}) {
-        $s .=
-            "@@{[state_to_c_var($st)]}->init_child = @@{[state_to_c_var($states{$st->{init_child}})]};\n"
-    }
     if ($st->{has_final}) {
         $s .= "@@{[state_to_c_var($st)]}->final = @@{[state_to_final_func($st)]};\n";
     }
@@ -1918,7 +1917,17 @@ sub state_to_init (_) {
     $s
 }
 
+sub state_to_set_init_child (_) {
+    my($st, $s) = ($_[0], "");
+    if ($st->{init_child}) {
+        $s .=
+            "@@{[state_to_c_var($st)]}->init_child = @@{[state_to_c_var($states{$st->{init_child}})]};\n"
+    }
+    $s
+}
+
 my $str = join "\n", map state_to_init, @model;
+$str .= join "\n", map state_to_set_init_child, @model;
 $str .= "\nstate_init(@@{[state_to_c_var($model[0])]});\n";
 print $str;
 @|Basics@/evaluate@

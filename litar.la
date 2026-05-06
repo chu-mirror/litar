@@ -2,7 +2,7 @@
 #define NDEBUG
 @
 @<state@:light module@:C Structure@/include flags@=
-// #define NDEBUG
+#define NDEBUG
 @
 @<litarfs@:light@:C Structure@/include flags@=
 #define NDEBUG
@@ -1415,6 +1415,20 @@ static State state_compile_out(State s, Signal sig)
 @
 
 @<litarfs@:light@:C Structure@/functions@=
+void put_to_input_frames(const char *ar, List *input_frames_r)
+{
+    char path[PATH_MAX+1];
+    char *ptr = realpath(ar, path);
+    if (path == NULL) {
+        perror("realpath");
+        longjmp(exit_main, 1);
+    }
+    InputFrame ipt = NULL;
+    NEW0(ipt);
+    ipt->file = atom_str(path);
+    push(ipt, input_frames_r);
+}
+
 Archive parse_archive(const char *archive)
 {
     Archive ret;
@@ -1424,18 +1438,7 @@ Archive parse_archive(const char *archive)
     struct state_compile_local *lc_r;
     RENAME(state_compile->local, lc_r);
 
-    do {
-        char path[PATH_MAX+1];
-        char *ptr = realpath(archive, path);
-        if (path == NULL) {
-            perror("realpath");
-            longjmp(exit_main, 1);
-        }
-        InputFrame ipt = NULL;
-        NEW0(ipt);
-        ipt->file = atom_str(path);
-        push(ipt, &lc_r->input_frames);
-    } while (0);
+    put_to_input_frames(archive, &lc_r->input_frames);
 
     while (lc_r->input_frames) {
         Token tkn;
@@ -1520,6 +1523,14 @@ FOREACH (blk, ar->blocks) {
             }
         }
         reverse(&blk->contents);
+        reverse(&blk->filters);
+        ChunkRef ckr;
+        FOREACH (ckr, blk->filters) {
+            printf("\n|");
+            print_chunk_ref(ckr);
+        }
+        reverse(&blk->filters);
+        printf("\n");
     }
 }
 reverse(&ar->blocks);
@@ -1631,6 +1642,60 @@ static void state_command_set_current_module_callback(State sc, Signal sig)
 }
 @
 
+@<mappings from control_character to state@=
+['.'] = &state_command_include,
+@
+
+@<parse@:Light@/states@=
+{
+    name => "command_include",
+    parent => "command",
+    init_child => "command_include_argument",
+    has_final => 1,
+    has_callback => 1,
+},
+{
+    name => "command_include_argument",
+    parent => "command_include",
+    alias => "parse_text",
+},
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static State state_command_include_in(State s, Signal sig)
+{
+    return NULL;
+}
+static State state_command_include_handler(State s, Signal sig)
+{
+    Token tkn;
+    RENAME(sig, tkn);
+    if (tkn->type == TOKEN_NEWLINE) {
+        return state_command_waiting;
+    }
+    return NULL;
+}
+static State state_command_include_out(State s, Signal sig)
+{
+    return NULL;
+}
+static State state_command_include_final(State sc, Signal sig)
+{
+    return sc;
+}
+static void state_command_include_callback(State sc, Signal sig)
+{
+    Str cache;
+    RENAME(sc->local, cache);
+    struct state_compile_local *lc_r;
+    RENAME(state_compile->local, lc_r);
+    put_to_input_frames(normalize(raw_string(cache)), &lc_r->input_frames);
+#ifdef SHOW_COMPILE_INFO
+    fprintf(stderr, "Command: include %s\n", ((InputFrame)car(lc_r->input_frames))->file);
+#endif
+}
+@
+
 @<parse@:Light@/states@=
 {
     name => "parse_block",
@@ -1733,6 +1798,15 @@ static State state_compile_final(State sc, Signal sig)
 {
     name => "parse_block_filters",
     parent => "parse_block",
+    init_child => "parse_block_filters_name",
+    alias => "parse_chunk_ref",
+    has_final => 1,
+    has_callback => 1,
+},
+{
+    name => "parse_block_filters_name",
+    parent => "parse_block_filters",
+    alias => "parse_text",
 },
 @
 
@@ -1854,7 +1928,8 @@ static State state_parse_block_final(State sc, Signal sig)
     Token tkn;
     RENAME(sig, tkn);
     if (sc == state_parse_block_comment
-        && tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<') {
+        && tkn->type == TOKEN_CONTROL_CHARACTER
+        && (tkn->value == '<' | tkn->value == '[' | tkn->value == '(')) {
         return state_parse_block_chunk_ref;
     }
     if (sc == state_parse_block_chunk_ref
@@ -1899,6 +1974,23 @@ static void state_parse_block_callback(State sc, Signal sig)
         NEW0(blk->chunk_ref);
         blk->chunk_ref->chunk = chk;
         blk->chunk_ref->labels = copy_list(lc_r->labels);
+    }
+
+    if (sc == state_parse_block_filters) {
+        struct state_parse_chunk_ref_local *lc_r;
+        RENAME(sc->local, lc_r);
+        Module mod;
+        if (lc_r->module_name) {
+            mod = module_of_name_in_archive(lc_r->module_name, ccl_r->archive);
+        } else {
+            mod = ccl_r->current_module;
+        }
+        Chunk chk = chunk_of_name_in_module(lc_r->chunk_name, mod);
+        ChunkRef ckr;
+        NEW0(ckr);
+        ckr->chunk = chk;
+        ckr->labels = copy_list(lc_r->labels);
+        push(ckr, &blk->filters);
     }
 }
 @

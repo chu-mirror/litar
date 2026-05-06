@@ -378,7 +378,7 @@ The back end is a server that makes use of libfuse3.
 @
 
 They communicate through the mounted file system.
-Other programs can communicate with the back end too by this method.
+Other programs can communicate with the back end too by this way.
 
 The back end adopts the framework provided by libfuse3.
 
@@ -745,7 +745,7 @@ or a reference to a chunk and a list of filters.
 typedef struct {
     enum {
         BLOCK_CONTENT_TEXT,
-        BLOCK_CONTENT_CHUNK_REF,
+        BLOCK_CONTENT_CHUNK,
     } type;
     union {
         const char *text;
@@ -779,7 +779,7 @@ void block_include_chunk(Block blk, ChunkRef ckr, List flts)
     BlockContent bc;
 
     NEW0(bc);
-    bc->type = BLOCK_CONTENT_CHUNK_REF;
+    bc->type = BLOCK_CONTENT_CHUNK;
     bc->value.chunk.chunk_ref = ckr;
     bc->value.chunk.filters = flts;
     push(bc, &blk->contents);
@@ -1071,7 +1071,7 @@ expanded_content_of_block_with_labels(Block blk, List lbls)
             if (bc->type == BLOCK_CONTENT_TEXT) {
                 str_extend(ect, bc->value.text);
             }
-            if (bc->type == BLOCK_CONTENT_CHUNK_REF) {
+            if (bc->type == BLOCK_CONTENT_CHUNK) {
                 UNDER(
                     List l1, l2, l;
 
@@ -1475,32 +1475,54 @@ Archive parse_archive(const char *archive)
 }
 @
 
+@<litarfs@:light@:C Structure@/functions@=
+void print_chunk_ref(ChunkRef ckr)
+{
+    printf(
+        "Chunk: %s/%s, ",
+        ckr->chunk->module->name,
+        ckr->chunk->name
+    );
+    printf("Labels: ");
+    const char *lbl;
+    FOREACH (lbl, ckr->labels) {
+        printf("%s ", lbl);
+    }
+}
+@
+
 @<build context for "fuse_main"@=
 Archive ar;
 ar = parse_archive(user_options.archive);
 Block blk;
+reverse(&ar->blocks);
 FOREACH (blk, ar->blocks) {
     printf("Comment:\n%s\n", blk->comment);
     if (blk->chunk_ref) {
-        printf(
-            "Extend Chunk: %s/%s\n",
-            blk->chunk_ref->chunk->module->name,
-            blk->chunk_ref->chunk->name
-        );
-        printf("Labels: ");
-        const char *lbl;
-        FOREACH (lbl, blk->chunk_ref->labels) {
-            printf("%s ", lbl);
-        }
+        printf("Extending ");
+        print_chunk_ref(blk->chunk_ref);
         printf("\n");
         BlockContent blc;
+        reverse(&blk->contents);
         FOREACH (blc, blk->contents) {
             if (blc->type == BLOCK_CONTENT_TEXT) {
                 printf("Text:\n%s\n", blc->value.text);
+            } else if (blc->type == BLOCK_CONTENT_CHUNK) {
+                print_chunk_ref(blc->value.chunk.chunk_ref);
+                ChunkRef ckr;
+                reverse(&blc->value.chunk.filters);
+                FOREACH (ckr, blc->value.chunk.filters) {
+                    printf("\n|");
+                    print_chunk_ref(ckr);
+                }
+                reverse(&blc->value.chunk.filters);
+                printf("\n");
             }
         }
+        reverse(&blk->contents);
     }
 }
+reverse(&ar->blocks);
 longjmp(exit_main, 2);
 @
 
@@ -1698,7 +1720,10 @@ static State state_compile_final(State sc, Signal sig)
 {
     name => "parse_block_content_chunk_ref",
     parent => "parse_block_content",
+    init_child => "parse_block_content_chunk_ref_name",
     alias => "parse_chunk_ref",
+    has_final => 1,
+    has_callback => 1,
 },
 {
     name => "parse_block_content_chunk_ref_name",
@@ -1759,8 +1784,33 @@ static void state_parse_block_content_callback(State sc, Signal sig)
     if (sc == state_parse_block_content_chunk_ref) {
         struct state_parse_chunk_ref_local *lc_r;
         struct state_parse_block_content_local *lcp_r;
+        struct state_compile_local *ccl_r;
         RENAME(sc->local, lc_r);
         RENAME(sc->parent->local, lcp_r);
+        RENAME(state_compile->local, ccl_r);
+
+        Module mod;
+        if (lc_r->module_name) {
+            mod = module_of_name_in_archive(lc_r->module_name, ccl_r->archive);
+        } else {
+            mod = ccl_r->current_module;
+        }
+
+        ChunkRef ckr;
+        NEW0(ckr);
+        ckr->labels = copy_list(lc_r->labels);
+        ckr->chunk = chunk_of_name_in_module(lc_r->chunk_name, mod);
+        if (!lcp_r->chunk_ref) {
+            lcp_r->chunk_ref = ckr;
+        } else {
+            push(ckr, &lcp_r->filters);
+        }
+
+        Token tkn;
+        RENAME(sig, tkn);
+        if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
+            block_include_chunk(blk, lcp_r->chunk_ref, lcp_r->filters);
+        }
     }
 }
 static State state_parse_block_content_final(State sc, Signal sig)

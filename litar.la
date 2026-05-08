@@ -545,10 +545,6 @@ user_options.archive = strdup("archive.la");
 user_options.mount_point = strdup("archive");
 @
 
-@<build context for "fuse_main"@=
-@
-
-
 Before we get into "fuse_main", we should build a proper context for it.
 The context should contain all information needed to build a file system.
 
@@ -1087,6 +1083,17 @@ expanded_content_of_block_with_labels(Block blk, List lbls)
 
 # libfuse3
 
+@<litarfs@:light@:C Structure@/global variables@=
+Archive archive;
+Node file_system_root;
+@
+
+@<build context for "fuse_main"@=
+archive = parse_archive(user_options.archive);
+file_system_root = file_system_from_archive(archive);
+@<show parsed information@>
+@
+
 @<litarfs operations@=
 LITARFS_OPER(init),
 @
@@ -1508,12 +1515,10 @@ void print_node(Node nd, int level)
 }
 @
 
-@<build context for "fuse_main"@=
-Archive ar;
-ar = parse_archive(user_options.archive);
+@<show parsed information@=
 Block blk;
-reverse(&ar->blocks);
-FOREACH (blk, ar->blocks) {
+reverse(&archive->blocks);
+FOREACH (blk, archive->blocks) {
     printf("Comment:\n%s\n", blk->comment);
     if (blk->chunk_ref) {
         printf("Extending ");
@@ -1547,9 +1552,8 @@ FOREACH (blk, ar->blocks) {
         printf("\n");
     }
 }
-reverse(&ar->blocks);
-Node fs = file_system_from_archive(ar);
-print_node(fs, 0);
+reverse(&archive->blocks);
+print_node(file_system_root, 0);
 longjmp(exit_main, 2);
 @
 

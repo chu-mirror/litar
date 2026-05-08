@@ -305,32 +305,6 @@ Besides the named module, there's a anonymous module. If there's no @@-,
 or there's no module name specified after @@-, the chunks belong to this
 anonymous module.
 
-litar's internal file system makes use of this module system.
-
-```
-/
-    module 1
-        directory 1
-            file 1
-        directory 2
-        ...
-    module 2
-    ...
-```
-
-A filter is executed under the directory of the module it belongs to.
-A module is simply a directory in some way, so litar also allows importing
-outside directories.
-
-```
-@@+ toolset
-
-@@- toolset
-@@<filter@@=#!/bin/sh
-./tool
-@@
-```
-
 The final piece of code reusability is @@., which is indroduced before.
 
 ```
@@ -342,7 +316,7 @@ The final piece of code reusability is @@., which is indroduced before.
 ```
 
 @@. is not only for including litar archives.
-It can be used to import any text content at any beginning of a line.
+It can be used to import any text content at legal places.
 The following is also legal.
 
 ```
@@ -370,13 +344,6 @@ The back end is a server that makes use of libfuse3.
 
 @[litarfs.c@=
 @<litarfs@:light@:C Structure@/executable@>
-@
-
-@<litarfs@:light@:C Structure@/includes@=
-#include <stdio.h>
-#include <limits.h>
-#include "light.h"
-#include "state.h"
 @
 
 They communicate through the mounted file system.
@@ -516,7 +483,6 @@ if (user_options.version) {
 }
 
 if (to_mount_file_system) {
-    @<build context for "fuse_main"@>
     fuse_opt_add_arg(&args, "-s");
 } else {
     args.argv[0][0] = '\0';
@@ -1088,12 +1054,6 @@ Archive archive;
 Node file_system_root;
 @
 
-@<build context for "fuse_main"@=
-archive = parse_archive(user_options.archive);
-file_system_root = file_system_from_archive(archive);
-@<show parsed information@>
-@
-
 @<litarfs operations@=
 LITARFS_OPER(init),
 @
@@ -1104,11 +1064,26 @@ litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 {
     (void) conn;
     (void) cfg;
+    archive = parse_archive(user_options.archive);
+    file_system_root = file_system_from_archive(archive);
+    return NULL;
+}
+@
+
+@<litarfs operations@=
+LITARFS_OPER(chmod),
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static int litarfs_chmod(const char *path, mode_t mode, struct fuse_file_info *fi)
+{
+    return 0;
 }
 @
 
 @<litarfs@:light@:C Structure@/function declarations@=
 static void *litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg);
+static int litarfs_chmod(const char *path, mode_t mode, struct fuse_file_info *fi);
 @
 
 # Parsing
@@ -2930,71 +2905,6 @@ if (name_of_chunk_to_execute) {
 }
 @
 
-@<operations after parsing input (DEBUG)@=
-@<print all sections@>
-@
-
-@<functions (DEBUG)@=
-void
-print_section(Section sec)
-{
-    if (sec->type == SECTION_COMMENT) {
-        List lst = copy_list(sec->content.comment);
-        reverse(&lst);
-        TextRef txt;
-        FOREACH (txt, lst) {
-            printf("Comment: (%s, %d, %d)\nContent:\n%s\n",
-                txt->file,
-                txt->start,
-                txt->end,
-                fetch_text_from(txt)
-            );
-        }
-    } else {
-        printf("Block: %s\n", name_of_chunk(sec->content.block->chunk));
-        List lst = copy_list(sec->content.block->contents);
-        reverse(&lst);
-        do {
-            BlockContent bc;
-            FOREACH(bc, lst) {
-                if (bc->type == BLOCK_CONTENT_TEXT) {
-                    printf("\tText: (%s, %d, %d)\n",
-                        bc->value.text->file,
-                        bc->value.text->start,
-                        bc->value.text->end
-                    );
-                } else {
-                    printf("\tReference: %s", name_of_chunk(bc->value.chunk->chunk));
-                    List lst2 = copy_list(bc->value.chunk->filters);
-                    reverse(&lst2);
-                    Chunk chk;
-                    FOREACH(chk, lst2) {
-                        printf(" | %s", chk->name);
-                    }
-                    free_list(&lst2);
-                    putchar('\n');
-                }
-            }
-        } while (0);
-        free_list(&lst);
-    }
-}
-@
-
-@<print all sections@=
-do {
-    Section sec;
-    reverse(&sections);
-    FOREACH(sec, sections) {
-        print_section(sec);
-    }
-} while (0);
-@
-
-@<operations after parsing input (debug)@=
-@<print nodes@>
-@
-
 @<operations after mounting file system@=
 do {
     printf("Starting executing shell\n");
@@ -3113,6 +3023,13 @@ Install:
 ```
 # make install
 ```
+@
+
+@<litarfs@:light@:C Structure@/includes@=
+#include <stdio.h>
+#include <limits.h>
+#include "light.h"
+#include "state.h"
 @
 
 @. lib/light.la

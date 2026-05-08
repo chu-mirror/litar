@@ -6,7 +6,9 @@
 @
 @<litarfs@:light@:C Structure@/include flags@=
 #define NDEBUG
+#ifndef NDEBUG
 #define SHOW_COMPILE_INFO
+#endif
 @
 
 @<introduction of litar@=
@@ -415,8 +417,8 @@ static const struct fuse_operations litarfs_oper = {
     name => 'litarfs',
     usages => [
         {
-            options => [@<command line options for "litarfs MOUNT_POINT"@>],
-            arguments => ['MOUNT_POINT'],
+            options => [@<command line options for "litarfs"@>],
+            arguments => [],
         },
     ],
 }
@@ -440,8 +442,8 @@ sub option_to_c_decl (_) {
 my @usages = @@{$syntax->{usages}};
 my $options_decl = join "\n", map option_to_c_decl, @@{$usages[0]->{options}};
 print $options_decl;
-
 @|Basics@/evaluate@
+
 
 @<litarfs user option specs@=@<Text Processing@/basic perl settings@>
 
@@ -473,7 +475,7 @@ print $option_specs;
 
 @|Basics@/evaluate@
 
-@<command line options for "litarfs MOUNT_POINT"@=
+@<command line options for "litarfs"@=
 {
     long_opt => "help",
     opt => "h",
@@ -523,17 +525,24 @@ if (to_mount_file_system) {
 returned = fuse_main(args.argc, args.argv, &litarfs_oper, NULL);
 @
 
-@<command line options for "litarfs MOUNT_POINT"@=
+@<command line options for "litarfs"@=
 {
     long_opt => "archive",
     opt => "a",
     argument => "ARCHIVE",
     description => "Specify the litar archive",
 },
+{
+    long_opt => "mount_point",
+    opt => "m",
+    argument => "MOUNT_POINT",
+    description => "Specify the mount point",
+},
 @
 
 @<set default values for "user_options"@=
 user_options.archive = strdup("archive.la");
+user_options.mount_point = strdup("archive");
 @
 
 @<build context for "fuse_main"@=
@@ -624,7 +633,7 @@ Chunk chunk_of_name_in_module(const char *name, Module mod)
     Chunk chk = get_from_hash_table(mod->chunk_name_to_chunk, name);
     if (!chk) {
         NEW0(chk);
-        chk->name = normalize(name);
+        chk->name = name;
         chk->module = mod;
         put_to_hash_table(mod->chunk_name_to_chunk, chk->name, chk);
     }
@@ -815,8 +824,9 @@ typedef enum {
 } ChunkType;
 @
 
-@<mappings from chunk@=
-ChunkType type;
+The type information is stored in block.
+@<mappings from block@=
+ChunkType chunk_type;
 @
 
 @<litarfs@:light@:C Structure@/data types@=
@@ -832,17 +842,6 @@ typedef struct {
     } value;
     const char *name;
 } *Node;
-@
-
-@<litarfs@:light@:C Structure@/global variables@=
-Node root_node;
-@
-
-@<litarfs@:Light@/initializations of main context@=
-NEW(root_node);
-root_node->type = NODE_DIRECTORY;
-root_node->value.nodes = NULL;
-root_node->name = atom_str("");
 @
 
 @<litarfs@:light@:C Structure@/functions@=
@@ -890,40 +889,6 @@ Node node_of_path(Node root, const char *path)
     return node;
 }
 
-char *path_of_chunk(Chunk chk)
-{
-    char *ret;
-    UNDER(
-        Str path;
-        path = new_str();
-        if (chk->module != module_of_name_in_archive("", chk->module->archive)) {
-            str_extend(path, chk->module->name);
-            str_extend(path, "/");
-        }
-        str_extend(path, chk->name);
-        ESCAPE(STRDUP(raw_string(path), ret));
-    );
-    return ret;
-}
-
-Node node_of_chunk(Node root, Chunk chk)
-{
-    Node nd;
-    UNDER(nd = node_of_path(root, path_of_chunk(chk)));
-    return nd;
-}
-
-void there_is_module_in_file_system(Node root, Module mod)
-{
-    Node nd;
-
-    NEW0(nd);
-    nd->type = NODE_DIRECTORY;
-    nd->name = mod->name;
-    nd->value.nodes = NULL;
-    push(nd, &root->value.nodes);
-}
-
 void chunk_is_file(Node root, Chunk chk)
 {
     char *path;
@@ -931,7 +896,7 @@ void chunk_is_file(Node root, Chunk chk)
     int i = 0, f = i, l;
 
     UNDER(
-        path = path_of_chunk(chk);
+        STRDUP(chk->name, path);
         l = strlen(path);
 
         while (f < l) {
@@ -957,6 +922,9 @@ void chunk_is_file(Node root, Chunk chk)
                         nd->value.chunk = chk;
                         push(nd, &node->value.nodes);
                     );
+                } else {
+                    fprintf(stderr, "Can not redefine file %s\n", path+f);
+                    longjmp(exit_main, 1);
                 }
                 break;
             }
@@ -970,8 +938,30 @@ void chunk_is_executable(Node root, Chunk chk)
     chunk_is_file(root, chk);
 
     Node nd;
-    nd = node_of_chunk(root, chk);
+    nd = node_of_path(root, chk->name);
     nd->type = NODE_EXECUTABLE;
+}
+
+Node file_system_from_archive(Archive ar)
+{
+    Node root;
+    NEW0(root);
+    root->type = NODE_DIRECTORY;
+    root->name = atom_str("");
+    root->value.nodes = empty_list;
+    UNDER(
+        List blks = copy_list(ar->blocks);
+        reverse(&blks);
+        Block blk;
+        FOREACH (blk, blks) {
+            if (blk->chunk_type == CHUNK_TYPE_REGULAR_FILE) {
+                ESCAPE(chunk_is_file(root, blk->chunk_ref->chunk));
+            } else if (blk->chunk_type == CHUNK_TYPE_EXECUTABLE) {
+                ESCAPE(chunk_is_executable(root, blk->chunk_ref->chunk));
+            }
+        }
+    );
+    return root;
 }
 @
 
@@ -1094,6 +1084,8 @@ expanded_content_of_block_with_labels(Block blk, List lbls)
     return ret;
 }
 @
+
+# libfuse3
 
 @<litarfs operations@=
 LITARFS_OPER(init),
@@ -1419,7 +1411,7 @@ void put_to_input_frames(const char *ar, List *input_frames_r)
 {
     char path[PATH_MAX+1];
     char *ptr = realpath(ar, path);
-    if (path == NULL) {
+    if (ptr == NULL) {
         perror("realpath");
         longjmp(exit_main, 1);
     }
@@ -1492,6 +1484,28 @@ void print_chunk_ref(ChunkRef ckr)
         printf("%s ", lbl);
     }
 }
+
+void print_node(Node nd, int level)
+{
+    char *prefix = NULL;
+
+    CALLOC(prefix, level+1);
+    memset(prefix, '\t', level);
+    prefix[level] = '\0';
+    switch (nd->type) {
+    case NODE_DIRECTORY:
+        printf("%s%s/\n", prefix, nd->name);
+        
+        Node sub;
+        FOREACH (sub, nd->value.nodes) {
+            print_node(sub, level+1);
+        }
+        break;
+    default:
+        printf("%s%s\n", prefix, nd->name);
+    }
+    FREE(prefix);
+}
 @
 
 @<build context for "fuse_main"@=
@@ -1534,6 +1548,8 @@ FOREACH (blk, ar->blocks) {
     }
 }
 reverse(&ar->blocks);
+Node fs = file_system_from_archive(ar);
+print_node(fs, 0);
 longjmp(exit_main, 2);
 @
 
@@ -1930,6 +1946,19 @@ static State state_parse_block_final(State sc, Signal sig)
     if (sc == state_parse_block_comment
         && tkn->type == TOKEN_CONTROL_CHARACTER
         && (tkn->value == '<' | tkn->value == '[' | tkn->value == '(')) {
+        Block blk;
+        RENAME(state_parse_block->local, blk);
+        switch (tkn->value) {
+        case '<':
+            blk->chunk_type = CHUNK_TYPE_NORMAL;
+            break;
+        case '[':
+            blk->chunk_type = CHUNK_TYPE_REGULAR_FILE;
+            break;
+        case '(':
+            blk->chunk_type = CHUNK_TYPE_EXECUTABLE;
+            break;
+        }
         return state_parse_block_chunk_ref;
     }
     if (sc == state_parse_block_chunk_ref
@@ -3609,34 +3638,6 @@ do {
 
 @<operations after parsing input (debug)@=
 @<print nodes@>
-@
-
-@<litar@:C Structure@/functions@=
-void print_node(Node nd, int level)
-{
-    char *prefix = NULL;
-
-    CALLOC(prefix, level+1);
-    memset(prefix, '\t', level);
-    prefix[level] = '\0';
-    switch (nd->type) {
-    case NODE_DIRECTORY:
-        printf("%s%s/\n", prefix, nd->name);
-        
-        Node sub;
-        FOREACH (sub, nd->value.nodes) {
-            print_node(sub, level+1);
-        }
-        break;
-    default:
-        printf("%s%s\n", prefix, nd->name);
-    }
-    FREE(prefix);
-}
-@
-
-@<print nodes@=
-print_node(root_node, 0);
 @
 
 @<operations after mounting file system@=

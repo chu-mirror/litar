@@ -461,8 +461,6 @@ print $option_specs;
 struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 new_resource(&args, (void (*)(void *))fuse_opt_free_args);
 
-@<set default values for "user_options"@>
-
 if (fuse_opt_parse(&args, &user_options, litarfs_option_specs, NULL) < 0) {
     fprintf(stderr, "Error when parsing arguments\n");
     longjmp(exit_main, 1);
@@ -484,7 +482,15 @@ if (user_options.version) {
 
 if (to_mount_file_system) {
     @<check and initialize arguments@>
+    archive = parse_archive(user_options.archive);
+    file_system_root = file_system_from_archive(archive);
+    base_directory = open(user_options.base, O_DIRECTORY);
+    if (base_directory == -1) {
+        perror("open base directory");
+        longjmp(exit_main, 1);
+    }
     fuse_opt_add_arg(&args, "-s");
+    fuse_opt_add_arg(&args, user_options.mount_point);
 } else {
     args.argv[0][0] = '\0';
 }
@@ -513,6 +519,28 @@ returned = fuse_main(args.argc, args.argv, &litarfs_oper, NULL);
 },
 @
 
+@<litarfs@:light@:C Structure@/functions@=
+void ensure_directory(const char *path)
+{
+    struct stat buf;
+    if (stat(path, &buf) == -1) {
+        if (errno != ENOENT) {
+            perror("stat");
+            longjmp(exit_main, 1);
+        }
+        if (mkdir(path, 0777) == -1) {
+            perror("mkdir");
+            longjmp(exit_main, 1);
+        }
+        stat(path, &buf);
+    }
+    if (!S_ISDIR(buf.st_mode)) {
+        fprintf(stderr, "%s is not a directory\n", path);
+        longjmp(exit_main, 1);
+    }
+}
+@
+
 @<check and initialize arguments@=
 if (!user_options.archive) {
     fprintf(stderr, "Please specify the archive name through -a\n");
@@ -534,6 +562,8 @@ if (!user_options.mount_point) {
         ESCAPE(user_options.mount_point = atom_str(p));
     );
 }
+ensure_directory(user_options.mount_point);
+
 if (!user_options.base) {
     UNDER(
         char *p;
@@ -543,17 +573,8 @@ if (!user_options.base) {
         ESCAPE(user_options.base = atom_str(p));
     );
 }
-printf(
-    "archive name: %s\nmount point: %s\nbase: %s\n",
-    user_options.archive,
-    user_options.mount_point,
-    user_options.base
-);
-longjmp(exit_main, 1);
+ensure_directory(user_options.base);
 @
-
-Before we get into "fuse_main", we should build a proper context for it.
-The context should contain all information needed to build a file system.
 
 Concepts illustrated in the previous chapters
 should be represented before the details of implementation.
@@ -1093,6 +1114,7 @@ expanded_content_of_block_with_labels(Block blk, List lbls)
 @<litarfs@:light@:C Structure@/global variables@=
 Archive archive;
 Node file_system_root;
+int base_directory;
 @
 
 @<litarfs operations@=
@@ -1105,28 +1127,25 @@ litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 {
     (void) conn;
     (void) cfg;
-    archive = parse_archive(user_options.archive);
-    file_system_root = file_system_from_archive(archive);
     return NULL;
 }
-@
-
-@<litarfs operations@=
-LITARFS_OPER(chmod),
 @
 
 @<litarfs@:light@:C Structure@/functions@=
 static int litarfs_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
 {
     (void) fi;
-    int res = 0;
+    if (path[0] == '/') ++path;
+
     memset(stbuf, 0, sizeof(struct stat));
     
     Node nd;
 
     nd = node_of_path(file_system_root, path);
     if (nd == NULL) {
-        return -ENOENT;
+        if(fstatat(base_directory, path, stbuf, 0) == -1) {
+            return -errno;
+        }
     }
 
     switch (nd->type) {
@@ -1152,19 +1171,171 @@ static int litarfs_getattr(const char *path, struct stat *stbuf, struct fuse_fil
             stbuf->st_size = strlen(ctn);
         } while (0);
     }
-    return res;
+    return 0;
+}
+
+static int litarfs_readlink(const char *path, char *buf, size_t size)
+{
+    if (path[0] == '/') ++path;
+    if (readlinkat(base_directory, path, buf, size) == -1) {
+        return -errno;
+    }
+    return 0;
+}
+
+static int litarfs_mknod(const char *path, mode_t mode, dev_t rdev) {
+    if (path[0] == '/') ++path;
+    if (mknodat(base_directory, path, mode, rdev) == -1) {
+        return -errno;
+    }
+    return 0;
+}
+
+static int litarfs_mkdir(const char *path, mode_t mode) {
+    if (path[0] == '/') ++path;
+    if (mkdirat(base_directory, path, mode) == -1) {
+        return -errno;
+    }
+    return 0;
+}
+
+static int litarfs_readdir(
+    const char *path, void *buf, fuse_fill_dir_t filler,
+    off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags
+) {
+    (void) offset;
+    (void) fi;
+    (void) flags;
+
+    if (path[0] == '/') ++path;
+
+    Node nd;
+    nd = node_of_path(file_system_root, path);
+    if (nd && nd->type != NODE_DIRECTORY) {
+        return -ENOTDIR;
+    }
+
+    int dir_in_base;
+    dir_in_base = openat(base_directory, path, O_DIRECTORY);
+
+    if (!nd && dir_in_base == -1) {
+        return -errno;
+    }
+
+    Node cld;
+    FOREACH (cld, nd->value.nodes) {
+        filler(buf, cld->name, NULL, 0, 0);
+    }
+    if (dir_in_base != -1) {
+        DIR *dirp = fdopendir(dir_in_base);
+        if (!dirp) {
+            return -errno;
+        }
+        struct dirent *ent;
+        while (ent = readdir(dirp)) {
+            struct stat st;
+            memset(&st, 0, sizeof(st));
+            st.st_ino = ent->d_ino;
+            st.st_mode = ent->d_type << 12;
+            if (!node_of_name_under_node(ent->d_name, nd)) {
+                filler(buf, ent->d_name, &st, 0, 0);
+            }
+        }
+        closedir(dirp);
+    }
+    
+    return 0;
+}
+
+static int litarfs_open(const char *path, struct fuse_file_info *fi)
+{
+    if (path[0] == '/') ++path;
+
+    Node nd;
+    nd = node_of_path(file_system_root, path);
+
+    if (nd == NULL) {
+        int fd = openat(base_directory, path, fi->flags);
+        if (fd == -1) {
+            return -errno;
+        }
+        fi->fh = (unsigned long) fd;
+    } else {
+        if ((fi->flags & O_ACCMODE) != O_RDONLY) {
+            return -EACCES;
+        }
+    }
+
+    return 0;
+}
+
+static int litarfs_read(
+    const char *path, char *buf, size_t size, off_t offset,
+    struct fuse_file_info *fi
+) {
+    Node nd;
+    
+    nd = node_of_path(file_system_root, path);
+    if (nd == NULL) {
+        int res = pread(fi->fh, buf, size, offset);
+        if (res == -1) {
+            return -errno;
+        }
+        return res;
+    } else {
+        UNDER(
+            const char *ctn;
+            ctn = content_of_chunk_with_labels(nd->value.chunk, empty_list);
+
+            size_t len;
+            len = strlen(ctn);
+
+            if (offset < len) {
+                if (offset + size > len) {
+                    size = len - offset;
+                }
+                memcpy(buf, ctn + offset, size);
+            } else {
+                size = 0;
+            }
+        );
+    }
+    return size;
 }
 
 static int litarfs_chmod(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
+    if (path[0] == '/') ++path;
     return 0;
 }
 @
 
+@<litarfs operations@=
+LITARFS_OPER(getattr),
+LITARFS_OPER(readlink),
+LITARFS_OPER(mknod),
+LITARFS_OPER(readdir),
+LITARFS_OPER(open),
+LITARFS_OPER(read),
+LITARFS_OPER(chmod),
+@
+
+
 @<litarfs@:light@:C Structure@/function declarations@=
 static void *litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg);
-static int litarfs_chmod(const char *path, mode_t mode, struct fuse_file_info *fi);
 static int litarfs_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi);
+static int litarfs_readlink(const char *path, char *buf, size_t size);
+static int litarfs_mknod(const char *path, mode_t mode, dev_t rdev);
+static int litarfs_readdir(
+    const char *path, void *buf, fuse_fill_dir_t filler,
+    off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags
+);
+static int litarfs_open(const char *path, struct fuse_file_info *fi);
+static int litarfs_read(
+    const char *path, char *buf, size_t size, off_t offset,
+    struct fuse_file_info *fi
+);
+static int litarfs_chmod(const char *path, mode_t mode, struct fuse_file_info *fi);
 @
 
 # Parsing
@@ -1475,7 +1646,7 @@ void put_to_input_frames(const char *ar, List *input_frames_r)
     char path[PATH_MAX+1];
     char *ptr = realpath(ar, path);
     if (ptr == NULL) {
-        perror("realpath");
+        fprintf(stderr, "realpath %s: %s", ar, strerror(errno));
         longjmp(exit_main, 1);
     }
     InputFrame ipt = NULL;
@@ -2395,378 +2566,6 @@ transform_with_labels(Str txt, List flts, List lbls)
 }
 @
 
-# FUSE
-
-The file system a litar archive implies does not have
-a meaningful way to reflect modifications, but still the filters
-might create some new files. So litar also uses overlayFS
-to grant the ability to modify file system to filters.
-
-The idea is to create an modifiable upper layer above
-the file system from a litar archive.
-
-@<litar@:C Structure@/global variables@=
-char *archive_data = NULL;
-char *fuse_mount_point = NULL;
-char *work_dir = NULL;
-char *upper_layer = NULL;
-char *mount_point = NULL;
-@
-
-The "mount_point" here is the mount point of the overlay.
-The mount point for FUSE will be automatically created,
-users should not be bothered to deal with this.
-
-litar reserve the directory ".litar" for the created mount points.
-The mount points are organized under the directory that has a same name
-with the litar archive.
-
-@<litar@:C Structure@/global variables@=
-const char *litar_data = ".litar";
-@
-
-@<litar@:C Structure@/functions@=
-void
-ensure_directory(const char *path)
-{
-    struct stat buf;
-    if (stat(path, &buf) == -1) {
-        if (errno != ENOENT) {
-            perror("stat");
-            exit(1);
-        }
-        if (mkdir(path, 0777) == -1) {
-            perror("mkdir");
-            exit(1);
-        }
-        stat(path, &buf);
-    }
-    if (!S_ISDIR(buf.st_mode)) {
-        fprintf(stderr, "%s is not a directory\n", path);
-        exit(1);
-    }
-}
-@
-
-@<initializations of global variables@=
-ensure_directory(litar_data);
-@
-
-@<mount file system@=
-RESERVE(do {
-    char *archive_file_name = archive_name, *cp = archive_name;
-    while (*cp) {
-        if (*cp == '/') {
-            archive_file_name = cp+1;
-        }
-        ++cp;
-    }
-    CALLOC(archive_data, strlen(litar_data)+strlen(archive_file_name)+2);
-    strcat(archive_data, litar_data);
-    strcat(archive_data, "/");
-    strcat(archive_data, archive_file_name);
-
-    ensure_directory(archive_data);
-
-    CALLOC(fuse_mount_point, strlen(archive_data)+strlen("/fuse")+1);
-    strcat(fuse_mount_point, archive_data);
-    strcat(fuse_mount_point, "/fuse");
-
-    ensure_directory(fuse_mount_point);
-
-    CALLOC(work_dir, strlen(archive_data)+strlen("/work")+1);
-    strcat(work_dir, archive_data);
-    strcat(work_dir, "/work");
-
-    ensure_directory(work_dir);
-    rmdir(work_dir); /* make sure work_dir is empty */
-    mkdir(work_dir, 0777);
-
-    if (mount_point == NULL) {
-        CALLOC(mount_point, strlen(archive_data)+strlen("/overlay")+2);
-        strcat(mount_point, archive_data);
-        strcat(mount_point, "/overlay");
-    }
-    ensure_directory(mount_point);
-
-    if (upper_layer == NULL) {
-        CALLOC(upper_layer, strlen(archive_data)+strlen("/upper")+1);
-        strcat(upper_layer, archive_data);
-        strcat(upper_layer, "/upper");
-    }
-    ensure_directory(upper_layer);
-} while (0));
-@
-
-litar uses version 3.14 to be compatitable with Debian.
-The loop provided by the libfuse is run at a new process.
-The new process communicate with the main process by a pipe.
-
-@<litar@:C Structure@/global variables@=
-int pipe_fuse_to_main[2];
-@
-
-@<litar@:C Structure@/functions@=
-static void *
-litar_fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
-{
-    (void) conn;
-    (void) cfg;
-}
-
-static int
-litar_fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
-    off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags)
-{
-    (void) offset;
-    (void) fi;
-    (void) flags;
-
-    Node nd;
-
-    nd = node_of_path(path);
-    if (nd == NULL) {
-        return -ENOENT;
-    }
-
-    if (nd->type != NODE_DIRECTORY) {
-        return -ENOTDIR;
-    }
-
-    Node cld;
-    FOREACH (cld, nd->value.nodes) {
-        filler(buf, cld->name, NULL, 0, 0);
-    }
-    
-    return 0;
-}
-
-static int
-litar_fuse_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
-{
-    (void) fi;
-    int res = 0;
-    memset(stbuf, 0, sizeof(struct stat));
-    
-    Node nd;
-
-    nd = node_of_path(path);
-    if (nd == NULL) {
-        return -ENOENT;
-    }
-
-    switch (nd->type) {
-    case NODE_DIRECTORY:
-        do {
-            int cnt = 2;
-            Node nd_;
-            FOREACH (nd_, nd->value.nodes) {
-                if (nd_->type == NODE_DIRECTORY) {
-                    ++cnt;
-                }
-            }
-            stbuf->st_mode = S_IFDIR | 0755;
-            stbuf->st_nlink = cnt;
-        } while (0);
-        break;
-    default:
-        do {
-            Str ctn;
-            ctn = content_of_chunk_with_labels(nd->value.chunk, empty_list);
-            stbuf->st_mode = S_IFREG | 0444;
-            stbuf->st_nlink = 1;
-            stbuf->st_size = strlen(raw_string(ctn));
-            free_str(&ctn);
-        } while (0);
-    }
-    return res;
-}
-
-static int
-litar_fuse_open(const char *path, struct fuse_file_info *fi)
-{
-    Node nd;
-    nd = node_of_path(path);
-
-    if (nd == NULL) {
-        return -ENOENT;
-    }
-
-    if ((fi->flags & O_ACCMODE) != O_RDONLY) {
-        return -EACCES;
-    }
-
-    return 0;
-}
-
-static int
-litar_fuse_read(const char *path, char *buf, size_t size, off_t offset,
-    struct fuse_file_info *fi)
-{
-    (void) fi;
-
-    Node nd;
-    
-    nd = node_of_path(path);
-    if (nd == NULL) {
-        return -ENOENT;
-    }
-
-    Str ctn;
-    ctn = content_of_chunk_with_labels(nd->value.chunk, empty_list);
-
-    size_t len;
-    len = strlen(raw_string(ctn));
-
-    if (offset < len) {
-        if (offset + size > len) {
-            size = len - offset;
-        }
-        memcpy(buf, raw_string(ctn) + offset, size);
-    } else {
-        size = 0;
-    }
-    free_str(&ctn);
-    return size;
-}
-
-static const struct fuse_operations litar_fuse_oper = {
-    .init = litar_fuse_init,
-    .readdir = litar_fuse_readdir,
-    .getattr = litar_fuse_getattr,
-    .open = litar_fuse_open,
-    .read = litar_fuse_read,
-};
-@
-
-@<litar@:C Structure@/global variables@=
-pid_t fuse_pid;
-@
-
-@<mount file system@=
-do {
-    if (pipe(pipe_fuse_to_main) < 0) {
-        perror("pipe");
-        exit(1);
-    }
-
-    uid_t ouid = getuid();
-    uid_t ogid = getgid();
-
-    if (unshare(CLONE_NEWUSER | CLONE_NEWNS) == -1) {
-        perror("unshare");
-        exit(1);
-    }
-
-    FILE *setgroups = fopen("/proc/self/setgroups", "w");
-    if (setgroups != NULL) {
-        fprintf(setgroups, "deny");
-    }
-    fclose(setgroups);
-
-    FILE *uid_map = fopen("/proc/self/uid_map", "w");
-    if (uid_map == NULL) {
-        fprintf(stderr, "failed to open /proc/self/uid_map\n");
-        exit(1);
-    }
-    fprintf(uid_map, "0 %u 1\n", ouid);
-    fclose(uid_map);
-
-    FILE *gid_map = fopen("/proc/self/gid_map", "w");
-    if (gid_map == NULL) {
-        fprintf(stderr, "failed to open /proc/self/gid_map\n");
-        exit(1);
-    }
-    fprintf(gid_map, "0 %u 1\n", ogid);
-    fclose(gid_map);
-    
-    if ((fuse_pid = fork()) < 0) {
-        perror("fork");
-        exit(1);
-    } else if (fuse_pid == 0) {
-        close(pipe_fuse_to_main[0]);
-        @<run fuse loop@>
-        exit(0);
-    }
-    close(pipe_fuse_to_main[1]);
-
-    char msg = 1;
-    
-    read(pipe_fuse_to_main[0], &msg, 1);
-    if (msg != 0) {
-        fprintf(stderr, "Error when mounting fuse\n");
-        exit(1);
-    }
-
-    @<mount overlay over fuse@>
-} while (0);
-@
-
-@<run fuse loop@=
-do {
-    char msg = 0;
-    struct fuse_args args = {0, NULL, 0};
-    struct fuse *fuse_r;
-
-    fuse_opt_add_arg(&args, "debug");
-
-    fuse_r = fuse_new(&args, &litar_fuse_oper, sizeof(litar_fuse_oper), NULL);
-    if (fuse_r == NULL) {
-        fprintf(stderr, "Can not create fuse\n");
-        msg = 1;
-        write(pipe_fuse_to_main[1], &msg, 1);
-        goto out1;
-    }
-
-    if (fuse_mount(fuse_r, fuse_mount_point) != 0) {
-        fprintf(stderr, "Can not mount fuse\n");
-        msg = 1;
-        write(pipe_fuse_to_main[1], &msg, 1);
-        goto out2;
-    }
-    
-    write(pipe_fuse_to_main[1], &msg, 1);
-
-    struct fuse_session *se = fuse_get_session(fuse_r);
-    if (fuse_set_signal_handlers(se) != 0) {
-        fprintf(stderr, "Can not register handlers\n");
-        goto out3;
-    }
-
-    fuse_loop(fuse_r);
-    fuse_remove_signal_handlers(se);
-
-    out3:
-    fuse_unmount(fuse_r);
-
-    out2:
-    fuse_destroy(fuse_r);
-
-    out1:
-} while (0);
-@
-
-@<mount overlay over fuse@=
-do {
-    Str overlay_opt = NULL;
-
-    new_str(&overlay_opt);
-    str_extend(overlay_opt, ",lowerdir=");
-    str_extend(overlay_opt, fuse_mount_point);
-    str_extend(overlay_opt, ",upperdir=");
-    str_extend(overlay_opt, upper_layer);
-    str_extend(overlay_opt, ",workdir=");
-    str_extend(overlay_opt, work_dir);
-
-    if (mount("overlay", mount_point, "overlay", 0, raw_string(overlay_opt)) < 0) {
-        perror("mount");
-        exit(1);
-    }
-
-    free_str(&overlay_opt);
-} while (0);
-@
-
 # User Interface
 
 @<command line options for "litar"@=
@@ -3021,7 +2820,6 @@ void transform_with_labels(Str txt, List flts, List lbls);
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
-#include <unistd.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <fcntl.h>
@@ -3108,6 +2906,8 @@ Install:
 #include <stdio.h>
 #include <limits.h>
 #include <errno.h>
+#include <unistd.h>
+#include <dirent.h>
 #include <sys/stat.h>
 
 #include "light.h"

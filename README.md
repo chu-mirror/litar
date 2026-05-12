@@ -7,13 +7,13 @@ they even spell commands to control computer through shells.
 Basically, all work that programmers do is writing text.
 
 The traditional unit of text is file, text of different types
-is saved in seperated files, but sometimes, it might take
+is saved in seperate files, but sometimes, it might take
 too much energy to create a new file. Like, you want to
 insert a build time information to your code whenever you build
 your program. To do that, you might write a simple sed script and
-put that to Makefile. Here is the problem, sed operate on the whole
+put that to Makefile. Here is a problem, sed operate on the whole
 file, so you have to make sure that the sed script won't influence the other
-parts of the file. To solve that, you might seperate that part of code to a new file,
+parts of the file. To solve that problem, you might move that part of code to a new file,
 use a function to encapsulate it or simply store the information
 in a macro or a variable and pass back to the original file.
 You can see all the extra efforts made here.
@@ -95,7 +95,7 @@ for text processing rather than a deliberate literate programming tool.
 As a result, litar will not take in weaving to its kernel.
 
 The major extension is user defined filters.
-Noweb has some similar design decisions, but litar makes use of filters even more.
+Noweb has some similar designs, but litar makes use of filters even more.
 
 The following simple program explains the usage of filter in litar.
 
@@ -132,12 +132,12 @@ Filters can also make effect on blocks. The following program is same with the a
 @<hello.c@=
 #include "stdio.h"
 int main() {
-    @<print hello world@>
+    @<print hello world exaggeratedly@>
     return 0;
 }
 @
 
-@<print hello world@=
+@<print hello world exaggeratedly@=
 printf("Hello, world!\n");
 @|exaggeratedly@
 
@@ -215,11 +215,6 @@ Filesystem in Userspace (FUSE), which allows litar to create a custom file syste
 and mount it. So filters can access the files in a litar archive just like
 other files in the operating system.
 
-Besides these control characters that describes the structure of a litar archive,
-there are some other control characters. They are commands, which influence
-the process of dealing with litar archive. For example, @. receives an argument
-of file name, and inserts the content of that file at the place of @..
-
 There's another important extension for reusability of code. Let's say, a chunk
 defines a general structure for a C program. Then we want to write two seperated
 C program in one litar archive. The final result might look like,
@@ -273,7 +268,7 @@ printf("Hello from program1\n");
 
 Extending through the specialized name does not affect the original chunk.
 
-When a litar archive becomes bigger and bigger, despite that the name of chunks
+When a litar archive becomes bigger and bigger, despite that the name of a chunk
 is usually a long sentence, names might conflict.
 So litar supports modulizing.
 
@@ -299,32 +294,7 @@ Besides the named module, there's a anonymous module. If there's no @-,
 or there's no module name specified after @-, the chunks belong to this
 anonymous module.
 
-litar's internal file system makes use of this module system.
-
-```
-/
-    module 1
-        directory 1
-            file 1
-        directory 2
-        ...
-    module 2
-    ...
-```
-
-A filter is executed under the directory of the module it belongs to.
-So a module is simply a directory in some way, so litar also allows importing
-outside directories.
-
-```
-@+ toolset
-
-@<filter@=#!/bin/sh
-../toolset/tool
-@
-```
-
-The final piece of establishing code reusability is @., which is indroduced before.
+The final piece of code reusability is @., which is indroduced before.
 
 ```
 @<chunk@=
@@ -335,7 +305,7 @@ The final piece of establishing code reusability is @., which is indroduced befo
 ```
 
 @. is not only for including litar archives.
-It can be used to import any text content at any beginning of a line.
+It can be used to import any text content at legal places.
 The following is also legal.
 
 ```
@@ -346,6 +316,10 @@ The following is also legal.
 
 ```
 
+Besides the control characters that describes the structure of a litar archive,
+there are some other control characters. They are commands, which influence
+the process of dealing with litar archive. For example, @. receives an argument
+of file name, and inserts the content of that file at the place of @..
 
 
 # Install
@@ -364,7 +338,7 @@ If there's a version of litar installed, run:
 $ litar -m "Basics" -p "install prerequisites" litar.la | sh
 ```
 
-Comple:
+Compile:
 
 ```
 $ make
@@ -382,5 +356,4 @@ Install:
 ```
 # make install
 ```
-
 

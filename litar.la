@@ -483,6 +483,7 @@ if (user_options.version) {
 }
 
 if (to_mount_file_system) {
+    @<check and initialize arguments@>
     fuse_opt_add_arg(&args, "-s");
 } else {
     args.argv[0][0] = '\0';
@@ -504,11 +505,51 @@ returned = fuse_main(args.argc, args.argv, &litarfs_oper, NULL);
     argument => "MOUNT_POINT",
     description => "Specify the mount point",
 },
+{
+    long_opt => "base",
+    opt => "b",
+    argument => "DIRECTORY",
+    description => "The writable directory for storing files",
+},
 @
 
-@<set default values for "user_options"@=
-user_options.archive = strdup("archive.la");
-user_options.mount_point = strdup("archive");
+@<check and initialize arguments@=
+if (!user_options.archive) {
+    fprintf(stderr, "Please specify the archive name through -a\n");
+    longjmp(exit_main, 1);
+}
+int l = strlen(user_options.archive);
+if (strcmp(user_options.archive+l-3, ".la") != 0) {
+    fprintf(stderr, "Illegal file name, the file name of a litar archive should end with .la\n");
+    longjmp(exit_main, 1);
+}
+if (!user_options.mount_point) {
+    UNDER(
+        char *fn, *p;
+        STRDUP(user_options.archive, fn);
+        fn[l-3] = '\0';
+        p = fn+l-3;
+        while (p != fn && *p != '/') --p;
+        if (*p == '/') ++p;
+        ESCAPE(user_options.mount_point = atom_str(p));
+    );
+}
+if (!user_options.base) {
+    UNDER(
+        char *p;
+        CALLOC(p, strlen(user_options.mount_point) + 2);
+        p[0] = '.';
+        strcat(p, user_options.mount_point);
+        ESCAPE(user_options.base = atom_str(p));
+    );
+}
+printf(
+    "archive name: %s\nmount point: %s\nbase: %s\n",
+    user_options.archive,
+    user_options.mount_point,
+    user_options.base
+);
+longjmp(exit_main, 1);
 @
 
 Before we get into "fuse_main", we should build a proper context for it.
@@ -1075,6 +1116,45 @@ LITARFS_OPER(chmod),
 @
 
 @<litarfs@:light@:C Structure@/functions@=
+static int litarfs_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
+{
+    (void) fi;
+    int res = 0;
+    memset(stbuf, 0, sizeof(struct stat));
+    
+    Node nd;
+
+    nd = node_of_path(file_system_root, path);
+    if (nd == NULL) {
+        return -ENOENT;
+    }
+
+    switch (nd->type) {
+    case NODE_DIRECTORY:
+        do {
+            int cnt = 2;
+            Node nd_;
+            FOREACH (nd_, nd->value.nodes) {
+                if (nd_->type == NODE_DIRECTORY) {
+                    ++cnt;
+                }
+            }
+            stbuf->st_mode = S_IFDIR | 0755;
+            stbuf->st_nlink = cnt;
+        } while (0);
+        break;
+    default:
+        do {
+            const char *ctn;
+            ctn = content_of_chunk_with_labels(nd->value.chunk, empty_list);
+            stbuf->st_mode = S_IFREG | 0444;
+            stbuf->st_nlink = 1;
+            stbuf->st_size = strlen(ctn);
+        } while (0);
+    }
+    return res;
+}
+
 static int litarfs_chmod(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
     return 0;
@@ -1084,6 +1164,7 @@ static int litarfs_chmod(const char *path, mode_t mode, struct fuse_file_info *f
 @<litarfs@:light@:C Structure@/function declarations@=
 static void *litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg);
 static int litarfs_chmod(const char *path, mode_t mode, struct fuse_file_info *fi);
+static int litarfs_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi);
 @
 
 # Parsing
@@ -2946,10 +3027,8 @@ void transform_with_labels(Str txt, List flts, List lbls);
 #include <fcntl.h>
 #include <getopt.h>
 #include <limits.h>
-#include <errno.h>
 #include <signal.h>
 
-#include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/types.h>
@@ -3028,6 +3107,9 @@ Install:
 @<litarfs@:light@:C Structure@/includes@=
 #include <stdio.h>
 #include <limits.h>
+#include <errno.h>
+#include <sys/stat.h>
+
 #include "light.h"
 #include "state.h"
 @

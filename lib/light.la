@@ -41,6 +41,7 @@ Some always to use header files.
 #include <stdint.h>
 #include <threads.h>
 #include <pthread.h>
+#include <unistd.h>
 @
 
 There are some idioms to make life a bit easier.
@@ -1183,6 +1184,53 @@ void str_clean(Str str)
 {
     str->len = 0;
     str->raw_string[0] = '\0';
+}
+@
+
+
+@<basic@:light module@:C Structure@/macros@=
+#define FILEIO_BUFFER_SIZE 1024
+@
+
+
+@<basic@:light module@:C Structure@/global variables@=
+static uint8_t fileio_buffer[FILEIO_BUFFER_SIZE];
+@
+
+@<basic@:light module@:C Structure@/functions@=
+void fileio_write_str(int fd, Str s)
+{
+    int n, wtn = 0;
+    while (wtn < str_length(s)) {
+        n = write(
+            fd,
+            raw_string(s) + wtn,
+            str_length(s) - wtn < FILEIO_BUFFER_SIZE ? str_length(s) - wtn :
+                                                FILEIO_BUFFER_SIZE
+        );
+        wtn += n;
+    }
+}
+
+void fileio_read_str(int fd, Str s)
+{
+    int n;
+    while (n = read(fd, fileio_buffer, FILEIO_BUFFER_SIZE - 1)) {
+        fileio_buffer[n] = '\0';
+        str_extend(s, fileio_buffer);
+    }
+}
+
+void fileio_copy_file(int fd1, int fd2)
+{
+    int n;
+    while (n = read(fd2, fileio_buffer, FILEIO_BUFFER_SIZE)) {
+        int m, wtn = 0;
+        while (wtn < n) {
+            m = write(fd1, fileio_buffer + wtn, n - wtn);
+            wtn += m;
+        }
+    }
 }
 @
 

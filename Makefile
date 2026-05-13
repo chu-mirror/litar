@@ -53,6 +53,6 @@ show: show.c $(LIGHT_SOURCE)
 	gcc -g -o $@ $^ -pthread
 
 clean:
-	rm -f litar.c litar hello litar.1 boot hello.c hello.h show show.c main.c \
+	rm -rf litar.c litar hello litar.1 boot hello.c hello.h show show.c main.c \
 	    $(LIGHT_HEADER) $(LIGHT_SOURCE) litarfs litarfs.c
 

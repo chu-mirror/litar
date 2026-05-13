@@ -1045,7 +1045,7 @@ content_of_chunk_with_labels(Chunk chk, List lbls)
                 FOREACH(blk, blks) {
                     UNDER(
                         const char *exb = expanded_content_of_block_with_labels(blk, remains);
-                        // transform_with_labels(exb, blk->filters, remains);
+                        exb = transform_with_labels(exb, blk->filters, remains);
                         str_extend(cc, exb);
                     );
                 }
@@ -1097,7 +1097,8 @@ expanded_content_of_block_with_labels(Block blk, List lbls)
                         bc->value.chunk.chunk_ref->chunk, l
                     );
 
-                    // transform_with_labels(cc, bc->value.chunk.filters, lbls);
+                    cc = transform_with_labels(cc, bc->value.chunk.filters, lbls);
+                    fprintf(stderr, "Fetch from chunk ref: %s", cc);
                     str_extend(ect, cc);
                 );
             }
@@ -1108,6 +1109,173 @@ expanded_content_of_block_with_labels(Block blk, List lbls)
     return ret;
 }
 @
+
+@<litarfs@:light@:C Structure@/functions@=
+pid_t run_filter(ChunkRef flt, int in, int out)
+{
+    pid_t pid;
+    if ((pid = fork()) < 0) {
+        perror("fork");
+        exit(1);
+    } else if (pid == 0) {
+        if (in != STDIN_FILENO) {
+            if (dup2(in, STDIN_FILENO) < 0) {
+                perror("dup2");
+                exit(1);
+            }
+            close(in);
+        }
+
+        if (out != STDOUT_FILENO) {
+            if (dup2(out, STDOUT_FILENO) < 0) {
+                perror("dup2");
+                exit(1);
+            }
+            close(out);
+        }
+
+        int fd;
+
+        if ((fd = memfd_create(flt->chunk->name, 0)) < 0) {
+            perror("memfd_create");
+            exit(1);
+        }
+
+        @<write content of "flt" to "fd"@>
+
+        @<execute "fd" under proper conditions@>
+        close(fd);
+    }
+    return pid;
+}
+@
+
+@<write content of "flt" to "fd"@=
+UNDER(
+    const char *ct = content_of_chunk_ref(flt);
+    Str _ct = new_str();
+    str_extend(_ct, ct);
+    fileio_write_str(fd, _ct);
+);
+@
+
+@<execute "fd" under proper conditions@=
+do {
+    char *name = strdup(flt->chunk->name);
+    char *argv[2] = {name, NULL};
+
+    if (chdir(user_options.mount_point) < 0) {
+        perror(user_options.mount_point);
+        exit(1);
+    }
+
+    if (lseek(fd, 0, SEEK_SET) < 0) {
+        perror("lseek");
+        exit(1);
+    }
+
+    if (fexecve(fd, argv, environ) < 0) {
+        perror("fexecve");
+        exit(1);
+    }
+} while (0);
+@
+
+
+@<litarfs@:light@:C Structure@/functions@=
+const char *
+transform_with_labels(const char *txt, List flts, List lbls)
+{
+    if (flts == empty_list) {
+        return txt;
+    }
+    UNDER (
+        fprintf(stderr, "Transforming text: \n%s\n", txt);
+        List _flts = copy_list(flts);
+        reverse(&_flts);
+        ChunkRef flt;
+        FOREACH (flt, _flts) {
+            fprintf(stderr, "Filter: ");
+            print_chunk_ref(flt);
+            fprintf(stderr, "\n");
+        }
+    );
+
+    char *ret;
+
+    UNDER(
+        flts = copy_list(flts);
+        reverse(&flts);
+
+        int in, out;
+
+        if ((in = memfd_create("file1", 0)) < 0) {
+            perror("memfd_create");
+            exit(1);
+        }
+        Str _txt = new_str();
+        str_extend(_txt, txt);
+        fileio_write_str(in, _txt);
+
+        if ((out = memfd_create("file2", 0)) < 0) {
+            perror("memfd_create");
+            exit(1);
+        }
+
+        ChunkRef flt;
+        FOREACH (flt, flts) {
+            pid_t pid;
+            int st;
+
+            UNDER (
+                ChunkRef ckr = NULL;
+                MOVE(flt, ckr);
+
+                List l1, l2;
+                l1 = copy_list(flt->labels);
+                l2 = copy_list(lbls);
+                ckr->labels = append(&l1, &l2);
+
+                lseek(in, 0, SEEK_SET);
+                lseek(out, 0, SEEK_SET);
+                ftruncate(out, 0);
+                pid = run_filter(ckr, in, out);
+            );
+
+            SWAP(in, out);
+
+            waitpid(pid, &st, 0);
+            if (WIFEXITED(st)) {
+                if (WEXITSTATUS(st) != 0) {
+                    fprintf(stderr,
+                        "filter @@<%s@@> failed, error code: %d\n",
+                        flt->chunk->name,
+                        WEXITSTATUS(st)
+                    );
+                    exit(1);
+                }
+            } else {
+                fprintf(stderr,
+                    "filter @@<%s@@> failed, unknown reason",
+                    flt->chunk->name
+                );
+                exit(1);
+            }
+        }
+
+        lseek(in, 0, SEEK_SET);
+        Str res = new_str();
+        fileio_read_str(in, res);
+
+        close(in);
+        close(out);
+
+        ESCAPE(STRDUP(raw_string(res), ret));
+    );
+    return ret;
+}
+@
+
 
 # libfuse3
 
@@ -1171,6 +1339,23 @@ static int litarfs_getattr(const char *path, struct stat *stbuf, struct fuse_fil
             stbuf->st_size = strlen(ctn);
         } while (0);
     }
+    return 0;
+}
+
+static int litarfs_access(const char *path, int mask) {
+    struct stat s;
+    if (litarfs_getattr(path, &s, NULL) != 0)
+        return -ENOENT;
+    
+	if ((mask & X_OK) && (s.st_mode & S_IXUSR) == 0)
+		return -EACCES;
+
+	if ((mask & W_OK) && (s.st_mode & S_IWUSR) == 0)
+		return -EACCES;
+
+	if ((mask & R_OK) && (s.st_mode & S_IRUSR) == 0)
+		return -EACCES;
+
     return 0;
 }
 
@@ -1312,6 +1497,7 @@ static int litarfs_chmod(const char *path, mode_t mode, struct fuse_file_info *f
 
 @<litarfs operations@=
 LITARFS_OPER(getattr),
+LITARFS_OPER(access),
 LITARFS_OPER(readlink),
 LITARFS_OPER(mknod),
 LITARFS_OPER(readdir),
@@ -1324,6 +1510,7 @@ LITARFS_OPER(chmod),
 @<litarfs@:light@:C Structure@/function declarations@=
 static void *litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg);
 static int litarfs_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi);
+static int litarfs_access(const char *path, int mask);
 static int litarfs_readlink(const char *path, char *buf, size_t size);
 static int litarfs_mknod(const char *path, mode_t mode, dev_t rdev);
 static int litarfs_readdir(
@@ -1707,15 +1894,16 @@ Archive parse_archive(const char *archive)
 @<litarfs@:light@:C Structure@/functions@=
 void print_chunk_ref(ChunkRef ckr)
 {
-    printf(
+    fprintf(
+        stderr,
         "Chunk: %s/%s, ",
         ckr->chunk->module->name,
         ckr->chunk->name
     );
-    printf("Labels: ");
+    fprintf(stderr, "Labels: ");
     const char *lbl;
     FOREACH (lbl, ckr->labels) {
-        printf("%s ", lbl);
+        fprintf(stderr, "%s ", lbl);
     }
 }
 
@@ -2408,163 +2596,6 @@ if (getcwd(working_dir, PATH_MAX) == NULL) {
 }
 @
 
-@<litar@:C Structure@/functions@=
-pid_t
-run_filter(ChunkRef flt, int in, int out)
-{
-    pid_t pid;
-    if ((pid = fork()) < 0) {
-        perror("fork");
-        exit(1);
-    } else if (pid == 0) {
-        if (in != STDIN_FILENO) {
-            if (dup2(in, STDIN_FILENO) < 0) {
-                perror("dup2");
-                exit(1);
-            }
-            close(in);
-        }
-
-        if (out != STDOUT_FILENO) {
-            if (dup2(out, STDOUT_FILENO) < 0) {
-                perror("dup2");
-                exit(1);
-            }
-            close(out);
-        }
-
-        int fd;
-
-        if ((fd = memfd_create(flt->chunk->name, 0)) < 0) {
-            perror("memfd_create");
-            exit(1);
-        }
-
-        @<write content of "flt" to "fd"@>
-
-        @<execute "fd" under proper conditions@>
-        close(fd);
-    }
-    return pid;
-}
-@
-
-@<write content of "flt" to "fd"@=
-do {
-    Str ct;
-    int n, wtn = 0;
-    ct = content_of_chunk_ref(flt);
-    fileio_write_str(fd, ct);
-    free_str(&ct);
-} while (0);
-@
-
-@<execute "fd" under proper conditions@=
-do {
-    char *name = strdup(flt->chunk->name);
-    char *argv[2] = {name, NULL};
-
-    if (chdir(mount_point) < 0) {
-        perror("chdir");
-        exit(1);
-    }
-
-    if (flt->chunk->module != module_of_name("")) {
-        if (chdir(flt->chunk->module->name) < 0) {
-            perror("chdir");
-            exit(1);
-        }
-    }
-
-    if (lseek(fd, 0, SEEK_SET) < 0) {
-        perror("lseek");
-        exit(1);
-    }
-
-    if (fexecve(fd, argv, environ) < 0) {
-        perror("fexecve");
-        exit(1);
-    }
-} while (0);
-@
-
-@<litar@:C Structure@/functions@=
-void
-transform_with_labels(Str txt, List flts, List lbls)
-{
-    if (flts == empty_list) {
-        return;
-    }
-
-    flts = copy_list(flts);
-    reverse(&flts);
-
-    int in, out;
-
-    if ((in = memfd_create("file1", 0)) < 0) {
-        perror("memfd_create");
-        exit(1);
-    }
-    fileio_write_str(in, txt);
-
-    if ((out = memfd_create("file2", 0)) < 0) {
-        perror("memfd_create");
-        exit(1);
-    }
-
-    ChunkRef flt;
-    FOREACH (flt, flts) {
-        pid_t pid;
-        int st;
-
-        ChunkRef ckr = NULL;
-        MOVE(flt, ckr);
-
-        List l1, l2;
-        l1 = copy_list(flt->labels);
-        l2 = copy_list(lbls);
-        ckr->labels = append(&l1, &l2);
-
-        lseek(in, 0, SEEK_SET);
-        lseek(out, 0, SEEK_SET);
-        ftruncate(out, 0);
-        pid = run_filter(ckr, in, out);
-
-        free_list(&ckr->labels);
-        FREE(ckr);
-
-        SWAP(in, out);
-
-        waitpid(pid, &st, 0);
-        if (WIFEXITED(st)) {
-            if (WEXITSTATUS(st) != 0) {
-                fprintf(stderr,
-                    "filter @@<%s@@> failed, error code: %d\n",
-                    flt->chunk->name,
-                    WEXITSTATUS(st)
-                );
-                exit(1);
-            }
-        } else {
-            fprintf(stderr,
-                "filter @@<%s@@> failed, unknown reason",
-                flt->chunk->name
-            );
-            exit(1);
-        }
-    }
-
-    lseek(in, 0, SEEK_SET);
-    str_clean(txt);
-    fileio_read_str(in, txt);
-
-    close(in);
-    close(out);
-    free_list(&flts);
-
-    return;
-}
-@
 
 # User Interface
 
@@ -2812,7 +2843,6 @@ void transform_with_labels(Str txt, List flts, List lbls);
 
 @<litar@:C Structure@/include flags@=
 #define NDEBUG
-#define _GNU_SOURCE
 @
 
 @<litar@:C Structure@/includes@=
@@ -2827,10 +2857,8 @@ void transform_with_labels(Str txt, List flts, List lbls);
 #include <limits.h>
 #include <signal.h>
 
-#include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <sys/sendfile.h>
 
 #define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 14)
@@ -2902,6 +2930,10 @@ Install:
 ```
 @
 
+@<litarfs@:light@:C Structure@/include flags@=
+#define _GNU_SOURCE
+@
+
 @<litarfs@:light@:C Structure@/includes@=
 #include <stdio.h>
 #include <limits.h>
@@ -2909,6 +2941,8 @@ Install:
 #include <unistd.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <sys/mman.h>
 
 #include "light.h"
 #include "state.h"

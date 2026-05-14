@@ -2418,6 +2418,8 @@ static void state_parse_block_content_callback(State sc, Signal sig)
         RENAME(sig, tkn);
         if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '>') {
             block_include_chunk(blk, lcp_r->chunk_ref, lcp_r->filters);
+            lcp_r->chunk_ref = NULL;
+            lcp_r->filters = empty_list;
         }
     }
 }

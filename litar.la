@@ -457,6 +457,13 @@ print $option_specs;
 },
 @
 
+@<litarfs@:light@:C Structure@/global variables@=
+Archive archive;
+Node file_system_root;
+int base_directory;
+Context root_light_top_context;
+@
+
 @<litarfs@:Light@/main body@=
 struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 new_resource(&args, (void (*)(void *))fuse_opt_free_args);
@@ -485,11 +492,12 @@ if (to_mount_file_system) {
     archive = parse_archive(user_options.archive);
     file_system_root = file_system_from_archive(archive);
     base_directory = open(user_options.base, O_DIRECTORY);
+    root_light_top_context = _light_top_context;
     if (base_directory == -1) {
         perror("open base directory");
         longjmp(exit_main, 1);
     }
-    fuse_opt_add_arg(&args, "-s");
+    // fuse_opt_add_arg(&args, "-s");
     fuse_opt_add_arg(&args, user_options.mount_point);
 } else {
     args.argv[0][0] = '\0';
@@ -745,6 +753,51 @@ A reference to chunk is consists of a chunk and a list of labels.
 typedef struct {Chunk chunk; List labels;} *ChunkRef;
 @
 
+@<mappings from archive@=
+HashTable collection_of_chunk_ref;
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static uint32_t hash_chunk_ref_func(const void *p)
+{
+    ChunkRef ckr;
+    return hash(p, sizeof(*ckr));
+}
+
+static int equal_chunk_ref_func(const void *p1, const void *p2)
+{
+    ChunkRef ckr1, ckr2;
+    RENAME(p1, ckr1);
+    RENAME(p2, ckr2);
+    return ckr1->chunk == ckr2->chunk && ckr1->labels == ckr2->labels;
+}
+
+ChunkRef get_chunk_ref(Chunk chk, List lbls)
+{
+    Archive ar = chk->module->archive;
+    if (!ar->collection_of_chunk_ref) {
+        ar->collection_of_chunk_ref = new_hash_table(
+            HASH_TABLE_DEFAULT_SIZE,
+            hash_chunk_ref_func,
+            equal_chunk_ref_func
+        );
+    }
+    ChunkRef ckr, _ckr;
+    NEW(ckr);
+    ckr->chunk = chk;
+    ckr->labels = lbls;
+
+    _ckr = get_from_hash_table(ar->collection_of_chunk_ref, ckr);
+    if (!_ckr) {
+        _ckr = ckr;
+        put_to_hash_table(ar->collection_of_chunk_ref, _ckr, _ckr);
+    } else {
+        FREE(ckr);
+    }
+    return _ckr;
+}
+@
+
 @<mappings from block@=
 ChunkRef chunk_ref;
 @
@@ -994,7 +1047,7 @@ and expanded content of block.
 
 litar use a stack to detect recursive including and report it as a severe error.
 @<litarfs@:light@:C Structure@/global variables@=
-List stack_of_chunks_in_tangling = NULL;
+thread_local List stack_of_chunks_in_tangling = empty_list;
 @
 
 @<litarfs@:light@:C Structure@/functions@=
@@ -1011,21 +1064,36 @@ int chunk_is_in_tangling(Chunk chk)
 @
 
 @<litarfs@:light@:C Structure@/function declarations@=
-const char *content_of_chunk_with_labels(Chunk chk, List lbls);
 const char *content_of_chunk_ref(ChunkRef ckr);
 const char *expanded_content_of_block_with_labels(Block blk, List lbls);
 @
 
 @<litarfs@:light@:C Structure@/functions@=
 const char *
-content_of_chunk_with_labels(Chunk chk, List lbls)
+content_of_chunk_ref(ChunkRef ckr)
 {
+    static HashTable chunk_ref_to_content;
+    static pthread_mutex_t cache_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+    char *ret;
+
+    pthread_mutex_lock(&cache_mutex);
+    if (!chunk_ref_to_content) {
+        chunk_ref_to_content = new_pointer_hash_table(HASH_TABLE_DEFAULT_SIZE);
+    }
+    ret = get_from_hash_table(chunk_ref_to_content, ckr);
+    pthread_mutex_unlock(&cache_mutex);
+
+    if (ret) {
+        return ret;
+    }
+
+    Chunk chk = ckr->chunk;
+    List lbls = ckr->labels;
     if (chunk_is_in_tangling(chk)) {
         fprintf(stderr, "Recursively include \"%s\"\n", chk->name);
         longjmp(exit_main, 1);
     }
-
-    char *ret;
 
     UNDER(
         Str cc = new_str();
@@ -1062,13 +1130,11 @@ content_of_chunk_with_labels(Chunk chk, List lbls)
         ESCAPE(STRDUP(raw_string(cc), ret));
     );
 
-    return ret;
-}
+    pthread_mutex_lock(&cache_mutex);
+    put_to_hash_table(chunk_ref_to_content, ckr, ret);
+    pthread_mutex_unlock(&cache_mutex);
 
-const char *
-content_of_chunk_ref(ChunkRef ckr)
-{
-    return content_of_chunk_with_labels(ckr->chunk, ckr->labels);
+    return ret;
 }
 
 const char *
@@ -1093,9 +1159,13 @@ expanded_content_of_block_with_labels(Block blk, List lbls)
                     l2 = copy_list(bc->value.chunk.chunk_ref->labels);
                     l = append(&l2, &l1);
 
-                    const char *cc = content_of_chunk_with_labels(
-                        bc->value.chunk.chunk_ref->chunk, l
-                    );
+                    const char *cc;
+
+                    ESCAPE(ESCAPE(
+                        cc = content_of_chunk_ref(
+                            get_chunk_ref(bc->value.chunk.chunk_ref->chunk, l)
+                        );
+                    ));
 
                     cc = transform_with_labels(cc, bc->value.chunk.filters, lbls);
                     fprintf(stderr, "Fetch from chunk ref: %s", cc);
@@ -1279,10 +1349,13 @@ transform_with_labels(const char *txt, List flts, List lbls)
 
 # libfuse3
 
-@<litarfs@:light@:C Structure@/global variables@=
-Archive archive;
-Node file_system_root;
-int base_directory;
+@<litarfs@:light@:C Structure@/static inline functions@=
+static inline void init_context()
+{
+    if (!_light_top_context) {
+        _light_top_context = root_light_top_context;
+    }
+}
 @
 
 @<litarfs operations@=
@@ -1302,6 +1375,8 @@ litarfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 @<litarfs@:light@:C Structure@/functions@=
 static int litarfs_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
 {
+    init_context();
+
     (void) fi;
     if (path[0] == '/') ++path;
 
@@ -1330,19 +1405,21 @@ static int litarfs_getattr(const char *path, struct stat *stbuf, struct fuse_fil
             stbuf->st_nlink = cnt;
         } while (0);
         break;
-    default:
-        do {
-            const char *ctn;
-            ctn = content_of_chunk_with_labels(nd->value.chunk, empty_list);
-            stbuf->st_mode = S_IFREG | 0444;
-            stbuf->st_nlink = 1;
-            stbuf->st_size = strlen(ctn);
-        } while (0);
+    case NODE_EXECUTABLE:
+        stbuf->st_mode = 0555;
+    case NODE_REGULAR:
+        stbuf->st_mode |= S_IFREG;
+        stbuf->st_mode &= 0666;
+        stbuf->st_size = strlen(content_of_chunk_ref(get_chunk_ref(nd->value.chunk, empty_list)));
+        stbuf->st_nlink = 1;
+        break;
     }
     return 0;
 }
 
 static int litarfs_access(const char *path, int mask) {
+    init_context();
+
     struct stat s;
     if (litarfs_getattr(path, &s, NULL) != 0)
         return -ENOENT;
@@ -1361,6 +1438,8 @@ static int litarfs_access(const char *path, int mask) {
 
 static int litarfs_readlink(const char *path, char *buf, size_t size)
 {
+    init_context();
+
     if (path[0] == '/') ++path;
     if (readlinkat(base_directory, path, buf, size) == -1) {
         return -errno;
@@ -1369,6 +1448,8 @@ static int litarfs_readlink(const char *path, char *buf, size_t size)
 }
 
 static int litarfs_mknod(const char *path, mode_t mode, dev_t rdev) {
+    init_context();
+
     if (path[0] == '/') ++path;
     if (mknodat(base_directory, path, mode, rdev) == -1) {
         return -errno;
@@ -1377,6 +1458,8 @@ static int litarfs_mknod(const char *path, mode_t mode, dev_t rdev) {
 }
 
 static int litarfs_mkdir(const char *path, mode_t mode) {
+    init_context();
+
     if (path[0] == '/') ++path;
     if (mkdirat(base_directory, path, mode) == -1) {
         return -errno;
@@ -1388,6 +1471,8 @@ static int litarfs_readdir(
     const char *path, void *buf, fuse_fill_dir_t filler,
     off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags
 ) {
+    init_context();
+
     (void) offset;
     (void) fi;
     (void) flags;
@@ -1434,6 +1519,8 @@ static int litarfs_readdir(
 
 static int litarfs_open(const char *path, struct fuse_file_info *fi)
 {
+    init_context();
+
     if (path[0] == '/') ++path;
 
     Node nd;
@@ -1458,6 +1545,8 @@ static int litarfs_read(
     const char *path, char *buf, size_t size, off_t offset,
     struct fuse_file_info *fi
 ) {
+    init_context();
+
     Node nd;
     
     nd = node_of_path(file_system_root, path);
@@ -1470,7 +1559,7 @@ static int litarfs_read(
     } else {
         UNDER(
             const char *ctn;
-            ctn = content_of_chunk_with_labels(nd->value.chunk, empty_list);
+            ctn = content_of_chunk_ref(get_chunk_ref(nd->value.chunk, empty_list));
 
             size_t len;
             len = strlen(ctn);
@@ -1490,6 +1579,8 @@ static int litarfs_read(
 
 static int litarfs_chmod(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
+    init_context();
+
     if (path[0] == '/') ++path;
     return 0;
 }
@@ -2832,11 +2923,6 @@ do {
 if (fuse_pid != 0) {
     kill(fuse_pid, SIGTERM);
 }
-@
-
-@<litar@:C Structure@/function declarations@=
-Str expanded_content_of_block_with_labels(Block blk, List lbls);
-void transform_with_labels(Str txt, List flts, List lbls);
 @
 
 # Appendix

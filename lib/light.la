@@ -1426,7 +1426,7 @@ HashTable new_string_hash_table(size_t size)
 @<basic@:light module@:C Structure@/functions@=
 static uint32_t hash_func_ptr(const void *p)
 {
-    return _hash_ptr(p);
+    return hash((uint8_t *)&p, sizeof(p));
 }
 
 static int equal_func_ptr(const void *p1, const void *p2)

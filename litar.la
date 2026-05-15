@@ -492,6 +492,9 @@ if (to_mount_file_system) {
     @<check and initialize arguments@>
     archive = parse_archive(user_options.archive);
     file_system_root = file_system_from_archive(archive);
+#ifdef SHOW_COMPILE_INFO
+    @<show parsed information@>
+#endif
     char path[PATH_MAX+1];
     char *ptr = realpath(user_options.mount_point, path);
     if (ptr == NULL) {
@@ -1332,6 +1335,13 @@ transform_with_labels(const char *txt, List flts, List lbls)
                     );
                     exit(1);
                 }
+            } else if (WIFSIGNALED(st)) {
+                fprintf(stderr,
+                    "filter @@<%s@@> interupted, signal number: %d\n",
+                    flt->chunk->name,
+                    WTERMSIG(st)
+                );
+                exit(1);
             } else {
                 fprintf(stderr,
                     "filter @@<%s@@> failed, unknown reason",
@@ -2033,37 +2043,37 @@ void print_node(Node nd, int level)
 Block blk;
 reverse(&archive->blocks);
 FOREACH (blk, archive->blocks) {
-    printf("Comment:\n%s\n", blk->comment);
+    fprintf(stderr, "Comment:\n%s\n", blk->comment);
     if (blk->chunk_ref) {
-        printf("Extending ");
+        fprintf(stderr, "Extending ");
         print_chunk_ref(blk->chunk_ref);
-        printf("\n");
+        fprintf(stderr, "\n");
         BlockContent blc;
         reverse(&blk->contents);
         FOREACH (blc, blk->contents) {
             if (blc->type == BLOCK_CONTENT_TEXT) {
-                printf("Text:\n%s\n", blc->value.text);
+                fprintf(stderr, "Text:\n%s\n", blc->value.text);
             } else if (blc->type == BLOCK_CONTENT_CHUNK) {
                 print_chunk_ref(blc->value.chunk.chunk_ref);
                 ChunkRef ckr;
                 reverse(&blc->value.chunk.filters);
                 FOREACH (ckr, blc->value.chunk.filters) {
-                    printf("\n|");
+                    fprintf(stderr, "\n|");
                     print_chunk_ref(ckr);
                 }
                 reverse(&blc->value.chunk.filters);
-                printf("\n");
+                fprintf(stderr, "\n");
             }
         }
         reverse(&blk->contents);
         reverse(&blk->filters);
         ChunkRef ckr;
         FOREACH (ckr, blk->filters) {
-            printf("\n|");
+            fprintf(stderr, "\n|");
             print_chunk_ref(ckr);
         }
         reverse(&blk->filters);
-        printf("\n");
+        fprintf(stderr, "\n");
     }
 }
 reverse(&archive->blocks);
@@ -2869,77 +2879,9 @@ case 'x':
     break;
 @
 
-@<operations after mounting file system@=
-if (name_of_chunk_to_execute) {
-    if (
-        !chunk_of_name_exist_in_module(
-            name_of_chunk_to_execute,
-            module_of_name(specified_module_name)
-        )
-    ) {
-        fprintf(stderr, "Unknown chunk: %s\n", name_of_chunk_to_execute);
-        exit(1);
-    }
-    Chunk chk;
-    chk = chunk_in_module_of_name(
-        module_of_name(specified_module_name),
-        name_of_chunk_to_execute
-    );
-
-    ChunkRef ckr = NULL;
-    NEW0(ckr);
-    ckr->chunk = chk;
-    ckr->labels = specified_labels;
-
-    pid_t cld;
-    int st;
-    cld = run_filter(ckr, STDIN_FILENO, STDOUT_FILENO);
-    FREE(ckr);
-    waitpid(cld, &st, 0);
-
-    if (WIFEXITED(st)) {
-        if (WEXITSTATUS(st) != 0) {
-            fprintf(stderr,
-                "Faled at execute @@<%s@@>, error code: %d\n",
-                name_of_chunk_to_execute,
-                WEXITSTATUS(st)
-            );
-            exit(1);
-        }
-    } else {
-        fprintf(stderr,
-            "Faled at execute @@<%s@@>, unknown reason\n",
-            name_of_chunk_to_execute
-        );
-        exit(1);
-    }
-    break;
-}
-@
-
-@<operations after mounting file system@=
-do {
-    printf("Starting executing shell\n");
-    if (execl("/usr/bin/bash", "bash", "-i", NULL) != 0) {
-        perror("execl");
-        exit(1);
-    }
-} while (0);
-@
-
 # Ending
 
-@<close child process and remove directories@=
-if (fuse_pid != 0) {
-    kill(fuse_pid, SIGTERM);
-}
-@
-
 # Appendix
-
-@<litar@:C Structure@/include flags@=
-#define NDEBUG
-@
 
 @<litar@:C Structure@/includes@=
 #include <sched.h>
@@ -2969,12 +2911,6 @@ if (fuse_pid != 0) {
 #include "deque.h"
 #include "state.h"
 #include "fileio.h"
-@
-
-@<execute sequentially@=#!/bin/sh
-echo "do {"
-cat -
-echo "} while (0);"
 @
 
 @<fill in build time information@=#!/bin/sh

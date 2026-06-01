@@ -251,7 +251,7 @@ even it does not make use of all information. So the content of chunk "print_ls.
 itself, a typical case of unended recursion.
 
 There's no easy way to solve this problem, you usually can not presume what system calls a program
-might invoke. Litar's solution is to declare explicitly what files an invocation of filter can see to build
+might invoke. litar's solution is to declare explicitly what files a filter can see to build
 static dependencies between chunks.
 
 ```
@@ -275,9 +275,9 @@ ls
 @@
 ```
 
-In this example, "print_ls.c" is assigned to a group of files named "source", "REAMED.md" is assigned to
+In this example, "print_ls.c" is assigned to a file group named "source", "REAMED.md" is assigned to
 "root". And "run ls" is executed under "root", so it can not see "print_ls.c". A file can be assigned to
-several groups at a same time. The declaration of dependency support simple set operations.
+several groups. The declaration of dependency support simple set operations.
 @@+ means to add all files of the following group to the dependency, @@- means to remove all files
 of the following group from the dependency.
 
@@ -305,6 +305,18 @@ ls
 ```
 
 @@& means to add the file, @@! means to remove the file.
+
+A rule is used to relieve users from the burden of explict dependency declaration.
+If a filter have not declared its dependencies or start declaration with @@- or @@!,
+litar will try to figure out the largest possible set of files it depends, then trim it
+down with following @@- or @@!.
+
+The algorithm is start with all files as the file group the filter depends on,
+then to enumerate all files, if a file ultimately depends back on the filter
+itself, remove it from the final file group.
+This algorithm has a limitation that it's a recursive procedure too. If a filter's figuring out
+depend on another filter that its figuring out depend on the original one, we got a dead loop.
+So a general suggestion is if a filter's dependency is clear, just write it out.
 
 There's another important extension for reusability of code. Let's say, a chunk
 defines a general structure for a C program. Then we want to write two seperated

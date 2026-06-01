@@ -27,7 +27,7 @@ put that to Makefile. Here is a problem, sed operate on the whole
 file, so you have to make sure that the sed script won't influence the other
 parts of the file. To solve that problem, you might move that part of code to a new file,
 use a function to encapsulate it or simply store the information
-in a macro or a variable and pass back to the original file.
+in a macro or a variable and pass it back to the original file.
 You can see all the extra efforts made here.
 
 litar is created to operate on a smaller unit of text, which is called chunk.
@@ -215,7 +215,7 @@ sed -f sed_scripts/bigger_world.sed
 
 There are three files in this example, "hello.c", "sed_scripts/bigger_world.sed"
 and "exaggeratedly". The difference between @@[ and @@( is that @@( specifies
-an executable file but @@['s is a regular file.
+an executable but @@['s is a regular file.
 Filters are executed in an environment so that these three
 files can be accessed.
 It's worthy to mention that a file in a litar archive is also a chunk.
@@ -225,6 +225,86 @@ To be compatible with Unix programming environment, litar uses a technology call
 Filesystem in Userspace (FUSE), which allows litar to create a custom file system
 and mount it. So filters can access the files in a litar archive just like
 other files in the operating system.
+
+The story of building up a file system is not that simple, consider the following example.
+
+```
+@@[print_ls.c@@=
+#include "stdio.h"
+int main() {
+    printf("@@<the files in root directory@@>");
+    return 0;
+}
+@@
+
+@@<the files in root directory@@=
+@@|run ls@@
+
+@@<run ls@@=#!/bin/sh
+ls
+@@
+```
+
+It's clear that the program should just print "print_ls.c", which is the name of it self,
+but ls usually always call system call "stat" for all files under the directory required,
+even it does not make use of all information. So the content of chunk "print_ls.c" depends on
+itself, a typical case of unended recursion.
+
+There's no easy way to solve this problem, you usually can not presume what system calls a program
+might invoke. Litar's solution is to declare explicitly what files an invocation of filter can see to build
+static dependencies between chunks.
+
+```
+@@[print_ls.c@@'source@@=
+#include "stdio.h"
+int main() {
+    printf("@@<the files in root directory@@>");
+    return 0;
+}
+@@
+
+@@[README.md@@'root@@=
+An example to show 
+@@
+
+@@<the files in root directory@@=
+@@|run ls@@+root@@
+
+@@<run ls@@=#!/bin/sh
+ls
+@@
+```
+
+In this example, "print_ls.c" is assigned to a group of files named "source", "REAMED.md" is assigned to
+"root". And "run ls" is executed under "root", so it can not see "print_ls.c". A file can be assigned to
+several groups at a same time. The declaration of dependency support simple set operations.
+@@+ means to add all files of the following group to the dependency, @@- means to remove all files
+of the following group from the dependency.
+
+litar also allows declaring dependencies through file names directly.
+
+```
+@@[print_ls.c@@'source@@=
+#include "stdio.h"
+int main() {
+    printf("@@<the files in root directory@@>");
+    return 0;
+}
+@@
+
+@@[README.md@@'root@@=
+An example to show 
+@@
+
+@@<the files in root directory@@=
+@@|run ls@@&README.md@@!print_ls.c@@
+
+@@<run ls@@=#!/bin/sh
+ls
+@@
+```
+
+@@& means to add the file, @@! means to remove the file.
 
 There's another important extension for reusability of code. Let's say, a chunk
 defines a general structure for a C program. Then we want to write two seperated
@@ -305,7 +385,11 @@ Besides the named module, there's a anonymous module. If there's no @@-,
 or there's no module name specified after @@-, the chunks belong to this
 anonymous module.
 
-The final piece of code reusability is @@., which is indroduced before.
+Specializing and modularizing can not be used on files. Files belong to a different
+namespace from normal chunks.
+
+The final piece for code reusability is @@., it receives an argument of file name,
+and inserts the content of that file at the place of @@.
 
 ```
 @@<chunk@@=
@@ -326,11 +410,6 @@ The following is also legal.
 @@
 
 ```
-
-Besides the control characters that describes the structure of a litar archive,
-there are some other control characters. They are commands, which influence
-the process of dealing with litar archive. For example, @@. receives an argument
-of file name, and inserts the content of that file at the place of @@..
 @
 
 The complete implementation of litar is divided to two parts, front end and back end.

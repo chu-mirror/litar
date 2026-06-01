@@ -308,11 +308,11 @@ ls
 
 A rule is used to relieve users from the burden of explict dependency declaration.
 If a filter have not declared its dependencies or start declaration with @@- or @@!,
-litar will try to figure out the largest possible set of files it depends, then trim it
-down with following @@- or @@!.
+litar will try to figure out the largest possible set of files it depends.
 
 The algorithm is start with all files as the file group the filter depends on,
-then to enumerate all files, if a file ultimately depends back on the filter
+modify it first by the following dependency declarations,
+then to enumerate all files left, if a file ultimately depends back on the filter
 itself, remove it from the final file group.
 This algorithm has a limitation that it's a recursive procedure too. If a filter's figuring out
 depend on another filter that its figuring out depend on the original one, we got a dead loop.

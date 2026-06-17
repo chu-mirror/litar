@@ -7,6 +7,9 @@ LIBS=`pkg-config fuse3 --libs`
 LIGHT_HEADER=light.h state.h
 LIGHT_SOURCE=light.c state.c
 
+STATIC_LIGHT_HEADER=_light.h
+STATIC_LIGHT_SOURCE=_light.c
+
 all: litar
 
 .SUFFIXES: .la
@@ -46,10 +49,19 @@ hello: examples/hello.la litar
 $(LIGHT_HEADER) $(LIGHT_SOURCE): lib/light.la boot
 	./boot -m Light -p $@ litar.la > $@
 
+$(STATIC_LIGHT_HEADER) $(STATIC_LIGHT_SOURCE): lib/_light.la boot
+	./boot -m Light -p $@ lib/_light.la > $@
+
 show.c: examples/show-light.la $(LIGHT_HEADER)
 	./boot -p "show.c" examples/show-light.la > show.c
 
 show: show.c $(LIGHT_SOURCE)
+	gcc -g -o $@ $^ -pthread
+
+test-light.c: examples/test-light.la $(STATIC_LIGHT_HEADER)
+	./boot -p "test-light.c" examples/test-light.la > test-light.c
+
+test-light: test-light.c $(STATIC_LIGHT_SOURCE)
 	gcc -g -o $@ $^ -pthread
 
 clean:

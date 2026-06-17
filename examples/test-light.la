@@ -1,0 +1,40 @@
+@[test-light.c@=
+@<test light@:C Structure@/executable@>
+@
+
+@<test light@:C Structure@/includes@=
+#include <stdio.h>
+#include <assert.h>
+#include <unistd.h>
+#include "_light.h"
+@
+
+@<test light@:C Structure@/main body@=
+printf("Testing light\n");
+@<test cases@>
+printf("All test passed\n");
+@
+
+@<test light@:C Structure@/global variables@=
+CONTEXT(test_case, NULL, 1 << 10)
+@
+
+@<test cases@=
+enter_context(test_case);
+assert(remaining_memory() == (1<<10) - sizeof(void *));
+char (*buf)[100];
+buf = salloc(sizeof(*buf));
+assert(remaining_memory() == (1<<10) - sizeof(void *) - 100);
+do {
+    enter_frame();
+    assert(remaining_memory() == (1<<10) - 2 * sizeof(void *) - 100);
+    char (*buf)[100];
+    buf = salloc(sizeof(*buf));
+    assert(remaining_memory() == (1<<10) - 2 * sizeof(void *) - 2 * 100);
+    exit_frame();
+} while (0);
+assert(remaining_memory() == (1<<10) - sizeof(void *) - 100);
+exit_context(test_case);
+@
+
+@. lib/_light.la

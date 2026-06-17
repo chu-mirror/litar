@@ -40,15 +40,54 @@ thread_local struct context *_light_top_context;
 @
 
 @<light@:C Structure@/exported static inline functions@=
-static inline void *salloc(size_t n) {
-    uint8_t *stack_top = _light_top_context->stack_top;
-    if (stack_top + n > (uint8_t *)_light_top_context->stack_end) {
+static inline void *_salloc(struct context *ctx, size_t size) {
+    uint8_t *stack_top = ctx->stack_top;
+    if (stack_top + size > (uint8_t *)ctx->stack_end) {
         return NULL;
     }
-    _light_top_context->stack_top = stack_top + n;
+    ctx->stack_top = stack_top + size;
     return stack_top;
 }
 
+static inline void *_csalloc(struct context *ctx, size_t nmemb, size_t size) {
+    size_t tot = nmemb * size;
+    void *p = _salloc(ctx, tot);
+    memset(p, tot);
+    return p;
+}
+
+static inline void *salloc(size_t size) {
+    return _salloc(_light_top_context, size);
+}
+
+static inline void *csalloc(size_t nmemb, size_t size) {
+    return _csalloc(_light_top_context, nmemb, size);
+}
+
+static inline size_t _remaining_memory(struct context *ctx) {
+    return (uint8_t *)ctx->stack_end - (uint8_t *)ctx->stack_top;
+}
+
+static inline size_t remaining_memory() {
+    return _remaining_memory(_light_top_context);
+}
+@
+
+@<light@:C Structure@/exported macros@=
+#define NEW(p) \
+    do { \
+        typeof(p) *p_r = &(p); \
+        (*p_r) = (typeof(p))salloc(sizeof *(p)); \
+    } while (0)
+#define CALLOC(p, len) \
+    do { \
+        typeof(p) *p_r = &(p); \
+        (*p_r) = (typeof(p))csalloc((len), sizeof *(p)); \
+    } while (0)
+#define NEW0(p) CALLOC(p, 1)
+@
+
+@<light@:C Structure@/exported static inline functions@=
 static inline void enter_frame() {
     void **p = salloc(sizeof(void *));
     *p = _light_top_context->stack_frame_start;
@@ -59,10 +98,6 @@ static inline void exit_frame() {
     _light_top_context->stack_top = _light_top_context->stack_frame_start;
     _light_top_context->stack_frame_start = *_light_top_context->stack_frame_start;
 }
-
-static inline size_t remaining_memory() {
-    return (uint8_t *)_light_top_context->stack_end - (uint8_t *)_light_top_context->stack_top;
-}
 @
 
 @<light@:C Structure@/exported macros@=
@@ -72,6 +107,36 @@ static inline size_t remaining_memory() {
         name.ctx.stack_top = &name.mem[sizeof(void *)]; \
         _light_top_context = name.ctx.parent_context; \
     } while (0)
+@
+
+@<light@:C Structure@/exported data type declarations@=
+typedef struct heap *Heap;
+@
+
+@<light@:C Structure@/data types@=
+struct heap {
+    size_t length;
+    size_t unit_size;
+    unsigned int *labels;
+    uint8_t *space;
+};
+@
+
+@<light@:C Structure@/functions@=
+Heap new_heap(size_t len, size_t unit_size)
+{
+    Heap hp;
+    NEW(hp);
+    hp->length = len;
+    hp->unit_size = unit_size;
+    CALLOC(hp->labels, len/(sizeof(*labels)-1));
+    hp->space = salloc(len * unit_size);
+}
+
+void *heap_alloc(Heap hp)
+{
+    int p = 0, l = 1, r = sizeof(*hp->labels);
+}
 @
 
 @<_light.h@=

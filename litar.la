@@ -692,6 +692,7 @@ should be represented before the details of implementation.
 typedef struct mappings_archive *Archive;
 typedef struct mappings_module *Module;
 typedef struct mappings_chunk *Chunk;
+typedef struct mappings_file *File;
 typedef struct mappings_block *Block;
 @
 
@@ -708,13 +709,22 @@ struct mappings_chunk {
     @<mappings from chunk@>
 };
 
+struct mappings_file {
+    @<mappings from file@>
+};
+
 struct mappings_block {
     @<mappings from block@>
 };
 @
 
+In an archive, there are modules that contains chunks.
+Besides modules, there's a list of files.
+Both chunks and files consist of blocks.
+
 @<mappings from archive@=
 HashTable modules;
+List files;
 List blocks;
 @
 
@@ -848,7 +858,7 @@ void block_extend_chunk_specialized_by(Block blk, Chunk chk, List lbls)
 }
 @
 
-A reference to chunk is consists of a chunk and a list of labels.
+A reference to chunk consists of a chunk and a list of labels.
 
 @<litarfs@:light@:C Structure@/data type declarations@=
 typedef struct {Chunk chunk; List labels;} *ChunkRef;
@@ -1813,6 +1823,20 @@ static Token next_token(InputFrame ipt)
 
     return tkn;
 }
+
+void put_to_input_frames(const char *ar, List *input_frames_r)
+{
+    char path[PATH_MAX+1];
+    char *ptr = realpath(ar, path);
+    if (ptr == NULL) {
+        fprintf(stderr, "realpath %s: %s", ar, strerror(errno));
+        longjmp(exit_main, 1);
+    }
+    InputFrame ipt = NULL;
+    NEW0(ipt);
+    ipt->file = atom_str(path);
+    push(ipt, input_frames_r);
+}
 @
 
 There's a lot of names in a litar archive. To avoid potential miss use of
@@ -2028,20 +2052,6 @@ static State state_compile_out(State s, Signal sig)
 @
 
 @<litarfs@:light@:C Structure@/functions@=
-void put_to_input_frames(const char *ar, List *input_frames_r)
-{
-    char path[PATH_MAX+1];
-    char *ptr = realpath(ar, path);
-    if (ptr == NULL) {
-        fprintf(stderr, "realpath %s: %s", ar, strerror(errno));
-        longjmp(exit_main, 1);
-    }
-    InputFrame ipt = NULL;
-    NEW0(ipt);
-    ipt->file = atom_str(path);
-    push(ipt, input_frames_r);
-}
-
 Archive parse_archive(const char *archive)
 {
     Archive ret;
@@ -2380,9 +2390,7 @@ static State state_parse_block_out(State s, Signal sig)
 @<litarfs@:light@:C Structure@/functions@=
 static State state_compile_final(State sc, Signal sig)
 {
-    if (sc == state_parse_block) {
-        return state_parse_block;
-    }
+    return sc;
 }
 @
 
@@ -2596,6 +2604,7 @@ static State state_parse_block_final(State sc, Signal sig)
     }
     return NULL;
 }
+
 static void state_parse_block_callback(State sc, Signal sig)
 {
     struct state_compile_local *ccl_r;
@@ -2754,38 +2763,6 @@ do {
     }
 } while (0);
 @
-
-The operations can be performed at three stages:
-
-1. before parsing;
-2. after parsing, before mounting;
-3. after mounting.
-
-@<perform operations according to flags@=
-do {
-    bool to_continue = true;
-
-    KEEP(@<operations before parsing@|execute sequentially@>);
-    if (!to_continue) {
-        break;
-    }
-
-    RESERVE(@<parse input@>);
-
-    KEEP(@<operations after parsing input@|execute sequentially@>);
-    if (!to_continue) {
-        break;
-    }
-
-    KEEP(@<mount file system@>);
-
-    KEEP(@<operations after mounting file system@|execute sequentially@>);
-} while (0);
-@
-
-# Concepts
-
-
 
 @<litar@:C Structure@/global variables@=
 char working_dir[PATH_MAX];
@@ -2970,8 +2947,6 @@ case 'x':
     break;
 @
 
-# Ending
-
 # Appendix
 
 @<litar@:C Structure@/includes@=
@@ -2986,22 +2961,8 @@ case 'x':
 #include <limits.h>
 #include <signal.h>
 
-#include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/sendfile.h>
-
-#define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 14)
-#include <fuse.h>
-
-#include "light.h"
-#include "str.h"
-#include "list.h"
-#include "hash_table.h"
-#include "assoc_table.h"
-#include "atom.h"
-#include "deque.h"
-#include "state.h"
-#include "fileio.h"
 @
 
 @<fill in build time information@=#!/bin/sh

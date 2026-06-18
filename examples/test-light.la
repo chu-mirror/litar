@@ -16,7 +16,7 @@ printf("All test passed\n");
 @
 
 @<test light@:C Structure@/macros@=
-#define test_case_context_size (1 << 25)
+#define test_case_context_size (1 << 23)
 @
 
 @<test light@:C Structure@/global variables@=
@@ -28,13 +28,13 @@ do {
     enter_context(test_case);
     assert(remaining_memory() == test_case_context_size - sizeof(void *));
     char (*buf)[100];
-    buf = salloc(sizeof(*buf));
+    NEW(buf);
     assert(remaining_memory() == test_case_context_size - sizeof(void *) - 100);
     do {
         enter_frame();
         assert(remaining_memory() == test_case_context_size - 2 * sizeof(void *) - 100);
         char (*buf)[100];
-        buf = salloc(sizeof(*buf));
+        NEW(buf);
         assert(remaining_memory() == test_case_context_size - 2 * sizeof(void *) - 2 * 100);
         exit_frame();
     } while (0);
@@ -48,25 +48,27 @@ do {
 do {
     int i;
     enter_context(test_case);
-    Heap hp = new_heap(100000, 10);
+#define HEAP_SIZE 100000
+    Heap hp = new_heap(HEAP_SIZE, 10);
     assert(hp);
-    uint8_t *(*arr)[100000];
+    uint8_t *(*arr)[HEAP_SIZE];
     NEW(arr);
     assert(arr);
-    for (i = 0; i < 100000; ++i) {
+    for (i = 0; i < HEAP_SIZE; ++i) {
         (*arr)[i] = heap_alloc(hp);
         if (i > 0) {
             assert((*arr)[i]-(*arr)[i-1] == 10);
         }
     }
-    for (i = 0; i < 50000; ++i) {
+    for (i = 0; i < HEAP_SIZE/2; ++i) {
         heap_free(hp, (*arr)[i*2]);
     }
-    for (i = 0; i < 50000; ++i) {
+    for (i = 0; i < HEAP_SIZE/2; ++i) {
         assert((*arr)[i*2] == heap_alloc(hp));
     }
     assert(heap_alloc(hp) == NULL);
     printf("Passed heap\n");
+#undef HEAP_SIZE
     exit_context(test_case);
 } while (0);
 @

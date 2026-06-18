@@ -122,7 +122,7 @@ typedef struct heap *Heap;
 struct heap {
     size_t length;
     size_t unit_size;
-    unsigned int *labels;
+    HEAP_LABEL_TYPE *labels;
     int first_direct;
     uint8_t *space;
 };
@@ -167,11 +167,12 @@ void *heap_alloc(Heap hp)
         return NULL;
     }
 
-    hp->labels[p] |= 1 << (HEAP_LABEL_SIZE - n - 1);
+    hp->labels[p] |= (HEAP_LABEL_TYPE) 1 << (HEAP_LABEL_SIZE - n - 1);
 
     while (__builtin_popcountg(hp->labels[p]) == HEAP_LABEL_SIZE) {
         int _p = (p - 1) / HEAP_LABEL_SIZE;
-        hp->labels[_p] |= 1 << (HEAP_LABEL_SIZE - 1 - (p - (_p * HEAP_LABEL_SIZE + 1)));
+        hp->labels[_p] |=
+            (HEAP_LABEL_TYPE) 1 << (HEAP_LABEL_SIZE - 1 - (p - (_p * HEAP_LABEL_SIZE + 1)));
         if (_p == 0) {
             break;
         }
@@ -189,10 +190,12 @@ void heap_free(Heap hp, void *elm)
     }
     size_t idx = (_elm - hp->space) / hp->unit_size;
     int p = hp->first_direct + idx/HEAP_LABEL_SIZE;
-    hp->labels[p] &= ~(1 << (HEAP_LABEL_SIZE - 1 - (idx % HEAP_LABEL_SIZE)));
+    hp->labels[p] &= ~((HEAP_LABEL_TYPE) 1 << (HEAP_LABEL_SIZE - 1 - (idx % HEAP_LABEL_SIZE)));
     do {
         int _p = (p - 1) /HEAP_LABEL_SIZE;
-        hp->labels[_p] &= ~(1 << (HEAP_LABEL_SIZE - 1 - (p - (_p * HEAP_LABEL_SIZE + 1))));
+        hp->labels[_p] &= ~(
+            (HEAP_LABEL_TYPE) 1 << (HEAP_LABEL_SIZE - 1 - (p - (_p * HEAP_LABEL_SIZE + 1)))
+        );
         if (__builtin_popcountg(hp->labels[_p]) < HEAP_LABEL_SIZE - 1) {
             break;
         }

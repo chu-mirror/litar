@@ -15,26 +15,60 @@ printf("Testing light\n");
 printf("All test passed\n");
 @
 
+@<test light@:C Structure@/macros@=
+#define test_case_context_size (1 << 25)
+@
+
 @<test light@:C Structure@/global variables@=
-CONTEXT(test_case, NULL, 1 << 10)
+CONTEXT(test_case, NULL, test_case_context_size)
 @
 
 @<test cases@=
-enter_context(test_case);
-assert(remaining_memory() == (1<<10) - sizeof(void *));
-char (*buf)[100];
-buf = salloc(sizeof(*buf));
-assert(remaining_memory() == (1<<10) - sizeof(void *) - 100);
 do {
-    enter_frame();
-    assert(remaining_memory() == (1<<10) - 2 * sizeof(void *) - 100);
+    enter_context(test_case);
+    assert(remaining_memory() == test_case_context_size - sizeof(void *));
     char (*buf)[100];
     buf = salloc(sizeof(*buf));
-    assert(remaining_memory() == (1<<10) - 2 * sizeof(void *) - 2 * 100);
-    exit_frame();
+    assert(remaining_memory() == test_case_context_size - sizeof(void *) - 100);
+    do {
+        enter_frame();
+        assert(remaining_memory() == test_case_context_size - 2 * sizeof(void *) - 100);
+        char (*buf)[100];
+        buf = salloc(sizeof(*buf));
+        assert(remaining_memory() == test_case_context_size - 2 * sizeof(void *) - 2 * 100);
+        exit_frame();
+    } while (0);
+    assert(remaining_memory() == test_case_context_size - sizeof(void *) - 100);
+    printf("Passed basic memory management\n");
+    exit_context(test_case);
 } while (0);
-assert(remaining_memory() == (1<<10) - sizeof(void *) - 100);
-exit_context(test_case);
+@
+
+@<test cases@=
+do {
+    int i;
+    enter_context(test_case);
+    Heap hp = new_heap(100000, 10);
+    assert(hp);
+    uint8_t *(*arr)[100000];
+    NEW(arr);
+    assert(arr);
+    for (i = 0; i < 100000; ++i) {
+        (*arr)[i] = heap_alloc(hp);
+        if (i > 0) {
+            assert((*arr)[i]-(*arr)[i-1] == 10);
+        }
+    }
+    for (i = 0; i < 50000; ++i) {
+        heap_free(hp, (*arr)[i*2]);
+    }
+    for (i = 0; i < 50000; ++i) {
+        assert((*arr)[i*2] == heap_alloc(hp));
+    }
+    assert(heap_alloc(hp) == NULL);
+    printf("Passed heap\n");
+    exit_context(test_case);
+} while (0);
 @
 
 @. lib/_light.la

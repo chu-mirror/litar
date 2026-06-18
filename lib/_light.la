@@ -52,7 +52,7 @@ static inline void *_salloc(struct context *ctx, size_t size) {
 static inline void *_csalloc(struct context *ctx, size_t nmemb, size_t size) {
     size_t tot = nmemb * size;
     void *p = _salloc(ctx, tot);
-    memset(p, tot);
+    memset(p, 0, tot);
     return p;
 }
 
@@ -113,11 +113,17 @@ static inline void exit_frame() {
 typedef struct heap *Heap;
 @
 
+@<light@:C Structure@/macros@=
+#define HEAP_LABEL_TYPE unsigned int
+#define HEAP_LABEL_SIZE (sizeof(HEAP_LABEL_TYPE) * 8)
+@
+
 @<light@:C Structure@/data types@=
 struct heap {
     size_t length;
     size_t unit_size;
     unsigned int *labels;
+    int first_direct;
     uint8_t *space;
 };
 @
@@ -127,15 +133,71 @@ Heap new_heap(size_t len, size_t unit_size)
 {
     Heap hp;
     NEW(hp);
+    if (!hp) {
+        return NULL;
+    }
     hp->length = len;
     hp->unit_size = unit_size;
-    CALLOC(hp->labels, len/(sizeof(*labels)-1));
     hp->space = salloc(len * unit_size);
+
+    int w_n = 1;
+    while (w_n < len) {
+        w_n *= HEAP_LABEL_SIZE;
+    }
+
+    hp->first_direct = (w_n-1)/(HEAP_LABEL_SIZE-1);
+    CALLOC(
+        hp->labels,
+        hp->first_direct + (len+HEAP_LABEL_SIZE-1)/HEAP_LABEL_SIZE
+    );
+    return hp;
 }
 
 void *heap_alloc(Heap hp)
 {
-    int p = 0, l = 1, r = sizeof(*hp->labels);
+    int p = 0;
+    while (p < hp->first_direct) {
+        p = HEAP_LABEL_SIZE * p + 1 + __builtin_clzg(~hp->labels[p], (int)HEAP_LABEL_SIZE);
+    }
+
+    int n = __builtin_clzg(~hp->labels[p], (int)HEAP_LABEL_SIZE);
+    int idx = (p - hp->first_direct) * HEAP_LABEL_SIZE + n;
+
+    if (idx >= hp->length) {
+        return NULL;
+    }
+
+    hp->labels[p] |= 1 << (HEAP_LABEL_SIZE - n - 1);
+
+    while (__builtin_popcountg(hp->labels[p]) == HEAP_LABEL_SIZE) {
+        int _p = (p - 1) / HEAP_LABEL_SIZE;
+        hp->labels[_p] |= 1 << (HEAP_LABEL_SIZE - 1 - (p - (_p * HEAP_LABEL_SIZE + 1)));
+        if (_p == 0) {
+            break;
+        }
+        p = _p;
+    }
+
+    return hp->space + (idx * hp->unit_size);
+}
+
+void heap_free(Heap hp, void *elm)
+{
+    uint8_t *_elm = elm;
+    if (_elm < hp->space || _elm >= hp->space + hp->length * hp->unit_size) {
+        return;
+    }
+    size_t idx = (_elm - hp->space) / hp->unit_size;
+    int p = hp->first_direct + idx/HEAP_LABEL_SIZE;
+    hp->labels[p] &= ~(1 << (HEAP_LABEL_SIZE - 1 - (idx % HEAP_LABEL_SIZE)));
+    do {
+        int _p = (p - 1) /HEAP_LABEL_SIZE;
+        hp->labels[_p] &= ~(1 << (HEAP_LABEL_SIZE - 1 - (p - (_p * HEAP_LABEL_SIZE + 1))));
+        if (__builtin_popcountg(hp->labels[_p]) < HEAP_LABEL_SIZE - 1) {
+            break;
+        }
+        p = _p;
+    } while (p);
 }
 @
 
@@ -150,6 +212,7 @@ void *heap_alloc(Heap hp)
 @<light@:C Structure@/interface required includes@=
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include <threads.h>
 @
 

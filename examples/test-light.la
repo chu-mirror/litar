@@ -82,19 +82,21 @@ do {
 @<test cases@=
 do {
     enter_context(test_case);
+#define LIST_SIZE 200000
     int i;
     struct {
         int n;
         struct list list_header;
     } *nd_r, *l;
     l = NULL;
-    for (i = 0; i < 100; ++i) {
+    for (i = 0; i < LIST_SIZE; ++i) {
         NEW(nd_r);
+        assert(nd_r != NULL);
         nd_r->n = i;
         l = cons(nd_r, l);
     }
-    assert(length(l) == 100);
-    i = 100;
+    assert(length(l) == LIST_SIZE);
+    i = LIST_SIZE;
     while (l) {
         assert(l->n == i-1);
         l = cdr(l);
@@ -102,6 +104,26 @@ do {
     }
     assert(i == 0);
     printf("Passed list\n");
+#undef LIST_SIZE
+    exit_context(test_case);
+} while (0);
+@
+
+@<test cases@=
+do {
+    enter_context(test_case);
+    Heap hp = new_heap(100, SEGMENT_SIZE(int elm[100]));
+    Segmented sg = new_segmented(hp);
+    for (int i = 0; i < 2000; ++i) {
+        int arr[5] = {0, 1, 2, 3, 4};
+        segmented_append(sg, arr, sizeof(arr));
+    }
+    SegmentedRandom sgr = segmented_random(sg);
+    for (int i = 0; i < 2000 * 5 * sizeof(int); i += sizeof(int)) {
+        assert(*(int *)segmented_pointer(sgr, i) == (i / sizeof(int)) % 5);
+    }
+
+    printf("Passed segmented\n");
     exit_context(test_case);
 } while (0);
 @

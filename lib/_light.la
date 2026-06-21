@@ -222,25 +222,133 @@ struct list {
 
 @<light@:C Structure@/exported macros@=
 #define cons(nd, l) ({ \
-        typeof(nd) nd ## _ = (nd); typeof(nd) l ## _ = (l); \
-        nd ## _->list_header.next = l ## _? &(l ## _)->list_header : NULL; \
-        nd ## _; \
+        typeof(nd) __light_macro_local_nd = (nd); typeof(nd) __light_macro_local_l = (l); \
+        __light_macro_local_nd->list_header.next = \
+            __light_macro_local_l? &(__light_macro_local_l)->list_header : NULL; \
+        __light_macro_local_nd; \
     })
 #define cdr(l) ({ \
-        typeof(l) l ## _ = (l); \
-        l ## _->list_header.next ? \
+        typeof(l) __light_macro_local_l = (l); \
+        __light_macro_local_l->list_header.next ? \
             container_of((l)->list_header.next, typeof(*(l)), list_header) : NULL; \
     })
 #define length(l) ({ \
-        typeof(l) l ## _ = (l); \
+        struct list * __light_macro_local_l_hd = &(l)->list_header; \
         int c = 0;  \
-        while (l ## _) { \
+        while (__light_macro_local_l_hd) { \
             ++c; \
-            l ## _ = cdr(l ## _); \
+            __light_macro_local_l_hd = __light_macro_local_l_hd -> next; \
         } \
         c; \
     })
+@
 
+@<light@:C Structure@/data types@=
+struct segment {
+    struct list list_header;
+    uint8_t mem[];
+};
+struct segmented {
+    Heap heap;
+    struct segment *head, *tail;
+    size_t tail_size;
+};
+@
+
+@<light@:C Structure@/exported macros@=
+#define SEGMENT_SIZE(elms) sizeof(struct {struct list list_header; elms;})
+@
+
+@<light@:C Structure@/exported data type declarations@=
+typedef struct segmented *Segmented;
+@
+
+@<light@:C Structure@/static inline functions@=
+static inline size_t segment_size(Segmented sg)
+{
+    return sg->heap->unit_size - offsetof(struct segment, mem);
+}
+@
+
+@<light@:C Structure@/functions@=
+Segmented new_segmented(Heap hp)
+{
+    Segmented sg;
+    NEW(sg);
+    if (!sg) {
+        return NULL;
+    }
+    sg->heap = hp;
+    sg->head = heap_alloc(hp);
+    sg->tail = sg->head;
+    sg->tail_size = 0;
+    return sg;
+}
+
+Segmented segmented_append(Segmented sg, void *src, size_t n)
+{
+    while (n) {
+        size_t tail_usable, save_to_tail;
+
+        tail_usable = segment_size(sg) - sg->tail_size;
+        save_to_tail = n < tail_usable ? n : tail_usable;
+
+        memcpy(sg->tail->mem + sg->tail_size, src, save_to_tail);
+        n -= save_to_tail;
+        sg->tail_size += save_to_tail;
+
+        if (sg->tail_size == segment_size(sg)) {
+            struct segment *nsg = heap_alloc(sg->heap);
+            if (!nsg) {
+                return NULL;
+            }
+            cons(sg->tail, cons(nsg, NULL));
+            sg->tail = nsg;
+            sg->tail_size = 0;
+        }
+    }
+    return sg;
+}
+@
+
+@<light@:C Structure@/data types@=
+struct segmented_random {
+    Segmented segmented;
+    void **segments;
+};
+@
+
+@<light@:C Structure@/exported data type declarations@=
+typedef struct segmented_random *SegmentedRandom;
+@
+
+@<light@:C Structure@/functions@=
+SegmentedRandom segmented_random(Segmented sg)
+{
+    SegmentedRandom sgr;
+    NEW(sgr);
+    if (!sgr) {
+        return NULL;
+    }
+    sgr->segmented = sg;
+
+    struct segment *segs = sg->head;
+    sgr->segments = csalloc(length(segs), sizeof(*sgr->segments));
+
+    int i = 0;
+    while (segs) {
+        sgr->segments[i] = segs->mem;
+        segs = cdr(segs);
+        ++i;
+    }
+    return sgr;
+}
+
+void *segmented_pointer(SegmentedRandom sgr, int addr)
+{
+    return (uint8_t *)sgr->segments[addr/segment_size(sgr->segmented)]
+        + addr % segment_size(sgr->segmented);
+}
 @
 
 @<_light.h@=

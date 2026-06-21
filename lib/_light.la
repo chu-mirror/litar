@@ -349,6 +349,24 @@ void *segmented_pointer(SegmentedRandom sgr, int addr)
     return (uint8_t *)sgr->segments[addr/segment_size(sgr->segmented)]
         + addr % segment_size(sgr->segmented);
 }
+
+void *segmented_continuous(Segmented sg)
+{
+    uint8_t *cont;
+    struct segment *segs = sg->head;
+
+    cont = salloc((length(segs)-1) * segment_size(sg) + sg->tail_size);
+    
+    int addr = 0;
+    while (segs != sg->tail) {
+        memcpy(cont + addr, segs->mem, segment_size(sg));
+        addr += segment_size(sg);
+        segs = cdr(segs);
+    }
+    memcpy(cont + addr, segs->mem, sg->tail_size);
+
+    return cont;
+}
 @
 
 @<_light.h@=

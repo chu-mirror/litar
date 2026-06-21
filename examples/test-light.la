@@ -122,6 +122,10 @@ do {
     for (int i = 0; i < 2000 * 5 * sizeof(int); i += sizeof(int)) {
         assert(*(int *)segmented_pointer(sgr, i) == (i / sizeof(int)) % 5);
     }
+    int *arr_total = segmented_continuous(sg);
+    for (int i = 0; i < 2000 * 5; ++i) {
+        assert(arr_total[i] == i % 5);
+    }
 
     printf("Passed segmented\n");
     exit_context(test_case);

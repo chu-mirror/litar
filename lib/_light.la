@@ -204,6 +204,35 @@ void heap_free(Heap hp, void *elm)
 }
 @
 
+Copied from linux kernel.
+
+@<light@:C Structure@/exported macros@=
+#define container_of(ptr, type, member) \
+    _Generic(ptr, \
+        const typeof(*(ptr)) *: ((const type *)((uint8_t *)(ptr) - offsetof(type, member))), \
+        default: ((type *)((uint8_t *)(ptr) - offsetof(type, member))) \
+    )
+@
+
+@<light@:C Structure@/exported data types@=
+struct list {
+    struct list *next;
+};
+@
+
+@<light@:C Structure@/exported macros@=
+#define cons(ptr, list) ({ \
+        typeof(ptr) _ptr = (ptr); typeof(ptr) _list = (list); \
+        _ptr->list_header.next = _list ? &(_list)->list_header : NULL; \
+        _ptr; \
+    })
+#define cdr(ptr) ({ \
+        typeof(ptr) _ptr = (ptr); \
+        _ptr->list_header.next ? \
+            container_of((ptr)->list_header.next, typeof(*(ptr)), list_header) : NULL; \
+    })
+@
+
 @<_light.h@=
 @<light@:C Structure@/module interface@>
 @

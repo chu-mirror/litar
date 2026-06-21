@@ -66,9 +66,40 @@ do {
     for (i = 0; i < HEAP_SIZE/2; ++i) {
         assert((*arr)[i*2] == heap_alloc(hp));
     }
+    for (i = 0; i < HEAP_SIZE/3; ++i) {
+        heap_free(hp, (*arr)[i*3]);
+    }
+    for (i = 0; i < HEAP_SIZE/3; ++i) {
+        assert((*arr)[i*3] == heap_alloc(hp));
+    }
     assert(heap_alloc(hp) == NULL);
     printf("Passed heap\n");
 #undef HEAP_SIZE
+    exit_context(test_case);
+} while (0);
+@
+
+@<test cases@=
+do {
+    enter_context(test_case);
+    struct {
+        int n;
+        struct list list_header;
+    } nd1, nd2, nd3, *nd_r;
+    nd1.n = 1;
+    nd2.n = 2;
+    nd3.n = 3;
+    nd_r = cons(&nd3, NULL);
+    assert(nd_r->n == 3);
+    nd_r = cons(&nd1, cons(&nd2, nd_r));
+    assert(nd_r->n == 1);
+    nd_r = cdr(nd_r);
+    assert(nd_r->n == 2);
+    nd_r = cdr(nd_r);
+    assert(nd_r->n == 3);
+    nd_r = cdr(nd_r);
+    assert(nd_r == NULL);
+    printf("Passed list\n");
     exit_context(test_case);
 } while (0);
 @

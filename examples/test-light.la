@@ -82,23 +82,25 @@ do {
 @<test cases@=
 do {
     enter_context(test_case);
+    int i;
     struct {
         int n;
         struct list list_header;
-    } nd1, nd2, nd3, *nd_r;
-    nd1.n = 1;
-    nd2.n = 2;
-    nd3.n = 3;
-    nd_r = cons(&nd3, NULL);
-    assert(nd_r->n == 3);
-    nd_r = cons(&nd1, cons(&nd2, nd_r));
-    assert(nd_r->n == 1);
-    nd_r = cdr(nd_r);
-    assert(nd_r->n == 2);
-    nd_r = cdr(nd_r);
-    assert(nd_r->n == 3);
-    nd_r = cdr(nd_r);
-    assert(nd_r == NULL);
+    } *nd_r, *l;
+    l = NULL;
+    for (i = 0; i < 100; ++i) {
+        NEW(nd_r);
+        nd_r->n = i;
+        l = cons(nd_r, l);
+    }
+    assert(length(l) == 100);
+    i = 100;
+    while (l) {
+        assert(l->n == i-1);
+        l = cdr(l);
+        --i;
+    }
+    assert(i == 0);
     printf("Passed list\n");
     exit_context(test_case);
 } while (0);

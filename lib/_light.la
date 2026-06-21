@@ -221,16 +221,26 @@ struct list {
 @
 
 @<light@:C Structure@/exported macros@=
-#define cons(ptr, list) ({ \
-        typeof(ptr) _ptr = (ptr); typeof(ptr) _list = (list); \
-        _ptr->list_header.next = _list ? &(_list)->list_header : NULL; \
-        _ptr; \
+#define cons(nd, l) ({ \
+        typeof(nd) nd ## _ = (nd); typeof(nd) l ## _ = (l); \
+        nd ## _->list_header.next = l ## _? &(l ## _)->list_header : NULL; \
+        nd ## _; \
     })
-#define cdr(ptr) ({ \
-        typeof(ptr) _ptr = (ptr); \
-        _ptr->list_header.next ? \
-            container_of((ptr)->list_header.next, typeof(*(ptr)), list_header) : NULL; \
+#define cdr(l) ({ \
+        typeof(l) l ## _ = (l); \
+        l ## _->list_header.next ? \
+            container_of((l)->list_header.next, typeof(*(l)), list_header) : NULL; \
     })
+#define length(l) ({ \
+        typeof(l) l ## _ = (l); \
+        int c = 0;  \
+        while (l ## _) { \
+            ++c; \
+            l ## _ = cdr(l ## _); \
+        } \
+        c; \
+    })
+
 @
 
 @<_light.h@=

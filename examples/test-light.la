@@ -40,7 +40,7 @@ do {
         exit_frame();
     } while (0);
     assert(remaining_memory() == test_case_context_size - sizeof(void *) - 100);
-    printf("Passed basic memory management\n");
+    printf("Passed memory\n");
     exit_context(test_case);
 } while (0);
 @
@@ -193,6 +193,17 @@ do {
     assert(s);
     assert(strcmp(buf, s) == 0);
     printf("Passed string\n");
+    exit_context(test_case);
+} while (0);
+@
+
+@<test cases@=
+do {
+    enter_context(test_case);
+    HashTable tbl = new_string_hash_table(100);
+    hash_table_map(tbl, "Maeda", "Chu");
+    assert(strcmp(hash_table_get(tbl, "Maeda"), "Chu") == 0);
+    printf("Passed hash table\n");
     exit_context(test_case);
 } while (0);
 @

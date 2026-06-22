@@ -512,16 +512,149 @@ String string_append(String str, const char *s)
 @
 
 @<light@:C Structure@/data types@=
-struct table_record {
+struct hash_table_record {
     const void *key;
     const void *value;
+    struct list slot;
+    struct bi_list table;
+};
+struct hash_table {
+    uint32_t (*hash_func)(const void *key);
+    int (*equal_func)(const void *key1, const void *key2);
+    Heap heap;
+    struct bi_list records;
+    size_t number_slots;
+    struct list *slots[];
 };
 @
 
-@<light@:C Structure@/data types@=
-struct hash_table {
-    Heap heap;
-};
+@<light@:C Structure@/exported data type declarations@=
+typedef struct hash_table *HashTable;
+@
+
+@<light@:C Structure@/static inline functions@=
+static inline uint32_t calculate_index_for_key(HashTable tbl, const void *key)
+{
+    return tbl->hash_func(key) & (tbl->number_slots-1);
+}
+@
+
+@<light@:C Structure@/functions@=
+HashTable new_hash_table(size_t size, uint32_t hf(const void *), int eq(const void *, const void *))
+{
+    size_t ns = 1;
+    while (ns < size) {
+        ns <<= 1;
+    }
+
+    HashTable tbl;
+    tbl = salloc(offsetof(struct hash_table, slots) + ns * sizeof(tbl->slots[0]));
+    tbl->number_slots = ns;
+    memset(tbl->slots, 0, ns * sizeof(tbl->slots[0]));
+
+    tbl->hash_func = hf;
+    tbl->equal_func = eq;
+    tbl->heap = new_heap(size, sizeof(struct hash_table_record));
+    bi_list_init(&tbl->records);
+    return tbl;
+}
+
+static struct hash_table_record *
+hash_table_find_record(HashTable tbl, const void *key)
+{
+    uint32_t idx = calculate_index_for_key(tbl, key);
+    struct list *rcds = tbl->slots[idx];
+    while (rcds) {
+        struct hash_table_record *rcd_r = container_of(rcds, struct hash_table_record, slot);
+        if (tbl->equal_func(key, rcd_r->key)) {
+            return rcd_r;
+        }
+        rcds = cdr(rcds);
+    }
+    return NULL;
+}
+
+void hash_table_map(HashTable tbl, const void *key, const void *value)
+{
+    struct hash_table_record *rcd_r = hash_table_find_record(tbl, key);
+    if (rcd_r) {
+        rcd_r->value = value;
+        return;
+    }
+    uint32_t idx = calculate_index_for_key(tbl, key);
+    NEW(rcd_r);
+    rcd_r->key = key;
+    rcd_r->value = value;
+    tbl->slots[idx] = cons(&rcd_r->slot, tbl->slots[idx]);
+    bi_list_insert(&rcd_r->table, &tbl->records);
+}
+
+const void *hash_table_get(HashTable tbl, const void *key)
+{
+    struct hash_table_record *rcd_r = hash_table_find_record(tbl, key);
+    if (rcd_r) {
+        return rcd_r->value;
+    } else {
+        return NULL;
+    }
+}
+@
+
+Light chooses FNV-1a as the default hash algorithm, the main usage is to calculate keys
+from a set of small values anyway.
+
+@<light@:C Structure@/exported static inline functions@=
+static inline uint32_t hash(const uint8_t *value, size_t len)
+{
+    uint32_t result;
+
+    int i;
+    for (i = 0, result = 2166136261U; i < len; ++i) {
+        result ^= value[i];
+        result *= 16777619U;
+    }
+
+    return result;
+}
+
+static inline uint32_t hash_str(const char *str)
+{
+    return hash((const uint8_t *)str, strlen(str));
+}
+@
+
+@<light@:C Structure@/functions@=
+static uint32_t hash_func_str(const void *s)
+{
+    return hash_str(s);
+}
+
+static int equal_func_str(const void *s1, const void *s2)
+{
+    return strcmp(s1, s2) == 0;
+}
+
+HashTable new_string_hash_table(size_t size)
+{
+    return new_hash_table(size, hash_func_str, equal_func_str);
+}
+@
+
+@<basic@:light module@:C Structure@/functions@=
+static uint32_t hash_func_ptr(const void *p)
+{
+    return hash((uint8_t *)&p, sizeof(p));
+}
+
+static int equal_func_ptr(const void *p1, const void *p2)
+{
+    return p1 == p2;
+}
+
+HashTable new_pointer_hash_table(size_t size)
+{
+    return new_hash_table(size, hash_func_ptr, equal_func_ptr);
+}
 @
 
 @<_light.h@=

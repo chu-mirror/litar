@@ -268,6 +268,26 @@ static inline size_t segment_size(Segmented sg)
 {
     return sg->heap->unit_size - offsetof(struct segment, mem);
 }
+
+static inline void segmented_init(Segmented sg, Heap hp)
+{
+    sg->heap = hp;
+    sg->head = heap_alloc(hp);
+    sg->tail = sg->head;
+    sg->tail_size = 0;
+}
+
+static inline Segmented segmented_attach_new_segment(Segmented sg)
+{
+    struct segment *nsg = heap_alloc(sg->heap);
+    if (!nsg) {
+        return NULL;
+    }
+    cons(sg->tail, cons(nsg, NULL));
+    sg->tail = nsg;
+    sg->tail_size = 0;
+    return sg;
+}
 @
 
 @<light@:C Structure@/functions@=
@@ -278,36 +298,87 @@ Segmented new_segmented(Heap hp)
     if (!sg) {
         return NULL;
     }
-    sg->heap = hp;
-    sg->head = heap_alloc(hp);
-    sg->tail = sg->head;
-    sg->tail_size = 0;
+    segmented_init(sg, hp);
     return sg;
 }
 
-Segmented segmented_append(Segmented sg, void *src, size_t n)
+Segmented new_segmented_in_heap(Heap hp_s, Heap hp)
 {
+    if (hp_s->unit_size >= sizeof(struct segmented)) {
+        return NULL;
+    }
+    Segmented sg = heap_alloc(hp_s);
+    if (!sg) {
+        return NULL;
+    }
+    segmented_init(sg, hp);
+    return sg;
+}
+
+size_t segmented_size(Segmented sg)
+{
+    return (length(sg->head)-1) * segment_size(sg) + sg->tail_size;
+}
+
+Segmented segmented_append(Segmented sg, const void *src, size_t n)
+{
+    const uint8_t *src_ = src;;
     while (n) {
         size_t tail_usable, save_to_tail;
 
         tail_usable = segment_size(sg) - sg->tail_size;
         save_to_tail = n < tail_usable ? n : tail_usable;
 
-        memcpy(sg->tail->mem + sg->tail_size, src, save_to_tail);
+        memcpy(sg->tail->mem + sg->tail_size, src_, save_to_tail);
         n -= save_to_tail;
+        src_ += save_to_tail;
         sg->tail_size += save_to_tail;
 
         if (sg->tail_size == segment_size(sg)) {
-            struct segment *nsg = heap_alloc(sg->heap);
-            if (!nsg) {
+            if (!segmented_attach_new_segment(sg)) {
                 return NULL;
             }
-            cons(sg->tail, cons(nsg, NULL));
-            sg->tail = nsg;
-            sg->tail_size = 0;
         }
     }
     return sg;
+}
+
+Segmented segmented_resize(Segmented sg, size_t size)
+{
+    struct segment *seg = sg->head;
+    size_t acc = 0;
+    while (acc < size) {
+        acc += segment_size(sg);
+        sg->tail = seg;
+
+        seg = cdr(seg);
+        if (!seg) {
+            if (!segmented_attach_new_segment(sg)) {
+                return NULL;
+            }
+            seg = sg->tail;
+        }
+    }
+    cons(sg->tail, NULL);
+    while (seg) {
+        struct segment *seg_ = seg;
+        seg = cdr(seg);
+        heap_free(sg->heap, seg_);
+    }
+    if (acc > size) {
+        sg->tail_size = size + segment_size(sg) - acc;
+    }
+}
+
+void segmented_free(Heap hp_s, Segmented sg)
+{
+    struct segment *seg = sg->head, *seg_;
+    while (seg) {
+        seg_ = seg;
+        seg = cdr(seg);
+        heap_free(sg->heap, seg_);
+    }
+    heap_free(hp_s, sg);
 }
 @
 
@@ -334,6 +405,9 @@ SegmentedRandom segmented_random(Segmented sg)
 
     struct segment *segs = sg->head;
     sgr->segments = csalloc(length(segs), sizeof(*sgr->segments));
+    if (!sgr->segments) {
+        return NULL;
+    }
 
     int i = 0;
     while (segs) {
@@ -350,22 +424,58 @@ void *segmented_pointer(SegmentedRandom sgr, int addr)
         + addr % segment_size(sgr->segmented);
 }
 
-void *segmented_continuous(Segmented sg)
+void segmented_copy_to(Segmented sg, void *buf)
 {
-    uint8_t *cont;
     struct segment *segs = sg->head;
-
-    cont = salloc((length(segs)-1) * segment_size(sg) + sg->tail_size);
-    
     int addr = 0;
     while (segs != sg->tail) {
-        memcpy(cont + addr, segs->mem, segment_size(sg));
+        memcpy(buf + addr, segs->mem, segment_size(sg));
         addr += segment_size(sg);
         segs = cdr(segs);
     }
-    memcpy(cont + addr, segs->mem, sg->tail_size);
+    memcpy(buf + addr, segs->mem, sg->tail_size);
+}
+
+void *segmented_continuous(Segmented sg)
+{
+    uint8_t *cont;
+
+    cont = salloc(segmented_size(sg));
+    if (!cont) {
+        return NULL;
+    }
+    segmented_copy_to(sg, cont);
 
     return cont;
+}
+@
+
+@<light@:C Structure@/exported data type declarations@=
+typedef Segmented String;
+@
+
+@<light@:C Structure@/functions@=
+String string(Heap hp, const char *s)
+{
+    Segmented sg = new_segmented(hp);
+    sg = segmented_append(sg, s, strlen(s));
+}
+
+const char *cstring(String str)
+{
+    size_t l = segmented_size(str);
+    char *s = salloc(l+1);
+    if (!s) {
+        return NULL;
+    }
+    segmented_copy_to(str, s);
+    s[l] = '\0';
+    return s;
+}
+
+String string_append(String str, const char *s)
+{
+    segmented_append(str, s, strlen(s));
 }
 @
 

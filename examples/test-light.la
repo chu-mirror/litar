@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <unistd.h>
+#include <string.h>
 #include "_light.h"
 @
 
@@ -118,16 +119,47 @@ do {
         int arr[5] = {0, 1, 2, 3, 4};
         segmented_append(sg, arr, sizeof(arr));
     }
+    assert(segmented_size(sg) == 2000 * 5 * 4);
     SegmentedRandom sgr = segmented_random(sg);
+    assert(sgr != NULL);
     for (int i = 0; i < 2000 * 5 * sizeof(int); i += sizeof(int)) {
         assert(*(int *)segmented_pointer(sgr, i) == (i / sizeof(int)) % 5);
     }
     int *arr_total = segmented_continuous(sg);
+    assert(arr_total != NULL);
     for (int i = 0; i < 2000 * 5; ++i) {
         assert(arr_total[i] == i % 5);
     }
 
+    segmented_resize(sg, 1000 * 5 * 4);
+    assert(segmented_size(sg) == 1000 * 5 * 4);
+    arr_total = segmented_continuous(sg);
+    assert(arr_total != NULL);
+    for (int i = 0; i < 1000 * 5; ++i) {
+        assert(arr_total[i] == i % 5);
+    }
+
     printf("Passed segmented\n");
+    exit_context(test_case);
+} while (0);
+@
+
+@<test cases@=
+do {
+    enter_context(test_case);
+    Heap hp = new_heap(100, SEGMENT_SIZE(char s[10]));
+    assert(hp);
+    String str = string(hp, "");
+    assert(str);
+    char buf[1000] = {'\0'};
+    for (int i = 0; i < 20; ++i) {
+        strcat(buf, "Hello\n");
+        assert(string_append(str, "Hello\n"));
+    }
+    const char *s = cstring(str);
+    assert(s);
+    assert(strcmp(buf, s) == 0);
+    printf("Passed string\n");
     exit_context(test_case);
 } while (0);
 @

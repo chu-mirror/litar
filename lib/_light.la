@@ -368,6 +368,7 @@ Segmented segmented_resize(Segmented sg, size_t size)
     if (acc > size) {
         sg->tail_size = size + segment_size(sg) - acc;
     }
+    return sg;
 }
 
 void segmented_free(Heap hp_s, Segmented sg)
@@ -459,6 +460,7 @@ String string(Heap hp, const char *s)
 {
     Segmented sg = new_segmented(hp);
     sg = segmented_append(sg, s, strlen(s));
+    return sg;
 }
 
 const char *cstring(String str)
@@ -475,7 +477,7 @@ const char *cstring(String str)
 
 String string_append(String str, const char *s)
 {
-    segmented_append(str, s, strlen(s));
+    return segmented_append(str, s, strlen(s));
 }
 @
 

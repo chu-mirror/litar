@@ -85,26 +85,59 @@ do {
     enter_context(test_case);
 #define LIST_SIZE 200000
     int i;
-    struct {
+    typedef struct {
         int n;
-        struct list list_header;
-    } *nd_r, *l;
-    l = NULL;
+        struct list list;
+    } Node;
+    Node *nd_r;
+    struct list *l = NULL;
     for (i = 0; i < LIST_SIZE; ++i) {
         NEW(nd_r);
         assert(nd_r != NULL);
         nd_r->n = i;
-        l = cons(nd_r, l);
+        l = cons(&nd_r->list, l);
     }
-    assert(length(l) == LIST_SIZE);
+    assert(list_length(l) == LIST_SIZE);
     i = LIST_SIZE;
     while (l) {
-        assert(l->n == i-1);
+        assert(container_of(l, Node, list)->n == i-1);
         l = cdr(l);
         --i;
     }
     assert(i == 0);
     printf("Passed list\n");
+#undef LIST_SIZE
+    exit_context(test_case);
+} while (0);
+@
+
+@<test cases@=
+do {
+    enter_context(test_case);
+    int i;
+    typedef struct {
+        int n;
+        struct bi_list bi_list;
+    } Node;
+    Node *nd_r;
+    struct bi_list guard, *l;
+    bi_list_init(&guard);
+#define LIST_SIZE 200000
+    for (i = 0; i < LIST_SIZE; ++i) {
+        NEW(nd_r);
+        assert(nd_r != NULL);
+        nd_r->n = i;
+        bi_list_insert(&nd_r->bi_list, &guard);
+    }
+    l = guard.next;
+    i = 0;
+    while (l != &guard) {
+        assert(container_of(l, Node, bi_list)->n == i);
+        l = l->next;
+        ++i;
+    }
+    assert(i == LIST_SIZE);
+    printf("Passed bi-list\n");
 #undef LIST_SIZE
     exit_context(test_case);
 } while (0);

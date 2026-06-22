@@ -76,13 +76,13 @@ static inline size_t remaining_memory() {
 @<light@:C Structure@/exported macros@=
 #define NEW(p) \
     do { \
-        typeof(p) *p_r = &(p); \
-        (*p_r) = (typeof(p))salloc(sizeof *(p)); \
+        typeof(p) *__light_macro_local_p_r = &(p); \
+        (*__light_macro_local_p_r) = (typeof(p))salloc(sizeof *(p)); \
     } while (0)
 #define CALLOC(p, len) \
     do { \
-        typeof(p) *p_r = &(p); \
-        (*p_r) = (typeof(p))csalloc((len), sizeof *(p)); \
+        typeof(p) *__light_macro_local_p_r = &(p); \
+        (*__light_macro_local_p_r) = (typeof(p))csalloc((len), sizeof *(p)); \
     } while (0)
 #define NEW0(p) CALLOC(p, 1)
 @
@@ -220,32 +220,61 @@ struct list {
 };
 @
 
-@<light@:C Structure@/exported macros@=
-#define cons(nd, l) ({ \
-        typeof(nd) __light_macro_local_nd = (nd); typeof(nd) __light_macro_local_l = (l); \
-        __light_macro_local_nd->list_header.next = \
-            __light_macro_local_l? &(__light_macro_local_l)->list_header : NULL; \
-        __light_macro_local_nd; \
-    })
-#define cdr(l) ({ \
-        typeof(l) __light_macro_local_l = (l); \
-        __light_macro_local_l->list_header.next ? \
-            container_of((l)->list_header.next, typeof(*(l)), list_header) : NULL; \
-    })
-#define length(l) ({ \
-        struct list * __light_macro_local_l_hd = &(l)->list_header; \
-        int c = 0;  \
-        while (__light_macro_local_l_hd) { \
-            ++c; \
-            __light_macro_local_l_hd = __light_macro_local_l_hd -> next; \
-        } \
-        c; \
-    })
+@<light@:C Structure@/exported static inline functions@=
+static inline struct list *
+cons(struct list *elm, struct list *l)
+{
+    elm->next = l;
+    return elm;
+}
+static inline struct list *
+cdr(struct list *l)
+{
+    return l->next;
+}
+@
+
+@<light@:C Structure@/functions@=
+int list_length(struct list *l)
+{
+    int n = 0;
+    while (l) {
+        l = cdr(l);
+        ++n;
+    }
+    return n;
+}
+@
+
+@<light@:C Structure@/exported data types@=
+struct bi_list {
+    struct bi_list *previous;
+    struct bi_list *next;
+};
+@
+
+@<light@:C Structure@/exported static inline functions@=
+static inline void
+bi_list_init(struct bi_list *l)
+{
+    l->previous = l;
+    l->next = l;
+}
+
+static inline void
+bi_list_insert(struct bi_list *nd1, struct bi_list *nd2)
+{
+    struct bi_list *pre_nd2 = nd2->previous;
+    nd1->previous = pre_nd2;
+    nd1->next = nd2;
+    pre_nd2->next = nd1;
+    nd2->previous = nd1;
+}
 @
 
 @<light@:C Structure@/data types@=
 struct segment {
-    struct list list_header;
+    struct list list;
     uint8_t mem[];
 };
 struct segmented {
@@ -256,7 +285,7 @@ struct segmented {
 @
 
 @<light@:C Structure@/exported macros@=
-#define SEGMENT_SIZE(elms) sizeof(struct {struct list list_header; elms;})
+#define SEGMENT_SIZE(elms) sizeof(struct {struct list list; elms;})
 @
 
 @<light@:C Structure@/exported data type declarations@=
@@ -273,6 +302,7 @@ static inline void segmented_init(Segmented sg, Heap hp)
 {
     sg->heap = hp;
     sg->head = heap_alloc(hp);
+    cons(&sg->head->list, NULL);
     sg->tail = sg->head;
     sg->tail_size = 0;
 }
@@ -283,7 +313,7 @@ static inline Segmented segmented_attach_new_segment(Segmented sg)
     if (!nsg) {
         return NULL;
     }
-    cons(sg->tail, cons(nsg, NULL));
+    cons(&sg->tail->list, cons(&nsg->list, NULL));
     sg->tail = nsg;
     sg->tail_size = 0;
     return sg;
@@ -317,7 +347,7 @@ Segmented new_segmented_in_heap(Heap hp_s, Heap hp)
 
 size_t segmented_size(Segmented sg)
 {
-    return (length(sg->head)-1) * segment_size(sg) + sg->tail_size;
+    return (list_length(&sg->head->list)-1) * segment_size(sg) + sg->tail_size;
 }
 
 Segmented segmented_append(Segmented sg, const void *src, size_t n)
@@ -345,25 +375,25 @@ Segmented segmented_append(Segmented sg, const void *src, size_t n)
 
 Segmented segmented_resize(Segmented sg, size_t size)
 {
-    struct segment *seg = sg->head;
+    struct list *segs = &sg->head->list;
     size_t acc = 0;
     while (acc < size) {
         acc += segment_size(sg);
-        sg->tail = seg;
+        sg->tail = container_of(segs, struct segment, list);
 
-        seg = cdr(seg);
-        if (!seg) {
+        segs = cdr(segs);
+        if (!segs) {
             if (!segmented_attach_new_segment(sg)) {
                 return NULL;
             }
-            seg = sg->tail;
+            segs = &sg->tail->list;
         }
     }
-    cons(sg->tail, NULL);
-    while (seg) {
-        struct segment *seg_ = seg;
-        seg = cdr(seg);
-        heap_free(sg->heap, seg_);
+    cons(&sg->tail->list, NULL);
+    while (segs) {
+        struct list *segs_ = segs;
+        segs = cdr(segs);
+        heap_free(sg->heap, segs_);
     }
     if (acc > size) {
         sg->tail_size = size + segment_size(sg) - acc;
@@ -373,11 +403,11 @@ Segmented segmented_resize(Segmented sg, size_t size)
 
 void segmented_free(Heap hp_s, Segmented sg)
 {
-    struct segment *seg = sg->head, *seg_;
-    while (seg) {
-        seg_ = seg;
-        seg = cdr(seg);
-        heap_free(sg->heap, seg_);
+    struct list *segs = &sg->head->list, *segs_;
+    while (segs) {
+        segs_ = segs;
+        segs = cdr(segs);
+        heap_free(sg->heap, segs_);
     }
     heap_free(hp_s, sg);
 }
@@ -404,15 +434,15 @@ SegmentedRandom segmented_random(Segmented sg)
     }
     sgr->segmented = sg;
 
-    struct segment *segs = sg->head;
-    sgr->segments = csalloc(length(segs), sizeof(*sgr->segments));
+    struct list *segs = &sg->head->list;
+    sgr->segments = csalloc(list_length(segs), sizeof(*sgr->segments));
     if (!sgr->segments) {
         return NULL;
     }
 
     int i = 0;
     while (segs) {
-        sgr->segments[i] = segs->mem;
+        sgr->segments[i] = container_of(segs, struct segment, list)->mem;
         segs = cdr(segs);
         ++i;
     }
@@ -427,14 +457,14 @@ void *segmented_pointer(SegmentedRandom sgr, int addr)
 
 void segmented_copy_to(Segmented sg, void *buf)
 {
-    struct segment *segs = sg->head;
+    struct list *segs = &sg->head->list;
     int addr = 0;
-    while (segs != sg->tail) {
-        memcpy(buf + addr, segs->mem, segment_size(sg));
+    while (segs != &sg->tail->list) {
+        memcpy(buf + addr, container_of(segs, struct segment, list)->mem, segment_size(sg));
         addr += segment_size(sg);
         segs = cdr(segs);
     }
-    memcpy(buf + addr, segs->mem, sg->tail_size);
+    memcpy(buf + addr, container_of(segs, struct segment, list)->mem, sg->tail_size);
 }
 
 void *segmented_continuous(Segmented sg)
@@ -479,6 +509,19 @@ String string_append(String str, const char *s)
 {
     return segmented_append(str, s, strlen(s));
 }
+@
+
+@<light@:C Structure@/data types@=
+struct table_record {
+    const void *key;
+    const void *value;
+};
+@
+
+@<light@:C Structure@/data types@=
+struct hash_table {
+    Heap heap;
+};
 @
 
 @<_light.h@=

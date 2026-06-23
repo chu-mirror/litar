@@ -13,9 +13,9 @@ name => 'light',
 @<light@:C Structure@/exported data type declarations@=
 struct context {
     struct context * const parent_context;
-    const void *stack_end;
     void **stack_frame_start;
     void *stack_top;
+    @<extra properties of context@>
 };
 extern thread_local struct context *_light_top_context;
 @
@@ -28,8 +28,6 @@ extern thread_local struct context *_light_top_context;
     } name = { \
         .ctx = { \
             .parent_context = parent, \
-            .stack_end = &name.mem[size], \
-            .stack_frame_start = (void **)&name.mem[0], \
             .stack_top = &name.mem[sizeof(void *)] , \
         } \
     };
@@ -42,7 +40,7 @@ thread_local struct context *_light_top_context;
 @<light@:C Structure@/exported static inline functions@=
 static inline void *_salloc(struct context *ctx, size_t size) {
     uint8_t *stack_top = ctx->stack_top;
-    if (stack_top + size > (uint8_t *)ctx->stack_end) {
+    if (stack_top + size > (uint8_t *)ctx) {
         return NULL;
     }
     ctx->stack_top = stack_top + size;
@@ -65,7 +63,7 @@ static inline void *csalloc(size_t nmemb, size_t size) {
 }
 
 static inline size_t _remaining_memory(struct context *ctx) {
-    return (uint8_t *)ctx->stack_end - (uint8_t *)ctx->stack_top;
+    return (uint8_t *)ctx - (uint8_t *)ctx->stack_top;
 }
 
 static inline size_t remaining_memory() {
@@ -101,10 +99,12 @@ static inline void exit_frame() {
 @
 
 @<light@:C Structure@/exported macros@=
-#define enter_context(name) do { _light_top_context = &name.ctx; } while (0)
+#define enter_context(name) do { \
+        _light_top_context = &name.ctx; \
+        enter_frame(); \
+    } while (0)
 #define exit_context(name) do { \
-        name.ctx.stack_frame_start = (void **) &name.mem[0]; \
-        name.ctx.stack_top = &name.mem[sizeof(void *)]; \
+        exit_frame(); \
         _light_top_context = name.ctx.parent_context; \
     } while (0)
 @
@@ -254,21 +254,37 @@ struct bi_list {
 @
 
 @<light@:C Structure@/exported static inline functions@=
-static inline void
-bi_list_init(struct bi_list *l)
+static inline void bi_list_init(struct bi_list *l)
 {
     l->previous = l;
     l->next = l;
 }
 
-static inline void
-bi_list_insert(struct bi_list *nd1, struct bi_list *nd2)
+static inline void bi_list_connect(struct bi_list *nd1, struct bi_list *nd2)
 {
-    struct bi_list *pre_nd2 = nd2->previous;
-    nd1->previous = pre_nd2;
     nd1->next = nd2;
-    pre_nd2->next = nd1;
     nd2->previous = nd1;
+}
+
+static inline struct bi_list *bi_list_insert(struct bi_list *nd1, struct bi_list *nd2)
+{
+    if (!nd2) {
+        bi_list_connect(nd1, nd1);
+    } else {
+        struct bi_list *pre_nd2 = nd2->previous;
+        bi_list_connect(pre_nd2, nd1);
+        bi_list_connect(nd1, nd2);
+    }
+    return nd1;
+}
+
+static inline struct bi_list *bi_list_remove(struct bi_list *nd)
+{
+    if (nd->next == nd && nd->previous == nd) {
+        return NULL;
+    }
+    bi_list_connect(nd->previous, nd->next);
+    return nd->next;
 }
 @
 
@@ -515,16 +531,15 @@ String string_append(String str, const char *s)
 struct hash_table_record {
     const void *key;
     const void *value;
-    struct list slot;
-    struct bi_list table;
+    struct bi_list slot, table;
 };
 struct hash_table {
     uint32_t (*hash_func)(const void *key);
     int (*equal_func)(const void *key1, const void *key2);
     Heap heap;
-    struct bi_list records;
+    struct bi_list *records;
     size_t number_slots;
-    struct list *slots[];
+    struct bi_list *slots[];
 };
 @
 
@@ -555,7 +570,7 @@ HashTable new_hash_table(size_t size, uint32_t hf(const void *), int eq(const vo
     tbl->hash_func = hf;
     tbl->equal_func = eq;
     tbl->heap = new_heap(size, sizeof(struct hash_table_record));
-    bi_list_init(&tbl->records);
+    tbl->records = NULL;
     return tbl;
 }
 
@@ -563,14 +578,17 @@ static struct hash_table_record *
 hash_table_find_record(HashTable tbl, const void *key)
 {
     uint32_t idx = calculate_index_for_key(tbl, key);
-    struct list *rcds = tbl->slots[idx];
-    while (rcds) {
-        struct hash_table_record *rcd_r = container_of(rcds, struct hash_table_record, slot);
+    struct bi_list *rcds = tbl->slots[idx], *rcd = rcds;
+    if (!rcds) {
+        return NULL;
+    }
+    do {
+        struct hash_table_record *rcd_r = container_of(rcd, struct hash_table_record, slot);
         if (tbl->equal_func(key, rcd_r->key)) {
             return rcd_r;
         }
-        rcds = cdr(rcds);
-    }
+        rcd = rcd->next;
+    } while (rcd != rcds);
     return NULL;
 }
 
@@ -585,8 +603,8 @@ void hash_table_map(HashTable tbl, const void *key, const void *value)
     NEW(rcd_r);
     rcd_r->key = key;
     rcd_r->value = value;
-    tbl->slots[idx] = cons(&rcd_r->slot, tbl->slots[idx]);
-    bi_list_insert(&rcd_r->table, &tbl->records);
+    tbl->slots[idx] = bi_list_insert(&rcd_r->slot, tbl->slots[idx]);
+    tbl->records = bi_list_insert(&rcd_r->table, tbl->records);
 }
 
 const void *hash_table_get(HashTable tbl, const void *key)
@@ -598,10 +616,28 @@ const void *hash_table_get(HashTable tbl, const void *key)
         return NULL;
     }
 }
+
+const void *hash_table_unmap(HashTable tbl, const void *key)
+{
+    struct hash_table_record *rcd_r = hash_table_find_record(tbl, key);
+    if (!rcd_r) {
+        return NULL;
+    }
+
+    uint32_t idx = calculate_index_for_key(tbl, key);
+    tbl->slots[idx] = bi_list_remove(&rcd_r->slot);
+    tbl->records = bi_list_remove(&rcd_r->table);
+
+    const void *v = rcd_r->value;
+    heap_free(tbl->heap, rcd_r);
+
+    return v;
+}
+
 @
 
-Light chooses FNV-1a as the default hash algorithm, the main usage is to calculate keys
-from a set of small values anyway.
+Light chooses FNV-1a as the default hash algorithm, the main usage is to calculate a key
+from a small value.
 
 @<light@:C Structure@/exported static inline functions@=
 static inline uint32_t hash(const uint8_t *value, size_t len)

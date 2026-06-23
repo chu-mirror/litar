@@ -27,19 +27,19 @@ CONTEXT(test_case, NULL, test_case_context_size)
 @<test cases@=
 do {
     enter_context(test_case);
-    assert(remaining_memory() == test_case_context_size - sizeof(void *));
     char (*buf)[100];
+    size_t idle_memory_1, idle_memory_2;
+    idle_memory_1 = remaining_memory();
     NEW(buf);
-    assert(remaining_memory() == test_case_context_size - sizeof(void *) - 100);
+    idle_memory_2 = remaining_memory();
+    assert(idle_memory_2 == idle_memory_1 - 100);
     do {
         enter_frame();
-        assert(remaining_memory() == test_case_context_size - 2 * sizeof(void *) - 100);
         char (*buf)[100];
         NEW(buf);
-        assert(remaining_memory() == test_case_context_size - 2 * sizeof(void *) - 2 * 100);
         exit_frame();
     } while (0);
-    assert(remaining_memory() == test_case_context_size - sizeof(void *) - 100);
+    assert(remaining_memory() == idle_memory_2);
     printf("Passed memory\n");
     exit_context(test_case);
 } while (0);
@@ -203,6 +203,8 @@ do {
     HashTable tbl = new_string_hash_table(100);
     hash_table_map(tbl, "Maeda", "Chu");
     assert(strcmp(hash_table_get(tbl, "Maeda"), "Chu") == 0);
+    assert(strcmp(hash_table_unmap(tbl, "Maeda"), "Chu") == 0);
+    assert(hash_table_get(tbl, "Maeda") == NULL);
     printf("Passed hash table\n");
     exit_context(test_case);
 } while (0);

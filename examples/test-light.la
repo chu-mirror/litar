@@ -237,4 +237,36 @@ do {
 } while (0);
 @
 
+@<test cases@=
+do {
+    enter_context(test_case);
+    Set set = new_string_set();
+    set_init(set, 100);
+
+    set_include(set, "A");
+    set_include(set, "B");
+    assert(set_in("A", set));
+    assert(set_in("B", set));
+
+    do {
+        enter_frame();
+        set_init(set, 100);
+        set_include(set, "C");
+        assert(set_in("A", set));
+        assert(set_in("B", set));
+        assert(set_in("C", set));
+        exit_frame();
+    } while (0);
+    assert(set_in("A", set));
+    assert(set_in("B", set));
+    assert(!set_in("C", set));
+
+    set_not_include(set, "A");
+    assert(!set_in("A", set));
+    assert(set_in("B", set));
+    assert(!set_in("C", set));
+    exit_context(test_case);
+} while (0);
+@
+
 @. lib/_light.la

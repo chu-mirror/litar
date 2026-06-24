@@ -777,7 +777,7 @@ HashTable new_string_hash_table()
 }
 @
 
-@<basic@:light module@:C Structure@/functions@=
+@<light@:C Structure@/functions@=
 static uint32_t hash_func_ptr(const void *p)
 {
     return hash((uint8_t *)&p, sizeof(p));
@@ -791,6 +791,31 @@ static int equal_func_ptr(const void *p1, const void *p2)
 HashTable new_pointer_hash_table()
 {
     return new_hash_table(hash_func_ptr, equal_func_ptr);
+}
+@
+
+@<light@:C Structure@/exported data type declarations@=
+typedef HashTable Set;
+@
+
+@<light@:C Structure@/exported macros@=
+#define new_set new_hash_table
+#define new_string_set new_string_hash_table
+#define set_init hash_table_init
+@
+
+@<light@:C Structure@/exported static inline functions@=
+static inline Set set_include(Set set, const void *elm)
+{
+    return hash_table_map(set, elm, elm);
+}
+static inline const void *set_in(const void *elm, Set set)
+{
+    return hash_table_get(set, elm);
+}
+static inline Set set_not_include(Set set, const void *elm)
+{
+    return hash_table_unmap(set, elm);
 }
 @
 

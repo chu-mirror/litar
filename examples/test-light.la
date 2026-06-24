@@ -27,12 +27,15 @@ CONTEXT(test_case, NULL, test_case_context_size)
 @<test cases@=
 do {
     enter_context(test_case);
+
     char (*buf)[100];
     size_t idle_memory_1, idle_memory_2;
+
     idle_memory_1 = remaining_memory();
     NEW(buf);
     idle_memory_2 = remaining_memory();
     assert(idle_memory_2 == idle_memory_1 - 100);
+
     do {
         enter_frame();
         char (*buf)[100];
@@ -40,6 +43,7 @@ do {
         exit_frame();
     } while (0);
     assert(remaining_memory() == idle_memory_2);
+
     printf("Passed memory\n");
     exit_context(test_case);
 } while (0);
@@ -202,18 +206,32 @@ do {
     enter_context(test_case);
     HashTable tbl = new_string_hash_table();
     assert(hash_table_init(tbl, 100));
-    hash_table_map(tbl, "Maeda", "Chu");
-    assert(strcmp(hash_table_get(tbl, "Maeda"), "Chu") == 0);
-    assert(hash_table_unmap(tbl, "Maeda"));
-    assert(hash_table_get(tbl, "Maeda") == NULL);
+
+    /* build mapping */
+    hash_table_map(tbl, "Name", "Chu");
+    hash_table_map(tbl, "Age", "18");
+    assert(strcmp(hash_table_get(tbl, "Name"), "Chu") == 0);
+    assert(strcmp(hash_table_get(tbl, "Age"), "18") == 0);
+
+    /* unmap */
+    assert(hash_table_unmap(tbl, "Name"));
+    assert(hash_table_get(tbl, "Name") == NULL);
+
     do {
         enter_frame();
+
         hash_table_init(tbl, 100);
-        hash_table_map(tbl, "Maeda", "Chu");
-        assert(strcmp(hash_table_get(tbl, "Maeda"), "Chu") == 0);
+
+        hash_table_map(tbl, "Name", "Chu");
+        assert(strcmp(hash_table_get(tbl, "Name"), "Chu") == 0);
+        assert(strcmp(hash_table_get(tbl, "Age"), "18") == 0);
+
         exit_frame();
     } while (0);
-    assert(hash_table_get(tbl, "Maeda") == NULL);
+
+    assert(hash_table_get(tbl, "Name") == NULL);
+    assert(strcmp(hash_table_get(tbl, "Age"), "18") == 0);
+
     printf("Passed hash table\n");
     exit_context(test_case);
 } while (0);

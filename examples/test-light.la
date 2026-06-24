@@ -200,10 +200,19 @@ do {
 @<test cases@=
 do {
     enter_context(test_case);
-    HashTable tbl = new_string_hash_table(100);
+    HashTable tbl = new_string_hash_table();
+    assert(hash_table_init(tbl, 100));
     hash_table_map(tbl, "Maeda", "Chu");
     assert(strcmp(hash_table_get(tbl, "Maeda"), "Chu") == 0);
-    assert(strcmp(hash_table_unmap(tbl, "Maeda"), "Chu") == 0);
+    assert(hash_table_unmap(tbl, "Maeda"));
+    assert(hash_table_get(tbl, "Maeda") == NULL);
+    do {
+        enter_frame();
+        hash_table_init(tbl, 100);
+        hash_table_map(tbl, "Maeda", "Chu");
+        assert(strcmp(hash_table_get(tbl, "Maeda"), "Chu") == 0);
+        exit_frame();
+    } while (0);
     assert(hash_table_get(tbl, "Maeda") == NULL);
     printf("Passed hash table\n");
     exit_context(test_case);

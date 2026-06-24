@@ -10,12 +10,105 @@ Light encourage using of statical memory rather than heap.
 name => 'light',
 @
 
-@<light@:C Structure@/exported data type declarations@=
+Copied from linux kernel.
+
+@<light@:C Structure@/exported macros@=
+#define container_of(ptr, type, member) \
+    _Generic(ptr, \
+        const typeof(*(ptr)) *: ((const type *)((uint8_t *)(ptr) - offsetof(type, member))), \
+        default: ((type *)((uint8_t *)(ptr) - offsetof(type, member))) \
+    )
+@
+
+@<light@:C Structure@/exported data types@=
+struct list {
+    struct list *next;
+};
+@
+
+@<light@:C Structure@/exported static inline functions@=
+static inline struct list *
+cons(struct list *elm, struct list *l)
+{
+    elm->next = l;
+    return elm;
+}
+static inline struct list *
+cdr(struct list *l)
+{
+    return l->next;
+}
+@
+
+@<light@:C Structure@/functions@=
+int list_length(struct list *l)
+{
+    int n = 0;
+    while (l) {
+        l = cdr(l);
+        ++n;
+    }
+    return n;
+}
+@
+
+@<light@:C Structure@/exported data types@=
+struct bi_list {
+    struct bi_list *previous;
+    struct bi_list *next;
+};
+@
+
+@<light@:C Structure@/exported static inline functions@=
+static inline void bi_list_init(struct bi_list *l)
+{
+    l->previous = l;
+    l->next = l;
+}
+
+static inline void bi_list_connect(struct bi_list *nd1, struct bi_list *nd2)
+{
+    nd1->next = nd2;
+    nd2->previous = nd1;
+}
+
+static inline struct bi_list *bi_list_insert(struct bi_list *nd1, struct bi_list *nd2)
+{
+    if (!nd2) {
+        bi_list_connect(nd1, nd1);
+    } else {
+        struct bi_list *pre_nd2 = nd2->previous;
+        bi_list_connect(pre_nd2, nd1);
+        bi_list_connect(nd1, nd2);
+    }
+    return nd1;
+}
+
+static inline struct bi_list *bi_list_remove(struct bi_list *nd)
+{
+    if (nd->next == nd && nd->previous == nd) {
+        return NULL;
+    }
+    bi_list_connect(nd->previous, nd->next);
+    return nd->next;
+}
+@
+
+@<light@:C Structure@/exported data types@=
 struct context {
+    const char *context_name;
     struct context * const parent_context;
-    void **stack_frame_start;
+    struct frame_header *stack_frame_start;
     void *stack_top;
-    @<extra properties of context@>
+};
+struct free_node {
+    void *ptr;
+    void *(*func)(void *ptr);
+    struct list free_list;
+};
+struct frame_header {
+    struct frame_header *last_frame_start;
+    struct list *free_list;
 };
 extern thread_local struct context *_light_top_context;
 @
@@ -27,14 +120,11 @@ extern thread_local struct context *_light_top_context;
         struct context ctx; \
     } name = { \
         .ctx = { \
+            .context_name = #name,\
             .parent_context = parent, \
             .stack_top = &name.mem[sizeof(void *)] , \
         } \
     };
-@
-
-@<light@:C Structure@/global variables@=
-thread_local struct context *_light_top_context;
 @
 
 @<light@:C Structure@/exported static inline functions@=
@@ -85,16 +175,49 @@ static inline size_t remaining_memory() {
 #define NEW0(p) CALLOC(p, 1)
 @
 
+@<light@:C Structure@/global variables@=
+thread_local struct context *_light_top_context;
+@
+
 @<light@:C Structure@/exported static inline functions@=
-static inline void enter_frame() {
-    void **p = salloc(sizeof(void *));
-    *p = _light_top_context->stack_frame_start;
-    _light_top_context->stack_frame_start = p;
+static inline struct frame_header *enter_frame() {
+    struct frame_header *hd;
+    NEW(hd);
+    if (!hd) {
+        return NULL;
+    }
+    hd->last_frame_start = _light_top_context->stack_frame_start;
+    _light_top_context->stack_frame_start = hd;
+    hd->free_list = NULL;
+    return hd;
 }
 
-static inline void exit_frame() {
+static inline struct free_node *exit_frame() {
+    struct frame_header *hd = _light_top_context->stack_frame_start;
+    while (hd->free_list) {
+        struct free_node *nd = container_of(hd->free_list, struct free_node, free_list);
+        if (!nd->func(nd->ptr)) {
+            return nd;
+        }
+        hd->free_list = cdr(hd->free_list);
+    }
     _light_top_context->stack_top = _light_top_context->stack_frame_start;
-    _light_top_context->stack_frame_start = *_light_top_context->stack_frame_start;
+    _light_top_context->stack_frame_start = _light_top_context->stack_frame_start->last_frame_start;
+    return NULL;
+}
+
+static inline struct free_node *new_free_node(void *ptr, void *func(void *))
+{
+    struct free_node *nd;
+    NEW(nd);
+    if (!nd) {
+        return NULL;
+    }
+    nd->ptr = ptr;
+    nd->func = func;
+    _light_top_context->stack_frame_start->free_list =
+        cons(&nd->free_list, _light_top_context->stack_frame_start->free_list);
+    return nd;
 }
 @
 
@@ -201,90 +324,6 @@ void heap_free(Heap hp, void *elm)
         }
         p = _p;
     } while (p);
-}
-@
-
-Copied from linux kernel.
-
-@<light@:C Structure@/exported macros@=
-#define container_of(ptr, type, member) \
-    _Generic(ptr, \
-        const typeof(*(ptr)) *: ((const type *)((uint8_t *)(ptr) - offsetof(type, member))), \
-        default: ((type *)((uint8_t *)(ptr) - offsetof(type, member))) \
-    )
-@
-
-@<light@:C Structure@/exported data types@=
-struct list {
-    struct list *next;
-};
-@
-
-@<light@:C Structure@/exported static inline functions@=
-static inline struct list *
-cons(struct list *elm, struct list *l)
-{
-    elm->next = l;
-    return elm;
-}
-static inline struct list *
-cdr(struct list *l)
-{
-    return l->next;
-}
-@
-
-@<light@:C Structure@/functions@=
-int list_length(struct list *l)
-{
-    int n = 0;
-    while (l) {
-        l = cdr(l);
-        ++n;
-    }
-    return n;
-}
-@
-
-@<light@:C Structure@/exported data types@=
-struct bi_list {
-    struct bi_list *previous;
-    struct bi_list *next;
-};
-@
-
-@<light@:C Structure@/exported static inline functions@=
-static inline void bi_list_init(struct bi_list *l)
-{
-    l->previous = l;
-    l->next = l;
-}
-
-static inline void bi_list_connect(struct bi_list *nd1, struct bi_list *nd2)
-{
-    nd1->next = nd2;
-    nd2->previous = nd1;
-}
-
-static inline struct bi_list *bi_list_insert(struct bi_list *nd1, struct bi_list *nd2)
-{
-    if (!nd2) {
-        bi_list_connect(nd1, nd1);
-    } else {
-        struct bi_list *pre_nd2 = nd2->previous;
-        bi_list_connect(pre_nd2, nd1);
-        bi_list_connect(nd1, nd2);
-    }
-    return nd1;
-}
-
-static inline struct bi_list *bi_list_remove(struct bi_list *nd)
-{
-    if (nd->next == nd && nd->previous == nd) {
-        return NULL;
-    }
-    bi_list_connect(nd->previous, nd->next);
-    return nd->next;
 }
 @
 
@@ -533,13 +572,17 @@ struct hash_table_record {
     const void *value;
     struct bi_list slot, table;
 };
-struct hash_table {
-    uint32_t (*hash_func)(const void *key);
-    int (*equal_func)(const void *key1, const void *key2);
+struct hash_table_storage {
     Heap heap;
+    struct list compose;
     struct bi_list *records;
     size_t number_slots;
     struct bi_list *slots[];
+};
+struct hash_table {
+    uint32_t (*hash_func)(const void *key);
+    int (*equal_func)(const void *key1, const void *key2);
+    struct list *compose;
 };
 @
 
@@ -548,37 +591,72 @@ typedef struct hash_table *HashTable;
 @
 
 @<light@:C Structure@/static inline functions@=
-static inline uint32_t calculate_index_for_key(HashTable tbl, const void *key)
-{
-    return tbl->hash_func(key) & (tbl->number_slots-1);
+static inline uint32_t calculate_index_for_key(
+    HashTable tbl,
+    struct hash_table_storage *st,
+    const void *key
+) {
+    return tbl->hash_func(key) & (st->number_slots-1);
 }
 @
 
 @<light@:C Structure@/functions@=
-HashTable new_hash_table(size_t size, uint32_t hf(const void *), int eq(const void *, const void *))
+HashTable new_hash_table(uint32_t hf(const void *), int eq(const void *, const void *))
+{
+    HashTable tbl;
+    NEW(tbl);
+    if (!tbl) {
+        return NULL;
+    }
+
+    tbl->hash_func = hf;
+    tbl->equal_func = eq;
+    tbl->compose = NULL;
+
+    return tbl;
+}
+
+static void *hash_table_remove_storage(void *tbl)
+{
+    HashTable tbl_ = tbl;
+    tbl_->compose = cdr(tbl_->compose);
+    return tbl;
+}
+
+HashTable hash_table_init(HashTable tbl, size_t size)
 {
     size_t ns = 1;
     while (ns < size) {
         ns <<= 1;
     }
+    struct hash_table_storage *st;
+    st = salloc(offsetof(struct hash_table_storage, slots) + ns * sizeof(st->slots[0]));
+    if (!st) {
+        return NULL;
+    }
 
-    HashTable tbl;
-    tbl = salloc(offsetof(struct hash_table, slots) + ns * sizeof(tbl->slots[0]));
-    tbl->number_slots = ns;
-    memset(tbl->slots, 0, ns * sizeof(tbl->slots[0]));
+    st->number_slots = ns;
+    memset(st->slots, 0, ns * sizeof(st->slots[0]));
 
-    tbl->hash_func = hf;
-    tbl->equal_func = eq;
-    tbl->heap = new_heap(size, sizeof(struct hash_table_record));
-    tbl->records = NULL;
+    st->heap = new_heap(size, sizeof(struct hash_table_record));
+    if (!st->heap) {
+        return NULL;
+    }
+
+    st->records = NULL;
+    tbl->compose = cons(&st->compose, tbl->compose);
+    new_free_node(tbl, hash_table_remove_storage);
     return tbl;
 }
 
 static struct hash_table_record *
-hash_table_find_record(HashTable tbl, const void *key)
-{
-    uint32_t idx = calculate_index_for_key(tbl, key);
-    struct bi_list *rcds = tbl->slots[idx], *rcd = rcds;
+hash_table_storage_find_record(
+    HashTable tbl,
+    struct hash_table_storage *st,
+    const void *key
+) {
+    uint32_t idx = calculate_index_for_key(tbl, st, key);
+    struct bi_list *rcds = st->slots[idx], *rcd = rcds;
     if (!rcds) {
         return NULL;
     }
@@ -592,19 +670,60 @@ hash_table_find_record(HashTable tbl, const void *key)
     return NULL;
 }
 
-void hash_table_map(HashTable tbl, const void *key, const void *value)
+static struct hash_table_record *
+hash_table_find_record(HashTable tbl, const void *key)
 {
-    struct hash_table_record *rcd_r = hash_table_find_record(tbl, key);
+    struct list *cp = tbl->compose;
+    while (cp) {
+        struct hash_table_storage *st = container_of(cp, struct hash_table_storage, compose);
+        struct hash_table_record *rcd = hash_table_storage_find_record(tbl, st, key);
+        if (rcd) {
+            return rcd;
+        }
+        cp = cdr(cp);
+    }
+    return NULL;
+}
+
+HashTable hash_table_map(HashTable tbl, const void *key, const void *value)
+{
+    struct hash_table_storage *st = container_of(tbl->compose, struct hash_table_storage, compose);
+    struct hash_table_record *rcd_r = hash_table_storage_find_record(tbl, st, key);
     if (rcd_r) {
         rcd_r->value = value;
-        return;
+        return tbl;
     }
-    uint32_t idx = calculate_index_for_key(tbl, key);
-    NEW(rcd_r);
+    rcd_r = heap_alloc(st->heap);
+    if (!rcd_r) {
+        return NULL;
+    }
+
+    uint32_t idx = calculate_index_for_key(tbl, st, key);
     rcd_r->key = key;
     rcd_r->value = value;
-    tbl->slots[idx] = bi_list_insert(&rcd_r->slot, tbl->slots[idx]);
-    tbl->records = bi_list_insert(&rcd_r->table, tbl->records);
+    st->slots[idx] = bi_list_insert(&rcd_r->slot, st->slots[idx]);
+    st->records = bi_list_insert(&rcd_r->table, st->records);
+    return tbl;
+}
+
+HashTable hash_table_unmap(HashTable tbl, const void *key)
+{
+    struct hash_table_storage *st = container_of(tbl->compose, struct hash_table_storage, compose);
+    struct hash_table_record *rcd_r = hash_table_storage_find_record(tbl, st, key);
+    if (!rcd_r) {
+        rcd_r = hash_table_find_record(tbl, key);
+        if (rcd_r) {
+            return hash_table_map(tbl, key, NULL);
+        }
+        return tbl;
+    }
+
+    uint32_t idx = calculate_index_for_key(tbl, st, key);
+    st->slots[idx] = bi_list_remove(&rcd_r->slot);
+    st->records = bi_list_remove(&rcd_r->table);
+    heap_free(st->heap, rcd_r);
+
+    return tbl;
 }
 
 const void *hash_table_get(HashTable tbl, const void *key)
@@ -616,24 +735,6 @@ const void *hash_table_get(HashTable tbl, const void *key)
         return NULL;
     }
 }
-
-const void *hash_table_unmap(HashTable tbl, const void *key)
-{
-    struct hash_table_record *rcd_r = hash_table_find_record(tbl, key);
-    if (!rcd_r) {
-        return NULL;
-    }
-
-    uint32_t idx = calculate_index_for_key(tbl, key);
-    tbl->slots[idx] = bi_list_remove(&rcd_r->slot);
-    tbl->records = bi_list_remove(&rcd_r->table);
-
-    const void *v = rcd_r->value;
-    heap_free(tbl->heap, rcd_r);
-
-    return v;
-}
-
 @
 
 Light chooses FNV-1a as the default hash algorithm, the main usage is to calculate a key
@@ -670,9 +771,9 @@ static int equal_func_str(const void *s1, const void *s2)
     return strcmp(s1, s2) == 0;
 }
 
-HashTable new_string_hash_table(size_t size)
+HashTable new_string_hash_table()
 {
-    return new_hash_table(size, hash_func_str, equal_func_str);
+    return new_hash_table(hash_func_str, equal_func_str);
 }
 @
 
@@ -687,9 +788,9 @@ static int equal_func_ptr(const void *p1, const void *p2)
     return p1 == p2;
 }
 
-HashTable new_pointer_hash_table(size_t size)
+HashTable new_pointer_hash_table()
 {
-    return new_hash_table(size, hash_func_ptr, equal_func_ptr);
+    return new_hash_table(hash_func_ptr, equal_func_ptr);
 }
 @
 

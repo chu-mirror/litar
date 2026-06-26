@@ -230,6 +230,7 @@ static inline struct free_node *new_free_node(void *ptr, void *func(void *))
         exit_frame(); \
         _light_top_context = name.ctx.parent_context; \
     } while (0)
+#define switch_context(name) do { _light_top_context = &name.ctx; } while (0)
 @
 
 @<light@:C Structure@/exported data type declarations@=
@@ -536,8 +537,22 @@ void *segmented_continuous(Segmented sg)
 }
 @
 
+@<light@:C Structure@/exported macros@=
+#define point_to_segmented(ptr, sgr, idx) do { \
+        typeof(ptr) __light_macro_local_ptr = NULL; \
+        (ptr) = segmented_pointer( \
+            (sgr), (idx) * (&_light_macro_local_ptr[1] - &_light_macro_local_ptr[0]) \
+        ); \
+    } while (0)
+@
+
+
 @<light@:C Structure@/exported data type declarations@=
 typedef Segmented String;
+@
+
+@<light@:C Structure@/exported macros@=
+#define string_free segmented_free
 @
 
 @<light@:C Structure@/functions@=
@@ -794,6 +809,8 @@ HashTable new_pointer_hash_table()
 }
 @
 
+Some useful data structures.
+
 @<light@:C Structure@/exported data type declarations@=
 typedef HashTable Set;
 @
@@ -817,6 +834,65 @@ static inline Set set_not_include(Set set, const void *elm)
 {
     return hash_table_unmap(set, elm);
 }
+@
+
+@<light@:C Structure@/exported data types@=
+struct deque {
+    struct bi_list *head;
+};
+@
+
+@<light@:C Structure@/exported data type declarations@=
+typedef struct deque *Deque;
+@
+
+@<light@:C Structure@/exported static inline functions@=
+static inline void deque_init(Deque q)
+{
+    q->head = NULL;
+}
+
+static inline struct bi_list *deque_pop_front(Deque q)
+{
+    struct bi_list *ret;
+    ret = q->head;
+    q->head = bi_list_remove(q->head);
+    return ret;
+}
+
+static inline struct bi_list *deque_pop_back(Deque q)
+{
+    struct bi_list *ret;
+    ret = q->head->previous;
+    q->head = bi_list_remove(q->head->previous);
+    return ret;
+}
+
+static inline void deque_push_front(Deque q, struct bi_list *elm)
+{
+    q->head = bi_list_insert(elm, q->head);
+}
+
+static inline void deque_push_back(Deque q, struct bi_list *elm)
+{
+    
+    q->head = bi_list_insert(elm, q->head)->next;
+}
+@
+
+@<light@:C Structure@/exported data type declarations@=
+typedef Deque Stack;
+typedef Deque Queue;
+@
+
+@<light@:C Structure@/exported macros@=
+#define stack_init deque_init
+#define stack_pop deque_pop_front
+#define stack_push deque_push_front
+
+#define queue_init deque_init
+#define queue_put deque_push_back
+#define queue_get deque_pop_front
 @
 
 @<_light.h@=

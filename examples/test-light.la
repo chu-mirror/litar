@@ -265,8 +265,53 @@ do {
     assert(!set_in("A", set));
     assert(set_in("B", set));
     assert(!set_in("C", set));
+    printf("Passed set\n");
     exit_context(test_case);
 } while (0);
 @
 
+@<test cases@=
+do {
+    enter_context(test_case);
+    struct number {
+        int n;
+        struct bi_list deque;
+    };
+    Stack stk;
+    NEW(stk);
+    stack_init(stk);
+
+
+    Heap hp = new_heap(100, sizeof(struct number));
+    struct number *n;
+    for (int i = 0; i < 10; ++i) {
+        n = heap_alloc(hp);
+        n->n = i;
+        stack_push(stk, &n->deque);
+    }
+
+    for (int i = 0; i < 10; ++i) {
+        n = container_of(stack_pop(stk), struct number, deque);
+        assert(n->n == 10 - i - 1);
+        heap_free(hp, n);
+    }
+
+    Queue qu = stk;
+
+    for (int i = 0; i < 10; ++i) {
+        n = heap_alloc(hp);
+        n->n = i;
+        queue_put(qu, &n->deque);
+    }
+
+    for (int i = 0; i < 10; ++i) {
+        n = container_of(queue_get(qu), struct number, deque);
+        assert(n->n == i);
+        heap_free(hp, n);
+    }
+    
+    printf("Passed deque\n");
+    exit_context(test_case);
+} while (0);
+@
 @. lib/_light.la

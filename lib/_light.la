@@ -6,13 +6,13 @@ how to manage memory, how to handle exception, etc.
 
 Light encourage using of statical memory rather than heap.
 
-@<light@:C Structure@/module properties@=
+@<lightlib@:C Structure@/module properties@=
 name => 'light',
 @
 
 Copied from linux kernel.
 
-@<light@:C Structure@/exported macros@=
+@<lightlib@:C Structure@/exported macros@=
 #define container_of(ptr, type, member) \
     _Generic(ptr, \
         const typeof(*(ptr)) *: ((const type *)((uint8_t *)(ptr) - offsetof(type, member))), \
@@ -20,13 +20,13 @@ Copied from linux kernel.
     )
 @
 
-@<light@:C Structure@/exported data types@=
+@<lightlib@:C Structure@/exported data types@=
 struct list {
     struct list *next;
 };
 @
 
-@<light@:C Structure@/exported static inline functions@=
+@<lightlib@:C Structure@/exported static inline functions@=
 static inline struct list *
 cons(struct list *elm, struct list *l)
 {
@@ -40,7 +40,7 @@ cdr(struct list *l)
 }
 @
 
-@<light@:C Structure@/functions@=
+@<lightlib@:C Structure@/functions@=
 int list_length(struct list *l)
 {
     int n = 0;
@@ -52,14 +52,14 @@ int list_length(struct list *l)
 }
 @
 
-@<light@:C Structure@/exported data types@=
+@<lightlib@:C Structure@/exported data types@=
 struct bi_list {
     struct bi_list *previous;
     struct bi_list *next;
 };
 @
 
-@<light@:C Structure@/exported static inline functions@=
+@<lightlib@:C Structure@/exported static inline functions@=
 static inline void bi_list_init(struct bi_list *l)
 {
     l->previous = l;
@@ -94,7 +94,7 @@ static inline struct bi_list *bi_list_remove(struct bi_list *nd)
 }
 @
 
-@<light@:C Structure@/exported data types@=
+@<lightlib@:C Structure@/exported data types@=
 struct context {
     const char *context_name;
     struct context * const parent_context;
@@ -109,25 +109,27 @@ struct free_node {
 struct frame_header {
     struct frame_header *last_frame_start;
     struct list *free_list;
+    const void *returned;
+    size_t returned_size;
 };
 extern thread_local struct context *_light_top_context;
 @
 
-@<light@:C Structure@/exported macros@=
-#define CONTEXT(name, parent, size) \
+@<lightlib@:C Structure@/exported macros@=
+#define CONTEXT(name, parent) \
     struct { \
-        uint8_t mem[size]; \
+        uint8_t mem[__light_option_context_size_ ## name]; \
         struct context ctx; \
-    } name = { \
+    } _light_context_ ## name = { \
         .ctx = { \
             .context_name = #name,\
             .parent_context = parent, \
-            .stack_top = &name.mem[sizeof(void *)] , \
+            .stack_top = &_light_context_ ## name.mem[sizeof(void *)] , \
         } \
     };
 @
 
-@<light@:C Structure@/exported static inline functions@=
+@<lightlib@:C Structure@/exported static inline functions@=
 static inline void *_salloc(struct context *ctx, size_t size) {
     uint8_t *stack_top = ctx->stack_top;
     if (stack_top + size > (uint8_t *)ctx) {
@@ -161,7 +163,7 @@ static inline size_t remaining_memory() {
 }
 @
 
-@<light@:C Structure@/exported macros@=
+@<lightlib@:C Structure@/exported macros@=
 #define NEW(p) \
     do { \
         typeof(p) *__light_macro_local_p_r = &(p); \
@@ -173,13 +175,20 @@ static inline size_t remaining_memory() {
         (*__light_macro_local_p_r) = (typeof(p))csalloc((len), sizeof *(p)); \
     } while (0)
 #define NEW0(p) CALLOC(p, 1)
+#define STRDUP(src, dst) \
+    do { \
+        typeof(dst) *__light_macro_local_dst_r = &(dst); \
+        typeof(src) *__light_macro_local_src_r = &(src); \
+        CALLOC(*__light_macro_local_dst_r, strlen(*__light_macro_local_src_r)+1); \
+        if (dst) strcpy(*__light_macro_local_dst_r, *__light_macro_local_src_r); \
+    } while (0)
 @
 
-@<light@:C Structure@/global variables@=
+@<lightlib@:C Structure@/global variables@=
 thread_local struct context *_light_top_context;
 @
 
-@<light@:C Structure@/exported static inline functions@=
+@<lightlib@:C Structure@/exported static inline functions@=
 static inline struct frame_header *enter_frame() {
     struct frame_header *hd;
     NEW(hd);
@@ -189,21 +198,46 @@ static inline struct frame_header *enter_frame() {
     hd->last_frame_start = _light_top_context->stack_frame_start;
     _light_top_context->stack_frame_start = hd;
     hd->free_list = NULL;
+    hd->returned = NULL;
+    hd->returned_size = 0;
     return hd;
 }
 
-static inline struct free_node *exit_frame() {
+static inline const void *frame_return(const void *p, size_t s)
+{
     struct frame_header *hd = _light_top_context->stack_frame_start;
+    hd->returned = p;
+    hd->returned_size = s;
+    return _light_top_context->stack_frame_start;
+}
+
+static inline const void *exit_frame() {
+    struct frame_header *hd = _light_top_context->stack_frame_start;
+
     while (hd->free_list) {
         struct free_node *nd = container_of(hd->free_list, struct free_node, free_list);
         if (!nd->func(nd->ptr)) {
-            return nd;
+            return NULL;
         }
         hd->free_list = cdr(hd->free_list);
     }
+
+    const void *rp = hd->returned;
+    size_t rs = hd->returned_size;
+
     _light_top_context->stack_top = _light_top_context->stack_frame_start;
     _light_top_context->stack_frame_start = _light_top_context->stack_frame_start->last_frame_start;
-    return NULL;
+
+    if (rp) {
+        void *p = salloc(rs);
+        if (!p) {
+            return NULL;
+        }
+        for (int i = 0; i < rs; ++i) {
+            *(uint8_t *)(p++) = *(uint8_t *)(rp++);
+        }
+    }
+    return hd;
 }
 
 static inline struct free_node *new_free_node(void *ptr, void *func(void *))
@@ -221,28 +255,33 @@ static inline struct free_node *new_free_node(void *ptr, void *func(void *))
 }
 @
 
-@<light@:C Structure@/exported macros@=
+@<lightlib@:C Structure@/exported macros@=
+#define frame_return_string(s) ({ \
+        typeof(s) *__light_macro_local_s_r = &(s); \
+        frame_return(*__light_macro_local_s_r, strlen(*__light_macro_local_s_r)+1); \
+    })
+#define frame_return_struct(p) frame_return(p, sizeof(*p))
 #define enter_context(name) do { \
-        _light_top_context = &name.ctx; \
+        _light_top_context = &_light_context_ ## name.ctx; \
         enter_frame(); \
     } while (0)
 #define exit_context(name) do { \
         exit_frame(); \
-        _light_top_context = name.ctx.parent_context; \
+        _light_top_context = _light_context_ ## name.ctx.parent_context; \
     } while (0)
-#define switch_context(name) do { _light_top_context = &name.ctx; } while (0)
+#define switch_context(name) do { _light_top_context = &_light_context_ ## name.ctx; } while (0)
 @
 
-@<light@:C Structure@/exported data type declarations@=
+@<lightlib@:C Structure@/exported data type declarations@=
 typedef struct heap *Heap;
 @
 
-@<light@:C Structure@/macros@=
+@<lightlib@:C Structure@/macros@=
 #define HEAP_LABEL_TYPE unsigned int
 #define HEAP_LABEL_SIZE (sizeof(HEAP_LABEL_TYPE) * 8)
 @
 
-@<light@:C Structure@/data types@=
+@<lightlib@:C Structure@/data types@=
 struct heap {
     size_t length;
     size_t unit_size;
@@ -252,7 +291,7 @@ struct heap {
 };
 @
 
-@<light@:C Structure@/functions@=
+@<lightlib@:C Structure@/functions@=
 Heap new_heap(size_t len, size_t unit_size)
 {
     Heap hp;
@@ -328,7 +367,7 @@ void heap_free(Heap hp, void *elm)
 }
 @
 
-@<light@:C Structure@/data types@=
+@<lightlib@:C Structure@/data types@=
 struct segment {
     struct list list;
     uint8_t mem[];
@@ -340,15 +379,15 @@ struct segmented {
 };
 @
 
-@<light@:C Structure@/exported macros@=
+@<lightlib@:C Structure@/exported macros@=
 #define SEGMENT_SIZE(elms) sizeof(struct {struct list list; elms;})
 @
 
-@<light@:C Structure@/exported data type declarations@=
+@<lightlib@:C Structure@/exported data type declarations@=
 typedef struct segmented *Segmented;
 @
 
-@<light@:C Structure@/static inline functions@=
+@<lightlib@:C Structure@/static inline functions@=
 static inline size_t segment_size(Segmented sg)
 {
     return sg->heap->unit_size - offsetof(struct segment, mem);
@@ -376,7 +415,7 @@ static inline Segmented segmented_attach_new_segment(Segmented sg)
 }
 @
 
-@<light@:C Structure@/functions@=
+@<lightlib@:C Structure@/functions@=
 Segmented new_segmented(Heap hp)
 {
     Segmented sg;
@@ -469,18 +508,18 @@ void segmented_free(Heap hp_s, Segmented sg)
 }
 @
 
-@<light@:C Structure@/data types@=
+@<lightlib@:C Structure@/data types@=
 struct segmented_random {
     Segmented segmented;
     void **segments;
 };
 @
 
-@<light@:C Structure@/exported data type declarations@=
+@<lightlib@:C Structure@/exported data type declarations@=
 typedef struct segmented_random *SegmentedRandom;
 @
 
-@<light@:C Structure@/functions@=
+@<lightlib@:C Structure@/functions@=
 SegmentedRandom segmented_random(Segmented sg)
 {
     SegmentedRandom sgr;
@@ -537,7 +576,7 @@ void *segmented_continuous(Segmented sg)
 }
 @
 
-@<light@:C Structure@/exported macros@=
+@<lightlib@:C Structure@/exported macros@=
 #define point_to_segmented(ptr, sgr, idx) do { \
         typeof(ptr) __light_macro_local_ptr = NULL; \
         (ptr) = segmented_pointer( \
@@ -547,15 +586,15 @@ void *segmented_continuous(Segmented sg)
 @
 
 
-@<light@:C Structure@/exported data type declarations@=
+@<lightlib@:C Structure@/exported data type declarations@=
 typedef Segmented String;
 @
 
-@<light@:C Structure@/exported macros@=
+@<lightlib@:C Structure@/exported macros@=
 #define string_free segmented_free
 @
 
-@<light@:C Structure@/functions@=
+@<lightlib@:C Structure@/functions@=
 String string(Heap hp, const char *s)
 {
     Segmented sg = new_segmented(hp);
@@ -581,7 +620,7 @@ String string_append(String str, const char *s)
 }
 @
 
-@<light@:C Structure@/data types@=
+@<lightlib@:C Structure@/data types@=
 struct hash_table_record {
     const void *key;
     const void *value;
@@ -601,11 +640,11 @@ struct hash_table {
 };
 @
 
-@<light@:C Structure@/exported data type declarations@=
+@<lightlib@:C Structure@/exported data type declarations@=
 typedef struct hash_table *HashTable;
 @
 
-@<light@:C Structure@/static inline functions@=
+@<lightlib@:C Structure@/static inline functions@=
 static inline uint32_t calculate_index_for_key(
     HashTable tbl,
     struct hash_table_storage *st,
@@ -615,7 +654,7 @@ static inline uint32_t calculate_index_for_key(
 }
 @
 
-@<light@:C Structure@/functions@=
+@<lightlib@:C Structure@/functions@=
 HashTable new_hash_table(uint32_t hf(const void *), int eq(const void *, const void *))
 {
     HashTable tbl;
@@ -755,7 +794,7 @@ const void *hash_table_get(HashTable tbl, const void *key)
 Light chooses FNV-1a as the default hash algorithm, the main usage is to calculate a key
 from a small value.
 
-@<light@:C Structure@/exported static inline functions@=
+@<lightlib@:C Structure@/exported static inline functions@=
 static inline uint32_t hash(const uint8_t *value, size_t len)
 {
     uint32_t result;
@@ -775,7 +814,7 @@ static inline uint32_t hash_str(const char *str)
 }
 @
 
-@<light@:C Structure@/functions@=
+@<lightlib@:C Structure@/functions@=
 static uint32_t hash_func_str(const void *s)
 {
     return hash_str(s);
@@ -792,7 +831,7 @@ HashTable new_string_hash_table()
 }
 @
 
-@<light@:C Structure@/functions@=
+@<lightlib@:C Structure@/functions@=
 static uint32_t hash_func_ptr(const void *p)
 {
     return hash((uint8_t *)&p, sizeof(p));
@@ -811,17 +850,17 @@ HashTable new_pointer_hash_table()
 
 Some useful data structures.
 
-@<light@:C Structure@/exported data type declarations@=
+@<lightlib@:C Structure@/exported data type declarations@=
 typedef HashTable Set;
 @
 
-@<light@:C Structure@/exported macros@=
+@<lightlib@:C Structure@/exported macros@=
 #define new_set new_hash_table
 #define new_string_set new_string_hash_table
 #define set_init hash_table_init
 @
 
-@<light@:C Structure@/exported static inline functions@=
+@<lightlib@:C Structure@/exported static inline functions@=
 static inline Set set_include(Set set, const void *elm)
 {
     return hash_table_map(set, elm, elm);
@@ -836,17 +875,17 @@ static inline Set set_not_include(Set set, const void *elm)
 }
 @
 
-@<light@:C Structure@/exported data types@=
+@<lightlib@:C Structure@/exported data types@=
 struct deque {
     struct bi_list *head;
 };
 @
 
-@<light@:C Structure@/exported data type declarations@=
+@<lightlib@:C Structure@/exported data type declarations@=
 typedef struct deque *Deque;
 @
 
-@<light@:C Structure@/exported static inline functions@=
+@<lightlib@:C Structure@/exported static inline functions@=
 static inline void deque_init(Deque q)
 {
     q->head = NULL;
@@ -880,12 +919,12 @@ static inline void deque_push_back(Deque q, struct bi_list *elm)
 }
 @
 
-@<light@:C Structure@/exported data type declarations@=
+@<lightlib@:C Structure@/exported data type declarations@=
 typedef Deque Stack;
 typedef Deque Queue;
 @
 
-@<light@:C Structure@/exported macros@=
+@<lightlib@:C Structure@/exported macros@=
 #define stack_init deque_init
 #define stack_pop deque_pop_front
 #define stack_push deque_push_front
@@ -917,18 +956,38 @@ There are some idioms to make life a bit easier.
 @
 
 @<_light.h@=
-@<light@:C Structure@/module interface@>
+@<lightlib@:C Structure@/module interface@>
 @
 
 @<_light.c@=
-@<light@:C Structure@/module@>
+@<lightlib@:C Structure@/module@>
 @
 
-@<light@:C Structure@/interface required includes@=
+@<lightlib@:C Structure@/interface required includes@=
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 #include <threads.h>
+@
+
+@<light contexts@=
+CONTEXT(main_body, NULL)
+@
+
+@<light@:C Structure@/global variables@=
+@<light contexts@>
+@
+
+@<light@:C Structure@/macros@=
+@<light options@>
+@
+
+@<light@:C Structure@/main body@=
+do {
+    enter_context(main_body);
+    @<main body@>
+    exit_context(main_body);
+} while (0);
 @
 
 @. lib/basic.la

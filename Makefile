@@ -25,6 +25,9 @@ litar.c: litar.la boot
 litarfs.c: litar.la boot
 	./boot -p "$@" litar.la > $@
 
+_litarfs.c: _litar.la boot
+	./boot -p "litarfs.c" _litar.la > $@
+
 litar.1: litar
 	./litar -p $@ litar.la > $@
 
@@ -63,6 +66,9 @@ test-light.c: examples/test-light.la $(STATIC_LIGHT_HEADER)
 
 test-light: test-light.c $(STATIC_LIGHT_SOURCE)
 	gcc -g -o $@ $^ -pthread
+
+_litarfs: _litarfs.c $(STATIC_LIGHT_SOURCE) $(STATIC_LIGHT_HEADER)
+	$(CC) $(CFLAGS) -o $@ $< $(STATIC_LIGHT_SOURCE) $(LIBS)
 
 clean:
 	rm -rf litar.c litar hello litar.1 boot hello.c hello.h show show.c main.c \

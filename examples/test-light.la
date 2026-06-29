@@ -1,8 +1,8 @@
 @[test-light.c@=
-@<test light@:C Structure@/executable@>
+@<test light@:light@:C Structure@/executable@>
 @
 
-@<test light@:C Structure@/includes@=
+@<test light@:light@:C Structure@/includes@=
 #include <stdio.h>
 #include <assert.h>
 #include <unistd.h>
@@ -10,23 +10,19 @@
 #include "_light.h"
 @
 
-@<test light@:C Structure@/main body@=
+@<test light@:Light@/main body@=
 printf("Testing light\n");
 @<test cases@>
 printf("All test passed\n");
 @
 
-@<test light@:C Structure@/macros@=
-#define test_case_context_size (1 << 23)
-@
-
-@<test light@:C Structure@/global variables@=
-CONTEXT(test_case, NULL, test_case_context_size)
+@<test light@:Light@/light options@=
+#define __light_option_context_size_main_body (1 << 23)
 @
 
 @<test cases@=
 do {
-    enter_context(test_case);
+    enter_frame();
 
     char (*buf)[100];
     size_t idle_memory_1, idle_memory_2;
@@ -45,14 +41,14 @@ do {
     assert(remaining_memory() == idle_memory_2);
 
     printf("Passed memory\n");
-    exit_context(test_case);
+    exit_frame();
 } while (0);
 @
 
 @<test cases@=
 do {
     int i;
-    enter_context(test_case);
+    enter_frame();
 #define HEAP_SIZE 100000
     Heap hp = new_heap(HEAP_SIZE, 10);
     assert(hp);
@@ -80,13 +76,13 @@ do {
     assert(heap_alloc(hp) == NULL);
     printf("Passed heap\n");
 #undef HEAP_SIZE
-    exit_context(test_case);
+    exit_frame();
 } while (0);
 @
 
 @<test cases@=
 do {
-    enter_context(test_case);
+    enter_frame();
 #define LIST_SIZE 200000
     int i;
     typedef struct {
@@ -111,13 +107,13 @@ do {
     assert(i == 0);
     printf("Passed list\n");
 #undef LIST_SIZE
-    exit_context(test_case);
+    exit_frame();
 } while (0);
 @
 
 @<test cases@=
 do {
-    enter_context(test_case);
+    enter_frame();
     int i;
     typedef struct {
         int n;
@@ -143,13 +139,13 @@ do {
     assert(i == LIST_SIZE);
     printf("Passed bi-list\n");
 #undef LIST_SIZE
-    exit_context(test_case);
+    exit_frame();
 } while (0);
 @
 
 @<test cases@=
 do {
-    enter_context(test_case);
+    enter_frame();
     Heap hp = new_heap(100, SEGMENT_SIZE(int elm[100]));
     Segmented sg = new_segmented(hp);
     for (int i = 0; i < 2000; ++i) {
@@ -177,13 +173,13 @@ do {
     }
 
     printf("Passed segmented\n");
-    exit_context(test_case);
+    exit_frame();
 } while (0);
 @
 
 @<test cases@=
 do {
-    enter_context(test_case);
+    enter_frame();
     Heap hp = new_heap(100, SEGMENT_SIZE(char s[10]));
     assert(hp);
     String str = string(hp, "");
@@ -197,13 +193,13 @@ do {
     assert(s);
     assert(strcmp(buf, s) == 0);
     printf("Passed string\n");
-    exit_context(test_case);
+    exit_frame();
 } while (0);
 @
 
 @<test cases@=
 do {
-    enter_context(test_case);
+    enter_frame();
     HashTable tbl = new_string_hash_table();
     assert(hash_table_init(tbl, 100));
 
@@ -233,13 +229,13 @@ do {
     assert(strcmp(hash_table_get(tbl, "Age"), "18") == 0);
 
     printf("Passed hash table\n");
-    exit_context(test_case);
+    exit_frame();
 } while (0);
 @
 
 @<test cases@=
 do {
-    enter_context(test_case);
+    enter_frame();
     Set set = new_string_set();
     set_init(set, 100);
 
@@ -266,13 +262,13 @@ do {
     assert(set_in("B", set));
     assert(!set_in("C", set));
     printf("Passed set\n");
-    exit_context(test_case);
+    exit_frame();
 } while (0);
 @
 
 @<test cases@=
 do {
-    enter_context(test_case);
+    enter_frame();
     struct number {
         int n;
         struct bi_list deque;
@@ -280,7 +276,6 @@ do {
     Stack stk;
     NEW(stk);
     stack_init(stk);
-
 
     Heap hp = new_heap(100, sizeof(struct number));
     struct number *n;
@@ -311,7 +306,7 @@ do {
     }
     
     printf("Passed deque\n");
-    exit_context(test_case);
+    exit_frame();
 } while (0);
 @
 @. lib/_light.la

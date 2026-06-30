@@ -94,6 +94,11 @@ static inline struct bi_list *bi_list_remove(struct bi_list *nd)
 }
 @
 
+@<lightlib@:C Structure@/exported macros@=
+#define FOREACH(elm, lst) for (elm = lst; elm; elm = cdr(elm))
+#define FOREACH_BI(elm, lst) for (; (elm && (elm != lst)) || (elm = lst); elm = elm->next)
+@
+
 @<lightlib@:C Structure@/exported data types@=
 struct context {
     const char *context_name;
@@ -620,12 +625,15 @@ String string_append(String str, const char *s)
 }
 @
 
-@<lightlib@:C Structure@/data types@=
+@<lightlib@:C Structure@/exported data types@=
 struct hash_table_record {
     const void *key;
     const void *value;
     struct bi_list slot, table;
 };
+@
+
+@<lightlib@:C Structure@/data types@=
 struct hash_table_storage {
     Heap heap;
     struct list compose;
@@ -711,16 +719,12 @@ hash_table_storage_find_record(
 ) {
     uint32_t idx = calculate_index_for_key(tbl, st, key);
     struct bi_list *rcds = st->slots[idx], *rcd = rcds;
-    if (!rcds) {
-        return NULL;
-    }
-    do {
+    FOREACH_BI (rcd, rcds) {
         struct hash_table_record *rcd_r = container_of(rcd, struct hash_table_record, slot);
         if (tbl->equal_func(key, rcd_r->key)) {
             return rcd_r;
         }
-        rcd = rcd->next;
-    } while (rcd != rcds);
+    }
     return NULL;
 }
 
@@ -728,13 +732,12 @@ static struct hash_table_record *
 hash_table_find_record(HashTable tbl, const void *key)
 {
     struct list *cp = tbl->compose;
-    while (cp) {
+    FOREACH (cp, tbl->compose) {
         struct hash_table_storage *st = container_of(cp, struct hash_table_storage, compose);
         struct hash_table_record *rcd = hash_table_storage_find_record(tbl, st, key);
         if (rcd) {
             return rcd;
         }
-        cp = cdr(cp);
     }
     return NULL;
 }

@@ -1,3 +1,121 @@
+Concepts illustrated in the previous chapters
+should be represented before the details of implementation.
+
+@<litarfs@:light@:C Structure@/data type declarations@=
+typedef struct archive *Archive;
+typedef struct block *Block;
+typedef struct file *File;
+@
+
+@<litarfs@:light@:C Structure@/data types@=
+struct dependency {
+    const char *path;
+    struct list dependencies_of_archive;
+};
+
+struct dependencies {
+    struct list *head;
+    struct list *end;
+    Heap heap;
+};
+
+struct archive {
+    const char *path;
+    struct dependencies dependencies;
+    struct bi_list *blocks;
+};
+@
+
+@<litarfs@:light@:C Structure@/global variables@=
+HashTable path_to_archive;
+@
+
+@<litarfs@:light@:C Structure@/functions@=
+static struct dependencies *build_include_sequance(Archive ar, struct dependencies *deps)
+{
+    struct list *deps = ar->dependencies.head, *dep;
+
+    FOREACH (dep, deps) {
+        struct dependency *r;
+        rcd_r = container_of(dep, struct hash_table_record, table);
+        build_archive_sequence();
+    }
+    set_include(seq, ar->path);
+}
+
+struct bi_list *total_blocks(Archive ar)
+{
+    struct bi_list *deps = set_enumerate(ar->dependencies), *dep;
+    struct hash_table_record *rcd_r;
+
+    dep = deps;
+}
+@
+
+@<litarfs@:light@:C Structure@/global variables@=
+Set collection_labels;
+@
+
+@<litarfs@:light@:C Structure@/data types@=
+struct label {
+    const char *name;
+    struct list labels;
+};
+struct chunk_ref {
+    const char *chunk_name;
+    const char *module_name;
+    struct list *labels;
+};
+@
+
+@<litarfs@:light@:C Structure@/data types@=
+struct block {
+    const char *comment;
+    struct chunk_ref chunk_ref;
+    struct bi_list *contents;
+
+    struct bi_list blocks_in_archive;
+    struct bi_list blocks_of_chunk_with_labels;
+    struct bi_list blocks_total;
+};
+@
+
+@<litarfs@:light@:C Structure@/data types@=
+struct content {
+    enum {
+        CONTENT_TYPE_CHUNK_REF,
+        CONTENT_TYPE_RAW_STRING,
+    } type;
+    union {
+        struct chunk_ref chunk_ref;
+        const char *raw_string;
+    } value;
+    struct bi_list contents_in_block;
+};
+@
+
+@<litarfs@:light@:C Structure@/global variables@=
+HashTable modules; /* module name -> chunk name -> labels -> blocks */
+@
+
+@<litarfs@:light@:C Structure@/data types@=
+struct file {
+    const char *path;
+    enum {
+        FILE_TYPE_CHUNK,
+        FILE_TYPE_LINK,
+    } type;
+    union {
+        struct chunk_ref chunk_ref;
+        const char *orig_path;
+    } value;
+};
+struct directory {
+    const char *path;
+    const char *orig_path;
+};
+@
+
 The complete implementation of litar is divided to two parts, front end and back end.
 The front end follows the common pattern of a command line tool.
 It parses options and arguments, executes, then exits.
@@ -177,7 +295,7 @@ do {
 
     if (to_mount_file_system) {
         int failed;
-        @<check and initialize arguments, set 'failed' if failed@>
+        @<check or initialize 'user_opitons', set 'failed' if failed@>
         if (failed) {
             returned = 1;
             goto clean_fuse_args;
@@ -194,7 +312,7 @@ clean_fuse_args:
 } while (0);
 @
 
-@<check and initialize arguments, set 'failed' if failed@=
+@<check or initialize 'user_opitons', set 'failed' if failed@=
 do {
     if (!user_options.archive) {
         fprintf(stderr, "Please specify the archive name through -a\n");
@@ -221,6 +339,7 @@ do {
         assert(exit_frame());
     }
     if (ensure_directory(user_options.mount_point)) {
+        fprintf(stderr, "Failed to ensure directory %s", user_options.mount_point);
         failed = 1;
         break;
     }
@@ -238,6 +357,7 @@ do {
         assert(exit_frame());
     }
     if (ensure_directory(user_options.base)) {
+        fprintf(stderr, "Failed to ensure directory %s", user_options.mount_point);
         failed = 1;
         break;
     }

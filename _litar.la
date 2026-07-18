@@ -1,62 +1,16 @@
-Concepts illustrated in the previous chapters
-should be represented before the details of implementation.
-
-@<litarfs@:light@:C Structure@/data type declarations@=
+@<litar@:light@:C Structure@/data type declarations@=
 typedef struct archive *Archive;
 typedef struct block *Block;
 typedef struct file *File;
 @
 
-@<litarfs@:light@:C Structure@/data types@=
-struct dependency {
-    const char *path;
-    struct list dependencies_of_archive;
-};
-
-struct dependencies {
-    struct list *head;
-    struct list *end;
-    Heap heap;
-};
-
+@<litar@:light@:C Structure@/data types@=
 struct archive {
     const char *path;
-    struct dependencies dependencies;
+    const char * const *dependencies;
+    int number_dependencies;
     struct bi_list *blocks;
 };
-@
-
-@<litarfs@:light@:C Structure@/global variables@=
-HashTable path_to_archive;
-@
-
-@<litarfs@:light@:C Structure@/functions@=
-static struct dependencies *build_include_sequance(Archive ar, struct dependencies *deps)
-{
-    struct list *deps = ar->dependencies.head, *dep;
-
-    FOREACH (dep, deps) {
-        struct dependency *r;
-        rcd_r = container_of(dep, struct hash_table_record, table);
-        build_archive_sequence();
-    }
-    set_include(seq, ar->path);
-}
-
-struct bi_list *total_blocks(Archive ar)
-{
-    struct bi_list *deps = set_enumerate(ar->dependencies), *dep;
-    struct hash_table_record *rcd_r;
-
-    dep = deps;
-}
-@
-
-@<litarfs@:light@:C Structure@/global variables@=
-Set collection_labels;
-@
-
-@<litarfs@:light@:C Structure@/data types@=
 struct label {
     const char *name;
     struct list labels;
@@ -66,21 +20,6 @@ struct chunk_ref {
     const char *module_name;
     struct list *labels;
 };
-@
-
-@<litarfs@:light@:C Structure@/data types@=
-struct block {
-    const char *comment;
-    struct chunk_ref chunk_ref;
-    struct bi_list *contents;
-
-    struct bi_list blocks_in_archive;
-    struct bi_list blocks_of_chunk_with_labels;
-    struct bi_list blocks_total;
-};
-@
-
-@<litarfs@:light@:C Structure@/data types@=
 struct content {
     enum {
         CONTENT_TYPE_CHUNK_REF,
@@ -92,15 +31,16 @@ struct content {
     } value;
     struct bi_list contents_in_block;
 };
-@
+struct block {
+    const char *comment;
+    struct chunk_ref chunk_ref;
+    struct bi_list *contents;
 
-@<litarfs@:light@:C Structure@/global variables@=
-HashTable modules; /* module name -> chunk name -> labels -> blocks */
-@
-
-@<litarfs@:light@:C Structure@/data types@=
+    struct bi_list blocks_in_archive;
+    struct bi_list blocks_of_chunk_with_labels;
+    struct bi_list blocks_total;
+};
 struct file {
-    const char *path;
     enum {
         FILE_TYPE_CHUNK,
         FILE_TYPE_LINK,
@@ -110,121 +50,36 @@ struct file {
         const char *orig_path;
     } value;
 };
-struct directory {
-    const char *path;
-    const char *orig_path;
-};
 @
 
-The complete implementation of litar is divided to two parts, front end and back end.
-The front end follows the common pattern of a command line tool.
-It parses options and arguments, executes, then exits.
-The back end is a server that makes use of libfuse3.
+@<litar@:light@:C Structure@/global variables@=
+HashTable archives; /* archive path -> archive */
+HashTable blocks; /* module name -> chunk name -> labels -> blocks */
+HashTable files; /* file path -> file */
+HashTable file_sets; /* file set name -> file set */
+@
 
 @[litar.c@=
-@<litar@:C Structure@/executable@>
+@<litar@:light@:executable@:C Structure@/executable@>
 @
 
-@[litarfs.c@=
-@<litarfs@:light@:C Structure@/executable@>
-@
-
-They communicate through the mounted file system.
-Other programs can communicate with the back end too by this way.
-
-The back end adopts the framework provided by libfuse3.
-
-@<litarfs@:light@:C Structure@/include flags@=
-#define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 14)
-@
-
-@<litarfs@:light@:C Structure@/includes@=
-#include <fuse.h>
-@
-
-@<litarfs@:light@:C Structure@/data types@=
-struct litarfs_options {
-    @<litarfs user options@>
-};
-@
-
-@<litarfs@:light@:C Structure@/global variables@=
-static struct litarfs_options user_options;
-static struct fuse_opt litarfs_option_specs[] = {
-    @<litarfs user option specs@>
-};
-static const struct fuse_operations litarfs_oper = {
-    @<litarfs operations@>
-};
-@
-
-@<litarfs@:light@:C Structure@/macros@=
-#define LITARFS_OPER(op) .op = litarfs_##op
-@
-
-@<litarfs@:light@:C Structure@/invocation syntax@=
+@<litar@:light@:C Structure@/invocation syntax@=
 {
-    name => 'litarfs',
+    name => 'litar',
     usages => [
         {
-            options => [@<command line options for "litarfs"@>],
+            options => [@<command line options for "litar"@>],
             arguments => [],
+        },
+        {
+            options => [@<command line options for "litar ARCHIVE"@>],
+            arguments => ['ARCHIVE'],
         },
     ],
 }
 @
 
-@<litarfs user options@=@<Text Processing@/basic perl settings@>
-my $syntax = @<litarfs@:light@:C Structure@/invocation syntax@>;
-
-sub option_to_c_decl (_) {
-    my $opt = shift;
-    my $c_decl = '';
-    if ($opt->{argument}) {
-        $c_decl .= 'const char *';
-    } else {
-        $c_decl .= 'int ';
-    }
-    $c_decl . lc($opt->{long_opt}) . ';'
-}
-
-my @usages = @@{$syntax->{usages}};
-my $options_decl = join "\n", map option_to_c_decl, @@{$usages[0]->{options}};
-print $options_decl;
-@|Basics@/evaluate@
-
-
-@<litarfs user option specs@=@<Text Processing@/basic perl settings@>
-
-my $syntax = @<litarfs@:light@:C Structure@/invocation syntax@>;
-
-sub option_to_opt_spec (_) {
-    my $opt = shift;
-    my $opt_spec = '';
-    my $p_arg = '';
-    if ($opt->{argument}) {
-        $p_arg = '=%s';
-    }
-    $opt_spec .=
-        "{\"--$opt->{long_opt}$p_arg\", offsetof(struct litarfs_options, $opt->{long_opt}), 1},";
-
-    if ($opt->{argument}) {
-        $p_arg = ' %s';
-    }
-    if ($opt->{opt}) {
-        $opt_spec .=
-            "\n{\"-$opt->{opt}$p_arg\", offsetof(struct litarfs_options, $opt->{long_opt}), 1},";
-    }
-    $opt_spec
-}
-
-my @usages = @@{$syntax->{usages}};
-my $option_specs = join "\n", map option_to_opt_spec, @@{$usages[0]->{options}};
-print $option_specs;
-
-@|Basics@/evaluate@
-
-@<command line options for "litarfs"@=
+@<command line options for "litar"@=
 {
     long_opt => "help",
     opt => "h",
@@ -237,24 +92,6 @@ print $option_specs;
     hide => 1,
     description => "Show version",
 },
-{
-    long_opt => "archive",
-    opt => "a",
-    argument => "ARCHIVE",
-    description => "Specify the litar archive",
-},
-{
-    long_opt => "mount_point",
-    opt => "m",
-    argument => "MOUNT_POINT",
-    description => "Specify the mount point",
-},
-{
-    long_opt => "base",
-    opt => "b",
-    argument => "DIRECTORY",
-    description => "The writable directory for storing files",
-},
 @
 
 @<print version information@=
@@ -265,106 +102,34 @@ printf("Version dev, built at <build time>\n");
 sed -e "s/<build time>/$(date -Iminute)/g"
 @
 
-@<litarfs@:Light@/light options@=
-#define __light_option_context_size_main_body (1 << 10)
-@
-
-@<litarfs@:Light@/main body@=
+@<litar@:Light@/main body@=
 do {
-    struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-
-    if (fuse_opt_parse(&args, &user_options, litarfs_option_specs, NULL) < 0) {
-        fprintf(stderr, "Error when parsing arguments\n");
-        returned = 1;
-        goto clean_fuse_args;
-    }
-
-    int to_mount_file_system = 1;
-
     if (user_options.help) {
-        printf("@<litarfs@:light@:C Structure@/command line usage@>");
-        fuse_opt_add_arg(&args, "--help");
-        to_mount_file_system = 0;
+        printf("@<litar@:light@:C Structure@/command line usage@>");
     }
 
     if (user_options.version) {
         @<print version information@>
-        fuse_opt_add_arg(&args, "--version");
         to_mount_file_system = 0;
     }
 
     if (to_mount_file_system) {
         int failed;
-        @<check or initialize 'user_opitons', set 'failed' if failed@>
+        do { @<check or initialize 'user_opitons', set 'failed' if failed@> } while (0);
         if (failed) {
             returned = 1;
-            goto clean_fuse_args;
         }
-        fuse_opt_add_arg(&args, user_options.mount_point);
+        @<initialize 'path_to_archive', set 'failed' if failed@>
+        if (failed) {
+            returned = 1;
+        }
     } else {
         args.argv[0][0] = '\0';
     }
-
-    returned = fuse_main(args.argc, args.argv, &litarfs_oper, NULL);
-
-clean_fuse_args:
-    fuse_opt_free_args(&args);
 } while (0);
 @
 
-@<check or initialize 'user_opitons', set 'failed' if failed@=
-do {
-    if (!user_options.archive) {
-        fprintf(stderr, "Please specify the archive name through -a\n");
-        failed = 1;
-        break;
-    }
-    int l = strlen(user_options.archive);
-    if (strcmp(user_options.archive+l-3, ".la") != 0) {
-        fprintf(stderr, "Illegal file name, the file name of a litar archive should end with .la\n");
-        failed = 1;
-        break;
-    }
-    if (!user_options.mount_point) {
-        enter_frame();
-
-        char *fn, *p;
-        STRDUP(user_options.archive, fn);
-        fn[l-3] = '\0';
-        p = fn+l-3;
-        while (p != fn && *p != '/') --p;
-        if (*p == '/') ++p;
-        user_options.mount_point = frame_return_string(p);
-
-        assert(exit_frame());
-    }
-    if (ensure_directory(user_options.mount_point)) {
-        fprintf(stderr, "Failed to ensure directory %s", user_options.mount_point);
-        failed = 1;
-        break;
-    }
-
-    if (!user_options.base) {
-        enter_frame();
-
-        char *p;
-        CALLOC(p, strlen(user_options.mount_point) + 2);
-        assert(p);
-        p[0] = '.';
-        strcat(p, user_options.mount_point);
-        user_options.base = frame_return_string(p);
-
-        assert(exit_frame());
-    }
-    if (ensure_directory(user_options.base)) {
-        fprintf(stderr, "Failed to ensure directory %s", user_options.mount_point);
-        failed = 1;
-        break;
-    }
-} while (0);
-@
-
-@<litarfs@:light@:C Structure@/functions@=
+@<litar@:light@:C Structure@/functions@=
 int ensure_directory(const char *path)
 {
     struct stat buf;
@@ -387,11 +152,127 @@ int ensure_directory(const char *path)
 }
 @
 
-@<litarfs@:light@:C Structure@/includes@=
+@<check or initialize 'user_opitons', set 'failed' if failed@=
+if (!user_options.archive) {
+    fprintf(stderr, "Please specify the archive name through -a\n");
+    failed = 1;
+    break;
+}
+int l = strlen(user_options.archive);
+if (strcmp(user_options.archive+l-3, ".la") != 0) {
+    fprintf(stderr, "Illegal file name, the file name of a litar archive should end with .la\n");
+    failed = 1;
+    break;
+}
+if (!user_options.mount_point) {
+    enter_frame();
+
+    char *fn, *p;
+    STRDUP(user_options.archive, fn);
+    fn[l-3] = '\0';
+    p = fn+l-3;
+    while (p != fn && *p != '/') --p;
+    if (*p == '/') ++p;
+    user_options.mount_point = frame_return_string(p);
+
+    assert(exit_frame());
+}
+if (ensure_directory(user_options.mount_point)) {
+    fprintf(stderr, "Failed to ensure directory %s", user_options.mount_point);
+    failed = 1;
+    break;
+}
+
+if (!user_options.base) {
+    enter_frame();
+
+    char *p;
+    CALLOC(p, strlen(user_options.mount_point) + 2);
+    assert(p);
+    p[0] = '.';
+    strcat(p, user_options.mount_point);
+    user_options.base = frame_return_string(p);
+
+    assert(exit_frame());
+}
+if (ensure_directory(user_options.base)) {
+    fprintf(stderr, "Failed to ensure directory %s", user_options.mount_point);
+    failed = 1;
+    break;
+}
+@
+
+Search pathes for litar archives, in this order:
+
+- current directory,
+- directories specified by command line argument, for example, -I dir1:dir2:dir3, the order
+  is reserved,
+- directories specified in environment variable LITAR_INCLUDE, the format is same with
+  command line argument,
+- $install_prefix/lib/litar. (two typical $install_prefix are /usr and /usr/local)
+
+@<command line options for "litar"@=
+{
+    long_opt => "include",
+    opt => "I",
+    argument => "INCLUDE_DIRECTORIES",
+    description => "Search paths for archives",
+},
+@
+
+@<litar@:light@:C Structure@/global variables@=
+struct search_paths {
+    const char *path;
+    struct list paths;
+};
+struct tail_list search_paths;
+@
+
+@<litar@:light@:C Structure@/functions@=
+Archive load_archive(const char *path)
+{
+    if (path[0] != '/') {
+    }
+}
+@
+
+The entry archive must be specified through command line argument.
+
+@<initialize 'path_to_archive', set 'failed' if failed@=
+do {
+    @<initialize 'search_paths', set 'failed' if failed@>
+    if (failed) {
+        break;
+    }
+    char path[PATH_MAX+1];
+    char *ptr = realpath(user_option.archive, path);
+    if (!ptr) {
+        fprintf(stderr, "Error when finding archive '%s': %s", strerror(errno));
+        failed = 1;
+        break;
+    }
+    load_archive(path);
+} while (0);
+@
+
+@<initialize 'search_paths', set 'failed' if failed@=
+do {
+} while (0);
+@
+
+@<litar@:light@:C Structure@/include flags@=
+#define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 17)
+@
+
+@<litar@:light@:C Structure@/includes@=
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <errno.h>
 #include <sys/stat.h>
+
+#include <fuse.h>
+
 #include "_light.h"
 @
 

@@ -1053,7 +1053,7 @@ typedef Deque Queue;
 #include <threads.h>
 @
 
-@<lightlib@:C Structure@/global variables@=
+@<light@:executable@:C Structure@/global variables@=
 static uint8_t context_main_memory[light_option_context_main_size];
 struct context context_main = {
     .name = "main",
@@ -1063,7 +1063,7 @@ struct context context_main = {
 };
 @
 
-@<light@:C Structure@/includes@=
+@<light@:executable@:C Structure@/includes@=
 #include "_light.h"
 @
 

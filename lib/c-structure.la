@@ -243,17 +243,6 @@ WhitespaceSensitiveMacros:
 ...
 @
 
-@<executable@=
-@<module@>
-int
-main(int argc, char *argv[])
-{
-    int returned = 0;
-    @<main body@>
-    return returned;
-}
-@|format C code@
-
 @<format C code@=#!/bin/sh
 clang-format-19 -style=file
 @
@@ -264,6 +253,7 @@ The invocation syntax:
     name => COMMAND_NAME,
     usages => [
         {
+            name => USAGE_NAME,
             options => [
                 {
                     long_opt => LONG_OPTION,
@@ -434,3 +424,45 @@ for my $usage (@@{$syntax->{usages}}) {
 
 print $options;
 @|Basics@/evaluate@
+
+@<program arguments@=
+@<Text Processing@/basic perl settings@>
+
+my $syntax = @<invocation syntax@>;
+
+sub option_to_c_decl (_) {
+    my $opt = shift;
+    my $c_decl = '';
+    if ($opt->{argument}) {
+        $c_decl .= 'const char *';
+    } else {
+        $c_decl .= 'int ';
+    }
+    $c_decl . lc($opt->{long_opt}) . ';'
+}
+
+my @usages = @@{$syntax->{usages}};
+my $options_decl = join "\n", map option_to_c_decl, @@{$usages[0]->{options}};
+print $options_decl;
+@|Basics@/evaluate@
+
+@<executable@:includes@=
+#include <unistd.h>
+@
+
+struct {
+    int usage;
+};
+
+@<executable@:global variables@=
+struct {@<program arguments@>} program_arguments;
+@
+
+@<executable@:functions@=
+int main(int argc, char *argv[])
+{
+    int ret = 0;
+    @<main body@>
+    return ret;
+}
+@

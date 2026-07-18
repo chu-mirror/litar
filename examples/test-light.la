@@ -1,11 +1,22 @@
 @[test-light.c@=
-@<test light@:light@:C Structure@/executable@>
+@<test light@:light@:executable@:C Structure@/module@>
 @
 
-@<test light@:light@:C Structure@/includes@=
-#include <stdio.h>
+@<test light@:light@:C Structure@/invocation syntax@=
+{
+    name => 'test-light',
+    usages => [
+        {
+            name => 'normal',
+            options => [],
+            arguments => [],
+        },
+    ],
+}
+@
+
+@<test light@:light@:executable@:C Structure@/includes@=
 #include <assert.h>
-#include <unistd.h>
 @
 
 

@@ -10,6 +10,30 @@ Light encourage using of statical memory rather than heap.
 name => 'light',
 @
 
+There are some idioms to make life a bit easier.
+
+@<lightlib@:C Structure@/exported macros@=
+#define GLUE_TOKENS_INNER(a, b) a ## b
+#define GLUE_TOKENS(a, b) GLUE_TOKENS_INNER(a, b)
+
+#define ZEROFY(p, n) memset((p), 0, sizeof(*p) * (n))
+#define ZEROFY_SINGLE(p) ZEROFY(p, 1)
+
+#define COPY(src, dest) memcpy((dest), (src), sizeof(*(src)))
+
+#define SIGN(v) (((v) > 0) - ((v) < 0))
+#define ABS(v) ((v) * SIGN(v))
+#define BETWEEN(v, l, r)                                             \
+    ((((l) <= (v)) && ((v) < (r))) || (((r) <= (v)) && ((v) < (l))))
+#define SWAP(a, b)                             \
+    do {                                       \
+        typeof(a) *a_r = &(a), *b_r = &(b), t; \
+        t = *a_r;                              \
+        *a_r = *b_r;                           \
+        *b_r = t;                              \
+    } while (0)
+@
+
 Copied from linux kernel.
 
 @<lightlib@:C Structure@/exported macros@=
@@ -775,7 +799,7 @@ HashTable hash_table_init(HashTable tbl, size_t size)
     }
 
     st->number_slots = ns;
-    memset(st->slots, 0, ns * sizeof(st->slots[0]));
+    ZEROFY(st->slots, ns);
 
     st->heap = new_heap(size, sizeof(struct hash_table_record));
     if (!st->heap) {
@@ -1012,30 +1036,6 @@ typedef Deque Queue;
 #define queue_init deque_init
 #define queue_put deque_push_back
 #define queue_get deque_pop_front
-@
-
-There are some idioms to make life a bit easier.
-
-@<lightlib@:C Structure@/exported macros@=
-#define GLUE_TOKENS_INNER(a, b) a ## b
-#define GLUE_TOKENS(a, b) GLUE_TOKENS_INNER(a, b)
-
-#define ZEROFY(p, n) memset((p), 0, sizeof(*p) * (n))
-#define ZEROFY_SINGLE(p) ZEROFY(p, 1)
-
-#define COPY(src, dest) memcpy((dest), (src), sizeof(*(src)))
-
-#define SIGN(v) (((v) > 0) - ((v) < 0))
-#define ABS(v) ((v) * SIGN(v))
-#define BETWEEN(v, l, r)                                             \
-    ((((l) <= (v)) && ((v) < (r))) || (((r) <= (v)) && ((v) < (l))))
-#define SWAP(a, b)                             \
-    do {                                       \
-        typeof(a) *a_r = &(a), *b_r = &(b), t; \
-        t = *a_r;                              \
-        *a_r = *b_r;                           \
-        *b_r = t;                              \
-    } while (0)
 @
 
 @<_light.h@=

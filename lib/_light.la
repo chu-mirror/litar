@@ -53,6 +53,28 @@ int list_length(struct list *l)
 @
 
 @<lightlib@:C Structure@/exported data types@=
+struct tail_list {
+    struct list *head;
+    struct list *tail;
+};
+@
+
+@<lightlib@:C Structure@/exported static inline functions@=
+static inline void list_extend(struct tail_list *tl, struct list *l)
+{
+    if (tl->tail) {
+        tl->tail->next = l;
+    } else {
+        tl->head = l;
+        tl->tail = l;
+    }
+    while (tl->tail->next) {
+        tl->tail = tl->tail->next;
+    }
+}
+@
+
+@<lightlib@:C Structure@/exported data types@=
 struct bi_list {
     struct bi_list *previous;
     struct bi_list *next;
@@ -101,10 +123,11 @@ static inline struct bi_list *bi_list_remove(struct bi_list *nd)
 
 @<lightlib@:C Structure@/exported data types@=
 struct context {
-    const char *context_name;
-    struct context * const parent_context;
-    struct frame_header *stack_frame_start;
+    const char *name;
+    struct context *parent;
+    const void *memory_end;
     void *stack_top;
+    struct frame_header *stack_frame_start;
 };
 struct free_node {
     void *ptr;
@@ -120,24 +143,10 @@ struct frame_header {
 extern thread_local struct context *_light_top_context;
 @
 
-@<lightlib@:C Structure@/exported macros@=
-#define CONTEXT(name, parent) \
-    struct { \
-        uint8_t mem[__light_option_context_size_ ## name]; \
-        struct context ctx; \
-    } _light_context_ ## name = { \
-        .ctx = { \
-            .context_name = #name,\
-            .parent_context = parent, \
-            .stack_top = &_light_context_ ## name.mem[sizeof(void *)] , \
-        } \
-    };
-@
-
 @<lightlib@:C Structure@/exported static inline functions@=
 static inline void *_salloc(struct context *ctx, size_t size) {
     uint8_t *stack_top = ctx->stack_top;
-    if (stack_top + size > (uint8_t *)ctx) {
+    if (stack_top + size >= (const uint8_t *)ctx->memory_end) {
         return NULL;
     }
     ctx->stack_top = stack_top + size;
@@ -160,7 +169,7 @@ static inline void *csalloc(size_t nmemb, size_t size) {
 }
 
 static inline size_t _remaining_memory(struct context *ctx) {
-    return (uint8_t *)ctx - (uint8_t *)ctx->stack_top;
+    return (uint8_t *)ctx->memory_end - (uint8_t *)ctx->stack_top;
 }
 
 static inline size_t remaining_memory() {
@@ -193,8 +202,9 @@ static inline size_t remaining_memory() {
 thread_local struct context *_light_top_context;
 @
 
-@<lightlib@:C Structure@/exported static inline functions@=
-static inline struct frame_header *enter_frame() {
+@<lightlib@:C Structure@/functions@=
+struct frame_header *enter_frame()
+{
     struct frame_header *hd;
     NEW(hd);
     if (!hd) {
@@ -208,7 +218,7 @@ static inline struct frame_header *enter_frame() {
     return hd;
 }
 
-static inline const void *frame_return(const void *p, size_t s)
+void *frame_return(const void *p, size_t s)
 {
     struct frame_header *hd = _light_top_context->stack_frame_start;
     hd->returned = p;
@@ -216,7 +226,7 @@ static inline const void *frame_return(const void *p, size_t s)
     return _light_top_context->stack_frame_start;
 }
 
-static inline const void *exit_frame() {
+const void *exit_frame() {
     struct frame_header *hd = _light_top_context->stack_frame_start;
 
     while (hd->free_list) {
@@ -245,7 +255,7 @@ static inline const void *exit_frame() {
     return hd;
 }
 
-static inline struct free_node *new_free_node(void *ptr, void *func(void *))
+struct free_node *new_free_node(void *ptr, void *func(void *))
 {
     struct free_node *nd;
     NEW(nd);
@@ -260,21 +270,88 @@ static inline struct free_node *new_free_node(void *ptr, void *func(void *))
 }
 @
 
+@<lightlib@:C Structure@/exported static inline functions@=
+static inline char *frame_return_string(const char *s)
+{
+    return frame_return(s, strlen(s)+1);
+}
+
+static inline struct frame_header *enter_context(struct context *ctx)
+{
+    ctx->parent = _light_top_context;
+    _light_top_context = ctx;
+    return enter_frame();
+}
+
+static inline const void *exit_context()
+{
+    const void * ret = exit_frame();
+    _light_top_context = _light_top_context->parent;
+    return ret;
+}
+
+static inline void switch_context(struct context *ctx)
+{
+    _light_top_context = ctx;
+}
+@
+
 @<lightlib@:C Structure@/exported macros@=
-#define frame_return_string(s) ({ \
-        typeof(s) *__light_macro_local_s_r = &(s); \
-        frame_return(*__light_macro_local_s_r, strlen(*__light_macro_local_s_r)+1); \
-    })
 #define frame_return_struct(p) frame_return(p, sizeof(*p))
-#define enter_context(name) do { \
-        _light_top_context = &_light_context_ ## name.ctx; \
-        enter_frame(); \
-    } while (0)
-#define exit_context(name) do { \
-        exit_frame(); \
-        _light_top_context = _light_context_ ## name.ctx.parent_context; \
-    } while (0)
-#define switch_context(name) do { _light_top_context = &_light_context_ ## name.ctx; } while (0)
+@
+
+@<lightlib@:C Structure@/includes@=
+#include <stdio.h>
+@
+
+@<lightlib@:C Structure@/exported data type declarations@=
+typedef enum {
+    LOG_LEVEL_INFO,
+    LOG_LEVEL_WARNING,
+    LOG_LEVEL_ERROR,
+} LogLevel;
+@
+
+@<lightlib@:C Structure@/functions@=
+void _light_log(LogLevel base, LogLevel lv, const char *msg)
+{
+    if (lv < base) {
+        return;
+    }
+
+    switch (lv) {
+    case LOG_LEVEL_INFO:
+        fputs("INFO: ", stderr);
+        break;
+    case LOG_LEVEL_WARNING:
+        fputs("WARNING: ", stderr);
+        break;
+    case LOG_LEVEL_ERROR:
+        fputs("ERROR: ", stderr);
+        break;
+    default:
+        return;
+    }
+
+    fputs(msg, stderr);
+
+    do {
+        struct context *ctx = _light_top_context;
+        fputs(" (", stderr);
+        fputs(ctx->name, stderr);
+        ctx = ctx->parent;
+        while (ctx) {
+            fputs(" -> ", stderr);
+            fputs(ctx->name, stderr);
+            ctx = ctx->parent;
+        }
+    } while (0);
+    fputs(")\n", stderr);
+}
+@
+
+@<lightlib@:C Structure@/exported macros@=
+#define light_log(lv, msg) _light_log(GLUE_TOKENS(LOG_LEVEL_, light_option_logging_level), (lv), (msg))
 @
 
 @<lightlib@:C Structure@/exported data type declarations@=
@@ -939,7 +1016,10 @@ typedef Deque Queue;
 
 There are some idioms to make life a bit easier.
 
-@<basic@:light module@:C Structure@/exported macros@=
+@<lightlib@:C Structure@/exported macros@=
+#define GLUE_TOKENS_INNER(a, b) a ## b
+#define GLUE_TOKENS(a, b) GLUE_TOKENS_INNER(a, b)
+
 #define ZEROFY(p, n) memset((p), 0, sizeof(*p) * (n))
 #define ZEROFY_SINGLE(p) ZEROFY(p, 1)
 
@@ -973,25 +1053,28 @@ There are some idioms to make life a bit easier.
 #include <threads.h>
 @
 
-@<light contexts@=
-CONTEXT(main_body, NULL)
+@<lightlib@:C Structure@/global variables@=
+static uint8_t context_main_memory[light_option_context_main_size];
+struct context context_main = {
+    .name = "main",
+    .parent = NULL,
+    .memory_end = context_main_memory + light_option_context_main_size,
+    .stack_top = context_main_memory,
+};
 @
 
-@<light@:C Structure@/global variables@=
-@<light contexts@>
-@
-
-@<light@:C Structure@/macros@=
-@<light options@>
+@<light@:C Structure@/includes@=
+#include "_light.h"
 @
 
 @<light@:C Structure@/main body@=
 do {
-    enter_context(main_body);
+    enter_context(&context_main);
     @<main body@>
-    exit_context(main_body);
+    exit_context(&context_main);
 } while (0);
 @
+
 
 @. lib/basic.la
 @. lib/text-processing.la

@@ -25,8 +25,8 @@ litar.c: litar.la boot
 litarfs.c: litar.la boot
 	./boot -p "$@" litar.la > $@
 
-_litarfs.c: _litar.la boot
-	./boot -p "litarfs.c" _litar.la > $@
+_litar.c: _litar.la boot
+	./boot -p "litar.c" _litar.la > $@
 
 litar.1: litar
 	./litar -p $@ litar.la > $@
@@ -65,9 +65,9 @@ test-light.c: examples/test-light.la $(STATIC_LIGHT_HEADER)
 	./boot -p "test-light.c" examples/test-light.la > test-light.c
 
 test-light: test-light.c $(STATIC_LIGHT_SOURCE)
-	gcc -g -o $@ $^ -pthread
+	gcc -Dlight_option_context_main_size="(1<<23)" -Dlight_option_logging_level=INFO -g -o $@ $^ -pthread
 
-_litarfs: _litarfs.c $(STATIC_LIGHT_SOURCE) $(STATIC_LIGHT_HEADER)
+_litar: _litar.c $(STATIC_LIGHT_SOURCE) $(STATIC_LIGHT_HEADER)
 	$(CC) $(CFLAGS) -o $@ $< $(STATIC_LIGHT_SOURCE) $(LIBS)
 
 clean:

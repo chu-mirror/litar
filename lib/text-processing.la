@@ -7,6 +7,7 @@ which perl
 @<basic perl settings@=#!@<path to perl interpreter@>
 use v5.14;
 use warnings;
+use strict;
 @
 
 @<remove newlines@=@<Text Processing@/basic perl settings@>
@@ -14,4 +15,5 @@ my @pres = <STDIN>;
 chomp @pres;
 print "@pres";
 @
+
 

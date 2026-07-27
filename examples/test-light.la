@@ -7,8 +7,29 @@
     name => 'test-light',
     usages => [
         {
-            name => 'normal',
-            options => [],
+            name => 'show help',
+            options => [
+                {
+                    long_opt => "help",
+                    opt => "h",
+                    description => "Show usage",
+                },
+                {
+                    long_opt => "version",
+                    opt => "V",
+                    description => "Show version",
+                },
+            ],
+            arguments => [],
+        },
+        {
+            name => 'test',
+            options => [
+                {
+                    long_opt => "no-log",
+                    description => "Do not print log",
+                },
+            ],
             arguments => [],
         },
     ],

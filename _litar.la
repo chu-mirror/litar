@@ -52,7 +52,7 @@ struct file {
 };
 @
 
-@<litar@:light@:C Structure@/global variables@=
+@<litar@:light@:executable@:C Structure@/global variables@=
 HashTable archives; /* archive path -> archive */
 HashTable blocks; /* module name -> chunk name -> labels -> blocks */
 HashTable files; /* file path -> file */
@@ -60,7 +60,7 @@ HashTable file_sets; /* file set name -> file set */
 @
 
 @[litar.c@=
-@<litar@:light@:executable@:C Structure@/executable@>
+@<litar@:light@:executable@:C Structure@/module@>
 @
 
 @<litar@:light@:C Structure@/invocation syntax@=
@@ -68,30 +68,28 @@ HashTable file_sets; /* file set name -> file set */
     name => 'litar',
     usages => [
         {
-            options => [@<command line options for "litar"@>],
+            name => "show help",
+            options => [
+                {
+                    long_opt => "help",
+                    opt => "h",
+                    description => "Show help",
+                },
+                {
+                    long_opt => "version",
+                    opt => "V",
+                    description => "Show version",
+                },
+            ],
             arguments => [],
         },
         {
-            options => [@<command line options for "litar ARCHIVE"@>],
-            arguments => ['ARCHIVE'],
+            name => "operate archive",
+            options => [@<command line options for "operate archive"@>],
+            arguments => ['archive'],
         },
     ],
 }
-@
-
-@<command line options for "litar"@=
-{
-    long_opt => "help",
-    opt => "h",
-    hide => 1,
-    description => "Show help",
-},
-{
-    long_opt => "version",
-    opt => "V",
-    hide => 1,
-    description => "Show version",
-},
 @
 
 @<print version information@=
@@ -104,27 +102,21 @@ sed -e "s/<build time>/$(date -Iminute)/g"
 
 @<litar@:Light@/main body@=
 do {
-    if (user_options.help) {
-        printf("@<litar@:light@:C Structure@/command line usage@>");
-    }
-
-    if (user_options.version) {
-        @<print version information@>
-        to_mount_file_system = 0;
-    }
-
-    if (to_mount_file_system) {
-        int failed;
-        do { @<check or initialize 'user_opitons', set 'failed' if failed@> } while (0);
-        if (failed) {
-            returned = 1;
+    switch (command_line.usage) {
+    case COMMAND_USAGE_SHOW_HELP:
+        if (command_line.options.help) {
+            printf("@<litar@:light@:C Structure@/command line usage@>");
+            break;
         }
-        @<initialize 'path_to_archive', set 'failed' if failed@>
-        if (failed) {
-            returned = 1;
+
+        if (command_line.options.version) {
+            @<print version information@>
+            break;
         }
-    } else {
-        args.argv[0][0] = '\0';
+
+        break;
+    default:
+        break;
     }
 } while (0);
 @
@@ -211,11 +203,11 @@ Search pathes for litar archives, in this order:
   command line argument,
 - $install_prefix/lib/litar. (two typical $install_prefix are /usr and /usr/local)
 
-@<command line options for "litar"@=
+@<command line options for "operate archive"@=
 {
     long_opt => "include",
     opt => "I",
-    argument => "INCLUDE_DIRECTORIES",
+    argument => "directories",
     description => "Search paths for archives",
 },
 @

@@ -1,7 +1,9 @@
 PREFIX=/usr/local
 EXEC=litar
 
-CFLAGS=-g `pkg-config fuse3 --cflags --libs`
+CFLAGS=-g `pkg-config fuse3 --cflags --libs` \
+    -Dlight_option_context_main_size="(1<<23)" \
+    -Dlight_option_logging_level=INFO
 LIBS=`pkg-config fuse3 --libs`
 
 LIGHT_HEADER=light.h state.h

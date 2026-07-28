@@ -518,6 +518,18 @@ sub look_option_of_usage($$) {
     "
 }
 
+sub look_usage_argument_number(_) {
+    my $usage = shift;
+    my $constant = enum_constant($usage);
+    my $number = @@{$usage->{arguments}};
+    "
+        if (!found_usage && argc - optind == $number) {
+            found_usage = 1;
+            command_line.usage = $constant;
+        }
+    "
+}
+
 sub store_argument($$) {
     my ($name, $idx) = @@_;
     $name =~ tr/ /_/;
@@ -552,6 +564,13 @@ for my $usage (@@{$syntax->{usages}}) {
         $str .= look_option_of_usage $option, $usage;
     }
 }
+$str .= join "\n", map look_usage_argument_number, @@{$syntax->{usages}};
+$str .= "
+    if (!found_usage) {
+        fprintf(stderr, \"Invalid usage, see --help for usage\\n\");
+        exit(1);
+    }
+";
 $str .= "switch (command_line.usage) {";
 $str .= join "\n", map store_arguments_for_usage, @@{$syntax->{usages}};
 $str .= "}";
@@ -599,7 +618,7 @@ int main(int argc, char *argv[])
 @<Text Processing@/basic perl settings@>
 my $syntax = @<invocation syntax@>;
 
-sub option_to_str ($) {
+sub option_to_str (_) {
     my $opt = shift;
     my $str = '[';
     if ($opt->{opt}) {
@@ -608,19 +627,19 @@ sub option_to_str ($) {
         $str .= "--$opt->{long_opt}";
     }
     if ($opt->{argument}) {
-        $str .= " $opt->{argument}";
+        $str .= uc " $opt->{argument}";
     }
     $str .= ']'
 }
 
-sub usage_to_str ($) {
+sub usage_to_str (_) {
     my $usage = shift;
     my $str = $syntax->{name};
 
     $str .= ' ';
     $str .= join ' ', map option_to_str, grep {!$_->{hide}} @@{$usage->{options}};
     $str .= ' ';
-    $str .= join ' ', @@{$usage->{arguments}};
+    $str .= uc join ' ', @@{$usage->{arguments}};
 }
 
 my @usages = map usage_to_str, @@{$syntax->{usages}};

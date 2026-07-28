@@ -538,7 +538,7 @@ sub store_argument($$) {
     my ($name, $idx) = @@_;
     $name =~ tr/ /_/;
     $name = lc $name;
-    "command_line.arguments.$name = argv[$idx];"
+    "command_line.arguments.$name = argv[optind + $idx];"
 }
 
 sub store_arguments_for_usage(_) {

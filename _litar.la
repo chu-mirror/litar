@@ -113,7 +113,6 @@ do {
             @<print version information@>
             break;
         }
-
         break;
     default:
         break;
@@ -121,7 +120,7 @@ do {
 } while (0);
 @
 
-@<litar@:light@:C Structure@/functions@=
+@<litar@:light@:executable@:C Structure@/functions@=
 int ensure_directory(const char *path)
 {
     struct stat buf;
@@ -145,11 +144,6 @@ int ensure_directory(const char *path)
 @
 
 @<check or initialize 'user_opitons', set 'failed' if failed@=
-if (!user_options.archive) {
-    fprintf(stderr, "Please specify the archive name through -a\n");
-    failed = 1;
-    break;
-}
 int l = strlen(user_options.archive);
 if (strcmp(user_options.archive+l-3, ".la") != 0) {
     fprintf(stderr, "Illegal file name, the file name of a litar archive should end with .la\n");
@@ -252,14 +246,11 @@ do {
 } while (0);
 @
 
-@<litar@:light@:C Structure@/include flags@=
+@<litar@:light@:executable@:C Structure@/include flags@=
 #define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 17)
 @
 
-@<litar@:light@:C Structure@/includes@=
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
+@<litar@:light@:executable@:C Structure@/includes@=
 #include <errno.h>
 #include <sys/stat.h>
 

@@ -505,13 +505,17 @@ sub look_option_of_usage($$) {
     my $name = $opt->{long_opt};
     $name =~ tr/-/_/;
     my $constant = enum_constant($usage);
+    my $short_opt = "";
+    if ($opt->{opt}) {
+        $short_opt = " -$opt->{opt}";
+    }
     "
         if (command_line.options.$name) {
             if (!found_usage) {
                 found_usage = 1;
                 command_line.usage = $constant;
             } else if (command_line.usage != $constant) {
-                fprintf(stderr, \"Conflict option $opt->{long_opt}\");
+                fprintf(stderr, \"Conflict option: --$opt->{long_opt}$short_opt\\n\");
                 exit(1);
             }
         }

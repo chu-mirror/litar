@@ -6,7 +6,7 @@ which perl
 
 @<basic perl settings@=#!@<path to perl interpreter@>
 use v5.14;
-use warnings;
+use warnings FATAL => 'all';
 use strict;
 @
 

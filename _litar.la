@@ -1,10 +1,164 @@
-@<litar@:light@:C Structure@/data type declarations@=
+@[litar.c@=
+@<litar@:light@:executable@:C Structure@/module@>
+@
+
+@<litar@:light@:C Structure@/invocation syntax@=
+{
+    name => 'litar',
+    usages => [
+        {
+            name => "show help",
+            options => [
+                {
+                    long_opt => "help",
+                    opt => "h",
+                    description => "Show help",
+                },
+                {
+                    long_opt => "version",
+                    opt => "V",
+                    description => "Show version",
+                },
+            ],
+            arguments => [],
+        },
+        {
+            name => "operate archive",
+            options => [
+                {
+                    long_opt => "print",
+                    opt => "p",
+                    argument => "chunk_ref",
+                    description => "Print the content pointed by chunk reference",
+                },
+                {
+                    long_opt => "mount-point",
+                    opt => "m",
+                    argument => "directory",
+                    description => "Specify the mount point for fuse",
+                },
+                {
+                    long_opt => "base",
+                    opt => "b",
+                    argument => "directory",
+                    description => "Specify the base directory for mounted fs",
+                },
+            ],
+            arguments => ['archive'],
+        },
+    ],
+}
+@
+
+@<print version information@=
+printf("Version dev, built at <build time>\n");
+@|fill in build time information@
+
+@<fill in build time information@=#!/bin/sh
+sed -e "s/<build time>/$(date -Iminute)/g"
+@
+
+@<litar@:Light@/main body@=
+do {
+    switch (command_line.usage) {
+    case COMMAND_USAGE_SHOW_HELP:
+        if (command_line.options.help) {
+            printf("@<litar@:light@:C Structure@/command line usage@>");
+            break;
+        }
+
+        if (command_line.options.version) {
+            @<print version information@>
+            break;
+        }
+        break;
+    case COMMAND_USAGE_OPERATE_ARCHIVE:
+        @<check or initialize relevant arguments@>
+        @<operate on archive according to options@>
+        break;
+    default:
+        break;
+    }
+} while (0);
+@
+
+@<check or initialize relevant arguments@=
+int l = strlen(command_line.arguments.archive);
+if (strcmp(command_line.arguments.archive+l-3, ".la") != 0) {
+    fprintf(stderr, "Illegal file name, the name of a litar archive should end with suffix .la\n");
+    exit(1);
+}
+@
+
+@<litar@:light@:executable@:C Structure@/functions@=
+int ensure_directory(const char *path)
+{
+    struct stat buf;
+    if (stat(path, &buf) == -1) {
+        if (errno != ENOENT) {
+            perror("stat");
+            return 1;
+        }
+        if (mkdir(path, 0777) == -1) {
+            perror("mkdir");
+            return 1;
+        }
+        stat(path, &buf);
+    }
+    if (!S_ISDIR(buf.st_mode)) {
+        fprintf(stderr, "%s is not a directory\n", path);
+        return 1;
+    }
+    return 0;
+}
+@
+
+@<check or initialize 'user_opitons', set 'failed' if failed@=
+if (!user_options.mount_point) {
+    enter_frame();
+
+    char *fn, *p;
+    STRDUP(user_options.archive, fn);
+    fn[l-3] = '\0';
+    p = fn+l-3;
+    while (p != fn && *p != '/') --p;
+    if (*p == '/') ++p;
+    user_options.mount_point = frame_return_string(p);
+
+    assert(exit_frame());
+}
+if (ensure_directory(user_options.mount_point)) {
+    fprintf(stderr, "Failed to ensure directory %s", user_options.mount_point);
+    failed = 1;
+    break;
+}
+
+if (!user_options.base) {
+    enter_frame();
+
+    char *p;
+    CALLOC(p, strlen(user_options.mount_point) + 2);
+    assert(p);
+    p[0] = '.';
+    strcat(p, user_options.mount_point);
+    user_options.base = frame_return_string(p);
+
+    assert(exit_frame());
+}
+if (ensure_directory(user_options.base)) {
+    fprintf(stderr, "Failed to ensure directory %s", user_options.mount_point);
+    failed = 1;
+    break;
+}
+@
+
+@<litar@:light@:executable@:C Structure@/data type declarations@=
 typedef struct archive *Archive;
 typedef struct block *Block;
 typedef struct file *File;
 @
 
-@<litar@:light@:C Structure@/data types@=
+@<litar@:light@:executable@:C Structure@/data types@=
 struct archive {
     const char *path;
     const char * const *dependencies;
@@ -57,135 +211,6 @@ HashTable archives; /* archive path -> archive */
 HashTable blocks; /* module name -> chunk name -> labels -> blocks */
 HashTable files; /* file path -> file */
 HashTable file_sets; /* file set name -> file set */
-@
-
-@[litar.c@=
-@<litar@:light@:executable@:C Structure@/module@>
-@
-
-@<litar@:light@:C Structure@/invocation syntax@=
-{
-    name => 'litar',
-    usages => [
-        {
-            name => "show help",
-            options => [
-                {
-                    long_opt => "help",
-                    opt => "h",
-                    description => "Show help",
-                },
-                {
-                    long_opt => "version",
-                    opt => "V",
-                    description => "Show version",
-                },
-            ],
-            arguments => [],
-        },
-        {
-            name => "operate archive",
-            options => [@<command line options for "operate archive"@>],
-            arguments => ['archive'],
-        },
-    ],
-}
-@
-
-@<print version information@=
-printf("Version dev, built at <build time>\n");
-@|fill in build time information@
-
-@<fill in build time information@=#!/bin/sh
-sed -e "s/<build time>/$(date -Iminute)/g"
-@
-
-@<litar@:Light@/main body@=
-do {
-    switch (command_line.usage) {
-    case COMMAND_USAGE_SHOW_HELP:
-        if (command_line.options.help) {
-            printf("@<litar@:light@:C Structure@/command line usage@>");
-            break;
-        }
-
-        if (command_line.options.version) {
-            @<print version information@>
-            break;
-        }
-        break;
-    default:
-        break;
-    }
-} while (0);
-@
-
-@<litar@:light@:executable@:C Structure@/functions@=
-int ensure_directory(const char *path)
-{
-    struct stat buf;
-    if (stat(path, &buf) == -1) {
-        if (errno != ENOENT) {
-            perror("stat");
-            return 1;
-        }
-        if (mkdir(path, 0777) == -1) {
-            perror("mkdir");
-            return 1;
-        }
-        stat(path, &buf);
-    }
-    if (!S_ISDIR(buf.st_mode)) {
-        fprintf(stderr, "%s is not a directory\n", path);
-        return 1;
-    }
-    return 0;
-}
-@
-
-@<check or initialize 'user_opitons', set 'failed' if failed@=
-int l = strlen(user_options.archive);
-if (strcmp(user_options.archive+l-3, ".la") != 0) {
-    fprintf(stderr, "Illegal file name, the file name of a litar archive should end with .la\n");
-    failed = 1;
-    break;
-}
-if (!user_options.mount_point) {
-    enter_frame();
-
-    char *fn, *p;
-    STRDUP(user_options.archive, fn);
-    fn[l-3] = '\0';
-    p = fn+l-3;
-    while (p != fn && *p != '/') --p;
-    if (*p == '/') ++p;
-    user_options.mount_point = frame_return_string(p);
-
-    assert(exit_frame());
-}
-if (ensure_directory(user_options.mount_point)) {
-    fprintf(stderr, "Failed to ensure directory %s", user_options.mount_point);
-    failed = 1;
-    break;
-}
-
-if (!user_options.base) {
-    enter_frame();
-
-    char *p;
-    CALLOC(p, strlen(user_options.mount_point) + 2);
-    assert(p);
-    p[0] = '.';
-    strcat(p, user_options.mount_point);
-    user_options.base = frame_return_string(p);
-
-    assert(exit_frame());
-}
-if (ensure_directory(user_options.base)) {
-    fprintf(stderr, "Failed to ensure directory %s", user_options.mount_point);
-    failed = 1;
-    break;
-}
 @
 
 Search pathes for litar archives, in this order:

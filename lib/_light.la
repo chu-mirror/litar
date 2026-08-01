@@ -1058,7 +1058,7 @@ static uint8_t context_main_memory[light_option_context_main_size];
 struct context context_main = {
     .name = "main",
     .parent = NULL,
-    .memory_end = context_main_memory + light_option_context_main_size,
+    .memory_end = context_main_memory + sizeof(context_main_memory),
     .stack_top = context_main_memory,
 };
 @

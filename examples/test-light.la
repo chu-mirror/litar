@@ -42,9 +42,9 @@
 
 
 @<test light@:Light@/main body@=
-light_log(LOG_LEVEL_INFO, "Testing light");
+light_log(INFO, "Testing light");
 @<test cases@>
-light_log(LOG_LEVEL_INFO, "All test passed");
+light_log(INFO, "All test passed");
 @
 
 @<test cases@=
@@ -67,7 +67,7 @@ do {
     } while (0);
     assert(remaining_memory() == idle_memory_2);
 
-    light_log(LOG_LEVEL_INFO, "Passed memory");
+    light_log(INFO, "Passed memory");
     exit_frame();
 } while (0);
 @
@@ -101,7 +101,7 @@ do {
         assert((*arr)[i*3] == heap_alloc(hp));
     }
     assert(heap_alloc(hp) == NULL);
-    light_log(LOG_LEVEL_INFO, "Passed heap");
+    light_log(INFO, "Passed heap");
 #undef HEAP_SIZE
     exit_frame();
 } while (0);
@@ -132,7 +132,7 @@ do {
         --i;
     }
     assert(i == 0);
-    light_log(LOG_LEVEL_INFO, "Passed list");
+    light_log(INFO, "Passed list");
 #undef LIST_SIZE
     exit_frame();
 } while (0);
@@ -164,7 +164,7 @@ do {
         ++i;
     }
     assert(i == LIST_SIZE);
-    light_log(LOG_LEVEL_INFO, "Passed bi-list");
+    light_log(INFO, "Passed bi-list");
 #undef LIST_SIZE
     exit_frame();
 } while (0);
@@ -199,7 +199,7 @@ do {
         assert(arr_total[i] == i % 5);
     }
 
-    light_log(LOG_LEVEL_INFO, "Passed segmented");
+    light_log(INFO, "Passed segmented");
     exit_frame();
 } while (0);
 @
@@ -219,7 +219,7 @@ do {
     const char *s = cstring(str);
     assert(s);
     assert(strcmp(buf, s) == 0);
-    light_log(LOG_LEVEL_INFO, "Passed string");
+    light_log(INFO, "Passed string");
     exit_frame();
 } while (0);
 @
@@ -255,7 +255,7 @@ do {
     assert(hash_table_get(tbl, "Name") == NULL);
     assert(strcmp(hash_table_get(tbl, "Age"), "18") == 0);
 
-    light_log(LOG_LEVEL_INFO, "Passed hash table");
+    light_log(INFO, "Passed hash table");
     exit_frame();
 } while (0);
 @
@@ -288,7 +288,7 @@ do {
     assert(!set_in("A", set));
     assert(set_in("B", set));
     assert(!set_in("C", set));
-    light_log(LOG_LEVEL_INFO, "Passed set");
+    light_log(INFO, "Passed set");
     exit_frame();
 } while (0);
 @
@@ -332,7 +332,7 @@ do {
         heap_free(hp, n);
     }
     
-    light_log(LOG_LEVEL_INFO, "Passed deque");
+    light_log(INFO, "Passed deque");
     exit_frame();
 } while (0);
 @

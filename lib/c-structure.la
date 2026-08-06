@@ -343,7 +343,7 @@ struct {
     enum {@<usage enumeration@>} usage;
     struct {@<command line options@>} options;
     struct {@<command line arguments@>} arguments;
-} command_line;
+} command;
 @
 
 @<executable@:includes@=
@@ -434,13 +434,13 @@ sub long_option_handling(_) {
     if ($opt->{argument}) {
         return "
             if (strcmp(long_options[idx].name, \"$opt->{long_opt}\")) {
-                command_line.options.$name = optarg;
+                command.options.$name = optarg;
             }
         "
     } else {
         return "
             if (strcmp(long_options[idx].name, \"$opt->{long_opt}\")) {
-                command_line.options.$name = 1;
+                command.options.$name = 1;
             }
         "
     }
@@ -469,13 +469,13 @@ sub short_opt_case(_) {
     if ($opt->{argument}) {
         return "
             case '$opt->{opt}':
-                command_line.options.$name = optarg;
+                command.options.$name = optarg;
                 break;
         "
     } else {
         return "
             case '$opt->{opt}':
-                command_line.options.$name = 1;
+                command.options.$name = 1;
                 break;
         "
     }
@@ -510,11 +510,11 @@ sub look_option_of_usage($$) {
         $short_opt = " -$opt->{opt}";
     }
     "
-        if (command_line.options.$name) {
+        if (command.options.$name) {
             if (!found_usage) {
                 found_usage = 1;
-                command_line.usage = $constant;
-            } else if (command_line.usage != $constant) {
+                command.usage = $constant;
+            } else if (command.usage != $constant) {
                 fprintf(stderr, \"Conflict option: --$opt->{long_opt}$short_opt\\n\");
                 exit(1);
             }
@@ -529,7 +529,7 @@ sub look_usage_argument_number(_) {
     "
         if (!found_usage && argc - optind == $number) {
             found_usage = 1;
-            command_line.usage = $constant;
+            command.usage = $constant;
         }
     "
 }
@@ -538,7 +538,7 @@ sub store_argument($$) {
     my ($name, $idx) = @@_;
     $name =~ tr/ /_/;
     $name = lc $name;
-    "command_line.arguments.$name = argv[optind + $idx];"
+    "command.arguments.$name = argv[optind + $idx];"
 }
 
 sub store_arguments_for_usage(_) {
@@ -575,7 +575,7 @@ $str .= "
         exit(1);
     }
 ";
-$str .= "switch (command_line.usage) {";
+$str .= "switch (command.usage) {";
 $str .= join "\n", map store_arguments_for_usage, @@{$syntax->{usages}};
 $str .= "}";
 $str .= "} while (0);";

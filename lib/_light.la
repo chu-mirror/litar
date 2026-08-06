@@ -326,6 +326,7 @@ static inline void switch_context(struct context *ctx)
 
 @<lightlib@:C Structure@/includes@=
 #include <stdio.h>
+#include <stdarg.h>
 @
 
 @<lightlib@:C Structure@/exported data type declarations@=
@@ -337,7 +338,7 @@ typedef enum {
 @
 
 @<lightlib@:C Structure@/functions@=
-void _light_log(LogLevel base, LogLevel lv, const char *msg)
+void _light_log(LogLevel base, LogLevel lv, const char *format, ...)
 {
     if (lv < base) {
         return;
@@ -357,7 +358,11 @@ void _light_log(LogLevel base, LogLevel lv, const char *msg)
         return;
     }
 
-    fputs(msg, stderr);
+    va_list args;
+
+    va_start(args, format);
+    vfprintf(stderr, format, args);
+    va_end(args);
 
     do {
         struct context *ctx = _light_top_context;
@@ -375,7 +380,8 @@ void _light_log(LogLevel base, LogLevel lv, const char *msg)
 @
 
 @<lightlib@:C Structure@/exported macros@=
-#define light_log(lv, msg) _light_log(GLUE_TOKENS(LOG_LEVEL_, light_option_logging_level), LOG_LEVEL_ ## lv, (msg))
+#define light_log(lv, format, ...) \
+    _light_log(GLUE_TOKENS(LOG_LEVEL_, light_option_logging_level), LOG_LEVEL_ ## lv, (format) __VA_OPT__(,) __VA_ARGS__)
 @
 
 @<lightlib@:C Structure@/exported data type declarations@=

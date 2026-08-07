@@ -142,7 +142,10 @@ static inline struct bi_list *bi_list_remove(struct bi_list *nd)
 
 @<lightlib@:C Structure@/exported macros@=
 #define FOREACH(elm, lst) for (elm = lst; elm; elm = cdr(elm))
-#define FOREACH_BI(elm, lst) for (; (elm && (elm != lst)) || (elm = lst); elm = elm->next)
+#define FOREACH_BI(elm, lst) \
+    for (elm = NULL; (elm && (elm != lst)) || (!elm && (elm = lst)); elm = elm->next)
+#define FOREACH_BI_BACKWARDS(elm, lst) \
+    for (elm = NULL; (elm && (elm != lst)) || (!elm && (elm = lst)); elm = elm->previous)
 @
 
 @<lightlib@:C Structure@/exported data types@=
@@ -380,8 +383,12 @@ void _light_log(LogLevel base, LogLevel lv, const char *format, ...)
 @
 
 @<lightlib@:C Structure@/exported macros@=
+#ifdef light_option_logging_level
 #define light_log(lv, format, ...) \
-    _light_log(GLUE_TOKENS(LOG_LEVEL_, light_option_logging_level), LOG_LEVEL_ ## lv, (format) __VA_OPT__(,) __VA_ARGS__)
+    _light_log(GLUE_TOKENS(LOG_LEVEL_, light_option_logging_level), LOG_LEVEL_##lv, (format) __VA_OPT__(,) __VA_ARGS__)
+#else
+#define light_log(lv, format, ...) ((void *) NULL);
+#endif
 @
 
 @<lightlib@:C Structure@/exported data type declarations@=
@@ -414,6 +421,9 @@ Heap new_heap(size_t len, size_t unit_size)
     hp->length = len;
     hp->unit_size = unit_size;
     hp->space = salloc(len * unit_size);
+    if (!hp->space) {
+        return NULL;
+    }
 
     int w_n = 1;
     while (w_n < len) {
@@ -425,6 +435,11 @@ Heap new_heap(size_t len, size_t unit_size)
         hp->labels,
         hp->first_direct + (len+HEAP_LABEL_SIZE-1)/HEAP_LABEL_SIZE
     );
+
+    if (!hp->labels) {
+        return NULL;
+    }
+
     return hp;
 }
 
@@ -559,7 +574,7 @@ size_t segmented_size(Segmented sg)
 
 Segmented segmented_append(Segmented sg, const void *src, size_t n)
 {
-    const uint8_t *src_ = src;;
+    const uint8_t *src_ = src;
     while (n) {
         size_t tail_usable, save_to_tail;
 
@@ -689,6 +704,7 @@ void *segmented_continuous(Segmented sg)
 @
 
 @<lightlib@:C Structure@/exported macros@=
+#define segmented_pushback(sg, mem) segmented_append((sg), &mem, sizeof(mem))
 #define point_to_segmented(ptr, sgr, idx) do { \
         typeof(ptr) __light_macro_local_ptr = NULL; \
         (ptr) = segmented_pointer( \
@@ -1057,6 +1073,20 @@ typedef Deque Queue;
 #include <stdint.h>
 #include <string.h>
 #include <threads.h>
+@
+
+@<light@:executable@:C Structure@/include flags@=
+@<light options@>
+@
+
+@<light options@=
+#ifndef light_option_context_main_size
+#define light_option_context_main_size (1 << 20)  /* 1 MB */
+#endif
+
+#ifndef light_option_logging_level
+/* #define light_option_logging_level ERROR */
+#endif
 @
 
 @<light@:executable@:C Structure@/global variables@=

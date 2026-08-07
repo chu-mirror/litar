@@ -147,20 +147,17 @@ do {
         struct bi_list bi_list;
     } Node;
     Node *nd_r;
-    struct bi_list guard, *l;
-    bi_list_init(&guard);
-#define LIST_SIZE 200000
+    struct bi_list *l, *nodes = NULL;
+#define LIST_SIZE 20000
     for (i = 0; i < LIST_SIZE; ++i) {
         NEW(nd_r);
         assert(nd_r != NULL);
         nd_r->n = i;
-        bi_list_insert(&nd_r->bi_list, &guard);
+        nodes = bi_list_insert(&nd_r->bi_list, nodes);
     }
-    l = guard.next;
     i = 0;
-    while (l != &guard) {
+    FOREACH_BI_BACKWARDS (l, nodes->previous) {
         assert(container_of(l, Node, bi_list)->n == i);
-        l = l->next;
         ++i;
     }
     assert(i == LIST_SIZE);

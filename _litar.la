@@ -2,6 +2,20 @@
 @<litar@:light@:executable@:C Structure@/module@>
 @
 
+@<litar@:Light@/light options@=
+#ifndef light_option_global_name_number 
+#define light_option_global_name_number (10000)
+#endif
+
+#ifndef light_option_name_max_length
+#define light_option_name_max_length (1000)
+#endif
+
+#ifndef light_option_archive_resoure_number
+#define light_option_archive_resoure_number (1000)
+#endif
+@
+
 @<litar@:light@:C Structure@/invocation syntax@=
 {
     name => 'litar',
@@ -43,6 +57,12 @@
                     argument => "directory",
                     description => "Specify the base directory for mounted fs",
                 },
+                {
+                    long_opt => "include",
+                    opt => "I",
+                    argument => "directories",
+                    description => "Search paths for archives",
+                },
             ],
             arguments => ['archive'],
         },
@@ -60,34 +80,101 @@ sed -e "s/<build time>/$(date -Iminute)/g"
 
 @<litar@:Light@/main body@=
 do {
-    switch (command_line.usage) {
+    light_log(INFO, "litar start");
+    switch (command.usage) {
     case COMMAND_USAGE_SHOW_HELP:
-        if (command_line.options.help) {
+        light_log(INFO, "chosen usage 'show help'");
+
+        if (command.options.help) {
             printf("@<litar@:light@:C Structure@/command line usage@>");
             break;
         }
 
-        if (command_line.options.version) {
+        if (command.options.version) {
             @<print version information@>
             break;
         }
+
+        ret = 1;
+        light_log(WARNING, "illegal running");
+
         break;
     case COMMAND_USAGE_OPERATE_ARCHIVE:
+        light_log(INFO, "chosen usage 'operate archive'");
         @<check or initialize relevant arguments@>
+        if (ret) {
+            break;
+        }
         @<operate on archive according to options@>
         break;
     default:
         break;
     }
+    light_log(INFO, "litar end with return value %d", ret);
 } while (0);
 @
 
 @<check or initialize relevant arguments@=
-int l = strlen(command_line.arguments.archive);
-if (strcmp(command_line.arguments.archive+l-3, ".la") != 0) {
-    fprintf(stderr, "Illegal file name, the name of a litar archive should end with suffix .la\n");
-    exit(1);
-}
+do {
+    int l = strlen(command.arguments.archive);
+    if (strcmp(command.arguments.archive+l-3, ".la") != 0) {
+        fprintf(stderr, "Illegal file name, the name of a litar archive should end with suffix .la\n");
+        ret = 1;
+        light_log(ERROR, "invalid archive file name '%s'", command.arguments.archive);
+        break;
+    }
+    if (access(command.arguments.archive, R_OK) == -1) {
+        ret = 1;
+        light_log(ERROR, "can not read file %s", command.arguments.archive);
+        break;
+    }
+    if (!command.options.mount_point) {
+        const void *r;
+        r = enter_frame();
+        assert(r);
+
+        char *fn, *p;
+        STRDUP(command.arguments.archive, fn);
+        assert(fn);
+
+        fn[l-3] = '\0';
+        p = fn+l-3;
+        while (p != fn && *p != '/') --p;
+        if (*p == '/') ++p;
+        command.options.mount_point = frame_return_string(p);
+
+        r = exit_frame();
+        assert(r);
+    }
+
+    if (ensure_directory(command.options.mount_point)) {
+        light_log(ERROR, "Failed to ensure directory %s", command.options.mount_point);
+        ret = 1;
+        break;
+    }
+
+    if (!command.options.base) {
+        const void *r;
+        r = enter_frame();
+        assert(r);
+
+        char *p;
+        CALLOC(p, strlen(command.options.mount_point) + 2);
+        assert(p);
+        p[0] = '.';
+        strcat(p, command.options.mount_point);
+        command.options.base = frame_return_string(p);
+
+        r = exit_frame();
+        assert(r);
+    }
+
+    if (ensure_directory(command.options.base)) {
+        light_log(ERROR, "Failed to ensure directory %s", command.options.base);
+        ret = 1;
+        break;
+    }
+} while (0);
 @
 
 @<litar@:light@:executable@:C Structure@/functions@=
@@ -113,66 +200,48 @@ int ensure_directory(const char *path)
 }
 @
 
-@<check or initialize 'user_opitons', set 'failed' if failed@=
-if (!user_options.mount_point) {
-    enter_frame();
-
-    char *fn, *p;
-    STRDUP(user_options.archive, fn);
-    fn[l-3] = '\0';
-    p = fn+l-3;
-    while (p != fn && *p != '/') --p;
-    if (*p == '/') ++p;
-    user_options.mount_point = frame_return_string(p);
-
-    assert(exit_frame());
-}
-if (ensure_directory(user_options.mount_point)) {
-    fprintf(stderr, "Failed to ensure directory %s", user_options.mount_point);
-    failed = 1;
-    break;
-}
-
-if (!user_options.base) {
-    enter_frame();
-
-    char *p;
-    CALLOC(p, strlen(user_options.mount_point) + 2);
-    assert(p);
-    p[0] = '.';
-    strcat(p, user_options.mount_point);
-    user_options.base = frame_return_string(p);
-
-    assert(exit_frame());
-}
-if (ensure_directory(user_options.base)) {
-    fprintf(stderr, "Failed to ensure directory %s", user_options.mount_point);
-    failed = 1;
-    break;
-}
-@
-
 @<litar@:light@:executable@:C Structure@/data type declarations@=
 typedef struct archive *Archive;
 typedef struct block *Block;
 typedef struct file *File;
+typedef struct file_set FileSet;
 @
 
 @<litar@:light@:executable@:C Structure@/data types@=
-struct archive {
-    const char *path;
-    const char * const *dependencies;
-    int number_dependencies;
-    struct bi_list *blocks;
-};
 struct label {
     const char *name;
-    struct list labels;
+    struct bi_list labels;
 };
 struct chunk_ref {
-    const char *chunk_name;
     const char *module_name;
-    struct list *labels;
+    const char *chunk_name;
+    struct bi_list *labels;
+};
+struct file_ref {
+    const char *module_name;
+    const char *file_path;
+};
+struct file_set_ref {
+    const char *module_name;
+    const char *file_set_name;
+};
+struct file_set {
+    enum {
+        FILE_SET_ADD_FILE,
+        FILE_SET_SUB_FILE,
+        FILE_SET_ADD_FILE_SET,
+        FILE_SET_SUB_FILE_SET,
+    } type;
+    union {
+        struct file_ref file;
+        struct file_set_ref file_set;
+    } value;
+    struct bi_list chain;
+};
+struct filter {
+    struct chunk_ref chunk;
+    struct file_set file_set;
+    struct bi_list filters;
 };
 struct content {
     enum {
@@ -180,19 +249,19 @@ struct content {
         CONTENT_TYPE_RAW_STRING,
     } type;
     union {
-        struct chunk_ref chunk_ref;
+        struct {
+            struct chunk_ref chunk;
+            struct filter filter;
+        } deref;
         const char *raw_string;
     } value;
     struct bi_list contents_in_block;
 };
 struct block {
     const char *comment;
-    struct chunk_ref chunk_ref;
     struct bi_list *contents;
-
-    struct bi_list blocks_in_archive;
-    struct bi_list blocks_of_chunk_with_labels;
-    struct bi_list blocks_total;
+    struct filter filter;
+    struct bi_list blocks_of_chunk_ref;
 };
 struct file {
     enum {
@@ -200,17 +269,196 @@ struct file {
         FILE_TYPE_LINK,
     } type;
     union {
-        struct chunk_ref chunk_ref;
+        struct {
+            struct chunk_ref chunk;
+            struct filter filter;
+            int is_executable;
+        } deref;
         const char *orig_path;
     } value;
+};
+struct dependency {
+    const char *archive_name;
+    struct bi_list dependencies;
+};
+
+struct chunk_block {
+    struct chunk_ref chunk;
+    Block block;
+};
+struct ref_file {
+    struct file_ref ref;
+    File file;
+};
+struct ref_file_set {
+    struct file_set_ref ref;
+    FileSet file_set;
+};
+struct archive {
+    Segmented dependencies;
+    Segmented blocks;
+    Segmented files;
+    Segmented file_sets;
 };
 @
 
 @<litar@:light@:executable@:C Structure@/global variables@=
 HashTable archives; /* archive path -> archive */
 HashTable blocks; /* module name -> chunk name -> labels -> blocks */
-HashTable files; /* file path -> file */
-HashTable file_sets; /* file set name -> file set */
+HashTable files; /* module name -> file path -> file */
+HashTable file_sets; /* module name -> file set name -> file set */
+@
+
+@<operate on archive according to options@=
+do {
+    const void *r;
+
+    r = enter_frame();
+    assert(r);
+
+    archives = new_string_hash_table();
+    assert(archives);
+
+    blocks = new_string_hash_table();
+    assert(blocks);
+
+    files = new_string_hash_table();
+    assert(files);
+
+    file_sets = new_string_hash_table();
+    assert(file_sets);
+
+    ret = load_archive(command.arguments.archive);
+
+    if (ret) {
+        light_log(ERROR, "failed at parsing archive");
+        break;
+    }
+
+    @<run fuse server@>
+    if (ret) {
+        light_log(ERROR, "failed to run fuse server");
+        break;
+    }
+
+    @<perform operations@>
+} while (0);
+@
+
+@<litar@:light@:executable@:C Structure@/functions@=
+const char *read_file(FILE *in)
+{
+    char *buffer, *old_buffer;
+    int size = 1 << 12, old_size = 0; /* start from 4KB */
+
+    const void *r;
+    r = enter_frame();
+    assert(r);
+
+    while (1) {
+        CALLOC(buffer, size);
+        assert(buffer);
+
+        memcpy(buffer, old_buffer, old_size);
+
+        int n;
+        n = fread(buffer + old_size, sizeof(char), size-old_size, in);
+        if (n == size-old_size) {
+            old_buffer = buffer;
+            old_size = size;
+            size <<= 1;
+            buffer = NULL;
+        } else {
+            buffer[old_size + n] = '\0';
+            buffer = frame_return(buffer, size+1);
+        }
+
+        if (buffer) {
+            break;
+        }
+    }
+    r = exit_frame();
+    assert(r);
+    return buffer;
+}
+@
+
+@<litar@:light@:executable@:C Structure@/data types@=
+struct token {
+    enum {
+        TOKEN_CONTROL_CHARACTER,
+        TOKEN_NORMAL_CHARACTER,
+        TOKEN_NEWLINE,
+        TOKEN_EOF,
+    } type;
+    char value;
+};
+
+struct input_frame {
+    const char *file;
+    FILE *in;
+    /* current position, current column, current row */
+    int cp, cc, cr;
+    /* previous position, previous column, previous row */
+    int pp, pc, pr;
+};
+@
+
+@<litar@:light@:executable@:C Structure@/functions@=
+struct token *next_token(struct input_frame *ipt, struct token *tkn)
+{
+    if (!ipt->in) {
+        ipt->in = fopen(ipt->file, "r");
+        assert(ipt->in);
+    }
+
+    char c;
+    int n = 0;
+
+    ipt->pp = ipt->cp;
+    ipt->pc = ipt->cc;
+    ipt->pr = ipt->cr;
+
+    n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
+    if (c == '\100') {
+        n += (c = fgetc(ipt->in)) == EOF ? 0 : 1;
+        if (isalpha(c)) {
+            n -= ungetc(c, ipt->in) == EOF ? 0 : 1;
+            tkn->type = TOKEN_NORMAL_CHARACTER;
+            tkn->value = '\100';
+        } else if (c == '\100') {
+            tkn->type = TOKEN_NORMAL_CHARACTER;
+            tkn->value = '\100';
+        } else {
+            tkn->type = TOKEN_CONTROL_CHARACTER;
+            if (c == EOF || c == '\n' || c == '\t' || c == ' ') {
+                tkn->value = ' ';
+            } else {
+                tkn->value = c;
+            }
+            if (c == '\n') {
+                n -= ungetc(c, ipt->in) == EOF ? 0 : 1;
+            }
+        }
+    } else if (c == '\n') {
+        tkn->type = TOKEN_NEWLINE;
+        tkn->value = '\n';
+        ipt->cp += n;
+        ++ipt->cr;
+        ipt->cc = 0;
+        n = 0;
+    } else if (c == EOF) {
+        tkn->type = TOKEN_EOF;
+        tkn->value = EOF;
+    } else {
+        tkn->type = TOKEN_NORMAL_CHARACTER;
+        tkn->value = c;
+    }
+    ipt->cp += n;
+    ipt->cc += n;
+
+    return tkn;
+}
 @
 
 Search pathes for litar archives, in this order:
@@ -222,53 +470,346 @@ Search pathes for litar archives, in this order:
   command line argument,
 - $install_prefix/lib/litar. (two typical $install_prefix are /usr and /usr/local)
 
-@<command line options for "operate archive"@=
+@<litar@:light@:executable@:C Structure@/functions@=
+const char *search_in_directories(const char *an, const char *dirs)
 {
-    long_opt => "include",
-    opt => "I",
-    argument => "directories",
-    description => "Search paths for archives",
-},
-@
+    char *path;
 
-@<litar@:light@:C Structure@/global variables@=
-struct search_paths {
-    const char *path;
-    struct list paths;
-};
-struct tail_list search_paths;
-@
+    const void *r;
+    r = enter_frame();
+    assert(r);
 
-@<litar@:light@:C Structure@/functions@=
-Archive load_archive(const char *path)
+    CALLOC(path, strlen(an) + strlen(dirs));
+    assert(path);
+    
+    const char *p = dirs;
+    int i = 0;
+    do {
+        if (*p == ':' || *p == '\0') {
+            if (path[i-1] != '/') {
+                path[i++] = '/';
+            }
+            strcpy(path+i, an);
+            
+            if (access(path, R_OK) == 0) {
+                path = frame_return_string(path);
+                break;
+            }
+            i = 0;
+        } else {
+            path[i++] = *p;
+        }
+        ++p;
+    } while (*p);
+
+    r = exit_frame();
+    assert(r);
+
+    return path;
+}
+
+const char *search_in_order(const char *an)
 {
-    if (path[0] != '/') {
+    const char *path = NULL;
+    if (access(an, R_OK)) {
+        path = an;
     }
+    if (an[0] != '/') {
+        if (!path && command.options.include) {
+            path = search_in_directories(an, command.options.include);
+        }
+        if (!path && getenv("LITAR_INCLUDE")) {
+            path = search_in_directories(an, getenv("LITAR_INCLUDE"));
+        }
+    }
+    return path;
 }
 @
 
-The entry archive must be specified through command line argument.
+@<litar@:light@:executable@:C Structure@/functions@=
+int load_archive(const char *path)
+{
+    struct input_frame ipt;
+    memset(&ipt, 0, sizeof(ipt));
+    ipt.file = path;
 
-@<initialize 'path_to_archive', set 'failed' if failed@=
-do {
-    @<initialize 'search_paths', set 'failed' if failed@>
-    if (failed) {
-        break;
+    Archive ar;
+    struct token tkn;
+    ar = parse_archive(&ipt, &tkn);
+    if (!ar) {
+        light_log(ERROR, "failed at parsing archive %s", path);
+        return 1;
+    } else {
+        light_log(INFO, "load archive %s", path);
     }
-    char path[PATH_MAX+1];
-    char *ptr = realpath(user_option.archive, path);
-    if (!ptr) {
-        fprintf(stderr, "Error when finding archive '%s': %s", strerror(errno));
-        failed = 1;
-        break;
+
+    const void *r;
+    r = hash_table_map(archives, path, ar);
+    assert(r);
+
+    return 0;
+}
+
+const char *chunk_ref_info(struct chunk_ref *ckr)
+{
+    struct bi_list *lbl_r;
+    int n = 0;
+    n += strlen(ckr->module_name);
+    n += 1;
+    n += strlen(ckr->chunk_name);
+    n += 1;
+}
+
+void show_archive_info(const char *path)
+{
+    const void *r;
+
+    r = enter_frame();
+    assert(r);
+
+    Archive ar = hash_table_get(path);
+    printf("Archive path: %s\n", path);
+
+    int i, n = segmented_size(ar->dependencies) / sizeof(*deps);
+    const char **deps = segmented_continuous(ar->dependencies);
+
+    printf("Dependencies:\n");
+    for (i = 0; i < n; ++i) {
+        printf("\t%d: %s\n", i+1, deps[i]);
     }
-    load_archive(path);
-} while (0);
+
+    struct chunk_block *blocks = segmented_continuous(ar->blocks);
+    n = segmented_size(ar->blocks) / sizeof(*blocks);
+    for (i = 0; i < n; ++i) {
+        printf("Extending chunk reference: %s", blocks[i]
+    }
+    r = exit_frame();
+    assert(r);
+}
 @
 
-@<initialize 'search_paths', set 'failed' if failed@=
-do {
-} while (0);
+@<litar@:light@:executable@:C Structure@/function declarations@=
+@<parse functions@>
+@
+
+@<parse functions@=
+void ignore_spaces(struct input_frame *ipt, struct token *tkn);
+Archive parse_archive(struct input_frame *ipt, struct token *tkn);
+const char *parse_module_name(struct input_frame *ipt, struct token *tkn);
+const char *parse_dependency(struct input_frame *ipt, struct token *tkn);
+struct chunk_block parse_block(struct input_frame *ipt, struct token *tkn);
+struct ref_file parse_file_declaration(struct input_frame *ipt, struct token *tkn);
+struct ref_file_set parse_file_set_declaration(struct input_frame *ipt, struct token *tkn);
+@
+
+@<litar@:light@:executable@:C Structure@/functions@=
+void ignore_spaces(struct input_frame *ipt, struct token *tkn)
+{
+    while (
+        next_token(ipt, tkn)->type == TOKEN_NORMAL_CHARACTER && isspace(tkn->value)
+        || tkn->type == TOKEN_NEWLINE
+    )
+        ;
+}
+
+Archive parse_archive(struct input_frame *ipt, struct token *tkn)
+{
+    Archive ar;
+    NEW0(ar);
+    assert(ar);
+
+    Heap hp = new_heap(
+        light_option_archive_resoure_number / 10,
+        SEGMENT_SIZE(
+            union {
+                const char *dep;
+                struct chunk_block c_b;
+                struct ref_file r_f;
+                struct ref_file_set r_fs;
+            } elm[10]
+        )
+    );
+    assert(hp);
+
+    ar->dependencies = new_segmented(hp);
+    assert(ar->dependencies);
+
+    ar->blocks = new_segmented(hp);
+    assert(ar->blocks);
+
+    ar->files = new_segmented(hp);
+    assert(ar->files);
+
+    ar->file_sets = new_segmented(hp);
+    assert(ar->file_sets);
+
+    const char *current_module_name = "";
+
+    do {
+        ignore_spaces(ipt, tkn);
+        if (tkn->type == TOKEN_CONTROL_CHARACTER) {
+            switch (tkn->value) {
+            case '-':
+                do {
+                    current_module_name = parse_module_name(ipt, tkn);
+                    if (!current_module_name) {
+                        ar = NULL;
+                    }
+                    if (tkn->type != TOKEN_CONTROL_CHARACTER || tkn->value != ' ') {
+                        ar = NULL;
+                        fprintf(
+                            stderr,
+                            "Unexpected ending of module name at row %d column %d of %s\n",
+                            ipt->pr+1, ipt->pc+1, ipt->file
+                        );
+                    }
+                    next_token(ipt, tkn);
+                } while (0);
+                break;
+            case '.':
+                do {
+                    const char *dep = parse_dependency(ipt, tkn);
+                    if (dep) {
+                        const void *r;
+                        r = segmented_pushback(ar->dependencies, dep);
+                        assert(r);
+                    } else {
+                        ar = NULL;
+                    }
+                } while (0);
+                break;
+            case '[':
+            case '(':
+                do {
+                    struct ref_file r_f = parse_file_declaration(ipt, tkn);
+                    if (r_f.file) {
+                        const void *r;
+                        r = segmented_pushback(ar->files, r_f);
+                        assert(r);
+                    } else {
+                        ar = NULL;
+                    }
+                } while (0);
+                break;
+            case '{':
+                break;
+            default:
+                break;
+            }
+        } else if (
+            tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<'
+            || tkn->type != TOKEN_EOF
+        ) {
+            struct chunk_block c_b = parse_block(ipt, tkn);
+            if (c_b.block->comment) {
+                const void *r;
+                r = segmented_pushback(ar->blocks, c_b);
+                assert(r);
+            } else {
+                ar = NULL;
+            }
+        } else {
+            ar = NULL;
+        }
+    } while (ar && tkn->type != TOKEN_EOF);
+    return ar;
+}
+
+const char *normalize(const char *name)
+{
+    int i = 0, j = 0, l = strlen(name);
+    char *norm = NULL;
+
+    STRDUP(name, norm);
+
+    l = strlen(name);
+    while (i < l) {
+        if (isspace(name[i])) {
+            if (j != 0 && !isspace(norm[j-1])) {
+                norm[j++] = ' ';
+            }
+        } else {
+            norm[j++] = name[i];
+        }
+        ++i;
+    }
+    if (isspace(norm[j-1])) {
+        norm[j-1] = '\0';
+    } else {
+        norm[j] = '\0';
+    }
+    return norm;
+}
+
+const char *parse_name(struct input_frame *ipt, struct token *tkn)
+{
+    static Set names;
+    if (!names) {
+        names = new_string_set();
+        set_init(names, light_option_global_name_number);
+    }
+
+    const char *name;
+
+    static char buffer[light_option_name_max_length];
+    int i = 0;
+    while (next_token(ipt, tkn)->type != TOKEN_CONTROL_CHARACTER) {
+        char c = ' ';
+        if (tkn->type == TOKEN_NEWLINE) {
+            c = ' ';
+        } else if (tkn->type == TOKEN_NORMAL_CHARACTER){
+            c = tkn->value;
+        } else {
+            fprintf(stderr, "Unended name at row %d, column %d\n", ipt->pr, ipt->pc);
+            return NULL;
+        }
+        buffer[i++] = c;
+    }
+    buffer[i] = '\0';
+
+    const void *r;
+    r = enter_frame();
+    assert(r);
+
+    const char *_name = normalize(buffer);
+    name = set_in(_name, names);
+    if (!name) {
+        name = frame_return_string(_name);
+        set_include(names, name);
+    }
+    r = exit_frame();
+    assert(r);
+
+    return name;
+}
+
+const char *parse_module_name(struct input_frame *ipt, struct token *tkn)
+{
+    return parse_name(ipt, tkn);
+}
+
+const char *parse_dependency(struct input_frame *ipt, struct token *tkn)
+{
+    return "";
+}
+
+struct chunk_block parse_block(struct input_frame *ipt, struct token *tkn)
+{
+    struct chunk_block c_b;
+    return c_b;
+}
+
+struct ref_file parse_file_declaration(struct input_frame *ipt, struct token *tkn)
+{
+    struct ref_file r_f;
+    return r_f;
+}
+
+struct ref_file_set parse_file_set_declaration(struct input_frame *ipt, struct token *tkn)
+{
+    struct ref_file_set r_fs;
+    return r_fs;
+}
 @
 
 @<litar@:light@:executable@:C Structure@/include flags@=
@@ -277,6 +818,9 @@ do {
 
 @<litar@:light@:executable@:C Structure@/includes@=
 #include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <ctype.h>
 #include <sys/stat.h>
 
 #include <fuse.h>

@@ -7,10 +7,6 @@
 #define light_option_global_name_number (10000)
 #endif
 
-#ifndef light_option_name_max_length
-#define light_option_name_max_length (1000)
-#endif
-
 #ifndef light_option_archive_resoure_number
 #define light_option_archive_resoure_number (1000)
 #endif
@@ -200,13 +196,6 @@ int ensure_directory(const char *path)
 }
 @
 
-@<litar@:light@:executable@:C Structure@/data type declarations@=
-typedef struct archive *Archive;
-typedef struct block *Block;
-typedef struct file *File;
-typedef struct file_set FileSet;
-@
-
 @<litar@:light@:executable@:C Structure@/data types@=
 struct label {
     const char *name;
@@ -284,15 +273,15 @@ struct dependency {
 
 struct chunk_block {
     struct chunk_ref chunk;
-    Block block;
+    struct block *block;
 };
 struct ref_file {
     struct file_ref ref;
-    File file;
+    struct file *file;
 };
 struct ref_file_set {
     struct file_set_ref ref;
-    FileSet file_set;
+    struct file_set *file_set;
 };
 struct archive {
     Segmented dependencies;
@@ -388,7 +377,6 @@ struct token {
     enum {
         TOKEN_CONTROL_CHARACTER,
         TOKEN_NORMAL_CHARACTER,
-        TOKEN_NEWLINE,
         TOKEN_EOF,
     } type;
     char value;
@@ -441,7 +429,7 @@ struct token *next_token(struct input_frame *ipt, struct token *tkn)
             }
         }
     } else if (c == '\n') {
-        tkn->type = TOKEN_NEWLINE;
+        tkn->type = TOKEN_NORMAL_CHARACTER;
         tkn->value = '\n';
         ipt->cp += n;
         ++ipt->cr;
@@ -533,7 +521,7 @@ int load_archive(const char *path)
     memset(&ipt, 0, sizeof(ipt));
     ipt.file = path;
 
-    Archive ar;
+    struct archive *ar;
     struct token tkn;
     ar = parse_archive(&ipt, &tkn);
     if (!ar) {
@@ -552,12 +540,31 @@ int load_archive(const char *path)
 
 const char *chunk_ref_info(struct chunk_ref *ckr)
 {
-    struct bi_list *lbl_r;
+    char *info;
     int n = 0;
+
+    struct bi_list *lbl_r;
+    FOREACH_BI (lbl_r, ckr->labels) {
+        n += strlen(container_of(lbl_r, struct label, labels)->name);
+        n += 1;
+    }
+
     n += strlen(ckr->module_name);
     n += 1;
     n += strlen(ckr->chunk_name);
     n += 1;
+
+    info = salloc(n);
+
+    info[0] = '\0';
+    FOREACH_BI (lbl_r, ckr->labels) {
+        strcat(info, container_of(lbl_r, struct label, labels)->name);
+        strcat(info, ":");
+    }
+    strcat(info, ckr->module_name);
+    strcat(info, "/");
+    strcat(info, ckr->chunk_name);
+    return info;
 }
 
 void show_archive_info(const char *path)
@@ -567,11 +574,11 @@ void show_archive_info(const char *path)
     r = enter_frame();
     assert(r);
 
-    Archive ar = hash_table_get(path);
+    const struct archive *ar = hash_table_get(archives, path);
     printf("Archive path: %s\n", path);
 
-    int i, n = segmented_size(ar->dependencies) / sizeof(*deps);
     const char **deps = segmented_continuous(ar->dependencies);
+    int i, n = segmented_size(ar->dependencies) / sizeof(*deps);
 
     printf("Dependencies:\n");
     for (i = 0; i < n; ++i) {
@@ -581,7 +588,12 @@ void show_archive_info(const char *path)
     struct chunk_block *blocks = segmented_continuous(ar->blocks);
     n = segmented_size(ar->blocks) / sizeof(*blocks);
     for (i = 0; i < n; ++i) {
-        printf("Extending chunk reference: %s", blocks[i]
+        r = enter_frame();
+        assert(r);
+        const char *ckr_info = chunk_ref_info(&blocks[i].chunk);
+        printf("Extending chunk reference: %s", ckr_info);
+        r = exit_frame();
+        assert(r);
     }
     r = exit_frame();
     assert(r);
@@ -593,11 +605,18 @@ void show_archive_info(const char *path)
 @
 
 @<parse functions@=
+/* basic elements */
 void ignore_spaces(struct input_frame *ipt, struct token *tkn);
-Archive parse_archive(struct input_frame *ipt, struct token *tkn);
+const char *parse_string(struct input_frame *ipt, struct token *tkn);
+const char *parse_name(struct input_frame *ipt, struct token *tkn);
+const char *parse_file_path(struct input_frame *ipt, struct token *tkn);
+
+/* archive elements */
+struct archive *parse_archive(struct input_frame *ipt, struct token *tkn);
 const char *parse_module_name(struct input_frame *ipt, struct token *tkn);
 const char *parse_dependency(struct input_frame *ipt, struct token *tkn);
 struct chunk_block parse_block(struct input_frame *ipt, struct token *tkn);
+const char *parse_block_comment(struct input_frame *ipt, struct token *tkn);
 struct ref_file parse_file_declaration(struct input_frame *ipt, struct token *tkn);
 struct ref_file_set parse_file_set_declaration(struct input_frame *ipt, struct token *tkn);
 @
@@ -606,113 +625,53 @@ struct ref_file_set parse_file_set_declaration(struct input_frame *ipt, struct t
 void ignore_spaces(struct input_frame *ipt, struct token *tkn)
 {
     while (
-        next_token(ipt, tkn)->type == TOKEN_NORMAL_CHARACTER && isspace(tkn->value)
-        || tkn->type == TOKEN_NEWLINE
+        next_token(ipt, tkn)->type == TOKEN_NORMAL_CHARACTER
+        && isspace(tkn->value)
     )
         ;
 }
 
-Archive parse_archive(struct input_frame *ipt, struct token *tkn)
+const char *parse_string(struct input_frame *ipt, struct token *tkn)
 {
-    Archive ar;
-    NEW0(ar);
-    assert(ar);
+    char *str;
 
-    Heap hp = new_heap(
-        light_option_archive_resoure_number / 10,
-        SEGMENT_SIZE(
-            union {
-                const char *dep;
-                struct chunk_block c_b;
-                struct ref_file r_f;
-                struct ref_file_set r_fs;
-            } elm[10]
-        )
-    );
-    assert(hp);
+    const void *r;
+    r = enter_frame();
+    assert(r);
 
-    ar->dependencies = new_segmented(hp);
-    assert(ar->dependencies);
+    char *_str;
+    int size = 1 << 10, _size = 0; /* start from 1KB */
 
-    ar->blocks = new_segmented(hp);
-    assert(ar->blocks);
+    while (1) {
+        CALLOC(str, size+1);
+        assert(str);
 
-    ar->files = new_segmented(hp);
-    assert(ar->files);
+        memcpy(str, _str, _size);
 
-    ar->file_sets = new_segmented(hp);
-    assert(ar->file_sets);
-
-    const char *current_module_name = "";
-
-    do {
-        ignore_spaces(ipt, tkn);
-        if (tkn->type == TOKEN_CONTROL_CHARACTER) {
-            switch (tkn->value) {
-            case '-':
-                do {
-                    current_module_name = parse_module_name(ipt, tkn);
-                    if (!current_module_name) {
-                        ar = NULL;
-                    }
-                    if (tkn->type != TOKEN_CONTROL_CHARACTER || tkn->value != ' ') {
-                        ar = NULL;
-                        fprintf(
-                            stderr,
-                            "Unexpected ending of module name at row %d column %d of %s\n",
-                            ipt->pr+1, ipt->pc+1, ipt->file
-                        );
-                    }
-                    next_token(ipt, tkn);
-                } while (0);
-                break;
-            case '.':
-                do {
-                    const char *dep = parse_dependency(ipt, tkn);
-                    if (dep) {
-                        const void *r;
-                        r = segmented_pushback(ar->dependencies, dep);
-                        assert(r);
-                    } else {
-                        ar = NULL;
-                    }
-                } while (0);
-                break;
-            case '[':
-            case '(':
-                do {
-                    struct ref_file r_f = parse_file_declaration(ipt, tkn);
-                    if (r_f.file) {
-                        const void *r;
-                        r = segmented_pushback(ar->files, r_f);
-                        assert(r);
-                    } else {
-                        ar = NULL;
-                    }
-                } while (0);
-                break;
-            case '{':
-                break;
-            default:
+        int i = _size;
+        while (tkn->type == TOKEN_NORMAL_CHARACTER) {
+            str[i++] = tkn->value;
+            next_token(ipt, tkn);
+            if (i == size) {
+                _str = str;
+                _size = size;
+                str = NULL;
+                size <<= 2;
                 break;
             }
-        } else if (
-            tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<'
-            || tkn->type != TOKEN_EOF
-        ) {
-            struct chunk_block c_b = parse_block(ipt, tkn);
-            if (c_b.block->comment) {
-                const void *r;
-                r = segmented_pushback(ar->blocks, c_b);
-                assert(r);
-            } else {
-                ar = NULL;
-            }
-        } else {
-            ar = NULL;
         }
-    } while (ar && tkn->type != TOKEN_EOF);
-    return ar;
+
+        if (str) {
+            str[i] = '\0';
+            str = frame_return(str, i+1);
+            break;
+        }
+    }
+
+    r = exit_frame();
+    assert(r);
+
+    return str;
 }
 
 const char *normalize(const char *name)
@@ -749,38 +708,208 @@ const char *parse_name(struct input_frame *ipt, struct token *tkn)
         set_init(names, light_option_global_name_number);
     }
 
-    const char *name;
-
-    static char buffer[light_option_name_max_length];
-    int i = 0;
-    while (next_token(ipt, tkn)->type != TOKEN_CONTROL_CHARACTER) {
-        char c = ' ';
-        if (tkn->type == TOKEN_NEWLINE) {
-            c = ' ';
-        } else if (tkn->type == TOKEN_NORMAL_CHARACTER){
-            c = tkn->value;
-        } else {
-            fprintf(stderr, "Unended name at row %d, column %d\n", ipt->pr, ipt->pc);
-            return NULL;
-        }
-        buffer[i++] = c;
-    }
-    buffer[i] = '\0';
+    const char *name = NULL;
+    int new_name = 0;
 
     const void *r;
     r = enter_frame();
     assert(r);
 
-    const char *_name = normalize(buffer);
-    name = set_in(_name, names);
-    if (!name) {
-        name = frame_return_string(_name);
-        set_include(names, name);
+    int row, col;
+    row = ipt->pr;
+    col = ipt->pc;
+
+    const char *str = parse_string(ipt, tkn);
+    
+    if (tkn->type == TOKEN_EOF) {
+        fprintf(stderr, "Unended name at end of %s\n", ipt->file);
+    } else {
+        const char *_name = normalize(str);
+        if (strlen(_name) == 0) {
+            fprintf(stderr,
+                "Name of length 0 is not allowed, found at row %d column %d in %s",
+                row+1, col+1, ipt->file
+            );
+        } else {
+            name = set_in(_name, names);
+            if (!name) {
+                new_name = 1;
+                name = frame_return_string(_name);
+            }
+        }
     }
     r = exit_frame();
     assert(r);
 
+    if (new_name) {
+        set_include(names, name);
+    }
+
     return name;
+}
+
+const char *parse_file_path(struct input_frame *ipt, struct token *tkn)
+{
+    char *path = NULL;
+    const void *r;
+    r = enter_frame();
+    assert(r);
+
+    int row, col;
+    row = ipt->pr;
+    col = ipt->pc;
+
+    const char *_str = parse_string(ipt, tkn);
+    char *str = NULL;
+
+    STRDUP(_str, str);
+    
+    int illegal = 0;
+    const char *p;
+    for (p = str; *p; ++p) {
+        if (*p == '\n') {
+            fprintf(stderr,
+                "the file path at row %d column %d in %s contains newline\n",
+                row+1, col+1, ipt->file
+            );
+            illegal = 1;
+            break;
+        }
+    }
+    if (!illegal) {
+        char *h, *t;
+        h = str;
+        while (isspace(*h))
+            ++h;
+        t = str + strlen(str);
+        while (isspace(*(t-1)))
+            --t;
+        *t = '\0';
+        path = frame_return_string(h);
+    }
+    r = exit_frame();
+    assert(r);
+    return path;
+}
+
+struct archive *parse_archive(struct input_frame *ipt, struct token *tkn)
+{
+    struct archive *ar;
+    NEW0(ar);
+    assert(ar);
+
+    Heap hp = new_heap(
+        light_option_archive_resoure_number / 10,
+        SEGMENT_SIZE(
+            union {
+                const char *dep;
+                struct chunk_block c_b;
+                struct ref_file r_f;
+                struct ref_file_set r_fs;
+            } elm[10]
+        )
+    );
+    assert(hp);
+
+    ar->dependencies = new_segmented(hp);
+    assert(ar->dependencies);
+
+    ar->blocks = new_segmented(hp);
+    assert(ar->blocks);
+
+    ar->files = new_segmented(hp);
+    assert(ar->files);
+
+    ar->file_sets = new_segmented(hp);
+    assert(ar->file_sets);
+
+    const char *current_module_name = "";
+
+    do {
+        ignore_spaces(ipt, tkn);
+        if (tkn->type == TOKEN_CONTROL_CHARACTER) {
+            switch (tkn->value) {
+            case '-':
+                do {
+                    next_token(ipt, tkn);
+                    current_module_name = parse_module_name(ipt, tkn);
+                    if (!current_module_name) {
+                        ar = NULL;
+                    }
+                    if (tkn->type != TOKEN_CONTROL_CHARACTER || tkn->value != ' ') {
+                        ar = NULL;
+                        fprintf(
+                            stderr,
+                            "Unexpected ending of module name at row %d column %d of %s\n",
+                            ipt->pr+1, ipt->pc+1, ipt->file
+                        );
+                    }
+                    next_token(ipt, tkn);
+                } while (0);
+                break;
+            case '.':
+                do {
+                    next_token(ipt, tkn);
+                    const char *dep = parse_dependency(ipt, tkn);
+                    if (dep) {
+                        const void *r;
+                        r = segmented_pushback(ar->dependencies, dep);
+                        assert(r);
+                    } else {
+                        ar = NULL;
+                    }
+                    if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == ' ') {
+                        next_token(ipt, tkn);
+                    } else if (tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '.') {
+                        /* go to parse next dependency */
+                    } else {
+                        fprintf(stderr,
+                            "Unexpected ending of dependency declaration at row %d column %d in %s\n",
+                            ipt->pr+1, ipt->pc+1, ipt->file
+                        );
+                        ar = NULL;
+                    }
+                } while (0);
+                break;
+            case '[':
+            case '(':
+                do {
+                    struct ref_file r_f = parse_file_declaration(ipt, tkn);
+                    if (r_f.file) {
+                        const void *r;
+                        r = segmented_pushback(ar->files, r_f);
+                        assert(r);
+                    } else {
+                        ar = NULL;
+                    }
+                } while (0);
+                break;
+            case '{':
+                break;
+            default:
+                break;
+            }
+        } else if (
+            tkn->type == TOKEN_CONTROL_CHARACTER && tkn->value == '<'
+            || tkn->type == TOKEN_EOF
+        ) {
+            struct chunk_block c_b = parse_block(ipt, tkn);
+            if (c_b.block->comment) {
+                const void *r;
+                r = segmented_pushback(ar->blocks, c_b);
+                assert(r);
+            } else {
+                ar = NULL;
+            }
+        } else {
+            fprintf(stderr,
+                "Unexpected token at row %d column %d in %s",
+                ipt->pr+1, ipt->pc+1, ipt->file
+            );
+            ar = NULL;
+        }
+    } while (ar && tkn->type != TOKEN_EOF);
+    return ar;
 }
 
 const char *parse_module_name(struct input_frame *ipt, struct token *tkn)
@@ -790,13 +919,21 @@ const char *parse_module_name(struct input_frame *ipt, struct token *tkn)
 
 const char *parse_dependency(struct input_frame *ipt, struct token *tkn)
 {
-    return "";
+    return parse_file_path(ipt, tkn);
 }
 
 struct chunk_block parse_block(struct input_frame *ipt, struct token *tkn)
 {
     struct chunk_block c_b;
+    struct block *blk;
+    NEW0(blk);
+    blk->comment = parse_block_comment(ipt, tkn);
     return c_b;
+}
+
+const char *parse_block_comment(struct input_frame *ipt, struct token *tkn)
+{
+    return parse_string(ipt, tkn);
 }
 
 struct ref_file parse_file_declaration(struct input_frame *ipt, struct token *tkn)

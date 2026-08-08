@@ -19,7 +19,7 @@ There are some idioms to make life a bit easier.
 #define ZEROFY(p, n) memset((p), 0, sizeof(*p) * (n))
 #define ZEROFY_SINGLE(p) ZEROFY(p, 1)
 
-#define COPY(src, dest) memcpy((dest), (src), sizeof(*(src)))
+#define COPY(dest, src) memcpy((dest), (src), sizeof(*(src)))
 
 #define SIGN(v) (((v) > 0) - ((v) < 0))
 #define ABS(v) ((v) * SIGN(v))
@@ -216,13 +216,18 @@ static inline size_t remaining_memory() {
         (*__light_macro_local_p_r) = (typeof(p))csalloc((len), sizeof *(p)); \
     } while (0)
 #define NEW0(p) CALLOC(p, 1)
-#define STRDUP(src, dst) \
-    do { \
-        typeof(dst) *__light_macro_local_dst_r = &(dst); \
-        typeof(src) *__light_macro_local_src_r = &(src); \
-        CALLOC(*__light_macro_local_dst_r, strlen(*__light_macro_local_src_r)+1); \
-        if (dst) strcpy(*__light_macro_local_dst_r, *__light_macro_local_src_r); \
-    } while (0)
+@
+
+@<lightlib@:C Structure@/exported static inline functions@=
+static inline char *sstrdup(const char *s)
+{
+    char *_s;
+    _s = salloc(strlen(s)+1);
+    if (_s) {
+        strcpy(_s, s);
+    }
+    return _s;
+}
 @
 
 @<lightlib@:C Structure@/global variables@=
@@ -251,6 +256,18 @@ void *frame_return(const void *p, size_t s)
     hd->returned = p;
     hd->returned_size = s;
     return _light_top_context->stack_frame_start;
+}
+
+void *frame_return_complex(
+    const void *obj,
+    void *serialize(const void *obj, size_t *size, const void *base_addr)
+) {
+    size_t size;
+    void *s_obj = serialize(obj, &size, _light_top_context->stack_frame_start);
+    if (!s_obj) {
+        return NULL;
+    }
+    return frame_return(s_obj, size);
 }
 
 const void *exit_frame() {

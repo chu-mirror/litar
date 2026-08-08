@@ -72,6 +72,51 @@ do {
 } while (0);
 @
 
+@<test light@:light@:executable@:C Structure@/data types@=
+struct id_card {
+    const char *name;
+    int age;
+} *card;
+@
+
+@<test light@:light@:executable@:C Structure@/functions@=
+void *id_card_serialize(const void *card, size_t *size, const void *base_addr)
+{
+    size_t id_card_offset, name_offset;
+
+    *size = 0;
+    id_card_offset = *size;
+
+    *size += sizeof(struct id_card);
+    name_offset = *size;
+
+    *size += strlen(((const struct id_card *)card)->name) + 1;
+
+    void *obj = salloc(*size);
+    COPY((uint8_t *)obj + id_card_offset, (const struct id_card *)card);
+    strcpy((uint8_t *)obj + name_offset, ((const struct id_card *)card)->name);
+    
+    ((struct id_card *)((uint8_t *)obj + id_card_offset))->name = (uint8_t *)base_addr + name_offset;
+}
+@
+
+@<test cases@=
+do {
+    struct id_card *card;
+    enter_frame();
+    NEW(card);
+    card->name = sstrdup("Chu");
+    card->age = 27;
+    card = frame_return_complex(card, id_card_serialize);
+    exit_frame();
+
+    assert(strcmp(card->name, "Chu") == 0);
+    assert(card->age == 27);
+
+    light_log(INFO, "Passed frame_return_complex");
+} while (0);
+@
+
 @<test cases@=
 do {
     int i;

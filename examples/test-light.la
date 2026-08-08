@@ -153,10 +153,10 @@ do {
         NEW(nd_r);
         assert(nd_r != NULL);
         nd_r->n = i;
-        nodes = bi_list_insert(&nd_r->bi_list, nodes);
+        nodes = bi_list_insert(&nd_r->bi_list, nodes)->next;
     }
     i = 0;
-    FOREACH_BI_BACKWARDS (l, nodes->previous) {
+    FOREACH_BI (l, nodes) {
         assert(container_of(l, Node, bi_list)->n == i);
         ++i;
     }

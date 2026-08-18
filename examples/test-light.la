@@ -97,6 +97,7 @@ void *id_card_serialize(const void *card, size_t *size, const void *base_addr)
     strcpy((uint8_t *)obj + name_offset, ((const struct id_card *)card)->name);
     
     ((struct id_card *)((uint8_t *)obj + id_card_offset))->name = (uint8_t *)base_addr + name_offset;
+    return obj;
 }
 @
 

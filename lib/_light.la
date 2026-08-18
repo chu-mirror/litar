@@ -58,14 +58,14 @@ cons(struct list *elm, struct list *l)
     return elm;
 }
 static inline struct list *
-cdr(struct list *l)
+cdr(const struct list *l)
 {
     return l->next;
 }
 @
 
 @<lightlib@:C Structure@/functions@=
-int list_length(struct list *l)
+int list_length(const struct list *l)
 {
     int n = 0;
     while (l) {
@@ -73,6 +73,23 @@ int list_length(struct list *l)
         ++n;
     }
     return n;
+}
+
+void reverse(struct list **l_r)
+{
+    struct list *l, *ll;
+
+    l = *l_r;
+    ll = NULL;
+
+    while (l) {
+        struct list *l_t = l->next;
+        l->next = ll;
+        ll = l;
+        l = l_t;
+    }
+
+    *l_r = ll;
 }
 @
 

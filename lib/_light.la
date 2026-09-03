@@ -346,14 +346,16 @@ static inline struct frame_header *enter_context(struct context *ctx)
 
 static inline const void *exit_context()
 {
-    const void * ret = exit_frame();
+    const void *ret = exit_frame();
     _light_top_context = _light_top_context->parent;
     return ret;
 }
 
-static inline void switch_context(struct context *ctx)
+static inline struct context *switch_context(struct context *ctx)
 {
+    struct context *tmp = _light_top_context;
     _light_top_context = ctx;
+    return tmp;
 }
 @
 

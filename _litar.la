@@ -7,8 +7,21 @@
 #define light_option_global_name_number (10000)
 #endif
 
-#ifndef light_option_archive_resoure_number
-#define light_option_archive_resoure_number (1000)
+#ifndef light_option_global_name_average_size
+#define light_option_global_name_average_size (32)
+#endif
+
+#ifndef light_option_context_names_size
+#define light_option_context_names_size \
+    (light_option_global_name_number * light_option_global_name_average_size)
+#endif
+
+#ifndef light_option_label_number
+#define light_option_label_number (1000)
+#endif
+
+#ifndef light_option_archive_resource_number
+#define light_option_archive_resource_number (1000)
 #endif
 @
 
@@ -199,12 +212,12 @@ int ensure_directory(const char *path)
 @<litar@:light@:executable@:C Structure@/data types@=
 struct label {
     const char *name;
-    struct bi_list labels;
+    struct list labels;
 };
 struct chunk_ref {
     const char *module_name;
     const char *chunk_name;
-    struct bi_list *labels;
+    struct list *labels;
 };
 struct file_ref {
     const char *module_name;
@@ -612,13 +625,11 @@ const char *parse_name(struct input_frame *ipt, struct token *tkn);
 const char *parse_file_path(struct input_frame *ipt, struct token *tkn);
 
 /* archive elements */
-struct archive *parse_archive(struct input_frame *ipt, struct token *tkn);
-const char *parse_module_name(struct input_frame *ipt, struct token *tkn);
-const char *parse_dependency(struct input_frame *ipt, struct token *tkn);
+struct chunk_ref parse_chunk_ref(struct input_frame *ipt, struct token *tkn);
 struct chunk_block parse_block(struct input_frame *ipt, struct token *tkn);
-const char *parse_block_comment(struct input_frame *ipt, struct token *tkn);
 struct ref_file parse_file_declaration(struct input_frame *ipt, struct token *tkn);
 struct ref_file_set parse_file_set_declaration(struct input_frame *ipt, struct token *tkn);
+struct archive *parse_archive(struct input_frame *ipt, struct token *tkn);
 @
 
 @<litar@:light@:executable@:C Structure@/functions@=
@@ -673,7 +684,19 @@ const char *parse_string(struct input_frame *ipt, struct token *tkn)
 
     return str;
 }
+@
 
+@<light@:executable@:C Structure@/global variables@=
+static uint8_t context_names_memory[light_option_context_names_size];
+struct context context_names = {
+    .name = "names",
+    .parent = NULL,
+    .memory_end = context_names_memory + light_option_context_names_size,
+    .stack_top = context_names_memory,
+};
+@
+
+@<litar@:light@:executable@:C Structure@/functions@=
 const char *normalize(const char *name)
 {
     int i = 0, j = 0, l = strlen(name);
@@ -703,9 +726,17 @@ const char *normalize(const char *name)
 const char *parse_name(struct input_frame *ipt, struct token *tkn)
 {
     static Set names;
+    struct context *prev = _light_top_context;
     if (!names) {
+        const void *r;
+        r = enter_context(&context_names);
+        assert(r);
         names = new_string_set();
-        set_init(names, light_option_global_name_number);
+        assert(names);
+        r = set_init(names, light_option_global_name_number);
+        assert(r);
+    } else {
+        switch_context(&context_names);
     }
 
     const char *name = NULL;
@@ -744,6 +775,7 @@ const char *parse_name(struct input_frame *ipt, struct token *tkn)
     if (new_name) {
         set_include(names, name);
     }
+    swtich_context(prev);
 
     return name;
 }
@@ -791,6 +823,118 @@ const char *parse_file_path(struct input_frame *ipt, struct token *tkn)
     assert(r);
     return path;
 }
+@
+
+@<litar@:light@:executable@:C Structure@/functions@=
+static uint32_t labels_hash_func(const struct list *lbls)
+{
+    uint32_t h;
+
+    int n = 0;
+    const struct list *p;
+    FOREACH (p, lbls) {
+        n += strlen(container_of(p, struct label, labels)->name) + 1;
+    }
+
+    const void *r;
+    r = enter_frame();
+    assert(r);
+    uint8_t *s = salloc(n);
+    
+    FOREACH (p, lbls) {
+        const char *name = container_of(p, struct label, label)->name;
+        memcpy(s, name, strlen(name)+1);
+    }
+    h = hash(s, n);
+
+    r = exit_frame();
+    assert(r);
+
+    return h;
+}
+
+static int labels_equal_func(const struct list *lbls1, const struct list *lbls2)
+{
+    while (lbls1 && lbls2) {
+        if (
+            strcmp(
+                container_of(lbls1, struct label, labels)->name,
+                container_of(lbls2, struct label, labels)->name
+            ) != 0
+        ) {
+            break;
+        }
+        lbls1 = cdr(lbls1);
+        lbls2 = cdr(lbls2);
+    }
+    if (!lbls1 && !lbls2) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+struct chunk_ref parse_chunk_ref(struct input_frame *ipt, struct token *tkn)
+{
+    static Set labelss;
+
+    if (!labelss) {
+        labelss = new_set(labels_hash_func, labels_equal_func);
+        set_init(labelss, light_option_label_number);
+    }
+
+    void *labels_serialize(const void *lbls, size_t *size, const void *base_addr)
+    {
+        struct list *_lbls, *saved = NULL;
+
+        *size = 0;
+        FOREACH (_lbls, (struct list *)lbls) {
+            if (set_in(_lbls, labelss)) {
+                saved = _lbls;
+                break;
+            }
+            *size += sizeof(struct list);
+            *size += strlen(container_of(lbl, struct label, labels)->name);
+        }
+
+        void *obj = salloc(*size);
+        int idx = 0;
+        FOREACH (lbl, _lbls) {
+            if (lbl == saved) {
+                break;
+            }
+            int idx_name = idx + sizeof(struct list);
+            ((struct label *)(obj+idx))->name = base_addr + idx;
+
+            if (cdr(lbl) == saved) {
+                ((struct label *)(obj+idx))->labels.next = saved;
+            } else {
+                int idx_labels_next = idx_name + strlen(container_of(lbl, struct label, labels)->name);
+                ((struct label *)(obj+idx))->labels.next = base_addr + idx_labels_next;
+                idx = idx_labels_next;
+            }
+        }
+        return obj;
+    }
+
+    const void *r;
+    r = enter_frame();
+    assert(r);
+
+    while (
+        tkn->type != TOKEN_CONTROL_CHARACTER
+        || (tkn->type == TOKEN_CONTROL_CHARACTER && (tkn->value == ':' || tkn->value == '/'))
+    ) {
+        const char *str = parse_name(ipt, tkn);
+        if (tkn->type == TOKEN_EOF) {
+            fprintf(stderr, "Unexpected ending of chunk ref at row %d column %d of %s\n",
+                            ipt->pr+1, ipt->pc+1, ipt->file);
+        }
+    }
+
+    r = exit_frame();
+    assert(r);
+}
 
 struct archive *parse_archive(struct input_frame *ipt, struct token *tkn)
 {
@@ -799,7 +943,7 @@ struct archive *parse_archive(struct input_frame *ipt, struct token *tkn)
     assert(ar);
 
     Heap hp = new_heap(
-        light_option_archive_resoure_number / 10,
+        light_option_archive_resource_number / 10,
         SEGMENT_SIZE(
             union {
                 const char *dep;
@@ -832,7 +976,7 @@ struct archive *parse_archive(struct input_frame *ipt, struct token *tkn)
             case '-':
                 do {
                     next_token(ipt, tkn);
-                    current_module_name = parse_module_name(ipt, tkn);
+                    current_module_name = parse_name(ipt, tkn);
                     if (!current_module_name) {
                         ar = NULL;
                     }
@@ -850,7 +994,7 @@ struct archive *parse_archive(struct input_frame *ipt, struct token *tkn)
             case '.':
                 do {
                     next_token(ipt, tkn);
-                    const char *dep = parse_dependency(ipt, tkn);
+                    const char *dep = parse_file_path(ipt, tkn);
                     if (dep) {
                         const void *r;
                         r = segmented_pushback(ar->dependencies, dep);
@@ -912,28 +1056,14 @@ struct archive *parse_archive(struct input_frame *ipt, struct token *tkn)
     return ar;
 }
 
-const char *parse_module_name(struct input_frame *ipt, struct token *tkn)
-{
-    return parse_name(ipt, tkn);
-}
-
-const char *parse_dependency(struct input_frame *ipt, struct token *tkn)
-{
-    return parse_file_path(ipt, tkn);
-}
-
 struct chunk_block parse_block(struct input_frame *ipt, struct token *tkn)
 {
     struct chunk_block c_b;
     struct block *blk;
     NEW0(blk);
-    blk->comment = parse_block_comment(ipt, tkn);
+    blk->comment = parse_string(ipt, tkn);
+    c_b->chunk = parse_chunk_ref(ipt, tkn);
     return c_b;
-}
-
-const char *parse_block_comment(struct input_frame *ipt, struct token *tkn)
-{
-    return parse_string(ipt, tkn);
 }
 
 struct ref_file parse_file_declaration(struct input_frame *ipt, struct token *tkn)

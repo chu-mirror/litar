@@ -26,7 +26,6 @@ the readability is supposed to be improved a lot.
 Such a file is called a litar archive, the name litar is a portmanteau of
 "literate" and "archive".
 
-
 # Basic structure
 
 Because a litar archive is supposed to contain text of all types, its own syntax
@@ -40,11 +39,11 @@ The space character can be either space, tab or newline.
 ```
 Some comments.
 
-@... expression 1 ...@
+@... expression 1 ... @
 
 Some other comments.
 
-@... expression 2 ...@
+@... expression 2 ... @
 ```
 
 # Block
@@ -99,14 +98,181 @@ that all references to chunk are replaced by the content of the corresponding ch
 It's a recursive procedure to evaluate the content of a chunk.
 So a block cannot include the chunk that it extends.
 
-# Filter
+# Module
+
+When a litar archive becomes bigger and bigger, despite that the name of a chunk
+is usually a long sentence, names might conflict.
+So litar supports modularization.
+
+```
+@- Module 1 @
+
+@<chunk@=
+    The contents.
+@
+
+@- Module 2 @
+
+@<chunk@=
+    @<Module 1@/chunk@>
+@
+```
+
+litar does not stop users from modifying chunks of other modules, in fact,
+it's a powerful way to interact with other modules, but use this feature
+with caution.
+
+Besides the named module, there's an anonymous module. If there's no @-,
+or there's no module name specified after @-, the chunks belong to this
+anonymous module.
+
+# Specialization
 
 The syntax above describes some common concepts that all literate programming tools have.
 litar has some useful extensions, which make it a general purpose tool
 for text processing rather than a deliberate literate programming tool.
 As a result, litar will not incorporate weaving to its core.
 
-The major extension is user defined filters.
+A chunk can be used as a template naturally. Let's say, a chunk
+defines a general structure for a C program. Then we want to write two separated
+C programs in one litar archive. The final result might look like,
+
+```
+@<general structure for C program@=
+@<includes@>
+int main(int argc, char **argv)
+{
+    @<main body of C program@>
+}
+@
+
+@<program1.c@=
+@<general structure for C program@>
+@
+
+@<program2.c@=
+@<general structure for C program@>
+@
+```
+
+It does not work because all extending to the @<general structure for C program@>
+reflects on both programs. litar introduces specialization of chunks.
+
+```
+@<general structure for C program@=
+@<includes@>
+int main(int argc, char **argv)
+{
+    @<main body of C program@>
+}
+@
+
+@<program1.c@=
+@<program1@:general structure for C program@>
+@
+
+@<program2.c@=
+@<program2@:general structure for C program@>
+@
+
+@<program1@:includes@=
+#include <stdio.h>
+@
+
+@<program1@:main body of C program@=
+printf("Hello from program1\n");
+@
+```
+
+`program1` and `program2` here are called labels. Labels, module name and chunk name construct a chunk reference.
+Extending through the specialized chunk reference does not affect the original chunk.
+litar allows multiple specializations at once to further specialize a chunk reference.
+For example, `@<spec2@:spec1@:module@/chunk@=` specialize `spec1@:module@/chunk` further by spec2.
+
+A sequence of labels can be grouped and assigned a name:
+
+```
+@:spec@=spec2@:spec1@
+```
+
+# Branching
+
+litar also provides a simple flagging system to support branching.
+
+```
+@! condition A @
+
+@? condition A @|
+
+@<chunk@=
+    block 1
+@
+
+@? condition B @|
+
+@<chunk@=
+    block 2
+@
+
+@|
+
+@<chunk@=
+    block 3
+@
+
+@
+```
+
+The chunk here is extended by block 1 rather than block 2 or block 3.
+
+# Including
+
+Just like programming languages, litar supports dividing out reusable part.
+The reusable part can form a library to be included to other archives.
+
+litar supports C style including.
+
+Library, 'c_structure.la':
+
+```
+@? included common C structure @|@|
+
+@! included common C structure @
+
+@- C structure @
+
+@<C program@=
+@<includes@>
+int main(int argc, char **argv) {
+    @<main body@>
+    return 0;
+}
+@
+
+@
+```
+
+Archive that describes a C program, 'hello.la':
+
+```
+@. c_structure.la @
+
+@<hello.c@=
+@<hello@:C structure@/C program@>
+@
+
+@<hello@:C structure@/includes@=
+#include <stdio.h>
+@
+
+@<hello@:C structure@/main body@=
+printf("Hello\n");
+@
+```
+
+# Filter
+
+Another major extension is user defined filters.
 The following simple program explains the usage of filter in litar.
 
 ```
@@ -172,14 +338,14 @@ how to decide what files a filter can access, etc.
 # File System
 
 It's ideal if a filter just use 3 files, stdin, stdout and stderr,
-and do nothing more than transform input from stdin to stdout,
+and do nothing more than transforming input from stdin to stdout,
 occasionally report error through stderr. In reality,
 it's too restrictive. Like Bourne Shell, it can not do anything meaningful
 without accessing tools provided by the underlying operating system.
 Even if we limited external programs to a fixed set,
 we would still have to account for tools like sed that require access to separate script files.
 So, to simply regard filters as executables and run them under
-current directory is enough? No, what if the invocated sed command want
+current directory is enough? No, what if the invoked sed command wants
 to make use of a script file written in the litar archive?
 Should we extract the file from the litar archive manually then run the sed command?
 It's too cumbersome, far from convenient!
@@ -215,12 +381,9 @@ sed -f sed_scripts/bigger_world.sed
 ```
 
 There are three files in this example, "hello.c", "sed_scripts/bigger_world.sed"
-and "exaggeratedly". The difference between @[ and @( is that @( specifies
+and "run_bigger_world.sh".  The difference between @[ and @( is that @( specifies
 an executable file but @['s is a regular file.
-Filters are executed in an environment so that these three
-files can be accessed.
-It's worthy to mention that a file in a litar archive is also a chunk,
-and it can be referenced as usual chunks.
+Filters are executed in an environment so that these three files can be accessed.
 
 The discussion above implies that a litar archive has a file system inside.
 To be compatible with Unix programming environment, litar uses a technology called
@@ -235,7 +398,7 @@ The introducing of file system causes a lot of consequences.
 One major problem is that the circular dependencies are not easy to detect as before.
 
 The expanded content of a chunk depends on not only other chunks it referenced,
-but also the filters it invocates. Filters depends heavily on the
+but also the filters it invokes. Filters depends heavily on the
 file system. For example, a simple 'ls' command will make the output
 of the filter depends on all files of the working directory, hence, all chunks these files
 relate to. The circular dependency does not only happen more frequently but also is harder to detect.
@@ -283,87 +446,4 @@ can be used to declare a new file set like following,
 
 Keep in mind that litar calculates final files using lazy evaluation.
 The calculation happens just before the invocation.
-
-# Specialization
-
-There's another important extension for reusability of code. Let's say, a chunk
-defines a general structure for a C program. Then we want to write two separated
-C program in one litar archive. The final result might look like,
-
-```
-@<general structure for C program@=
-@<includes@>
-int main(int argc, char *argv)
-{
-    @<main body of C program@>
-}
-@
-
-@[program1.c@=
-@<general structure for C program@>
-@
-
-@[program2.c@=
-@<general structure for C program@>
-@
-```
-
-It does not work because all extending to the @<general structure for C program@>
-reflects on both programs. litar introduce specialization of chunks.
-
-```
-@<general structure for C program@=
-@<includes@>
-int main(int argc, char *argv)
-{
-    @<main body of C program@>
-}
-@
-
-@[program1.c@=
-@<program1@:general structure for C program@>
-@
-
-@[program2.c@=
-@<program2@:general structure for C program@>
-@
-
-@<program1@:includes@=
-#include <stdio.h>
-@
-
-@<program1@:main body of C program@=
-printf("Hello from program1\n");
-@
-```
-
-Extending through the specialized name does not affect the original chunk.
-
-# Module
-
-When a litar archive becomes bigger and bigger, despite that the name of a chunk
-is usually a long sentence, names might conflict.
-So litar supports modularization.
-
-```
-@- Module 1
-
-@<chunk@=
-    The contents.
-@
-
-@- Module 2
-
-@<chunk@=
-    @<Module 1@/chunk@>
-@
-```
-
-litar does not stop users from modifying chunks of other modules, in fact,
-it's a powerful way to interact with other modules, but use this feature
-with caution.
-
-Besides the named module, there's a anonymous module. If there's no @-,
-or there's no module name specified after @-, the chunks belong to this
-anonymous module.
 

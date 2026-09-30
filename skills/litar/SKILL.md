@@ -1,22 +1,18 @@
 ---
 name: litar
-description: "interact with litar, print chunk, author an litar archive"
+description: "read and edit litar archive, interact with litar command line tool"
 ---
 
-litar implements `reference/syntax.md`.
+# Read and edit litar archive
 
-## Run
+A litar archive follows the syntax defined in `reference/syntax.md`.
+Follow the style guidance in `reference/style.md`.
+
+# Invoke command line tool
 
 Print the contents of a chunk in an archive.
 
 ```bash
 ./litar -p CHUNK archive.la
 ```
-
-The expanded chunk goes to stdout. The arguments are the flag `-p`,
-the chunk name, and the archive path, in that order.
-
-## Author an archive
-
-Follow the style guidance in `reference/style.md`.
 

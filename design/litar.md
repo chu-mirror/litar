@@ -1,29 +1,29 @@
 # Introduction
 
-Programmers have a lot of text to deal with. They write code,
+Programmers have a lot of text to deal with: they write code,
 they write code to compile code, they write document, they write
 code to format document, they write code to parse whatever text,
 they even type commands to control computer through shells.
 Basically, all work that programmers do is writing text.
 
-The traditional unit of text is file, text of different types
-is saved in separate files, but creating a new file can sometimes be cumbersome.
+The traditional unit of text is file; text of different types
+is saved in separate files. Creating a new file is sometimes cumbersome.
 Like, you want to insert build-time information to your code whenever you build
 your program. To do that, you might write a simple sed script and
-put that to Makefile. Here is a problem, sed operates on the whole
-file, so you have to make sure that the sed script won't influence the other
-parts of the file. To solve that problem, you might move that part of code to a new file,
-use a function to encapsulate it or simply store the information
-in a macro or a variable and pass back to the original file.
+put that to Makefile. Here is a problem: sed operates on the whole
+file, so you want the sed script to leave the remaining alone.
+To solve this, you might move the code being modified to a new file,
+use a function to encapsulate it, or simply store the information
+in a macro or a variable, then pass it back to the original file.
 You can see all the extra efforts made here.
 
-litar is created to operate on a smaller unit of text, which is called chunk.
-With litar, you can gather text of whatever type to a single file
-and describe the relations between chunks with ease. Some relations
+litar operates on a smaller unit of text, which is called chunk.
+With litar, you gather text of whatever type to a single file
+and describe the relations between chunks with ease; some relations
 are hard or cumbersome to implement if between files.
 What's more, follow the spirit of literate programming,
 the readability is supposed to be improved a lot.
-Such a file is called a litar archive, the name litar is a portmanteau of
+Such a file is called a litar archive; the name litar is a portmanteau of
 "literate" and "archive".
 
 # Basic structure
@@ -33,23 +33,24 @@ should be as simple as possible. The syntax of a litar archive is built upon
 control characters, which are @ followed by a non-alphabetic character.
 
 A litar archive consists of comments and expressions. Expressions start with a control character,
-end with a special control character @ followed by a space character.
-The space character can be either space, tab or newline.
+end with a special control character, @ followed by a space character;
+the space character can be either space, tab or newline.
 
 ```
 Some comments.
 
-@... expression 1 ... @
+@<non-alphabetic character> expression 1 @
 
 Some other comments.
 
-@... expression 2 ... @
+@<non-alphabetic character> expression 2 @
 ```
 
 # Block
 
-To fully describe all concepts, we shall introduce another term, block.
-Each block consists of two basic parts: the name of a chunk and the content of current block.
+Block expressions extend a chunk by a piece of text.
+Each block expression consists of two basic parts:
+the name of a chunk and the content of current block.
 
 ```
 @<chunk1@=
@@ -66,9 +67,9 @@ Each block consists of two basic parts: the name of a chunk and the content of c
 
 ```
 
-We say here that chunk1 is extended by block1 and block3, chunk2 is extended by block2.
+We say: block1 and block3 extend chunk1, block2 extends chunk2.
 
-Here is another relation between chunk and block, include.
+Here is another relation between chunk and block: include.
 
 ```
 Some comments.
@@ -87,18 +88,24 @@ Some other comments
 
 ```
 
-The contents of block2 contain a reference to chunk1, we say block2 includes chunk1
+block2 contains a reference to chunk1; we say: block2 includes chunk1
 at the position of the reference to chunk1.
 
-The definition for the content of a chunk is the expanded content of all
-blocks appended to the chunk concatenated.
-The definition for the expanded content of a block is the content of the block
-that all references to chunk are replaced by the content of the corresponding chunk.
+Let's define what the content of a chunk is.
 
-It's a recursive procedure to evaluate the content of a chunk.
-So a block cannot include the chunk that it extends.
+- the content of a chunk: the expanded content of all blocks extending the chunk concatenated in order.
+- the expanded content of a block: the content of the block
+  that all references to chunk are replaced by the content of the corresponding chunk.
+
+It's a recursive procedure to evaluate the content of a chunk;
+a block can not include the chunk that it extends.
 
 # Module
+
+The syntax above describes some common concepts that all literate programming tools have.
+litar has some useful extensions, which make it a general purpose tool
+for text processing rather than a deliberate literate programming tool.
+As a result, litar will not incorporate weaving to its core.
 
 When a litar archive becomes bigger and bigger, despite that the name of a chunk
 is usually a long sentence, names might conflict.
@@ -111,6 +118,10 @@ So litar supports modularization.
     The contents.
 @
 
+@<another chunk@=
+    @<chunk@>
+@
+
 @- Module 2 @
 
 @<chunk@=
@@ -118,8 +129,11 @@ So litar supports modularization.
 @
 ```
 
-litar does not stop users from modifying chunks of other modules, in fact,
-it's a powerful way to interact with other modules, but use this feature
+The chunk in Module 2 references to the chunk in Module 1 by preceding the chunk name "chunk"
+with the module name "Module 1". Chunks in a same module can ignore the module name.
+
+litar does not stop users from modifying chunks of other modules,
+it's a powerful way to interact with other modules in fact, but use this feature
 with caution.
 
 Besides the named module, there's an anonymous module. If there's no @-,
@@ -128,14 +142,10 @@ anonymous module.
 
 # Specialization
 
-The syntax above describes some common concepts that all literate programming tools have.
-litar has some useful extensions, which make it a general purpose tool
-for text processing rather than a deliberate literate programming tool.
-As a result, litar will not incorporate weaving to its core.
-
-A chunk can be used as a template naturally. Let's say, a chunk
-defines a general structure for a C program. Then we want to write two separated
-C programs in one litar archive. The final result might look like,
+A chunk can be used as a template naturally. Consider that a chunk
+defines a general structure for a C program, and we want to write two separated
+C programs in single litar archive basing on that.
+The final result might look like,
 
 ```
 @<general structure for C program@=
@@ -184,10 +194,17 @@ printf("Hello from program1\n");
 @
 ```
 
-`program1` and `program2` here are called labels. Labels, module name and chunk name construct a chunk reference.
-Extending through the specialized chunk reference does not affect the original chunk.
+`program1` and `program2` here are called labels. Labels, module name, and chunk name construct a chunk reference.
+Extending through a chunk reference does not affect other chunk references of same chunk.
 litar allows multiple specializations at once to further specialize a chunk reference.
 For example, `@<spec2@:spec1@:module@/chunk@=` specialize `spec1@:module@/chunk` further by spec2.
+
+After the introducing of chunk reference, We shall redefine what the content of a chunk is.
+
+- the content of a chunk reference: the expanded content of all blocks extending
+  unspecialized predecessors and the current concatenated in order.
+- the expanded content of a block: the content of the block
+  that all chunk references are replaced by the content.
 
 A sequence of labels can be grouped and assigned a name:
 
@@ -232,7 +249,7 @@ The reusable part can form a library to be included to other archives.
 
 litar supports C style including.
 
-Library, 'c_structure.la':
+'c_structure.la', a library of common C structures:
 
 ```
 @? included common C structure @|@|
@@ -252,7 +269,7 @@ int main(int argc, char **argv) {
 @
 ```
 
-Archive that describes a C program, 'hello.la':
+'hello.la', an archive of a C program:
 
 ```
 @. c_structure.la @
@@ -273,11 +290,11 @@ printf("Hello\n");
 # Filter
 
 Another major extension is user defined filters.
-The following simple program explains the usage of filter in litar.
+The following simple program explains the usage of filters in litar.
 
 ```
 @<hello.c@=
-#include "stdio.h"
+#include <stdio.h>
 int main() {
     @<print hello world@|exaggeratedly@>
     return 0;
@@ -295,14 +312,14 @@ sed 's/world/WORLD/'
 
 The final output of this program is "Hello, WORLD!". The creation
 of a chunk is pretty easy compared to files, so is the operation to
-the chunk. Operations are applied through pipes,
-and filters themselves are nothing more than a chunk. An operation like this is called filter.
-Filter and pipe have the same meaning as in the context of Unix shell.
+the chunk. Operations are applied through pipes; an operation is called filter.
+The filters themselves are nothing more than a chunk.
+Filter and pipe are borrowed directly from the context of Unix shell.
 
 Filters are scripts that the first line must be a shebang,
 so litar can support all script languages without extra effort.
 
-Filters can also make effect on blocks. The following program is same with the above.
+Filters can also make effect on blocks. The following program print same as the above.
 
 ```
 @<hello.c@=
@@ -316,17 +333,15 @@ int main() {
 @<print hello world exaggeratedly@=
 printf("Hello, world!\n");
 @|exaggeratedly@
-
-@<exaggeratedly@=#!/bin/sh
-sed 's/world/WORLD/'
-@
 ```
 
-The two relations are extended to,
+To arrange multiple filters in a single transforming is possible:
+@<print hello world@|exaggeratedly@|more exaggeratedly@>.
 
-1. a chunk is extended by a block transformed by filters;
-2. a block includes a chunk transformed by filters
-   at the position of reference to the chunk.
+The two relations, between block and chunk, are hence extended:
+
+- a block extends a chunk reference, the block might be transformed by filters;
+- a block includes a chunk reference, the chunk reference might be transformed by filters.
 
 The whole design of litar is around this extension, all other features are
 supplementary to this, and this is the hardest part.
@@ -342,11 +357,11 @@ and do nothing more than transforming input from stdin to stdout,
 occasionally report error through stderr. In reality,
 it's too restrictive. Like Bourne Shell, it can not do anything meaningful
 without accessing tools provided by the underlying operating system.
-Even if we limited external programs to a fixed set,
-we would still have to account for tools like sed that require access to separate script files.
-So, to simply regard filters as executables and run them under
-current directory is enough? No, what if the invoked sed command wants
-to make use of a script file written in the litar archive?
+Even we limit external programs to a fixed set,
+we still have to account for tools like sed that require access to outside script files.
+
+To simply regard filters as executables and run them under the current directory is insufficient too.
+what if the invoked sed command wants to make use of a script file written in the litar archive?
 Should we extract the file from the litar archive manually then run the sed command?
 It's too cumbersome, far from convenient!
 
@@ -406,7 +421,7 @@ litar solve this problem by runtime circular dependency detection and explicit f
 
 litar requires all invocations of filters to specify which files it can see explicitly.
 File set is introduced to ease this work. The following example adds the file hello.c
-to two file sets, source files and executables.
+to two file sets: source files and executables.
 
 ```
 @[hello.c@`source files@`executables@=
@@ -419,7 +434,7 @@ int main()
 @
 ```
 
-Invocations can specify which files they can see using expressions based on file sets.
+Invocations specify which files they can see using expressions based on file sets.
 
 ```
 @<list files@=#!/bin/sh
@@ -431,14 +446,14 @@ printf("@<@|list files@+source files@>");
 @
 ```
 
-The expressions support basic set operations. By default, no invocation can see any file
+The expressions support basic set operations. By default, an invocation can not see any file
 exported from the archive. @+ adds all files from the file set to the files the invocation
 can see, @- subtracts, @, adds a single file, @! deletes a single file.
 For example, "@+file set1@-file set2@,file1@,file2@!file3" declares files that
 has all files in file set1 but not in file set2 but has file1 and file2 but does not have file3.
 
-litar allows declaring a new file set using the expression. The previous expression
-can be used to declare a new file set like following,
+litar permits declaring a new file set using the expression.
+The previous expression can be used to declare a new file set like following,
 
 ```
 @`file set@+file set1@-file set2@,file1@,file2@!file3@
@@ -446,4 +461,9 @@ can be used to declare a new file set like following,
 
 Keep in mind that litar calculates final files using lazy evaluation.
 The calculation happens just before the invocation.
+
+The declaration of file sets requires heavy human intervention,
+so it does not work assuredly. In the end, litar should provide helpful
+information if circular dependency occurred; users can improve the archive
+based on the information.
 

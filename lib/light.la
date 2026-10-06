@@ -1,0 +1,43 @@
+@? included light @|@|
+@! included light @
+
+@- Light @
+
+@<module@=
+@<include flags@>
+@<includes@>
+@<macros@>
+@<data type declarations@>
+@<data types@>
+@<function declarations@>
+@<global variables@>
+@<static inline functions@>
+@<functions@>
+@
+
+@<module interface@=
+@<interface required includes@>
+@<interface specific macros@>
+@<exported macros@>
+@<exported data type declarations@>
+@<exported data types@>
+@<global declarations@>
+@<exported static inline functions@>
+@
+
+@<executable@:includes@=
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+@
+
+@<executable@:functions@=
+int main(int argc, char *argv[])
+{
+    int ret = 0;
+    @<main body@>
+    return ret;
+}
+@
+
+@ included light

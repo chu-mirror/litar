@@ -7,7 +7,7 @@ litar is a command line tool, supports both short options and long options.
 
 The format of EXPRESSION follows "label1@:label2@:module name@/chunk name@|filter1@|filter2".
 
-litar search the included libraries in this order:
+litar searches the included libraries in this order:
 
 1. current directory;
 2. directories in $LITAR_INCLUDE, follow the format with $PATH;

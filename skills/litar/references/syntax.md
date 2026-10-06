@@ -1,8 +1,15 @@
 # litar archive syntax
 
-An archive is comments and expressions. A control character is `@` followed by a non-alphabetic character, so `@` before a letter is ordinary text. An expression starts with a control character and ends with `@` followed by a space, a tab, or a newline. Text outside expressions is a comment.
+An archive is comments and expressions.
+A control character is `@` followed by a non-alphabetic character,
+so `@` before a letter is ordinary text.
+An expression starts with a control character
+and ends with `@` followed by a space, a tab, or a newline.
+Text outside expressions is a comment.
 
-A name runs until the next control sequence. Names in the design are words separated by spaces (`main body of C program`, `source files`).
+A name runs until the next control sequence.
+Names in the design are words separated by spaces
+(`main body of C program`, `source files`).
 
 ## Control sequences
 
@@ -31,7 +38,8 @@ A name runs until the next control sequence. Names in the design are words separ
 
 ## Chunks and blocks
 
-A block names a chunk and supplies content. The chunk is extended by that block:
+A block names a chunk and supplies content.
+The chunk is extended by that block:
 
 ```
 @<chunk@=
@@ -39,7 +47,9 @@ content
 @
 ```
 
-Several blocks may extend one chunk. The chunk's content is those blocks' expanded contents, concatenated in archive order.
+Several blocks may extend one chunk.
+The chunk's content is those blocks' expanded contents,
+concatenated in archive order.
 
 A reference includes a chunk at that point:
 
@@ -47,7 +57,10 @@ A reference includes a chunk at that point:
 @<chunk@>
 ```
 
-The expanded content of a block is its content with every reference replaced by the referenced chunk's content. Evaluation is recursive. A block cannot include the chunk that it extends.
+The expanded content of a block is its content
+with every reference replaced by the referenced chunk's content.
+Evaluation is recursive.
+A block cannot include the chunk that it extends.
 
 ```
 @<chunk1@=
@@ -61,11 +74,13 @@ The contents of block2.
 @
 ```
 
-`chunk1` is extended by its block. `chunk2` includes `chunk1` where `@<chunk1@>` stands.
+`chunk1` is extended by its block.
+`chunk2` includes `chunk1` where `@<chunk1@>` stands.
 
 ## Qualified names
 
-Labels, a module name, and a chunk name construct a chunk reference. The design writes them in this order:
+Labels, a module name, and a chunk name construct a chunk reference.
+The design writes them in this order:
 
 ```
 @<chunk@>
@@ -75,7 +90,8 @@ Labels, a module name, and a chunk name construct a chunk reference. The design 
 @<label@:label@:module@/chunk@>
 ```
 
-The same spelling is used after `@<` in a block (`@=`). These are combinations the design shows:
+The same spelling is used after `@<` in a block (`@=`).
+These are combinations the design shows:
 
 ```
 @<program1@:general structure for C program@>
@@ -87,7 +103,8 @@ The same spelling is used after `@<` in a block (`@=`). These are combinations t
 
 ## Specialization
 
-`program1` and `program2` are labels. Extending a labeled reference leaves the original chunk unchanged.
+`program1` and `program2` are labels.
+Extending a labeled reference leaves the original chunk unchanged.
 
 ```
 @<general structure for C program@=
@@ -115,9 +132,14 @@ printf("Hello from program1\n");
 @
 ```
 
-`@<program1@:includes@=` and `@<program1@:main body of C program@=` fill the holes of `@<program1@:general structure for C program@>`. The original `includes` and `main body of C program` chunks stay unchanged, so the same template can be labeled again with different text.
+`@<program1@:includes@=` and `@<program1@:main body of C program@=`
+fill the holes of `@<program1@:general structure for C program@>`.
+The original `includes` and `main body of C program` chunks stay unchanged,
+so the same template can be labeled again with different text.
 
-Several labels may be applied at once. `@<spec2@:spec1@:module@/chunk@=` specializes `spec1@:module@/chunk` further by `spec2`.
+Several labels may be applied at once.
+`@<spec2@:spec1@:module@/chunk@=`
+specializes `spec1@:module@/chunk` further by `spec2`.
 
 A sequence of labels can be grouped and assigned a name:
 
@@ -133,7 +155,10 @@ Here `spec` names the sequence `spec2@:spec1`.
 @- Module 1 @
 ```
 
-Chunks after a `@-` expression belong to the named module until the next `@-` expression. With no `@-` yet, or with no name after `@-`, they belong to the anonymous module.
+Chunks after a `@-` expression belong to the named module
+until the next `@-` expression.
+With no `@-` yet, or with no name after `@-`,
+they belong to the anonymous module.
 
 ```
 @- Module 1 @
@@ -149,7 +174,10 @@ The contents.
 @
 ```
 
-Each module has its own `chunk`. The design allows a block to modify a chunk of another module through a qualified name, and treats that as something to use carefully.
+Each module has its own `chunk`.
+The design allows a block to modify a chunk of another module
+through a qualified name,
+and treats that as something to use carefully.
 
 ## Branching
 
@@ -181,7 +209,11 @@ block 3
 @
 ```
 
-`@? condition @|` introduces the arm kept when that flag is set. `@|` introduces the arm kept when no `@?` flag in the chain is set. The closing `@` ends the chain. In this example `condition A` is set, so `chunk` is extended by block 1.
+`@? condition @|` introduces the arm kept when that flag is set.
+`@|` introduces the arm kept when no `@?` flag in the chain is set.
+The closing `@` ends the chain.
+In this example `condition A` is set,
+so `chunk` is extended by block 1.
 
 ## Including an archive
 
@@ -211,7 +243,13 @@ int main(int argc, char **argv) {
 @
 ```
 
-`@? included common C structure @|` opens the arm kept when that flag is set, and that arm is empty. The next `@|` opens the arm kept when the flag is not set. That arm sets the flag, selects the module `C structure`, and defines `C program`. The closing `@` ends the branch. A later inclusion finds the flag set and keeps the empty arm.
+`@? included common C structure @|`
+opens the arm kept when that flag is set, and that arm is empty.
+The next `@|` opens the arm kept when the flag is not set.
+That arm sets the flag, selects the module `C structure`,
+and defines `C program`.
+The closing `@` ends the branch.
+A later inclusion finds the flag set and keeps the empty arm.
 
 The including archive then extends the library's chunks under its own label:
 
@@ -231,7 +269,9 @@ printf("Hello\n");
 
 ## Filters
 
-A filter is a chunk whose first line is a shebang. `@|` pipes text through that chunk the way a Unix shell pipe does. The filter's output replaces the piped text.
+A filter is a chunk whose first line is a shebang.
+`@|` pipes text through that chunk the way a Unix shell pipe does.
+The filter's output replaces the piped text.
 
 On a reference, the named chunk is filtered, then included:
 
@@ -253,9 +293,11 @@ sed 's/world/WORLD/'
 @
 ```
 
-`@<print hello world@|exaggeratedly@>` becomes `printf("Hello, WORLD!\n");`.
+`@<print hello world@|exaggeratedly@>`
+becomes `printf("Hello, WORLD!\n");`.
 
-On a block, the body is filtered, then extends the chunk. This archive has the same result as the one above:
+On a block, the body is filtered, then extends the chunk.
+This archive has the same result as the one above:
 
 ```
 @<hello.c@=
@@ -275,18 +317,25 @@ sed 's/world/WORLD/'
 @
 ```
 
-`@|exaggeratedly` filters the body before that body extends `print hello world exaggeratedly`. The reference includes the filtered text `printf("Hello, WORLD!\n");`.
+`@|exaggeratedly` filters the body
+before that body extends `print hello world exaggeratedly`.
+The reference includes the filtered text `printf("Hello, WORLD!\n");`.
 
 With filters, the two relations are:
 
 1. a chunk is extended by a block transformed by filters;
 2. a block includes a chunk transformed by filters where the reference stands.
 
-A filter runs as a process. Which files it can see is declared with the file-set syntax below. Cycles that involve filters and files are detected when the filter runs.
+A filter runs as a process.
+Which files it can see is declared with the file-set syntax below.
+Cycles that involve filters and files are detected when the filter runs.
 
 ## Files
 
-`@[` defines a regular file. `@(` defines an executable file. The path is the chunk name. A file is a chunk and can be referenced with `@<`.
+`@[` defines a regular file.
+`@(` defines an executable file.
+The path is the chunk name.
+A file is a chunk and can be referenced with `@<`.
 
 ```
 @[hello.c@=
@@ -310,11 +359,16 @@ sed -f sed_scripts/bigger_world.sed
 @
 ```
 
-`hello.c` and `sed_scripts/bigger_world.sed` are regular files. `run_bigger_world.sh` is executable. litar mounts the archive's files with FUSE so a filter can open them as ordinary files. `exaggeratedly` is the filter chunk that runs the executable.
+`hello.c` and `sed_scripts/bigger_world.sed` are regular files.
+`run_bigger_world.sh` is executable.
+litar mounts the archive's files with FUSE
+so a filter can open them as ordinary files.
+`exaggeratedly` is the filter chunk that runs the executable.
 
 ## File sets
 
-A file definition may add that file to file sets. Repeat `` @`name `` once per set:
+A file definition may add that file to file sets.
+Repeat `` @`name `` once per set:
 
 ```
 @[hello.c@`source files@`executables@=
@@ -329,7 +383,9 @@ int main()
 
 This adds `hello.c` to `source files` and to `executables`.
 
-An invocation names the files it can see. It starts from none of the files exported from the archive. The operators then apply in order:
+An invocation names the files it can see.
+It starts from none of the files exported from the archive.
+The operators then apply in order:
 
 - `@+` adds every file in a file set
 - `@-` removes every file in a file set
@@ -346,9 +402,13 @@ printf("@<@|list files@+source files@>");
 @
 ```
 
-`@<@|list files@+source files@>` invokes the filter `list files` and lets that invocation see the files in `source files`.
+`@<@|list files@+source files@>`
+invokes the filter `list files`
+and lets that invocation see the files in `source files`.
 
-`@+file set1@-file set2@,file1@,file2@!file3` means the files in `file set1`, without the files in `file set2`, plus `file1` and `file2`, without `file3`.
+`@+file set1@-file set2@,file1@,file2@!file3`
+means the files in `file set1`, without the files in `file set2`,
+plus `file1` and `file2`, without `file3`.
 
 The same expression can define a file set:
 

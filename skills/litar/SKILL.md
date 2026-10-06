@@ -10,9 +10,9 @@ Follow the style guidance in `reference/style.md`.
 
 # Invoke command line tool
 
-Print the contents of a chunk in an archive.
+Evaluate the contents of a expression in an archive.
 
 ```bash
-./litar -p CHUNK archive.la
+./litar -p "label@:module@/chunk@|filter" archive.la
 ```
 

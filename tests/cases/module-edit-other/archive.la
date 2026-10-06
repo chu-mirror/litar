@@ -1,0 +1,15 @@
+@- Lib @
+
+@<part@=
+L
+@
+
+@- @
+
+@<Lib@/part@=
+A
+@
+
+@<show@=
+@<Lib@/part@>
+@

@@ -1,0 +1,19 @@
+@- Lib @
+
+@<template@=
+@<hole@>
+@
+
+@- @
+
+@<hello@:Lib@/hole@=
+[@<msg@>]
+@
+
+@<msg@=
+M
+@
+
+@<out@=
+@<hello@:Lib@/template@>
+@

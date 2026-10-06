@@ -1,0 +1,9 @@
+A comment mentions email@example.com and stays outside.
+
+@<chunk@=
+Hello
+@
+
+@<letters@=
+a@b@c
+@

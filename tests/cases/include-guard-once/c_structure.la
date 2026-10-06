@@ -1,0 +1,15 @@
+@? included common C structure @|@|
+
+@! included common C structure @
+
+@- C structure @
+
+@<C program@=
+@<includes@>
+int main(int argc, char **argv) {
+    @<main body@>
+    return 0;
+}
+@
+
+@

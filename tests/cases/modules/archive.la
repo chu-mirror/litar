@@ -1,0 +1,11 @@
+@- Module 1 @
+
+@<chunk@=
+    The contents.
+@
+
+@- Module 2 @
+
+@<chunk@=
+    @<Module 1@/chunk@>
+@

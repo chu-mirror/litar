@@ -1,0 +1,33 @@
+@- Mine @
+
+@? no @|
+
+@- Other @
+
+@! hidden @
+
+@<chunk@=
+NO
+@
+
+@|
+
+@<chunk@=
+YES
+@
+
+@
+
+@? hidden @|
+
+@<flag@=
+BAD
+@
+
+@|
+
+@<flag@=
+GOOD
+@
+
+@

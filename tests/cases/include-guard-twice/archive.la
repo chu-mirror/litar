@@ -1,0 +1,14 @@
+@. c_structure.la @
+@. c_structure.la @
+
+@<hello.c@=
+@<hello@:C structure@/C program@>
+@
+
+@<hello@:C structure@/includes@=
+#include <stdio.h>
+@
+
+@<hello@:C structure@/main body@=
+printf("Hello\n");
+@

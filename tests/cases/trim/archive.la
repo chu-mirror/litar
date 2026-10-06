@@ -1,0 +1,13 @@
+@<lf@=
+Hello
+@
+@<crlf@=
+Hello
+@
+@<cr@=Hello@
+@<bare@=Hello@
+@<inner@=
+
+Hello
+
+@

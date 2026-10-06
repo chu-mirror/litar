@@ -1,0 +1,21 @@
+@! condition B @
+
+@? condition A @|
+
+@<chunk@=
+    block 1
+@
+
+@? condition B @|
+
+@<chunk@=
+    block 2
+@
+
+@|
+
+@<chunk@=
+    block 3
+@
+
+@

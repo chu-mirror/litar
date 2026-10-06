@@ -1,0 +1,31 @@
+@<general structure for C program@=
+@<includes@>
+int main(int argc, char **argv)
+{
+    @<main body of C program@>
+}
+@
+
+@<program1.c@=
+@<program1@:general structure for C program@>
+@
+
+@<program2.c@=
+@<program2@:general structure for C program@>
+@
+
+@<program1@:includes@=
+#include <stdio.h>
+@
+
+@<program1@:main body of C program@=
+printf("Hello from program1\n");
+@
+
+@<program2@:includes@=
+#include <stdlib.h>
+@
+
+@<program2@:main body of C program@=
+return 2;
+@

@@ -20,8 +20,8 @@ let LLMs write programs in literate program form
 to make the output more accessible.
 
 This style guidance is for both human and LLMs to write a well organized litar archive.
-The language used to constrain authoring of a litar archive
-is based on discussion of structure's shapes.
+The language used to constrain the authoring of a litar archive
+is based on the discussion of structure's shapes.
 The knowledge of human for something is always structurized, so is for programs.
 For example, a C source file, from the outermost,
 consists of includes, macros, variables, and functions, etc.
@@ -94,19 +94,27 @@ and the first step is to make the structures explicit.
 So an acceptable answer to the question at the opening is that the tree is lengthy
 enough so that to take actions costs several minutes for a skilled engineer.
 The number of tokens digested by LLMs is a good index for length;
-200 tokens is a dangerous length for human beings.
+150 tokens is a comfortable length for human beings, at least for the author.
 
-To put several substructures in a sequence to a single block does not differ much with 
+To put several substructures in a sequence to a single block does not differ much from
 to divide them to different blocks, so in practice, the length of a tree usually equals the length of a block.
-A more practical style guiding is, **limit the length of a block under 200 tokens**.
+Here's a more practical style guiding: **control the length of a block around 150 tokens**.
 
-# Name a chunk as a phrase, its grammatical function shall conform to the underlying structure
+# Name a chunk as a phrase, its grammatical function makes sense
 
-First of all, becuase the name of a chunk is a phrase,
+First of all, because the name of a chunk is a phrase,
 **do not capitalize the first character and do not append a period at the end**.
 
 Naming a sequence is simple; a sequence is always a list of items,
 so **name a sequence as a plural noun phrase**.
 
 Naming a tree is much more difficult; it heavily depends on context.
+
+# Add comment before a block when an assumption was made in that block
+
+# Make blocks extending a sequence order-irreverent
+
+# Avoid repetition by filters
+
+# Format files by filters
 

@@ -1,14 +1,23 @@
-/* Bootstrap of litar: the archive syntax through Including.
-   Filters, files, and file sets belong to later stages.
+/* Bootstrap of litar: the archive syntax through Filters.
+   A filter is a chunk run as a script in the current directory.
+   File definitions and file sets belong to later stages.
    See design/litar.md and design/stages.md. */
 
+#define _POSIX_C_SOURCE 200809L
+
 #include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #if defined(__GNUC__)
 #define NORETURN __attribute__((noreturn))
@@ -37,7 +46,20 @@ typedef struct QName {
     int has_module;
     const char *module;
     const char *chunk;
+    struct QName *filters;
+    int nfilters;
+    int capfilters;
 } QName;
+
+/* A filter is a chunk reference. Labels and the module are optional.
+   The strings live in the archive arena. */
+typedef struct Filt {
+    const char **labels;
+    int nlabels;
+    int has_module;
+    const char *module;
+    const char *chunk;
+} Filt;
 
 typedef struct Block {
     const char **labels;
@@ -46,10 +68,18 @@ typedef struct Block {
     const char *chunk;
     const char *content;
     size_t content_len;
+    Filt *filters;
+    int nfilters;
     int def_line;
     const char *def_file;
     const char *def_module;
 } Block;
+
+typedef struct Buf {
+    char *data;
+    size_t n;
+    size_t cap;
+} Buf;
 
 typedef struct Group {
     const char *name;
@@ -303,6 +333,109 @@ static void consume_end(Parser *p) {
     p->i += 2;
 }
 
+static void qname_add_filter(QName *qn, const QName *filt) {
+    if (qn->nfilters == qn->capfilters) {
+        int ncap = qn->capfilters ? qn->capfilters * 2 : 4;
+        QName *nf = xmalloc((size_t)ncap * sizeof(QName));
+        if (qn->nfilters) {
+            memcpy(nf, qn->filters, (size_t)qn->nfilters * sizeof(QName));
+        }
+        free(qn->filters);
+        qn->filters = nf;
+        qn->capfilters = ncap;
+    }
+    qn->filters[qn->nfilters++] = *filt;
+}
+
+static void qname_free(QName *qn) {
+    free(qn->labels.v);
+    qn->labels.v = NULL;
+    for (int i = 0; i < qn->nfilters; i++) {
+        free(qn->filters[i].labels.v);
+    }
+    free(qn->filters);
+    qn->filters = NULL;
+    qn->nfilters = 0;
+    qn->capfilters = 0;
+}
+
+/* A filter name is a qualified name. It ends at the next filter,
+   at the end of a reference, or at the end of the expression.
+   It does not itself take filters: `@|a@|b` is a pipeline. */
+
+static void parse_filter_name(Parser *p, QName *filt, int expr) {
+    memset(filt, 0, sizeof(*filt));
+    for (;;) {
+        size_t start = p->i;
+        int k;
+        char *name;
+        while (p->i < p->n && control_kind(p) < 0) {
+            p->i++;
+        }
+        name = take_name(p, start, p->i);
+        if (p->i >= p->n) {
+            if (!expr) {
+                fail_at(p, "unterminated name");
+            }
+            if (!name[0]) {
+                fail_at(p, "empty filter name");
+            }
+            filt->chunk = name;
+            return;
+        }
+        k = control_kind(p);
+        if (k == ':') {
+            if (filt->has_module) {
+                fail_at(p, "label after module name");
+            }
+            if (!name[0]) {
+                fail_at(p, "empty label");
+            }
+            sv_push(&filt->labels, name);
+            p->i += 2;
+            continue;
+        }
+        if (k == '/') {
+            if (filt->has_module) {
+                fail_at(p, "extra '@/' in name");
+            }
+            if (!name[0]) {
+                fail_at(p, "empty module name");
+            }
+            filt->has_module = 1;
+            filt->module = name;
+            p->i += 2;
+            continue;
+        }
+        if (k == '|' || k == '>' || is_end_kind(k)) {
+            if (!name[0]) {
+                fail_at(p, "empty filter name");
+            }
+            filt->chunk = name;
+            return;
+        }
+        fail_at(p, "unexpected control '@%c' in name", k);
+    }
+}
+
+static void parse_filter_list(Parser *p, QName *qn, int expr) {
+    for (;;) {
+        QName filt;
+        int k;
+        parse_filter_name(p, &filt, expr);
+        qname_add_filter(qn, &filt);
+        if (p->i >= p->n) {
+            return;
+        }
+        k = control_kind(p);
+        if (k == '|') {
+            p->i += 2;
+            continue;
+        }
+        return;
+    }
+}
+
 static void parse_qname(Parser *p, QName *qn, int mode) {
     memset(qn, 0, sizeof(*qn));
     for (;;) {
@@ -325,7 +458,18 @@ static void parse_qname(Parser *p, QName *qn, int mode) {
         }
         k = control_kind(p);
         if (k == '|') {
-            fail_at(p, "filters are not implemented");
+            /* On a block header the filter list belongs after the body.
+               On a reference or a print expression it belongs here. */
+            if (mode == Q_BLOCK) {
+                fail_at(p, "unexpected control '@|' in name");
+            }
+            if (!name[0]) {
+                fail_at(p, "empty chunk name");
+            }
+            qn->chunk = name;
+            p->i += 2;
+            parse_filter_list(p, qn, mode == Q_EXPR);
+            return;
         }
         if (k == ':') {
             if (qn->has_module) {
@@ -391,11 +535,39 @@ static void add_block(Archive *a, Block blk) {
     a->blocks[a->nblocks++] = blk;
 }
 
+static void copy_filters(Arena *a, QName *filters, int n, Filt **out, int *nout) {
+    Filt *fs;
+    if (n == 0) {
+        *out = NULL;
+        *nout = 0;
+        return;
+    }
+    fs = arena_alloc(a, (size_t)n * sizeof(Filt));
+    for (int i = 0; i < n; i++) {
+        QName *f = &filters[i];
+        fs[i].nlabels = f->labels.n;
+        fs[i].labels = NULL;
+        if (f->labels.n) {
+            const char **labs = arena_alloc(a, (size_t)f->labels.n * sizeof(char *));
+            for (int j = 0; j < f->labels.n; j++) {
+                labs[j] = f->labels.v[j];
+            }
+            fs[i].labels = labs;
+        }
+        fs[i].has_module = f->has_module;
+        fs[i].module = f->module;
+        fs[i].chunk = f->chunk;
+    }
+    *out = fs;
+    *nout = n;
+}
+
 static void parse_block(Parser *p, int execute) {
     QName qn;
     Block blk;
     size_t body;
     size_t end;
+    int depth = 0;
     int line = line_at(p, p->i);
     p->i += 2;
     parse_qname(p, &qn, Q_BLOCK);
@@ -404,18 +576,34 @@ static void parse_block(Parser *p, int execute) {
     }
     p->i += 2;
     body = p->i;
+    /* `@|` ends the body only outside a reference. `@|` between `@<`
+       and `@>` belongs to that reference and stays in the body.
+       `@` followed by whitespace still ends the block at any depth,
+       so an unclosed reference does not swallow the block's closer. */
     while (p->i < p->n) {
         int k = control_kind(p);
-        if (k >= 0 && is_end_kind(k)) {
+        if (k < 0) {
+            p->i++;
+            continue;
+        }
+        if (is_end_kind(k)) {
             break;
         }
-        p->i++;
+        if (k == '|' && depth == 0) {
+            break;
+        }
+        if (k == '<') {
+            depth++;
+        } else if (k == '>' && depth > 0) {
+            depth--;
+        }
+        p->i += 2;
     }
     if (p->i >= p->n) {
         fail_at(p, "unterminated block");
     }
     /* The newline after '@=' and the newline before the closing '@'
-       are part of the block layout used throughout the design.
+       or '@|' are part of the block layout used throughout the design.
        @<msg@=\nHello\n@ therefore stores Hello. */
     end = p->i;
     if (body < end && p->buf[body] == '\r') {
@@ -432,9 +620,16 @@ static void parse_block(Parser *p, int execute) {
     } else if (end > body && p->buf[end - 1] == '\r') {
         end--;
     }
+    if (control_kind(p) == '|') {
+        p->i += 2;
+        parse_filter_list(p, &qn, 0);
+    }
+    if (p->i >= p->n || !is_end_kind(control_kind(p))) {
+        fail_at(p, "expected '@' to end the expression");
+    }
     consume_end(p);
     if (!execute) {
-        free(qn.labels.v);
+        qname_free(&qn);
         return;
     }
     memset(&blk, 0, sizeof(blk));
@@ -451,10 +646,11 @@ static void parse_block(Parser *p, int execute) {
     blk.chunk = qn.chunk;
     blk.content_len = end - body;
     blk.content = arena_strndup(&p->arc->arena, p->buf + body, blk.content_len);
+    copy_filters(&p->arc->arena, qn.filters, qn.nfilters, &blk.filters, &blk.nfilters);
     blk.def_line = line;
     blk.def_file = p->filename;
     blk.def_module = p->arc->current_module;
-    free(qn.labels.v);
+    qname_free(&qn);
     add_block(p->arc, blk);
 }
 
@@ -542,9 +738,6 @@ static void parse_group(Parser *p, int execute) {
         }
         if (is_end_kind(k)) {
             break;
-        }
-        if (k == '|') {
-            fail_at(p, "filters are not implemented");
         }
         fail_at(p, "unexpected control in label group");
     }
@@ -787,12 +980,486 @@ static void visit_pop(Visit *v) {
     free(v->keys[--v->n]);
 }
 
-static void expand_ref(Archive *a, Visit *v, const char **labels, int nlabels,
-                       const char *module, const char *chunk, int emit);
+static void buf_append(Buf *b, const char *s, size_t n) {
+    size_t cap;
+    char *d;
+    if (n == 0) {
+        return;
+    }
+    if (b->n + n < b->n) {
+        fail("out of memory");
+    }
+    if (b->n + n <= b->cap) {
+        memcpy(b->data + b->n, s, n);
+        b->n += n;
+        return;
+    }
+    cap = b->cap ? b->cap : 64;
+    while (cap < b->n + n) {
+        if (cap > (SIZE_MAX / 2)) {
+            fail("out of memory");
+        }
+        cap *= 2;
+    }
+    d = realloc(b->data, cap);
+    if (!d) {
+        fail("out of memory");
+    }
+    b->data = d;
+    b->cap = cap;
+    memcpy(b->data + b->n, s, n);
+    b->n += n;
+}
 
-static void expand_content(Archive *a, Visit *v, const Block *b,
-                           const char **clabels, int cn, const char *where,
-                           int emit) {
+static int write_all(int fd, const char *buf, size_t n) {
+    size_t off = 0;
+    while (off < n) {
+        ssize_t w = write(fd, buf + off, n - off);
+        if (w < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -1;
+        }
+        if (w == 0) {
+            errno = EIO;
+            return -1;
+        }
+        off += (size_t)w;
+    }
+    return 0;
+}
+
+/* `#! interpreter` or `#! interpreter arg`. One optional word, as the
+   kernel's script loader does. Spaces after `#!` are skipped. */
+
+static int copy_word(const char *s, size_t n, char *dst, size_t cap) {
+    if (n == 0 || n >= cap) {
+        return 0;
+    }
+    if (s[n - 1] == '\r') {
+        n--;
+        if (n == 0 || n >= cap) {
+            return 0;
+        }
+    }
+    memcpy(dst, s, n);
+    dst[n] = '\0';
+    return 1;
+}
+
+static int parse_shebang(const char *script, size_t n, char *interp, size_t interp_cap,
+                         char *arg, size_t arg_cap, int *has_arg) {
+    size_t i = 2;
+    size_t start;
+    *has_arg = 0;
+    if (n < 2 || script[0] != '#' || script[1] != '!') {
+        return 0;
+    }
+    while (i < n && (script[i] == ' ' || script[i] == '\t')) {
+        i++;
+    }
+    start = i;
+    while (i < n && script[i] != ' ' && script[i] != '\t' && script[i] != '\n' &&
+           script[i] != '\r') {
+        i++;
+    }
+    if (!copy_word(script + start, i - start, interp, interp_cap)) {
+        return 0;
+    }
+    if (i < n && script[i] == '\r') {
+        i++;
+    }
+    if (i >= n || script[i] == '\n') {
+        return 1;
+    }
+    while (i < n && (script[i] == ' ' || script[i] == '\t')) {
+        i++;
+    }
+    if (i >= n || script[i] == '\n' || script[i] == '\r') {
+        return 1;
+    }
+    start = i;
+    while (i < n && script[i] != ' ' && script[i] != '\t' && script[i] != '\n' &&
+           script[i] != '\r') {
+        i++;
+    }
+    if (!copy_word(script + start, i - start, arg, arg_cap)) {
+        return 0;
+    }
+    *has_arg = 1;
+    return 1;
+}
+
+enum {
+    RUN_OK = 0,
+    RUN_STATUS = 1,
+    RUN_SIGNAL = 2,
+    RUN_EXEC = 3,
+    RUN_IO = 4,
+    RUN_SHEBANG = 5
+};
+
+static int pump_filter(int in_fd, int out_fd, const char *input, size_t input_n, Buf *out) {
+    size_t off = 0;
+    struct sigaction ign;
+    struct sigaction old;
+    int restore = 0;
+    int rc = 0;
+    memset(&ign, 0, sizeof(ign));
+    ign.sa_handler = SIG_IGN;
+    sigemptyset(&ign.sa_mask);
+    if (sigaction(SIGPIPE, &ign, &old) == 0) {
+        restore = 1;
+    }
+    if (input_n == 0 && in_fd >= 0) {
+        close(in_fd);
+        in_fd = -1;
+    }
+    while (in_fd >= 0 || out_fd >= 0) {
+        struct pollfd pf[2];
+        int np = 0;
+        int in_ix = -1;
+        int out_ix = -1;
+        int pr;
+        if (in_fd >= 0) {
+            in_ix = np;
+            pf[np].fd = in_fd;
+            pf[np].events = POLLOUT;
+            pf[np].revents = 0;
+            np++;
+        }
+        if (out_fd >= 0) {
+            out_ix = np;
+            pf[np].fd = out_fd;
+            pf[np].events = POLLIN;
+            pf[np].revents = 0;
+            np++;
+        }
+        pr = poll(pf, (nfds_t)np, -1);
+        if (pr < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            rc = -1;
+            break;
+        }
+        if (in_ix >= 0 && (pf[in_ix].revents & (POLLOUT | POLLERR | POLLHUP))) {
+            if ((pf[in_ix].revents & POLLOUT) && off < input_n) {
+                ssize_t w = write(in_fd, input + off, input_n - off);
+                if (w < 0) {
+                    if (errno == EPIPE) {
+                        close(in_fd);
+                        in_fd = -1;
+                    } else if (errno != EINTR) {
+                        rc = -1;
+                        break;
+                    }
+                } else {
+                    off += (size_t)w;
+                    if (off == input_n) {
+                        close(in_fd);
+                        in_fd = -1;
+                    }
+                }
+            } else if (pf[in_ix].revents & (POLLERR | POLLHUP)) {
+                close(in_fd);
+                in_fd = -1;
+            }
+        }
+        if (out_ix >= 0 && (pf[out_ix].revents & (POLLIN | POLLHUP | POLLERR))) {
+            char tmp[4096];
+            ssize_t r = read(out_fd, tmp, sizeof tmp);
+            if (r < 0) {
+                if (errno != EINTR) {
+                    rc = -1;
+                    break;
+                }
+            } else if (r == 0) {
+                close(out_fd);
+                out_fd = -1;
+            } else {
+                buf_append(out, tmp, (size_t)r);
+            }
+        }
+    }
+    if (in_fd >= 0) {
+        close(in_fd);
+    }
+    if (out_fd >= 0) {
+        close(out_fd);
+    }
+    if (restore) {
+        sigaction(SIGPIPE, &old, NULL);
+    }
+    return rc;
+}
+
+/* Run the script in the current directory. The interpreter named by
+   the shebang reads the script, so the script does not have to be
+   executable and a noexec temporary directory still works. The
+   script's standard error is this process's standard error. */
+
+static int run_script(const char *script, size_t script_n, const char *input, size_t input_n,
+                      Buf *out, int *detail, int *err_no) {
+    char interp[4096];
+    char arg[4096];
+    int has_arg = 0;
+    const char *tmpdir;
+    char *path = NULL;
+    int fd = -1;
+    int in_pipe[2] = {-1, -1};
+    int out_pipe[2] = {-1, -1};
+    int err_pipe[2] = {-1, -1};
+    pid_t pid = -1;
+    int status = 0;
+    int rc = RUN_IO;
+    size_t nd;
+    if (!parse_shebang(script, script_n, interp, sizeof interp, arg, sizeof arg, &has_arg)) {
+        return RUN_SHEBANG;
+    }
+    tmpdir = getenv("TMPDIR");
+    if (!tmpdir || !tmpdir[0]) {
+        tmpdir = "/tmp";
+    }
+    nd = strlen(tmpdir);
+    path = xmalloc(nd + sizeof("/litar-XXXXXX"));
+    memcpy(path, tmpdir, nd);
+    memcpy(path + nd, "/litar-XXXXXX", sizeof("/litar-XXXXXX"));
+    fd = mkstemp(path);
+    if (fd < 0) {
+        *err_no = errno;
+        free(path);
+        return RUN_IO;
+    }
+    if (write_all(fd, script, script_n) < 0) {
+        *err_no = errno;
+        close(fd);
+        unlink(path);
+        free(path);
+        return RUN_IO;
+    }
+    if (close(fd) < 0) {
+        *err_no = errno;
+        unlink(path);
+        free(path);
+        return RUN_IO;
+    }
+    if (pipe(in_pipe) < 0) {
+        *err_no = errno;
+        in_pipe[0] = in_pipe[1] = -1;
+        goto cleanup;
+    }
+    if (pipe(out_pipe) < 0) {
+        *err_no = errno;
+        out_pipe[0] = out_pipe[1] = -1;
+        goto cleanup;
+    }
+    if (pipe(err_pipe) < 0) {
+        *err_no = errno;
+        err_pipe[0] = err_pipe[1] = -1;
+        goto cleanup;
+    }
+    if (fcntl(err_pipe[1], F_SETFD, FD_CLOEXEC) < 0) {
+        *err_no = errno;
+        goto cleanup;
+    }
+    pid = fork();
+    if (pid < 0) {
+        *err_no = errno;
+        goto cleanup;
+    }
+    if (pid == 0) {
+        char *av[4];
+        int ac = 0;
+        int e;
+        if (dup2(in_pipe[0], STDIN_FILENO) < 0 || dup2(out_pipe[1], STDOUT_FILENO) < 0) {
+            e = errno;
+            if (write(err_pipe[1], &e, sizeof e) < 0) {
+            }
+            _exit(127);
+        }
+        close(in_pipe[0]);
+        close(in_pipe[1]);
+        close(out_pipe[0]);
+        close(out_pipe[1]);
+        close(err_pipe[0]);
+        av[ac++] = interp;
+        if (has_arg) {
+            av[ac++] = arg;
+        }
+        av[ac++] = path;
+        av[ac] = NULL;
+        execvp(av[0], av);
+        e = errno;
+        if (write(err_pipe[1], &e, sizeof e) < 0) {
+        }
+        _exit(127);
+    }
+    close(in_pipe[0]);
+    in_pipe[0] = -1;
+    close(out_pipe[1]);
+    out_pipe[1] = -1;
+    close(err_pipe[1]);
+    err_pipe[1] = -1;
+    {
+        int e = 0;
+        size_t got = 0;
+        while (got < sizeof e) {
+            ssize_t r = read(err_pipe[0], (char *)&e + got, sizeof e - got);
+            if (r < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                *err_no = errno;
+                goto cleanup;
+            }
+            if (r == 0) {
+                break;
+            }
+            got += (size_t)r;
+        }
+        close(err_pipe[0]);
+        err_pipe[0] = -1;
+        if (got == sizeof e) {
+            *err_no = e;
+            rc = RUN_EXEC;
+            goto cleanup;
+        }
+    }
+    /* Keep the script file until the interpreter has exited. The shell
+       opens the path after exec returns, so unlinking here would race. */
+    if (pump_filter(in_pipe[1], out_pipe[0], input, input_n, out) < 0) {
+        *err_no = errno;
+        in_pipe[1] = -1;
+        out_pipe[0] = -1;
+        rc = RUN_IO;
+        goto cleanup;
+    }
+    in_pipe[1] = -1;
+    out_pipe[0] = -1;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) {
+            *err_no = errno;
+            rc = RUN_IO;
+            goto cleanup;
+        }
+    }
+    pid = -1;
+    unlink(path);
+    free(path);
+    path = NULL;
+    if (WIFEXITED(status)) {
+        if (WEXITSTATUS(status) == 0) {
+            return RUN_OK;
+        }
+        *detail = WEXITSTATUS(status);
+        return RUN_STATUS;
+    }
+    if (WIFSIGNALED(status)) {
+        *detail = WTERMSIG(status);
+        return RUN_SIGNAL;
+    }
+    *err_no = EIO;
+    return RUN_IO;
+
+cleanup:
+    if (pid > 0) {
+        kill(pid, SIGKILL);
+        while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {
+        }
+    }
+    if (in_pipe[0] >= 0) {
+        close(in_pipe[0]);
+    }
+    if (in_pipe[1] >= 0) {
+        close(in_pipe[1]);
+    }
+    if (out_pipe[0] >= 0) {
+        close(out_pipe[0]);
+    }
+    if (out_pipe[1] >= 0) {
+        close(out_pipe[1]);
+    }
+    if (err_pipe[0] >= 0) {
+        close(err_pipe[0]);
+    }
+    if (err_pipe[1] >= 0) {
+        close(err_pipe[1]);
+    }
+    if (path) {
+        unlink(path);
+        free(path);
+    }
+    return rc;
+}
+
+static void expand_ref(Archive *a, Visit *v, const char **labels, int nlabels,
+                       const char *module, const char *chunk, Buf *out);
+
+static int chunk_defined(Archive *a, const char **labels, int nlabels, const char *module,
+                         const char *chunk);
+
+static void run_filter(Archive *a, Visit *v, Buf *data, const char **flabels, int fn,
+                       int has_module, const char *fmodule, const char *fchunk,
+                       const char **cur_labels, int cur_n, const char *def_module,
+                       const Parser *loc) {
+    StrVec resolved = {0};
+    const char **use_l;
+    int use_n;
+    const char *use_m;
+    char *key;
+    Buf program = {0};
+    Buf result = {0};
+    int detail = 0;
+    int err_no = 0;
+    int rc;
+    if (!def_module) {
+        def_module = "";
+    }
+    if (fn > 0) {
+        expand_label_list(a, flabels, fn, &resolved);
+        use_l = resolved.v;
+        use_n = resolved.n;
+    } else {
+        use_l = cur_labels;
+        use_n = cur_n;
+    }
+    use_m = has_module ? fmodule : def_module;
+    if (!use_m) {
+        use_m = "";
+    }
+    key = canonical(use_l, use_n, use_m, fchunk);
+    if (!chunk_defined(a, use_l, use_n, use_m, fchunk)) {
+        fail_at(loc, "filter '%s' is not defined", key);
+    }
+    expand_ref(a, v, use_l, use_n, use_m, fchunk, &program);
+    free(resolved.v);
+    if (program.n < 2 || !program.data || program.data[0] != '#' || program.data[1] != '!') {
+        fail_at(loc, "filter '%s' does not start with a shebang", key);
+    }
+    rc = run_script(program.data, program.n, data->data ? data->data : "", data->n, &result,
+                    &detail, &err_no);
+    free(program.data);
+    if (rc == RUN_SHEBANG) {
+        fail_at(loc, "filter '%s' does not start with a shebang", key);
+    }
+    if (rc == RUN_STATUS) {
+        fail_at(loc, "filter '%s' exited with status %d", key, detail);
+    }
+    if (rc == RUN_SIGNAL) {
+        fail_at(loc, "filter '%s' exited with signal %d", key, detail);
+    }
+    if (rc != RUN_OK) {
+        fail_at(loc, "could not run filter '%s': %s", key, strerror(err_no ? err_no : EIO));
+    }
+    free(data->data);
+    *data = result;
+    free(key);
+}
+
+static void expand_content(Archive *a, Visit *v, const Block *b, const char **clabels, int cn,
+                           const char *where, Buf *out) {
     const char *content = b->content;
     size_t len = b->content_len;
     size_t i = 0;
@@ -807,6 +1474,8 @@ static void expand_content(Archive *a, Visit *v, const Block *b,
                 int use_n;
                 const char *use_m;
                 StrVec resolved = {0};
+                Buf piece = {0};
+                Parser loc;
                 if (nch != '<') {
                     Parser errp;
                     memset(&errp, 0, sizeof(errp));
@@ -837,9 +1506,23 @@ static void expand_content(Archive *a, Visit *v, const Block *b,
                     use_n = cn;
                 }
                 use_m = qn.has_module ? qn.module : b->def_module;
-                expand_ref(a, v, use_l, use_n, use_m, qn.chunk, emit);
-                free(qn.labels.v);
+                expand_ref(a, v, use_l, use_n, use_m, qn.chunk, &piece);
+                memset(&loc, 0, sizeof(loc));
+                loc.where = where;
+                loc.def_line = b->def_line;
+                loc.def_file = b->def_file;
+                for (int fi = 0; fi < qn.nfilters; fi++) {
+                    QName *f = &qn.filters[fi];
+                    /* A filter with no labels keeps the labels of the
+                       reference being expanded, not labels written on
+                       the chunk reference it is attached to. */
+                    run_filter(a, v, &piece, f->labels.v, f->labels.n, f->has_module, f->module,
+                               f->chunk, clabels, cn, b->def_module, &loc);
+                }
+                buf_append(out, piece.data, piece.n);
+                free(piece.data);
                 free(resolved.v);
+                qname_free(&qn);
                 i = sub.i + 2;
                 continue;
             }
@@ -855,9 +1538,7 @@ static void expand_content(Archive *a, Visit *v, const Block *b,
                 }
                 j++;
             }
-            if (emit && fwrite(content + i, 1, j - i, stdout) != j - i) {
-                fail("could not write output");
-            }
+            buf_append(out, content + i, j - i);
             i = j;
         }
     }
@@ -887,7 +1568,7 @@ static int chunk_defined(Archive *a, const char **labels, int nlabels,
 }
 
 static void expand_ref(Archive *a, Visit *v, const char **labels, int nlabels,
-                       const char *module, const char *chunk, int emit) {
+                       const char *module, const char *chunk, Buf *out) {
     char *key = canonical(labels, nlabels, module, chunk);
     if (visit_has(v, key)) {
         fail("circular inclusion of '%s'", key);
@@ -895,10 +1576,26 @@ static void expand_ref(Archive *a, Visit *v, const char **labels, int nlabels,
     visit_push(v, key);
     for (int i = 0; i < a->nblocks; i++) {
         Block *b = &a->blocks[i];
+        Buf body = {0};
+        Parser loc;
         if (!block_in_chain(a, b, labels, nlabels, module, chunk)) {
             continue;
         }
-        expand_content(a, v, b, labels, nlabels, key, emit);
+        /* References in the body are expanded first. The block's filters
+           then transform that text, and the filter output is what this
+           block contributes. The output is not scanned for references. */
+        expand_content(a, v, b, labels, nlabels, key, &body);
+        memset(&loc, 0, sizeof(loc));
+        loc.where = key;
+        loc.def_line = b->def_line;
+        loc.def_file = b->def_file;
+        for (int fi = 0; fi < b->nfilters; fi++) {
+            Filt *f = &b->filters[fi];
+            run_filter(a, v, &body, f->labels, f->nlabels, f->has_module, f->module, f->chunk,
+                       labels, nlabels, b->def_module, &loc);
+        }
+        buf_append(out, body.data, body.n);
+        free(body.data);
     }
     visit_pop(v);
 }
@@ -1109,7 +1806,7 @@ static void usage(FILE *fp, const char *argv0) {
 }
 
 int main(int argc, char **argv) {
-    const char *argv0 = (argc > 0 && argv[0] && argv[0][0]) ? argv[0] : "stage0";
+    const char *argv0 = (argc > 0 && argv[0] && argv[0][0]) ? argv[0] : "litar";
     const char *expr = NULL;
     const char *file = NULL;
     Archive arc;
@@ -1118,6 +1815,7 @@ int main(int argc, char **argv) {
     StrVec labels = {0};
     const char *module;
     Visit visit = {0};
+    Buf result = {0};
     char *key;
 
     for (int i = 1; i < argc; i++) {
@@ -1171,6 +1869,13 @@ int main(int argc, char **argv) {
     ep.n = strlen(expr);
     ep.arc = &arc;
     parse_qname(&ep, &qn, Q_EXPR);
+    if (ep.i < ep.n) {
+        int k = control_kind(&ep);
+        if (k == 0) {
+            fail_at(&ep, "unterminated name");
+        }
+        fail_at(&ep, "unexpected control '@%c' in name", k);
+    }
     if (qn.labels.n) {
         expand_label_list(&arc, qn.labels.v, qn.labels.n, &labels);
     }
@@ -1180,13 +1885,28 @@ int main(int argc, char **argv) {
         fail("chunk '%s' is not defined", key);
     }
     free(key);
-    /* Walk once before writing, so a cycle or a bad reference exits
-       with empty stdout. */
-    expand_ref(&arc, &visit, labels.v, labels.n, module, qn.chunk, 0);
-    expand_ref(&arc, &visit, labels.v, labels.n, module, qn.chunk, 1);
+    /* The chunk is built in memory and written only after every filter
+       has run, so a cycle or a failed filter leaves stdout empty and
+       each filter runs once. */
+    expand_ref(&arc, &visit, labels.v, labels.n, module, qn.chunk, &result);
+    if (qn.nfilters) {
+        Parser loc;
+        memset(&loc, 0, sizeof(loc));
+        for (int fi = 0; fi < qn.nfilters; fi++) {
+            QName *f = &qn.filters[fi];
+            /* A print expression is not inside a block, so a filter
+               with no module is in the anonymous module. */
+            run_filter(&arc, &visit, &result, f->labels.v, f->labels.n, f->has_module,
+                       f->module, f->chunk, labels.v, labels.n, "", &loc);
+        }
+    }
+    if (result.n && fwrite(result.data, 1, result.n, stdout) != result.n) {
+        fail("could not write output");
+    }
+    free(result.data);
 
     free(labels.v);
-    free(qn.labels.v);
+    qname_free(&qn);
     free(visit.keys);
     free(arc.blocks);
     free(arc.src);

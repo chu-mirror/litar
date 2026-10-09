@@ -1,0 +1,11 @@
+@- Tools @
+
+@<shout@=#!/bin/sh
+LC_ALL=C tr '[:lower:]' '[:upper:]'
+@
+
+@- @
+
+@<word@=
+ab
+@

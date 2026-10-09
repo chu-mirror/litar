@@ -1,0 +1,11 @@
+@<boom@=#!/bin/sh
+exit 3
+@
+
+@<t@=
+x
+@
+
+@<use@=
+@<t@|boom@>
+@

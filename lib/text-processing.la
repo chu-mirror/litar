@@ -1,0 +1,26 @@
+@? included Text Processing @|@|
+@! included Text Processing @
+
+@. lib/basic.la @
+
+@- Text Processing @
+
+@<path to perl interpreter@=
+#!/bin/sh
+which perl
+@|Basics@/evaluate@
+
+@<basic perl settings@=#!@<path to perl interpreter@>
+use v5.14;
+use warnings FATAL => 'all';
+use strict;
+@
+
+@<remove newlines@=@<Text Processing@/basic perl settings@>
+my @pres = <STDIN>;
+chomp @pres;
+print "@pres";
+@
+
+@
+

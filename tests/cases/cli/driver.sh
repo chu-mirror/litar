@@ -68,5 +68,5 @@ assert_fail "directory is not an archive" "could not read" \
     "$LITAR" -p chunk "$dir"
 assert_fail "empty expression" "empty chunk name" \
     "$LITAR" --print= archive.la
-assert_fail "filter in expression" "filters are not implemented in expression" \
+assert_fail "filter in expression" "filter 'filt' is not defined in expression" \
     "$LITAR" -p 'chunk@|filt' archive.la

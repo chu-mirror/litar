@@ -1,0 +1,11 @@
+@<noisy@=#!/bin/sh
+echo e >&2
+printf out
+@
+
+@<t@=
+@
+
+@<c@=
+@<t@|noisy@>
+@

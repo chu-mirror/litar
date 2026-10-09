@@ -13,7 +13,7 @@ This project proposes a system named litar, which is defined in [design/litar.md
 
 # Build and test
 
-`make` compiles `src/stage0.c` into `./litar`.
+`make` compiles `src/boot.c` into `./litar`.
 `make test` compiles it, then runs the tests under `tests/`.
 `make clean` removes the binary.
 

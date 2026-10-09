@@ -1,0 +1,11 @@
+@<hello@=
+hello
+@
+
+@<upper@=#!/bin/sh
+LC_ALL=C tr '[:lower:]' '[:upper:]'
+@
+
+@<out@=
+@<hello@|upper@>
+@

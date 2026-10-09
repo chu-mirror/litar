@@ -1,0 +1,7 @@
+@<a@=
+hello
+@|echoa@
+
+@<echoa@=#!/bin/sh
+printf '%s' @<a@>
+@

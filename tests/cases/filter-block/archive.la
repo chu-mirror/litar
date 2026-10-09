@@ -1,0 +1,20 @@
+@<hello@=
+hello
+@|upper@
+
+@<upper@=#!/bin/sh
+LC_ALL=C tr '[:lower:]' '[:upper:]'
+@
+
+@<both@=
+@<hello@>
+!
+@
+
+@<copy@=#!/usr/bin/env sh
+cat
+@
+
+@<env@=
+hi
+@|copy@

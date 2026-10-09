@@ -1,6 +1,6 @@
-# Stage 0 implementation details
+# Bootstrap implementation details
 
-`src/stage0.c` implements `design/litar.md` through Including,
+`src/boot.c` implements `design/litar.md` through Filters,
 and `--help` and `-p`/`--print` from `design/ui.md`.
 This file records the concrete reading used
 where those design files leave a choice open.
@@ -24,8 +24,9 @@ CR is included so a CRLF archive ends expressions
 the same way as a LF archive.
 
 The same rules apply inside block content.
-At this stage the only control that may appear there
-is a chunk reference, `@<` … `@>`.
+A chunk reference, `@<` … `@>`, may name filters with `@|`.
+A `@|` that is not inside a reference ends the body
+and is the block's own filter list.
 Any other control in content is an error
 when that block is expanded.
 
@@ -133,10 +134,9 @@ through `program1@:general structure for C program`.
 A reference that writes no module
 uses the module selected where the surrounding block was written.
 A reference that writes a module uses that module.
-In `examples/hello.la` the holes of `lib/light.la` stay in `Light`,
-because those blocks were written after `@- Light @`,
-and `@<hello message@>` stays in the anonymous module,
-because that block was written while `hello.la` was anonymous.
+A hole written after `@- Light @` stays in `Light`
+when another archive references it without naming a module.
+A reference written in the anonymous module stays there.
 
 ## Label groups
 
@@ -279,14 +279,82 @@ and a bad reference leave stdout empty.
 `could not write output` is reported
 if stdout cannot be written while the chunk is being emitted.
 
+## Filters
+
+A filter is a chunk.
+`@|` names one, and `@|a@|b` is a pipeline:
+the text goes through `a`, then through `b`.
+On a reference the filters follow the chunk name,
+`@<chunk@|filter@>`,
+and the same spelling is accepted in `-p` and `--print`.
+On a block they follow the body:
+
+```
+@<chunk@=
+body
+@|filter@
+```
+
+`@|` in a block header, before `@=`,
+is `unexpected control '@|' in name`.
+`@|` in a label group is `unexpected control in label group`.
+`@|` as an expression of its own is still `unexpected '@|'`.
+An empty filter name is `empty filter name`.
+
+The reference is expanded first,
+including every reference in a block body.
+Each of the block's filters then runs on that text,
+and the filter output is the text the block contributes.
+A reference's filters run on the expanded chunk.
+Filter output is not scanned for further references.
+Blocks of one chunk are still concatenated in parse order;
+each block is filtered on its own before that concatenation.
+
+A filter with no labels keeps the labels
+of the reference being expanded.
+Labels written on the chunk reference next to the filter
+do not become the filter's labels.
+A filter with no module uses the module selected
+where the block that names the filter was written.
+On a print expression there is no such block,
+so a filter with no module is in the anonymous module.
+A filter that names a module or labels uses those.
+
+A missing filter is `filter '…' is not defined`,
+with the same key spelling as a chunk.
+The program that filter expands to
+must begin with `#!`.
+Otherwise the error is
+`filter '…' does not start with a shebang`.
+The interpreter and one optional word are taken from that line,
+the way the kernel loads a script,
+and the interpreter is started with the program in a temporary file.
+The filter's standard input is the text being transformed.
+Its standard output replaces that text.
+Its standard error is this process's standard error.
+The working directory is the process's current directory.
+A non-zero exit is `filter '…' exited with status N`.
+A signal is `filter '…' exited with signal N`.
+A failure to start the interpreter is
+`could not run filter '…':` followed by the system message.
+
+The whole result is held until every filter has finished,
+then written to stdout.
+A filter therefore runs once,
+and a failed filter or a cycle leaves stdout empty.
+Expanding the filter program is an ordinary chunk expansion,
+so a filter that reaches the chunk already being expanded
+stops with `circular inclusion of '…'`.
+
+`Text Processing@/path to perl interpreter`
+in `lib/text-processing.la` is the shell script `which perl`
+run by `Basics@/evaluate`.
+Its result is the path printed by `which perl`.
+
 ## Later stages
 
-Filters, file definitions, and file sets are recognized and rejected.
+File definitions and file sets are recognized and rejected.
 
-- `@|` in a name, a label group, or the print expression:
-  `filters are not implemented`
-- `@|` as an expression of its own: `unexpected '@|'`
-- `@|` in block content, outside a reference: `unexpected control '@|'`
 - `@[` and `@(`: `file definitions are not implemented`
 - `` @` ``, `@+`, and `@,`: `file sets are not implemented`
 - any other control used as an expression: `unknown expression '@c'`

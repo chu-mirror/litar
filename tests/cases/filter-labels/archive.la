@@ -1,0 +1,19 @@
+@<plain@:shout@=#!/bin/sh
+printf P
+@
+
+@<other@:shout@=#!/bin/sh
+printf O
+@
+
+@<plain@:word@=
+@<other@:hole@|shout@>
+@
+
+@<pick@=
+@<other@:hole@|other@:shout@>
+@
+
+@<other@:hole@=
+x
+@

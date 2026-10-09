@@ -1,0 +1,15 @@
+@<ab@=
+ab
+@
+
+@<x@=#!/bin/sh
+printf '%sx' "$(cat)"
+@
+
+@<word@=
+ab
+@|x@|x@
+
+@<piped@=
+@<ab@|x@|x@>
+@

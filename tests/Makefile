@@ -1,5 +1,5 @@
-# Run the stage 0 test set. From the repo root, `make test` builds first.
-# `make -C tests` builds ../litar when it is missing or older than src/stage0.c.
+# Run the test set. From the repo root, `make test` builds first.
+# `make -C tests` builds ../litar when it is missing or older than src/boot.c.
 
 ROOT := ..
 LITAR ?= $(ROOT)/litar
@@ -11,7 +11,7 @@ all: test
 test: $(LITAR)
 	bash run.sh $(abspath $(LITAR))
 
-$(LITAR): $(ROOT)/src/stage0.c
+$(LITAR): $(ROOT)/src/boot.c
 	$(MAKE) -C $(ROOT) litar
 
 clean:

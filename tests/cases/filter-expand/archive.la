@@ -1,0 +1,27 @@
+@<msg@=
+hi
+@
+
+@<run@=#!/bin/sh
+printf '%s\n' @<msg@>
+@|evalsh@
+
+@<evalsh@=#!/bin/sh
+set -e
+f=`mktemp`
+cat - > "$f"
+chmod +x "$f"
+"$f"
+rm -f "$f"
+@
+
+@<raw@=#!/bin/sh
+printf '\100<msg\100>'
+@
+
+@<show@=
+[@<x@|raw@>]
+@
+
+@<x@=
+@

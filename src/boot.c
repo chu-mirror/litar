@@ -1,4 +1,4 @@
-/* Stage 0 of litar: the archive syntax through Including.
+/* Bootstrap of litar: the archive syntax through Including.
    Filters, files, and file sets belong to later stages.
    See design/litar.md and design/stages.md. */
 

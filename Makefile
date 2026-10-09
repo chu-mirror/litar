@@ -1,5 +1,5 @@
-# Build the stage 0 litar binary and run the test set.
-#   make        compile ./litar from src/stage0.c
+# Build the boot binary and run the test set.
+#   make        compile ./litar from src/boot.c
 #   make test   compile, then run tests/
 #   make clean  remove the binary
 
@@ -10,8 +10,8 @@ CFLAGS ?= -std=c11 -Wall -Wextra -Werror
 
 all: litar
 
-litar: src/stage0.c
-	$(CC) $(CFLAGS) -o $@ src/stage0.c
+litar: src/boot.c
+	$(CC) $(CFLAGS) -o $@ src/boot.c
 
 test: litar
 	$(MAKE) -C tests test LITAR=$(abspath litar)

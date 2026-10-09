@@ -1,0 +1,1157 @@
+@? included light framework @|@|
+
+@. lib/c-structure.la @
+
+@- Light @
+
+Light is a framework mainly for C programming.
+It reflects the author's preferences and customs,
+which includes how to format code,
+how to manage memory, how to handle exception, etc.
+
+Light encourage using of statical memory rather than heap.
+
+@<lightlib@:C Structure@/module properties@=
+name => 'light',
+@
+
+There are some idioms to make life a bit easier.
+
+@<lightlib@:C Structure@/exported macros@=
+#define GLUE_TOKENS_INNER(a, b) a ## b
+#define GLUE_TOKENS(a, b) GLUE_TOKENS_INNER(a, b)
+
+#define ZEROFY(p, n) memset((p), 0, sizeof(*p) * (n))
+#define ZEROFY_SINGLE(p) ZEROFY(p, 1)
+
+#define COPY(dest, src) memcpy((dest), (src), sizeof(*(src)))
+
+#define SIGN(v) (((v) > 0) - ((v) < 0))
+#define ABS(v) ((v) * SIGN(v))
+#define BETWEEN(v, l, r)                                             \
+    ((((l) <= (v)) && ((v) < (r))) || (((r) <= (v)) && ((v) < (l))))
+#define SWAP(a, b)                             \
+    do {                                       \
+        typeof(a) *a_r = &(a), *b_r = &(b), t; \
+        t = *a_r;                              \
+        *a_r = *b_r;                           \
+        *b_r = t;                              \
+    } while (0)
+@
+
+Copied from linux kernel.
+
+@<lightlib@:C Structure@/exported macros@=
+#define container_of(ptr, type, member) \
+    _Generic(ptr, \
+        const typeof(*(ptr)) *: ((const type *)((uint8_t *)(ptr) - offsetof(type, member))), \
+        default: ((type *)((uint8_t *)(ptr) - offsetof(type, member))) \
+    )
+@
+
+@<lightlib@:C Structure@/exported data types@=
+struct list {
+    struct list *next;
+};
+@
+
+@<lightlib@:C Structure@/exported static inline functions@=
+static inline struct list *
+cons(struct list *elm, struct list *l)
+{
+    elm->next = l;
+    return elm;
+}
+static inline struct list *
+cdr(const struct list *l)
+{
+    return l->next;
+}
+@
+
+@<lightlib@:C Structure@/functions@=
+int list_length(const struct list *l)
+{
+    int n = 0;
+    while (l) {
+        l = cdr(l);
+        ++n;
+    }
+    return n;
+}
+
+void reverse(struct list **l_r)
+{
+    struct list *l, *ll;
+
+    l = *l_r;
+    ll = NULL;
+
+    while (l) {
+        struct list *l_t = l->next;
+        l->next = ll;
+        ll = l;
+        l = l_t;
+    }
+
+    *l_r = ll;
+}
+@
+
+@<lightlib@:C Structure@/exported data types@=
+struct tail_list {
+    struct list *head;
+    struct list *tail;
+};
+@
+
+@<lightlib@:C Structure@/exported static inline functions@=
+static inline void list_extend(struct tail_list *tl, struct list *l)
+{
+    if (tl->tail) {
+        tl->tail->next = l;
+    } else {
+        tl->head = l;
+        tl->tail = l;
+    }
+    while (tl->tail->next) {
+        tl->tail = tl->tail->next;
+    }
+}
+@
+
+@<lightlib@:C Structure@/exported data types@=
+struct bi_list {
+    struct bi_list *previous;
+    struct bi_list *next;
+};
+@
+
+@<lightlib@:C Structure@/exported static inline functions@=
+static inline void bi_list_init(struct bi_list *l)
+{
+    l->previous = l;
+    l->next = l;
+}
+
+static inline void bi_list_connect(struct bi_list *nd1, struct bi_list *nd2)
+{
+    nd1->next = nd2;
+    nd2->previous = nd1;
+}
+
+static inline struct bi_list *bi_list_insert(struct bi_list *nd1, struct bi_list *nd2)
+{
+    if (!nd2) {
+        bi_list_connect(nd1, nd1);
+    } else {
+        struct bi_list *pre_nd2 = nd2->previous;
+        bi_list_connect(pre_nd2, nd1);
+        bi_list_connect(nd1, nd2);
+    }
+    return nd1;
+}
+
+static inline struct bi_list *bi_list_remove(struct bi_list *nd)
+{
+    if (nd->next == nd && nd->previous == nd) {
+        return NULL;
+    }
+    bi_list_connect(nd->previous, nd->next);
+    return nd->next;
+}
+@
+
+@<lightlib@:C Structure@/exported macros@=
+#define FOREACH(elm, lst) for (elm = lst; elm; elm = cdr(elm))
+#define FOREACH_BI(elm, lst) \
+    for (elm = NULL; (elm && (elm != lst)) || (!elm && (elm = lst)); elm = elm->next)
+#define FOREACH_BI_BACKWARDS(elm, lst) \
+    for (elm = NULL; (elm && (elm != lst)) || (!elm && (elm = lst)); elm = elm->previous)
+@
+
+@<lightlib@:C Structure@/exported data types@=
+struct context {
+    const char *name;
+    struct context *parent;
+    const void *memory_end;
+    void *stack_top;
+    struct frame_header *stack_frame_start;
+};
+struct free_node {
+    void *ptr;
+    void *(*func)(void *ptr);
+    struct list free_list;
+};
+struct frame_header {
+    struct frame_header *last_frame_start;
+    struct list *free_list;
+    const void *returned;
+    size_t returned_size;
+};
+extern thread_local struct context *_light_top_context;
+@
+
+@<lightlib@:C Structure@/exported static inline functions@=
+static inline void *_salloc(struct context *ctx, size_t size) {
+    uint8_t *stack_top = ctx->stack_top;
+    if (stack_top + size >= (const uint8_t *)ctx->memory_end) {
+        return NULL;
+    }
+    ctx->stack_top = stack_top + size;
+    return stack_top;
+}
+
+static inline void *_csalloc(struct context *ctx, size_t nmemb, size_t size) {
+    size_t tot = nmemb * size;
+    void *p = _salloc(ctx, tot);
+    memset(p, 0, tot);
+    return p;
+}
+
+static inline void *salloc(size_t size) {
+    return _salloc(_light_top_context, size);
+}
+
+static inline void *csalloc(size_t nmemb, size_t size) {
+    return _csalloc(_light_top_context, nmemb, size);
+}
+
+static inline size_t _remaining_memory(struct context *ctx) {
+    return (uint8_t *)ctx->memory_end - (uint8_t *)ctx->stack_top;
+}
+
+static inline size_t remaining_memory() {
+    return _remaining_memory(_light_top_context);
+}
+@
+
+@<lightlib@:C Structure@/exported macros@=
+#define NEW(p) \
+    do { \
+        typeof(p) *__light_macro_local_p_r = &(p); \
+        (*__light_macro_local_p_r) = (typeof(p))salloc(sizeof *(p)); \
+    } while (0)
+#define CALLOC(p, len) \
+    do { \
+        typeof(p) *__light_macro_local_p_r = &(p); \
+        (*__light_macro_local_p_r) = (typeof(p))csalloc((len), sizeof *(p)); \
+    } while (0)
+#define NEW0(p) CALLOC(p, 1)
+@
+
+@<lightlib@:C Structure@/exported static inline functions@=
+static inline char *sstrdup(const char *s)
+{
+    char *_s;
+    _s = salloc(strlen(s)+1);
+    if (_s) {
+        strcpy(_s, s);
+    }
+    return _s;
+}
+@
+
+@<lightlib@:C Structure@/global variables@=
+thread_local struct context *_light_top_context;
+@
+
+@<lightlib@:C Structure@/functions@=
+struct frame_header *enter_frame()
+{
+    struct frame_header *hd;
+    NEW(hd);
+    if (!hd) {
+        return NULL;
+    }
+    hd->last_frame_start = _light_top_context->stack_frame_start;
+    _light_top_context->stack_frame_start = hd;
+    hd->free_list = NULL;
+    hd->returned = NULL;
+    hd->returned_size = 0;
+    return hd;
+}
+
+void *frame_return(const void *p, size_t s)
+{
+    struct frame_header *hd = _light_top_context->stack_frame_start;
+    hd->returned = p;
+    hd->returned_size = s;
+    return _light_top_context->stack_frame_start;
+}
+
+void *frame_return_complex(
+    const void *obj,
+    void *serialize(const void *obj, size_t *size, const void *base_addr)
+) {
+    size_t size;
+    void *s_obj = serialize(obj, &size, _light_top_context->stack_frame_start);
+    if (!s_obj) {
+        return NULL;
+    }
+    return frame_return(s_obj, size);
+}
+
+const void *exit_frame() {
+    struct frame_header *hd = _light_top_context->stack_frame_start;
+
+    while (hd->free_list) {
+        struct free_node *nd = container_of(hd->free_list, struct free_node, free_list);
+        if (!nd->func(nd->ptr)) {
+            return NULL;
+        }
+        hd->free_list = cdr(hd->free_list);
+    }
+
+    const void *rp = hd->returned;
+    size_t rs = hd->returned_size;
+
+    _light_top_context->stack_top = _light_top_context->stack_frame_start;
+    _light_top_context->stack_frame_start = _light_top_context->stack_frame_start->last_frame_start;
+
+    if (rp) {
+        void *p = salloc(rs);
+        if (!p) {
+            return NULL;
+        }
+        for (int i = 0; i < rs; ++i) {
+            *(uint8_t *)(p++) = *(uint8_t *)(rp++);
+        }
+    }
+    return hd;
+}
+
+struct free_node *new_free_node(void *ptr, void *func(void *))
+{
+    struct free_node *nd;
+    NEW(nd);
+    if (!nd) {
+        return NULL;
+    }
+    nd->ptr = ptr;
+    nd->func = func;
+    _light_top_context->stack_frame_start->free_list =
+        cons(&nd->free_list, _light_top_context->stack_frame_start->free_list);
+    return nd;
+}
+@
+
+@<lightlib@:C Structure@/exported static inline functions@=
+static inline char *frame_return_string(const char *s)
+{
+    return frame_return(s, strlen(s)+1);
+}
+
+static inline struct frame_header *enter_context(struct context *ctx)
+{
+    ctx->parent = _light_top_context;
+    _light_top_context = ctx;
+    return enter_frame();
+}
+
+static inline const void *exit_context()
+{
+    const void *ret = exit_frame();
+    _light_top_context = _light_top_context->parent;
+    return ret;
+}
+
+static inline struct context *switch_context(struct context *ctx)
+{
+    struct context *tmp = _light_top_context;
+    _light_top_context = ctx;
+    return tmp;
+}
+@
+
+@<lightlib@:C Structure@/exported macros@=
+#define frame_return_struct(p) frame_return(p, sizeof(*p))
+@
+
+@<lightlib@:C Structure@/includes@=
+#include <stdio.h>
+#include <stdarg.h>
+@
+
+@<lightlib@:C Structure@/exported data type declarations@=
+typedef enum {
+    LOG_LEVEL_INFO,
+    LOG_LEVEL_WARNING,
+    LOG_LEVEL_ERROR,
+} LogLevel;
+@
+
+@<lightlib@:C Structure@/functions@=
+void _light_log(LogLevel base, LogLevel lv, const char *format, ...)
+{
+    if (lv < base) {
+        return;
+    }
+
+    switch (lv) {
+    case LOG_LEVEL_INFO:
+        fputs("INFO: ", stderr);
+        break;
+    case LOG_LEVEL_WARNING:
+        fputs("WARNING: ", stderr);
+        break;
+    case LOG_LEVEL_ERROR:
+        fputs("ERROR: ", stderr);
+        break;
+    default:
+        return;
+    }
+
+    va_list args;
+
+    va_start(args, format);
+    vfprintf(stderr, format, args);
+    va_end(args);
+
+    do {
+        struct context *ctx = _light_top_context;
+        fputs(" (", stderr);
+        fputs(ctx->name, stderr);
+        ctx = ctx->parent;
+        while (ctx) {
+            fputs(" -> ", stderr);
+            fputs(ctx->name, stderr);
+            ctx = ctx->parent;
+        }
+    } while (0);
+    fputs(")\n", stderr);
+}
+@
+
+@<lightlib@:C Structure@/exported macros@=
+#ifdef light_option_logging_level
+#define light_log(lv, format, ...) \
+    _light_log(GLUE_TOKENS(LOG_LEVEL_, light_option_logging_level), LOG_LEVEL_##lv, (format) __VA_OPT__(,) __VA_ARGS__)
+#else
+#define light_log(lv, format, ...) ((void *) NULL);
+#endif
+@
+
+@<lightlib@:C Structure@/exported data type declarations@=
+typedef struct heap *Heap;
+@
+
+@<lightlib@:C Structure@/macros@=
+#define HEAP_LABEL_TYPE unsigned int
+#define HEAP_LABEL_SIZE (sizeof(HEAP_LABEL_TYPE) * 8)
+@
+
+@<lightlib@:C Structure@/data types@=
+struct heap {
+    size_t length;
+    size_t unit_size;
+    HEAP_LABEL_TYPE *labels;
+    int first_direct;
+    uint8_t *space;
+};
+@
+
+@<lightlib@:C Structure@/functions@=
+Heap new_heap(size_t len, size_t unit_size)
+{
+    Heap hp;
+    NEW(hp);
+    if (!hp) {
+        return NULL;
+    }
+    hp->length = len;
+    hp->unit_size = unit_size;
+    hp->space = salloc(len * unit_size);
+    if (!hp->space) {
+        return NULL;
+    }
+
+    int w_n = 1;
+    while (w_n < len) {
+        w_n *= HEAP_LABEL_SIZE;
+    }
+
+    hp->first_direct = (w_n-1)/(HEAP_LABEL_SIZE-1);
+    CALLOC(
+        hp->labels,
+        hp->first_direct + (len+HEAP_LABEL_SIZE-1)/HEAP_LABEL_SIZE
+    );
+
+    if (!hp->labels) {
+        return NULL;
+    }
+
+    return hp;
+}
+
+void *heap_alloc(Heap hp)
+{
+    int p = 0;
+    while (p < hp->first_direct) {
+        p = HEAP_LABEL_SIZE * p + 1 + __builtin_clzg(~hp->labels[p], (int)HEAP_LABEL_SIZE);
+    }
+
+    int n = __builtin_clzg(~hp->labels[p], (int)HEAP_LABEL_SIZE);
+    int idx = (p - hp->first_direct) * HEAP_LABEL_SIZE + n;
+
+    if (idx >= hp->length) {
+        return NULL;
+    }
+
+    hp->labels[p] |= (HEAP_LABEL_TYPE) 1 << (HEAP_LABEL_SIZE - n - 1);
+
+    while (__builtin_popcountg(hp->labels[p]) == HEAP_LABEL_SIZE) {
+        int _p = (p - 1) / HEAP_LABEL_SIZE;
+        hp->labels[_p] |=
+            (HEAP_LABEL_TYPE) 1 << (HEAP_LABEL_SIZE - 1 - (p - (_p * HEAP_LABEL_SIZE + 1)));
+        if (_p == 0) {
+            break;
+        }
+        p = _p;
+    }
+
+    return hp->space + (idx * hp->unit_size);
+}
+
+void heap_free(Heap hp, void *elm)
+{
+    uint8_t *_elm = elm;
+    if (_elm < hp->space || _elm >= hp->space + hp->length * hp->unit_size) {
+        return;
+    }
+    size_t idx = (_elm - hp->space) / hp->unit_size;
+    int p = hp->first_direct + idx/HEAP_LABEL_SIZE;
+    hp->labels[p] &= ~((HEAP_LABEL_TYPE) 1 << (HEAP_LABEL_SIZE - 1 - (idx % HEAP_LABEL_SIZE)));
+    do {
+        int _p = (p - 1) /HEAP_LABEL_SIZE;
+        hp->labels[_p] &= ~(
+            (HEAP_LABEL_TYPE) 1 << (HEAP_LABEL_SIZE - 1 - (p - (_p * HEAP_LABEL_SIZE + 1)))
+        );
+        if (__builtin_popcountg(hp->labels[_p]) < HEAP_LABEL_SIZE - 1) {
+            break;
+        }
+        p = _p;
+    } while (p);
+}
+@
+
+@<lightlib@:C Structure@/data types@=
+struct segment {
+    struct list list;
+    uint8_t mem[];
+};
+struct segmented {
+    Heap heap;
+    struct segment *head, *tail;
+    size_t tail_size;
+};
+@
+
+@<lightlib@:C Structure@/exported macros@=
+#define SEGMENT_SIZE(elms) sizeof(struct {struct list list; elms;})
+@
+
+@<lightlib@:C Structure@/exported data type declarations@=
+typedef struct segmented *Segmented;
+@
+
+@<lightlib@:C Structure@/static inline functions@=
+static inline size_t segment_size(Segmented sg)
+{
+    return sg->heap->unit_size - offsetof(struct segment, mem);
+}
+
+static inline void segmented_init(Segmented sg, Heap hp)
+{
+    sg->heap = hp;
+    sg->head = heap_alloc(hp);
+    cons(&sg->head->list, NULL);
+    sg->tail = sg->head;
+    sg->tail_size = 0;
+}
+
+static inline Segmented segmented_attach_new_segment(Segmented sg)
+{
+    struct segment *nsg = heap_alloc(sg->heap);
+    if (!nsg) {
+        return NULL;
+    }
+    cons(&sg->tail->list, cons(&nsg->list, NULL));
+    sg->tail = nsg;
+    sg->tail_size = 0;
+    return sg;
+}
+@
+
+@<lightlib@:C Structure@/functions@=
+Segmented new_segmented(Heap hp)
+{
+    Segmented sg;
+    NEW(sg);
+    if (!sg) {
+        return NULL;
+    }
+    segmented_init(sg, hp);
+    return sg;
+}
+
+Segmented new_segmented_in_heap(Heap hp_s, Heap hp)
+{
+    if (hp_s->unit_size >= sizeof(struct segmented)) {
+        return NULL;
+    }
+    Segmented sg = heap_alloc(hp_s);
+    if (!sg) {
+        return NULL;
+    }
+    segmented_init(sg, hp);
+    return sg;
+}
+
+size_t segmented_size(Segmented sg)
+{
+    return (list_length(&sg->head->list)-1) * segment_size(sg) + sg->tail_size;
+}
+
+Segmented segmented_append(Segmented sg, const void *src, size_t n)
+{
+    const uint8_t *src_ = src;
+    while (n) {
+        size_t tail_usable, save_to_tail;
+
+        tail_usable = segment_size(sg) - sg->tail_size;
+        save_to_tail = n < tail_usable ? n : tail_usable;
+
+        memcpy(sg->tail->mem + sg->tail_size, src_, save_to_tail);
+        n -= save_to_tail;
+        src_ += save_to_tail;
+        sg->tail_size += save_to_tail;
+
+        if (sg->tail_size == segment_size(sg)) {
+            if (!segmented_attach_new_segment(sg)) {
+                return NULL;
+            }
+        }
+    }
+    return sg;
+}
+
+Segmented segmented_resize(Segmented sg, size_t size)
+{
+    struct list *segs = &sg->head->list;
+    size_t acc = 0;
+    while (acc < size) {
+        acc += segment_size(sg);
+        sg->tail = container_of(segs, struct segment, list);
+
+        segs = cdr(segs);
+        if (!segs) {
+            if (!segmented_attach_new_segment(sg)) {
+                return NULL;
+            }
+            segs = &sg->tail->list;
+        }
+    }
+    cons(&sg->tail->list, NULL);
+    while (segs) {
+        struct list *segs_ = segs;
+        segs = cdr(segs);
+        heap_free(sg->heap, segs_);
+    }
+    if (acc > size) {
+        sg->tail_size = size + segment_size(sg) - acc;
+    }
+    return sg;
+}
+
+void segmented_free(Heap hp_s, Segmented sg)
+{
+    struct list *segs = &sg->head->list, *segs_;
+    while (segs) {
+        segs_ = segs;
+        segs = cdr(segs);
+        heap_free(sg->heap, segs_);
+    }
+    heap_free(hp_s, sg);
+}
+@
+
+@<lightlib@:C Structure@/data types@=
+struct segmented_random {
+    Segmented segmented;
+    void **segments;
+};
+@
+
+@<lightlib@:C Structure@/exported data type declarations@=
+typedef struct segmented_random *SegmentedRandom;
+@
+
+@<lightlib@:C Structure@/functions@=
+SegmentedRandom segmented_random(Segmented sg)
+{
+    SegmentedRandom sgr;
+    NEW(sgr);
+    if (!sgr) {
+        return NULL;
+    }
+    sgr->segmented = sg;
+
+    struct list *segs = &sg->head->list;
+    sgr->segments = csalloc(list_length(segs), sizeof(*sgr->segments));
+    if (!sgr->segments) {
+        return NULL;
+    }
+
+    int i = 0;
+    while (segs) {
+        sgr->segments[i] = container_of(segs, struct segment, list)->mem;
+        segs = cdr(segs);
+        ++i;
+    }
+    return sgr;
+}
+
+void *segmented_pointer(SegmentedRandom sgr, int addr)
+{
+    return (uint8_t *)sgr->segments[addr/segment_size(sgr->segmented)]
+        + addr % segment_size(sgr->segmented);
+}
+
+void segmented_copy_to(Segmented sg, void *buf)
+{
+    struct list *segs = &sg->head->list;
+    int addr = 0;
+    while (segs != &sg->tail->list) {
+        memcpy(buf + addr, container_of(segs, struct segment, list)->mem, segment_size(sg));
+        addr += segment_size(sg);
+        segs = cdr(segs);
+    }
+    memcpy(buf + addr, container_of(segs, struct segment, list)->mem, sg->tail_size);
+}
+
+void *segmented_continuous(Segmented sg)
+{
+    uint8_t *cont;
+
+    cont = salloc(segmented_size(sg));
+    if (!cont) {
+        return NULL;
+    }
+    segmented_copy_to(sg, cont);
+
+    return cont;
+}
+@
+
+@<lightlib@:C Structure@/exported macros@=
+#define segmented_pushback(sg, mem) segmented_append((sg), &mem, sizeof(mem))
+#define point_to_segmented(ptr, sgr, idx) do { \
+        typeof(ptr) __light_macro_local_ptr = NULL; \
+        (ptr) = segmented_pointer( \
+            (sgr), (idx) * (&_light_macro_local_ptr[1] - &_light_macro_local_ptr[0]) \
+        ); \
+    } while (0)
+@
+
+
+@<lightlib@:C Structure@/exported data type declarations@=
+typedef Segmented String;
+@
+
+@<lightlib@:C Structure@/exported macros@=
+#define string_free segmented_free
+@
+
+@<lightlib@:C Structure@/functions@=
+String string(Heap hp, const char *s)
+{
+    Segmented sg = new_segmented(hp);
+    sg = segmented_append(sg, s, strlen(s));
+    return sg;
+}
+
+const char *cstring(String str)
+{
+    size_t l = segmented_size(str);
+    char *s = salloc(l+1);
+    if (!s) {
+        return NULL;
+    }
+    segmented_copy_to(str, s);
+    s[l] = '\0';
+    return s;
+}
+
+String string_append(String str, const char *s)
+{
+    return segmented_append(str, s, strlen(s));
+}
+@
+
+@<lightlib@:C Structure@/exported data types@=
+struct hash_table_record {
+    const void *key;
+    const void *value;
+    struct bi_list slot, table;
+};
+@
+
+@<lightlib@:C Structure@/data types@=
+struct hash_table_storage {
+    Heap heap;
+    struct list compose;
+    struct bi_list *records;
+    size_t number_slots;
+    struct bi_list *slots[];
+};
+struct hash_table {
+    uint32_t (*hash_func)(const void *key);
+    int (*equal_func)(const void *key1, const void *key2);
+    struct list *compose;
+};
+@
+
+@<lightlib@:C Structure@/exported data type declarations@=
+typedef struct hash_table *HashTable;
+@
+
+@<lightlib@:C Structure@/static inline functions@=
+static inline uint32_t calculate_index_for_key(
+    HashTable tbl,
+    struct hash_table_storage *st,
+    const void *key
+) {
+    return tbl->hash_func(key) & (st->number_slots-1);
+}
+@
+
+@<lightlib@:C Structure@/functions@=
+HashTable new_hash_table(uint32_t hf(const void *), int eq(const void *, const void *))
+{
+    HashTable tbl;
+    NEW(tbl);
+    if (!tbl) {
+        return NULL;
+    }
+
+    tbl->hash_func = hf;
+    tbl->equal_func = eq;
+    tbl->compose = NULL;
+
+    return tbl;
+}
+
+static void *hash_table_remove_storage(void *tbl)
+{
+    HashTable tbl_ = tbl;
+    tbl_->compose = cdr(tbl_->compose);
+    return tbl;
+}
+
+HashTable hash_table_init(HashTable tbl, size_t size)
+{
+    size_t ns = 1;
+    while (ns < size) {
+        ns <<= 1;
+    }
+    struct hash_table_storage *st;
+    st = salloc(offsetof(struct hash_table_storage, slots) + ns * sizeof(st->slots[0]));
+    if (!st) {
+        return NULL;
+    }
+
+    st->number_slots = ns;
+    ZEROFY(st->slots, ns);
+
+    st->heap = new_heap(size, sizeof(struct hash_table_record));
+    if (!st->heap) {
+        return NULL;
+    }
+
+    st->records = NULL;
+    tbl->compose = cons(&st->compose, tbl->compose);
+    new_free_node(tbl, hash_table_remove_storage);
+    return tbl;
+}
+
+static struct hash_table_record *
+hash_table_storage_find_record(
+    HashTable tbl,
+    struct hash_table_storage *st,
+    const void *key
+) {
+    uint32_t idx = calculate_index_for_key(tbl, st, key);
+    struct bi_list *rcds = st->slots[idx], *rcd = rcds;
+    FOREACH_BI (rcd, rcds) {
+        struct hash_table_record *rcd_r = container_of(rcd, struct hash_table_record, slot);
+        if (tbl->equal_func(key, rcd_r->key)) {
+            return rcd_r;
+        }
+    }
+    return NULL;
+}
+
+static struct hash_table_record *
+hash_table_find_record(HashTable tbl, const void *key)
+{
+    struct list *cp = tbl->compose;
+    FOREACH (cp, tbl->compose) {
+        struct hash_table_storage *st = container_of(cp, struct hash_table_storage, compose);
+        struct hash_table_record *rcd = hash_table_storage_find_record(tbl, st, key);
+        if (rcd) {
+            return rcd;
+        }
+    }
+    return NULL;
+}
+
+HashTable hash_table_map(HashTable tbl, const void *key, const void *value)
+{
+    struct hash_table_storage *st = container_of(tbl->compose, struct hash_table_storage, compose);
+    struct hash_table_record *rcd_r = hash_table_storage_find_record(tbl, st, key);
+    if (rcd_r) {
+        rcd_r->value = value;
+        return tbl;
+    }
+    rcd_r = heap_alloc(st->heap);
+    if (!rcd_r) {
+        return NULL;
+    }
+
+    uint32_t idx = calculate_index_for_key(tbl, st, key);
+    rcd_r->key = key;
+    rcd_r->value = value;
+    st->slots[idx] = bi_list_insert(&rcd_r->slot, st->slots[idx]);
+    st->records = bi_list_insert(&rcd_r->table, st->records);
+    return tbl;
+}
+
+HashTable hash_table_unmap(HashTable tbl, const void *key)
+{
+    struct hash_table_storage *st = container_of(tbl->compose, struct hash_table_storage, compose);
+    struct hash_table_record *rcd_r = hash_table_storage_find_record(tbl, st, key);
+    if (!rcd_r) {
+        rcd_r = hash_table_find_record(tbl, key);
+        if (rcd_r) {
+            return hash_table_map(tbl, key, NULL);
+        }
+        return tbl;
+    }
+
+    uint32_t idx = calculate_index_for_key(tbl, st, key);
+    st->slots[idx] = bi_list_remove(&rcd_r->slot);
+    st->records = bi_list_remove(&rcd_r->table);
+    heap_free(st->heap, rcd_r);
+
+    return tbl;
+}
+
+const void *hash_table_get(HashTable tbl, const void *key)
+{
+    struct hash_table_record *rcd_r = hash_table_find_record(tbl, key);
+    if (rcd_r) {
+        return rcd_r->value;
+    } else {
+        return NULL;
+    }
+}
+@
+
+Light chooses FNV-1a as the default hash algorithm, the main usage is to calculate a key
+from a small value.
+
+@<lightlib@:C Structure@/exported static inline functions@=
+static inline uint32_t hash(const uint8_t *value, size_t len)
+{
+    uint32_t result;
+
+    int i;
+    for (i = 0, result = 2166136261U; i < len; ++i) {
+        result ^= value[i];
+        result *= 16777619U;
+    }
+
+    return result;
+}
+
+static inline uint32_t hash_str(const char *str)
+{
+    return hash((const uint8_t *)str, strlen(str));
+}
+@
+
+@<lightlib@:C Structure@/functions@=
+static uint32_t hash_func_str(const void *s)
+{
+    return hash_str(s);
+}
+
+static int equal_func_str(const void *s1, const void *s2)
+{
+    return strcmp(s1, s2) == 0;
+}
+
+HashTable new_string_hash_table()
+{
+    return new_hash_table(hash_func_str, equal_func_str);
+}
+@
+
+@<lightlib@:C Structure@/functions@=
+static uint32_t hash_func_ptr(const void *p)
+{
+    return hash((uint8_t *)&p, sizeof(p));
+}
+
+static int equal_func_ptr(const void *p1, const void *p2)
+{
+    return p1 == p2;
+}
+
+HashTable new_pointer_hash_table()
+{
+    return new_hash_table(hash_func_ptr, equal_func_ptr);
+}
+@
+
+Some useful data structures.
+
+@<lightlib@:C Structure@/exported data type declarations@=
+typedef HashTable Set;
+@
+
+@<lightlib@:C Structure@/exported macros@=
+#define new_set new_hash_table
+#define new_string_set new_string_hash_table
+#define set_init hash_table_init
+@
+
+@<lightlib@:C Structure@/exported static inline functions@=
+static inline Set set_include(Set set, const void *elm)
+{
+    return hash_table_map(set, elm, elm);
+}
+static inline const void *set_in(const void *elm, Set set)
+{
+    return hash_table_get(set, elm);
+}
+static inline Set set_not_include(Set set, const void *elm)
+{
+    return hash_table_unmap(set, elm);
+}
+@
+
+@<lightlib@:C Structure@/exported data types@=
+struct deque {
+    struct bi_list *head;
+};
+@
+
+@<lightlib@:C Structure@/exported data type declarations@=
+typedef struct deque *Deque;
+@
+
+@<lightlib@:C Structure@/exported static inline functions@=
+static inline void deque_init(Deque q)
+{
+    q->head = NULL;
+}
+
+static inline struct bi_list *deque_pop_front(Deque q)
+{
+    struct bi_list *ret;
+    ret = q->head;
+    q->head = bi_list_remove(q->head);
+    return ret;
+}
+
+static inline struct bi_list *deque_pop_back(Deque q)
+{
+    struct bi_list *ret;
+    ret = q->head->previous;
+    q->head = bi_list_remove(q->head->previous);
+    return ret;
+}
+
+static inline void deque_push_front(Deque q, struct bi_list *elm)
+{
+    q->head = bi_list_insert(elm, q->head);
+}
+
+static inline void deque_push_back(Deque q, struct bi_list *elm)
+{
+    
+    q->head = bi_list_insert(elm, q->head)->next;
+}
+@
+
+@<lightlib@:C Structure@/exported data type declarations@=
+typedef Deque Stack;
+typedef Deque Queue;
+@
+
+@<lightlib@:C Structure@/exported macros@=
+#define stack_init deque_init
+#define stack_pop deque_pop_front
+#define stack_push deque_push_front
+
+#define queue_init deque_init
+#define queue_put deque_push_back
+#define queue_get deque_pop_front
+@
+
+@<light.h@=
+@<lightlib@:C Structure@/module interface@>
+@
+
+@<light.c@=
+@<lightlib@:C Structure@/module@>
+@
+
+@<lightlib@:C Structure@/interface required includes@=
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include <threads.h>
+@
+
+@<light@:executable@:C Structure@/include flags@=
+@<light options@>
+@
+
+@<light options@=
+#ifndef light_option_context_main_size
+#define light_option_context_main_size (1 << 20)  /* 1 MB */
+#endif
+
+#ifndef light_option_logging_level
+/* #define light_option_logging_level ERROR */
+#endif
+@
+
+@<light@:executable@:C Structure@/global variables@=
+static uint8_t context_main_memory[light_option_context_main_size];
+struct context context_main = {
+    .name = "main",
+    .parent = NULL,
+    .memory_end = context_main_memory + sizeof(context_main_memory),
+    .stack_top = context_main_memory,
+};
+@
+
+@<light@:executable@:C Structure@/includes@=
+#include "light.h"
+@
+
+@<light@:C Structure@/main body@=
+do {
+    enter_context(&context_main);
+    @<main body@>
+    exit_context(&context_main);
+} while (0);
+@
+
+@! included light framework @
+@
+

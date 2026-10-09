@@ -1,0 +1,382 @@
+@. lib/light.la @
+
+@<test-light.c@=
+@<test light@:light@:executable@:C Structure@/module@>
+@
+
+@<test light@:light@:C Structure@/invocation syntax@=
+{
+    name => 'test-light',
+    usages => [
+        {
+            name => 'show help',
+            options => [
+                {
+                    long_opt => "help",
+                    opt => "h",
+                    description => "Show usage",
+                },
+                {
+                    long_opt => "version",
+                    opt => "V",
+                    description => "Show version",
+                },
+            ],
+            arguments => [],
+        },
+        {
+            name => 'test',
+            options => [
+                {
+                    long_opt => "no-log",
+                    description => "Do not print log",
+                },
+            ],
+            arguments => ["command"],
+        },
+    ],
+}
+@
+
+@<test light@:light@:executable@:C Structure@/includes@=
+#include <assert.h>
+@
+
+@<test light@:Light@/main body@=
+light_log(INFO, "Testing light");
+@<test cases@>
+light_log(INFO, "All test passed");
+@
+
+@<test cases@=
+do {
+    enter_frame();
+
+    char (*buf)[100];
+    size_t idle_memory_1, idle_memory_2;
+
+    idle_memory_1 = remaining_memory();
+    NEW(buf);
+    idle_memory_2 = remaining_memory();
+    assert(idle_memory_2 == idle_memory_1 - 100);
+
+    do {
+        enter_frame();
+        char (*buf)[100];
+        NEW(buf);
+        exit_frame();
+    } while (0);
+    assert(remaining_memory() == idle_memory_2);
+
+    light_log(INFO, "Passed memory");
+    exit_frame();
+} while (0);
+@
+
+@<test light@:light@:executable@:C Structure@/data types@=
+struct id_card {
+    const char *name;
+    int age;
+} *card;
+@
+
+@<test light@:light@:executable@:C Structure@/functions@=
+void *id_card_serialize(const void *card, size_t *size, const void *base_addr)
+{
+    size_t id_card_offset, name_offset;
+
+    *size = 0;
+    id_card_offset = *size;
+
+    *size += sizeof(struct id_card);
+    name_offset = *size;
+
+    *size += strlen(((const struct id_card *)card)->name) + 1;
+
+    void *obj = salloc(*size);
+    COPY((uint8_t *)obj + id_card_offset, (const struct id_card *)card);
+    strcpy((uint8_t *)obj + name_offset, ((const struct id_card *)card)->name);
+    
+    ((struct id_card *)((uint8_t *)obj + id_card_offset))->name = (uint8_t *)base_addr + name_offset;
+    return obj;
+}
+@
+
+@<test cases@=
+do {
+    struct id_card *card;
+    enter_frame();
+    NEW(card);
+    card->name = sstrdup("Chu");
+    card->age = 27;
+    card = frame_return_complex(card, id_card_serialize);
+    exit_frame();
+
+    assert(strcmp(card->name, "Chu") == 0);
+    assert(card->age == 27);
+
+    light_log(INFO, "Passed frame_return_complex");
+} while (0);
+@
+
+@<test cases@=
+do {
+    int i;
+    enter_frame();
+#define HEAP_SIZE 100000
+    Heap hp = new_heap(HEAP_SIZE, 10);
+    assert(hp);
+    uint8_t *(*arr)[HEAP_SIZE];
+    NEW(arr);
+    assert(arr);
+    for (i = 0; i < HEAP_SIZE; ++i) {
+        (*arr)[i] = heap_alloc(hp);
+        if (i > 0) {
+            assert((*arr)[i]-(*arr)[i-1] == 10);
+        }
+    }
+    for (i = 0; i < HEAP_SIZE/2; ++i) {
+        heap_free(hp, (*arr)[i*2]);
+    }
+    for (i = 0; i < HEAP_SIZE/2; ++i) {
+        assert((*arr)[i*2] == heap_alloc(hp));
+    }
+    for (i = 0; i < HEAP_SIZE/3; ++i) {
+        heap_free(hp, (*arr)[i*3]);
+    }
+    for (i = 0; i < HEAP_SIZE/3; ++i) {
+        assert((*arr)[i*3] == heap_alloc(hp));
+    }
+    assert(heap_alloc(hp) == NULL);
+    light_log(INFO, "Passed heap");
+#undef HEAP_SIZE
+    exit_frame();
+} while (0);
+@
+
+@<test cases@=
+do {
+    enter_frame();
+#define LIST_SIZE 200000
+    int i;
+    typedef struct {
+        int n;
+        struct list list;
+    } Node;
+    Node *nd_r;
+    struct list *l = NULL;
+    for (i = 0; i < LIST_SIZE; ++i) {
+        NEW(nd_r);
+        assert(nd_r != NULL);
+        nd_r->n = i;
+        l = cons(&nd_r->list, l);
+    }
+    assert(list_length(l) == LIST_SIZE);
+    i = LIST_SIZE;
+    while (l) {
+        assert(container_of(l, Node, list)->n == i-1);
+        l = cdr(l);
+        --i;
+    }
+    assert(i == 0);
+    light_log(INFO, "Passed list");
+#undef LIST_SIZE
+    exit_frame();
+} while (0);
+@
+
+@<test cases@=
+do {
+    enter_frame();
+    int i;
+    typedef struct {
+        int n;
+        struct bi_list bi_list;
+    } Node;
+    Node *nd_r;
+    struct bi_list *l, *nodes = NULL;
+#define LIST_SIZE 20000
+    for (i = 0; i < LIST_SIZE; ++i) {
+        NEW(nd_r);
+        assert(nd_r != NULL);
+        nd_r->n = i;
+        nodes = bi_list_insert(&nd_r->bi_list, nodes)->next;
+    }
+    i = 0;
+    FOREACH_BI (l, nodes) {
+        assert(container_of(l, Node, bi_list)->n == i);
+        ++i;
+    }
+    assert(i == LIST_SIZE);
+    light_log(INFO, "Passed bi-list");
+#undef LIST_SIZE
+    exit_frame();
+} while (0);
+@
+
+@<test cases@=
+do {
+    enter_frame();
+    Heap hp = new_heap(100, SEGMENT_SIZE(int elm[100]));
+    Segmented sg = new_segmented(hp);
+    for (int i = 0; i < 2000; ++i) {
+        int arr[5] = {0, 1, 2, 3, 4};
+        segmented_append(sg, arr, sizeof(arr));
+    }
+    assert(segmented_size(sg) == 2000 * 5 * 4);
+    SegmentedRandom sgr = segmented_random(sg);
+    assert(sgr != NULL);
+    for (int i = 0; i < 2000 * 5 * sizeof(int); i += sizeof(int)) {
+        assert(*(int *)segmented_pointer(sgr, i) == (i / sizeof(int)) % 5);
+    }
+    int *arr_total = segmented_continuous(sg);
+    assert(arr_total != NULL);
+    for (int i = 0; i < 2000 * 5; ++i) {
+        assert(arr_total[i] == i % 5);
+    }
+
+    segmented_resize(sg, 1000 * 5 * 4);
+    assert(segmented_size(sg) == 1000 * 5 * 4);
+    arr_total = segmented_continuous(sg);
+    assert(arr_total != NULL);
+    for (int i = 0; i < 1000 * 5; ++i) {
+        assert(arr_total[i] == i % 5);
+    }
+
+    light_log(INFO, "Passed segmented");
+    exit_frame();
+} while (0);
+@
+
+@<test cases@=
+do {
+    enter_frame();
+    Heap hp = new_heap(100, SEGMENT_SIZE(char s[10]));
+    assert(hp);
+    String str = string(hp, "");
+    assert(str);
+    char buf[1000] = {'\0'};
+    for (int i = 0; i < 20; ++i) {
+        strcat(buf, "Hello\n");
+        assert(string_append(str, "Hello\n"));
+    }
+    const char *s = cstring(str);
+    assert(s);
+    assert(strcmp(buf, s) == 0);
+    light_log(INFO, "Passed string");
+    exit_frame();
+} while (0);
+@
+
+@<test cases@=
+do {
+    enter_frame();
+    HashTable tbl = new_string_hash_table();
+    assert(hash_table_init(tbl, 100));
+
+    /* build mapping */
+    hash_table_map(tbl, "Name", "Chu");
+    hash_table_map(tbl, "Age", "18");
+    assert(strcmp(hash_table_get(tbl, "Name"), "Chu") == 0);
+    assert(strcmp(hash_table_get(tbl, "Age"), "18") == 0);
+
+    /* unmap */
+    assert(hash_table_unmap(tbl, "Name"));
+    assert(hash_table_get(tbl, "Name") == NULL);
+
+    do {
+        enter_frame();
+
+        hash_table_init(tbl, 100);
+
+        hash_table_map(tbl, "Name", "Chu");
+        assert(strcmp(hash_table_get(tbl, "Name"), "Chu") == 0);
+        assert(strcmp(hash_table_get(tbl, "Age"), "18") == 0);
+
+        exit_frame();
+    } while (0);
+
+    assert(hash_table_get(tbl, "Name") == NULL);
+    assert(strcmp(hash_table_get(tbl, "Age"), "18") == 0);
+
+    light_log(INFO, "Passed hash table");
+    exit_frame();
+} while (0);
+@
+
+@<test cases@=
+do {
+    enter_frame();
+    Set set = new_string_set();
+    set_init(set, 100);
+
+    set_include(set, "A");
+    set_include(set, "B");
+    assert(set_in("A", set));
+    assert(set_in("B", set));
+
+    do {
+        enter_frame();
+        set_init(set, 100);
+        set_include(set, "C");
+        assert(set_in("A", set));
+        assert(set_in("B", set));
+        assert(set_in("C", set));
+        exit_frame();
+    } while (0);
+    assert(set_in("A", set));
+    assert(set_in("B", set));
+    assert(!set_in("C", set));
+
+    set_not_include(set, "A");
+    assert(!set_in("A", set));
+    assert(set_in("B", set));
+    assert(!set_in("C", set));
+    light_log(INFO, "Passed set");
+    exit_frame();
+} while (0);
+@
+
+@<test cases@=
+do {
+    enter_frame();
+    struct number {
+        int n;
+        struct bi_list deque;
+    };
+    Stack stk;
+    NEW(stk);
+    stack_init(stk);
+
+    Heap hp = new_heap(100, sizeof(struct number));
+    struct number *n;
+    for (int i = 0; i < 10; ++i) {
+        n = heap_alloc(hp);
+        n->n = i;
+        stack_push(stk, &n->deque);
+    }
+
+    for (int i = 0; i < 10; ++i) {
+        n = container_of(stack_pop(stk), struct number, deque);
+        assert(n->n == 10 - i - 1);
+        heap_free(hp, n);
+    }
+
+    Queue qu = stk;
+
+    for (int i = 0; i < 10; ++i) {
+        n = heap_alloc(hp);
+        n->n = i;
+        queue_put(qu, &n->deque);
+    }
+
+    for (int i = 0; i < 10; ++i) {
+        n = container_of(queue_get(qu), struct number, deque);
+        assert(n->n == i);
+        heap_free(hp, n);
+    }
+    
+    light_log(INFO, "Passed deque");
+    exit_frame();
+} while (0);
+@

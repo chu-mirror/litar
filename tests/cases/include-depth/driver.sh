@@ -23,7 +23,7 @@ trap 'rm -rf "$tmp"' EXIT
 gen_chain "$tmp/ok" 63
 (
     cd "$tmp/ok"
-    assert_text "64 archives" "YES" "$LITAR" -p ok main.la
+    assert_text "64 archives" $'YES\n' "$LITAR" -p ok main.la
 )
 gen_chain "$tmp/bad" 64
 (

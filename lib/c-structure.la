@@ -1,0 +1,577 @@
+@? included C Structure @|@|
+
+@. lib/text-processing.la @
+
+@- C Structure @
+
+@<Basics@/system prerequisites@=
+cproto
+clang-format-19
+@
+
+@<module meta information@=
+(
+    name => 'default',
+    included_flag_format => '_MODULE_%s',
+    include_paths => [qw(@<include paths@>)],
+    @<module properties@>
+)
+@
+
+@<-I flags@=@<Text Processing@/basic perl settings@>
+my %meta = @<module meta information@>;
+
+print join " ", map {"-I$_"} @@{ $meta{include_paths} };
+@|Basics@/evaluate@
+
+@<module@=
+@<include flags@>
+@<includes@>
+@<macros@>
+@<data type declarations@>
+@<data types@>
+@<function declarations@>
+@<global variables@>
+@<static inline functions@>
+@<functions@>
+@|format C code@
+
+@<module interface@=
+@<interface required includes@>
+@<interface specific macros@>
+@<exported macros@>
+@<exported data type declarations@>
+@<exported data types@>
+@<global declarations@>
+@<exported static inline functions@>
+@|wrap with included flag@|format C code@
+
+@<wrap with included flag@=@<Text Processing@/basic perl settings@>
+my %meta = @<module meta information@>;
+
+printf("#ifndef $meta{included_flag_format}\n", uc($meta{name}));
+printf("#define $meta{included_flag_format}\n", uc($meta{name}));
+
+while (<STDIN>) {
+    print;
+}
+
+print "#endif\n";
+@
+
+@<includes@=
+@<interface required includes@>
+@
+
+@<macros@=
+@<exported macros@>
+@
+
+@<data type declarations@=
+@<exported data type declarations@>
+@
+
+@<data types@=
+@<exported data types@>
+@
+
+@<static inline functions@=
+@<exported static inline functions@>
+@
+
+@<function declarations@=
+@<exported macros@>
+@<data type declarations@>
+@<functions@>
+@|extract function declarations@
+
+@<extract function declarations@=#!/bin/sh
+cproto -s @<-I flags@>
+@
+
+@<global declarations@=
+@<macros@>
+@<data type declarations@>
+@<global variables@>
+@<functions@>
+@|extract global declarations@
+
+@<extract global declarations@=#!/bin/sh
+cproto -v -e @<-I flags@>
+@
+
+@<format C code@=#!/bin/sh
+clang-format-19 -style=file
+@
+
+The invocation syntax:
+
+{
+    name => COMMAND_NAME,
+    usages => [
+        {
+            name => USAGE_NAME,
+            options => [
+                {
+                    long_opt => LONG_OPTION,
+                    opt => SHORT_OPTION (optional),
+                    argument => OPTION_ARGUMENT (optional),
+                    description => DESCRIPTION,
+                },
+                ...
+            ],
+            arguments => [
+                ARGUMENT,
+                ...
+            ],
+        },
+        ...
+    ],
+}
+
+@<usage enumeration@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub enum_constant (_) {
+    my $ug = shift;
+    $ug->{name} =~ tr/ /_/;
+    "COMMAND_USAGE_" . uc $ug->{name}
+}
+
+print join ',', map enum_constant, @@{$syntax->{usages}};
+@|Basics@/evaluate@
+
+@<command line options@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub option_to_c_decl (_) {
+    my $opt = shift;
+    my $c_decl = '';
+    if ($opt->{argument}) {
+        $c_decl .= 'const char *';
+    } else {
+        $c_decl .= 'int ';
+    }
+    my $name = $opt->{long_opt};
+    $name =~ tr/-/_/;
+    $c_decl . lc($name) . ';'
+}
+
+my @usages = @@{$syntax->{usages}};
+my @options;
+while (@usages) {
+    my $usage = shift @usages;
+    @options = (@options, @@{$usage->{options}});
+}
+my $options_decl = join "\n", map option_to_c_decl, @options;
+print $options_decl;
+@|Basics@/evaluate@
+
+@<command line arguments@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub argument_definition(_) {
+    my $name = shift;
+    $name =~ tr/ /_/;
+    $name = lc $name;
+    "const char *$name;"
+}
+
+my %arguments;
+my @usages;
+@usages = @@{$syntax->{usages}};
+while (@usages) {
+    my $usage = shift @usages;
+    for my $arg (@@{$usage->{arguments}}) {
+        $arguments{$arg} = 1;
+    }
+}
+
+my @arguments = keys %arguments;
+
+print (join "", map argument_definition, @arguments);
+@|Basics@/evaluate@
+
+@<executable@:global variables@=
+struct {
+    enum {@<usage enumeration@>} usage;
+    struct {@<command line options@>} options;
+    struct {@<command line arguments@>} arguments;
+} command;
+@
+
+@<executable@:includes@=
+#include <getopt.h>
+@
+
+@<getopt long options@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub option_to_longopt (_) {
+    my $opt = shift;
+    my $str = '{';
+    if ($opt->{long_opt}) {
+        $str .= '"' . $opt->{long_opt} . '"';
+        if ($opt->{argument}) {
+            $str .= ',required_argument';
+        } else {
+            $str .= ',no_argument';
+        }
+        $str .= ',NULL';
+        if ($opt->{opt}) {
+            $str .= ",'@@{[$opt->{opt}]}'";
+        } else {
+            $str .= ",0";
+        }
+    }
+    $str .= "},"
+}
+
+my @options = ();
+for my $usage (@@{$syntax->{usages}}) {
+    @options = (@options, @@{$usage->{options}});
+}
+
+print (join "", map option_to_longopt, @options);
+@|Basics@/evaluate@
+
+@<executable@:global variables@=
+const struct option long_options[] = {
+    @<getopt long options@>
+};
+@
+
+@<getopt string@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub option_to_str (_) {
+    my $opt = shift;
+    my $str = '';
+    if ($opt->{opt}) {
+        $str = $opt->{opt};
+        if ($opt->{argument}) {
+            $str .= ':';
+        }
+    }
+    $str
+}
+
+my @options = ();
+for my $usage (@@{$syntax->{usages}}) {
+    @options = (@options, @@{$usage->{options}});
+}
+
+print (join "", map option_to_str, @options);
+@|Basics@/evaluate@
+
+@<handle long option of index "idx"@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+my @usages = @@{$syntax->{usages}};
+my @options;
+
+while (@usages) {
+    my $usage = shift @usages;
+    @options = (@options, @@{$usage->{options}});
+}
+
+sub long_option_handling(_) {
+    my $opt = shift;
+    if ($opt->{opt}) {
+        return "";
+    }
+    my $name = $opt->{long_opt};
+    $name =~ tr/-/_/;
+
+    if ($opt->{argument}) {
+        return "
+            if (strcmp(long_options[idx].name, \"$opt->{long_opt}\")) {
+                command.options.$name = optarg;
+            }
+        "
+    } else {
+        return "
+            if (strcmp(long_options[idx].name, \"$opt->{long_opt}\")) {
+                command.options.$name = 1;
+            }
+        "
+    }
+}
+print (join "", map long_option_handling, @options);
+@|Basics@/evaluate@
+
+@<cases for short options@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+my @usages = @@{$syntax->{usages}};
+my @options;
+
+while (@usages) {
+    my $usage = shift @usages;
+    @options = (@options, @@{$usage->{options}});
+}
+
+sub short_opt_case(_) {
+    my $opt = shift;
+    if (!$opt->{opt}) {
+        return "";
+    }
+    my $name = $opt->{long_opt};
+    $name =~ tr/-/_/;
+    if ($opt->{argument}) {
+        return "
+            case '$opt->{opt}':
+                command.options.$name = optarg;
+                break;
+        "
+    } else {
+        return "
+            case '$opt->{opt}':
+                command.options.$name = 1;
+                break;
+        "
+    }
+}
+print (join "", map short_opt_case, @options);
+@|Basics@/evaluate@
+
+@<choose usage and store arguments@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+my @usages = @@{$syntax->{usages}};
+my @options;
+
+while (@usages) {
+    my $usage = shift @usages;
+    @options = (@options, @@{$usage->{options}});
+}
+
+sub enum_constant (_) {
+    my $ug = shift;
+    $ug->{name} =~ tr/ /_/;
+    "COMMAND_USAGE_" . uc $ug->{name}
+}
+
+sub look_option_of_usage($$) {
+    my ($opt, $usage) = @@_;
+    my $name = $opt->{long_opt};
+    $name =~ tr/-/_/;
+    my $constant = enum_constant($usage);
+    my $short_opt = "";
+    if ($opt->{opt}) {
+        $short_opt = " -$opt->{opt}";
+    }
+    "
+        if (command.options.$name) {
+            if (!found_usage) {
+                found_usage = 1;
+                command.usage = $constant;
+            } else if (command.usage != $constant) {
+                fprintf(stderr, \"Conflict option: --$opt->{long_opt}$short_opt\\n\");
+                exit(1);
+            }
+        }
+    "
+}
+
+sub look_usage_argument_number(_) {
+    my $usage = shift;
+    my $constant = enum_constant($usage);
+    my $number = @@{$usage->{arguments}};
+    "
+        if (!found_usage && argc - optind == $number) {
+            found_usage = 1;
+            command.usage = $constant;
+        }
+    "
+}
+
+sub store_argument($$) {
+    my ($name, $idx) = @@_;
+    $name =~ tr/ /_/;
+    $name = lc $name;
+    "command.arguments.$name = argv[optind + $idx];"
+}
+
+sub store_arguments_for_usage(_) {
+    my $usage = shift;
+    my $constant = enum_constant($usage);
+    my $number = @@{$usage->{arguments}};
+    my $idx = 0;
+    my $store_arguments = "";
+    for my $arg (@@{$usage->{arguments}}) {
+        $store_arguments .= store_argument($arg, $idx);
+        ++$idx;
+    }
+    "
+        case $constant:
+            if (argc - optind != $number) {
+                fprintf(stderr, \"Unmatched argument number, see --help for usage\\n\");
+                exit(1);
+            }
+            $store_arguments
+            break;
+    "
+}
+
+my $str = "do { int found_usage = 0;";
+for my $usage (@@{$syntax->{usages}}) {
+    for my $option (@@{$usage->{options}}) {
+        $str .= look_option_of_usage $option, $usage;
+    }
+}
+$str .= join "\n", map look_usage_argument_number, @@{$syntax->{usages}};
+$str .= "
+    if (!found_usage) {
+        fprintf(stderr, \"Invalid usage, see --help for usage\\n\");
+        exit(1);
+    }
+";
+$str .= "switch (command.usage) {";
+$str .= join "\n", map store_arguments_for_usage, @@{$syntax->{usages}};
+$str .= "}";
+$str .= "} while (0);";
+print $str;
+@|Basics@/evaluate@
+
+@<parse command line arguments@=
+do {
+    int opt, idx;
+    while ((opt = getopt_long(argc, argv, "@<getopt string@>", long_options, &idx)) != -1) {
+        switch (opt) {
+        case 0:
+            @<handle long option of index "idx"@>
+            break;
+        @<cases for short options@>
+        case '?':
+            break;
+        default:
+            fprintf(stderr, "getopt return unexpected value %d", opt);
+            exit(1);
+        }
+    }
+    @<choose usage and store arguments@>
+} while (0);
+@
+
+@<executable@:includes@=
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+@
+
+@<executable@:functions@=
+int main(int argc, char *argv[])
+{
+    @<parse command line arguments@>
+    int ret = 0;
+    @<main body@>
+    return ret;
+}
+@
+
+@<command line usage@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub option_to_str (_) {
+    my $opt = shift;
+    my $str = '[';
+    if ($opt->{opt}) {
+        $str .= "-$opt->{opt}";
+    } else {
+        $str .= "--$opt->{long_opt}";
+    }
+    if ($opt->{argument}) {
+        $str .= uc " $opt->{argument}";
+    }
+    $str .= ']'
+}
+
+sub usage_to_str (_) {
+    my $usage = shift;
+    my $str = $syntax->{name};
+
+    $str .= ' ';
+    $str .= join ' ', map option_to_str, grep {!$_->{hide}} @@{$usage->{options}};
+    $str .= ' ';
+    $str .= uc join ' ', @@{$usage->{arguments}};
+}
+
+my @usages = map usage_to_str, @@{$syntax->{usages}};
+my $usages_str = '';
+
+$usages_str .= 'Usage:\t' . (shift @usages);
+while (@usages) {
+    $usages_str .= '\n\t' . (shift @usages);
+}
+$usages_str .= '\n';
+
+print $usages_str;
+@|Basics@/evaluate@
+
+
+@<manpage synopsis@=@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+sub option_to_str (_) {
+    my $opt = shift;
+    my $str = '';
+    if ($opt->{opt}) {
+        $str .= '\fB\-' . $opt->{opt} . '\fR';
+    } else {
+        $str .= '\fB\-\-' . $opt->{long_opt} . '\fR';
+    }
+    if ($opt->{argument}) {
+        $str .= ' \fI' . $opt->{argument} . '\fR';
+    }
+    $str
+}
+
+sub usage_to_str (_) {
+    my $usage = shift;
+    my $str = ".B $syntax->{name}";
+
+    $str .= "\n";
+    $str .= '[' . (join '|', map option_to_str, grep {!$_->{hide}} @@{$usage->{options}}) . ']';
+    $str .= "\n";
+    $str .= "@@{[map {'\fI' . $_ . '\fR'} @@{$usage->{arguments}}]}";
+    $str .= "\n";
+    
+    $str
+}
+
+my @usages = map usage_to_str, @@{$syntax->{usages}};
+print join "\n", @usages;
+@|Basics@/evaluate@
+
+@<manpage options@=@<Text Processing@/basic perl settings@>
+my $syntax = @<invocation syntax@>;
+
+my $options = '';
+for my $usage (@@{$syntax->{usages}}) {
+    for my $option (@@{$usage->{options}}) {
+        $options .= ".TP\n";
+        if ($option->{opt}) {
+            $options .= '.BR \-' . $option->{opt} . ', " " ';
+        }
+        $options .= '\-\-' . $option->{long_opt};
+        if ($option->{argument}) {
+            $options .= ' " " \fI' . $option->{argument} . '\fR' . "\n";
+        } else {
+            $options .= "\n";
+        }
+        $options .= $option->{description} . "\n";
+    }
+}
+
+print $options;
+@|Basics@/evaluate@
+
+@! included C Structure @
+@

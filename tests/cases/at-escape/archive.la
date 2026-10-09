@@ -1,0 +1,31 @@
+Comment with an @@ sign.
+
+@<plain@=
+@@
+@
+
+@<words@=
+@@<kept@@>
+@
+
+@<bar@=
+@@|not
+@
+
+@<four@=
+@@@@
+@
+
+@<a@@b@=
+yes
+@
+
+@<use@=
+[@<a@@b@>]
+@
+
+@- M@@N @
+
+@<mod@=
+in
+@

@@ -16,7 +16,11 @@ A control is `@` followed by a byte below 128
 that is outside `A`–`Z` and `a`–`z`.
 `@` followed by an ASCII letter, or by any byte 128 or above,
 is ordinary text.
-There is no escape for a literal control.
+`@@` is the text `@`.
+It does not start an expression, end a name, or open a reference.
+Each `@` that would otherwise be a control is written twice,
+so `@@<kept@@>` is the text `@<kept@>`,
+and the name `a@@b` is the name `a@b`.
 
 An expression ends at `@` followed by space, tab, CR, or LF,
 and also at `@` at the end of the buffer.
@@ -56,12 +60,13 @@ The block extends exactly the reference written on that header.
 The module is the one named after `@/`,
 or the module selected at that point in the file when `@/` is absent.
 
-One leading newline and one trailing newline are layout, not content.
-Each of those newlines may be LF or CRLF.
+One leading newline is layout, not content.
+That newline may be LF or CRLF.
 `@<msg@=` followed by a newline, `Hello`, a newline, and `@`
-stores `Hello`.
-A newline that should remain at either end of the content
+stores `Hello` and the final newline.
+A newline that should remain at the start of the content
 takes one extra newline in the file.
+The newline before the closing `@` or `@|` is content.
 Other whitespace is content.
 
 Several blocks may extend one chunk.

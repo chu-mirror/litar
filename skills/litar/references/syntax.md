@@ -3,6 +3,7 @@
 An archive is comments and expressions.
 A control character is `@` followed by a non-alphabetic character,
 so `@` before a letter is ordinary text.
+`@@` is the text `@`, not a control.
 An expression starts with a control character
 and ends with `@` followed by a space, a tab, or a newline.
 Text outside expressions is a comment.
@@ -15,6 +16,7 @@ Names in the design are words separated by spaces
 
 | Sequence | Where it appears | Meaning |
 | --- | --- | --- |
+| `@@` | anywhere | The text `@` |
 | `@` + space, tab, or newline | end of an expression | Ends the expression |
 | `@<` | block or reference | Starts a chunk name |
 | `@=` | block | Starts the block body |

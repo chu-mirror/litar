@@ -22,16 +22,16 @@ printf '@<k@=\nSHARE\n@\n' >"$tmp/home/.local/share/litar/$name"
 printf '@. %s @\n' "$name" >"$tmp/cwd/main.la"
 cd "$tmp/cwd"
 
-assert_text "cwd first" "CWD" \
+assert_text "cwd first" $'CWD\n' \
     env HOME="$tmp/home" LITAR_INCLUDE="$tmp/inc" "$LITAR" -p k main.la
 rm -f "$name"
-assert_text "LITAR_INCLUDE" "INC" \
+assert_text "LITAR_INCLUDE" $'INC\n' \
     env HOME="$tmp/home" LITAR_INCLUDE="$tmp/inc" "$LITAR" -p k main.la
 rm -f "$tmp/inc/$name"
-assert_text "HOME/.litar" "HOME" \
+assert_text "HOME/.litar" $'HOME\n' \
     env HOME="$tmp/home" LITAR_INCLUDE="$tmp/inc" "$LITAR" -p k main.la
 rm -f "$tmp/home/.litar/$name"
-assert_text "HOME share" "SHARE" \
+assert_text "HOME share" $'SHARE\n' \
     env HOME="$tmp/home" LITAR_INCLUDE="$tmp/inc" "$LITAR" -p k main.la
 rm -f "$tmp/home/.local/share/litar/$name"
 assert_fail "not found" "could not find archive '$name'" \
@@ -39,25 +39,25 @@ assert_fail "not found" "could not find archive '$name'" \
 
 printf '@<k@=\nFILE\n@\n' >"$tmp/inc/$name"
 mkdir -p "$name"
-assert_text "directory skipped" "FILE" \
+assert_text "directory skipped" $'FILE\n' \
     env HOME="$tmp/nowhere" LITAR_INCLUDE="$tmp/inc" "$LITAR" -p k main.la
 rmdir "$name"
 
-assert_text "colon list" "FILE" \
+assert_text "colon list" $'FILE\n' \
     env -u HOME LITAR_INCLUDE="/no/such/litar-dir:$tmp/inc:" \
     "$LITAR" -p k main.la
 
 printf '@<k@=\nDOT\n@\n' >"$name"
-assert_text "trailing colon" "DOT" \
+assert_text "trailing colon" $'DOT\n' \
     env -u HOME LITAR_INCLUDE="/no/such/litar-dir:" "$LITAR" -p k main.la
-assert_text "empty component" "DOT" \
+assert_text "empty component" $'DOT\n' \
     env -u HOME LITAR_INCLUDE=":/no/such/litar-dir" "$LITAR" -p k main.la
 
 mkdir -p "$tmp/abs"
 printf '@<k@=\nABS\n@\n' >"$tmp/abs/real.la"
 printf '@<k@=\nCWDABS\n@\n' >"$tmp/cwd/real.la"
 printf '@. %s @\n' "$tmp/abs/real.la" >"$tmp/cwd/abs.la"
-assert_text "absolute" "ABS" "$LITAR" -p k abs.la
+assert_text "absolute" $'ABS\n' "$LITAR" -p k abs.la
 printf '@. %s @\n' "$tmp/abs/nope.la" >"$tmp/cwd/absmiss.la"
 assert_fail "absolute missing" "could not find archive '$tmp/abs/nope.la'" \
     "$LITAR" -p k absmiss.la
@@ -72,7 +72,7 @@ chmod u+r "$tmp/cwd/hidden.la"
 
 rm -f "$name"
 printf '@<k@=\nHOME\n@\n' >"$tmp/home/.litar/$name"
-assert_text "HOME set" "HOME" \
+assert_text "HOME set" $'HOME\n' \
     env -u LITAR_INCLUDE HOME="$tmp/home" "$LITAR" -p k main.la
 assert_fail "HOME unset" "could not find archive '$name'" \
     env -u HOME -u LITAR_INCLUDE "$LITAR" -p k main.la

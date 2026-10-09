@@ -31,6 +31,7 @@ Such a file is called a litar archive; the name litar is a portmanteau of
 Because a litar archive is supposed to contain text of all types, its own syntax
 should be as simple as possible. The syntax of a litar archive is built upon
 control characters, which are @ followed by a non-alphabetic character.
+`@@` is a special control character that it behaves as normal text of `@`.
 
 A litar archive consists of comments and expressions. Expressions start with a control character,
 end with a special control character, @ followed by a space character;

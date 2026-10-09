@@ -275,7 +275,8 @@ static int is_ascii_alpha(unsigned char c) {
 
 /* '@' followed by an ASCII non-letter is a control. '@' followed by a
    letter, or by a non-ASCII byte, is ordinary text. 0 means the buffer
-   ends on '@', which closes an expression. -1 means this is not a control. */
+   ends on '@', which closes an expression. -1 means this is not a control.
+   '@@' is the text '@', not a control: kind '@' is that escape. */
 
 static int control_kind(const Parser *p) {
     unsigned char c;
@@ -300,21 +301,55 @@ static int is_trim_space(unsigned char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 
+/* Stop at the next control, but pass over @@. Both bytes of the escape
+   stay in the span so the name can be decoded to a single '@'. */
+
+static void scan_to_control(Parser *p) {
+    while (p->i < p->n) {
+        int k = control_kind(p);
+        if (k == '@') {
+            p->i += 2;
+            continue;
+        }
+        if (k >= 0) {
+            return;
+        }
+        p->i++;
+    }
+}
+
 static char *take_name(Parser *p, size_t start, size_t end) {
+    size_t n = 0;
+    size_t w = 0;
+    char *d;
     while (start < end && is_trim_space((unsigned char)p->buf[start])) {
         start++;
     }
     while (end > start && is_trim_space((unsigned char)p->buf[end - 1])) {
         end--;
     }
-    return arena_strndup(&p->arc->arena, p->buf + start, end - start);
+    for (size_t i = start; i < end; i++) {
+        if (p->buf[i] == '@' && i + 1 < end && p->buf[i + 1] == '@') {
+            i++;
+        }
+        n++;
+    }
+    d = arena_alloc(&p->arc->arena, n + 1);
+    for (size_t i = start; i < end; i++) {
+        if (p->buf[i] == '@' && i + 1 < end && p->buf[i + 1] == '@') {
+            d[w++] = '@';
+            i++;
+            continue;
+        }
+        d[w++] = p->buf[i];
+    }
+    d[w] = '\0';
+    return d;
 }
 
 static char *read_name_until_control(Parser *p) {
     size_t start = p->i;
-    while (p->i < p->n && control_kind(p) < 0) {
-        p->i++;
-    }
+    scan_to_control(p);
     if (p->i >= p->n) {
         fail_at(p, "unterminated expression");
     }
@@ -369,9 +404,7 @@ static void parse_filter_name(Parser *p, QName *filt, int expr) {
         size_t start = p->i;
         int k;
         char *name;
-        while (p->i < p->n && control_kind(p) < 0) {
-            p->i++;
-        }
+        scan_to_control(p);
         name = take_name(p, start, p->i);
         if (p->i >= p->n) {
             if (!expr) {
@@ -442,9 +475,7 @@ static void parse_qname(Parser *p, QName *qn, int mode) {
         size_t start = p->i;
         int k;
         char *name;
-        while (p->i < p->n && control_kind(p) < 0) {
-            p->i++;
-        }
+        scan_to_control(p);
         name = take_name(p, start, p->i);
         if (p->i >= p->n) {
             if (mode != Q_EXPR) {
@@ -516,9 +547,7 @@ static void parse_qname(Parser *p, QName *qn, int mode) {
 }
 
 static void skip_to_control(Parser *p) {
-    while (p->i < p->n && control_kind(p) < 0) {
-        p->i++;
-    }
+    scan_to_control(p);
 }
 
 static void add_block(Archive *a, Block blk) {
@@ -602,23 +631,15 @@ static void parse_block(Parser *p, int execute) {
     if (p->i >= p->n) {
         fail_at(p, "unterminated block");
     }
-    /* The newline after '@=' and the newline before the closing '@'
-       or '@|' are part of the block layout used throughout the design.
-       @<msg@=\nHello\n@ therefore stores Hello. */
+    /* The newline after '@=' is layout, not content.
+       The newline before the closing '@' or '@|' is content.
+       @<msg@=\nHello\n@ therefore stores Hello\n. */
     end = p->i;
     if (body < end && p->buf[body] == '\r') {
         body++;
     }
     if (body < end && p->buf[body] == '\n') {
         body++;
-    }
-    if (end > body && p->buf[end - 1] == '\n') {
-        end--;
-        if (end > body && p->buf[end - 1] == '\r') {
-            end--;
-        }
-    } else if (end > body && p->buf[end - 1] == '\r') {
-        end--;
     }
     if (control_kind(p) == '|') {
         p->i += 2;
@@ -1466,6 +1487,11 @@ static void expand_content(Archive *a, Visit *v, const Block *b, const char **cl
     while (i < len) {
         if (content[i] == '@' && i + 1 < len) {
             unsigned char nch = (unsigned char)content[i + 1];
+            if (nch == '@') {
+                buf_append(out, "@", 1);
+                i += 2;
+                continue;
+            }
             if (nch < 128 && !is_ascii_alpha(nch)) {
                 Parser sub;
                 QName qn;

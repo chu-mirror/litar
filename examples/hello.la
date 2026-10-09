@@ -1,0 +1,23 @@
+@. lib/c-structure.la @
+
+@<hello.c@=
+@<hello@:executable@:C Structure@/module@>
+@
+
+@<hello@:C Structure@/invocation syntax@=
+{
+    name => 'hello',
+    usages => [
+        {
+            name => 'run',
+            options => [],
+            arguments => [],
+        },
+    ],
+}
+@
+
+@<hello@:C Structure@/main body@=
+printf("Hello World!\n");
+@
+

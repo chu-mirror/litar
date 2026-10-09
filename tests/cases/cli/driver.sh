@@ -40,10 +40,10 @@ check_help "help" "$LITAR" --help
 check_help "help wins over -p" "$LITAR" --help -p
 check_help "help ignores a missing archive" "$LITAR" --help no-such.la
 
-assert_text "-p" "OK" "$LITAR" -p chunk archive.la
-assert_text "--print" "OK" "$LITAR" --print chunk archive.la
-assert_text "--print=" "OK" "$LITAR" --print=chunk archive.la
-assert_text "archive before -p" "OK" "$LITAR" archive.la -p chunk
+assert_text "-p" $'OK\n' "$LITAR" -p chunk archive.la
+assert_text "--print" $'OK\n' "$LITAR" --print chunk archive.la
+assert_text "--print=" $'OK\n' "$LITAR" --print=chunk archive.la
+assert_text "archive before -p" $'OK\n' "$LITAR" archive.la -p chunk
 
 assert_fail "duplicate -p and --print" "duplicate print option" \
     "$LITAR" -p chunk --print chunk archive.la

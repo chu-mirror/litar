@@ -17,7 +17,7 @@ if [ "$st" -ne 0 ]; then
     cat "$err" >&2
     exit 1
 fi
-printf 'out' >"$exp_out"
+printf 'out\n' >"$exp_out"
 printf 'e\n' >"$exp_err"
 if ! cmp -s "$exp_out" "$out"; then
     echo "FAIL filter stderr: stdout" >&2

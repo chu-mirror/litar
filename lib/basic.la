@@ -1,5 +1,4 @@
 @? included Basics @|@|
-@! included Basics @
 @- Basics @
 
 @<evaluate@=#!/bin/sh
@@ -11,4 +10,5 @@ $temp_file
 rm $temp_file
 @
 
+@! included Basics @
 @

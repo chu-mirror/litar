@@ -1,0 +1,118 @@
+@<chunk@=
+one
+@<other@>
+@
+
+@<other@=
+TWO
+@
+
+@<chunk@=
+@@
+@
+
+@<escaped@=
+@@<not a ref@@>
+@
+
+@<at@=
+@@@@
+@
+
+@<filtered@=
+hello
+@|upper@
+
+@<upper@=#!/bin/sh
+LC_ALL=C tr '[:lower:]' '[:upper:]'
+@
+
+@<nofilter@=
+raw
+@|missing-filter@
+
+@<base@=
+B
+@
+
+@<lab@:base@=
+L
+@
+
+@<otherlab@:base@=
+O
+@
+
+@<lab@:extra@:base@=
+X
+@
+
+@:pair@=lab@:extra@
+
+@<cycle@=
+@<cycle@>
+@
+
+@! keep @
+
+@? other @|
+
+@<branched@=
+no
+@
+
+@|
+
+@<branched@=
+yes
+@
+
+@
+
+@- Mod @
+
+@<meta@=
+{
+    summary: |||
+        @<summary@>
+    |||,
+}
+@
+
+@<summary@=
+hello module
+@
+
+@- @
+
+@. lib.la @
+
+@<outline@=
+@<substructure 1@>
+@
+
+@<label@:outline@=
+@<substructure 2@>
+@
+
+@<kept@:outline@=
+@<keep@:named@>
+@<open@>
+@
+
+@<b@:outline@=
+@<inner@>
+@
+
+@<a@:b@:outline@=
+@<inner@>
+@<Mod@/inner@>
+@<inner@|upper@>
+@
+
+@<grouped@=
+@<hole@>
+@
+
+@- Ghost @
+

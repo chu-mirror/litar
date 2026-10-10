@@ -4,6 +4,15 @@
 
 @- C Structure @
 
+@<summary@=
+A framework for constructing C program.
+@
+
+@<exported chunks@=
+"module",
+"interface",
+@
+
 @<Basics@/system prerequisites@=
 cproto
 clang-format-19

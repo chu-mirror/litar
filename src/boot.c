@@ -1,5 +1,7 @@
 /* Bootstrap of litar: the archive syntax through Filters.
    A filter is a chunk run as a script in the current directory.
+   --help, -p/--print, and -l/--literal follow design/ui.md.
+   Each module has the built-in meta chunk from design/style.md.
    File definitions and file sets belong to later stages.
    See design/litar.md and design/stages.md. */
 
@@ -115,6 +117,9 @@ typedef struct Archive {
     Flag *flags;
     const char *current_module;
     const char *anonymous_module;
+    const char **modules;
+    int nmodules;
+    int capmodules;
     int inc_depth;
 } Archive;
 
@@ -139,7 +144,13 @@ typedef struct Visit {
 enum {
     Q_BLOCK = 1,
     Q_REF,
-    Q_EXPR
+    Q_EXPR,
+    Q_CHUNK
+};
+
+enum {
+    MODE_PRINT = 1,
+    MODE_LITERAL
 };
 
 static void fail(const char *fmt, ...) NORETURN;
@@ -478,7 +489,7 @@ static void parse_qname(Parser *p, QName *qn, int mode) {
         scan_to_control(p);
         name = take_name(p, start, p->i);
         if (p->i >= p->n) {
-            if (mode != Q_EXPR) {
+            if (mode != Q_EXPR && mode != Q_CHUNK) {
                 fail_at(p, "unterminated name");
             }
             if (!name[0]) {
@@ -490,8 +501,9 @@ static void parse_qname(Parser *p, QName *qn, int mode) {
         k = control_kind(p);
         if (k == '|') {
             /* On a block header the filter list belongs after the body.
-               On a reference or a print expression it belongs here. */
-            if (mode == Q_BLOCK) {
+               On a reference or a print expression it belongs here.
+               A chunk reference (-l) does not take filters. */
+            if (mode == Q_BLOCK || mode == Q_CHUNK) {
                 fail_at(p, "unexpected control '@|' in name");
             }
             if (!name[0]) {
@@ -562,6 +574,71 @@ static void add_block(Archive *a, Block blk) {
         a->capblocks = ncap;
     }
     a->blocks[a->nblocks++] = blk;
+}
+
+static void note_module(Archive *a, const char *name) {
+    if (!name) {
+        name = "";
+    }
+    for (int i = 0; i < a->nmodules; i++) {
+        if (strcmp(a->modules[i], name) == 0) {
+            return;
+        }
+    }
+    if (a->nmodules == a->capmodules) {
+        int ncap = a->capmodules ? a->capmodules * 2 : 8;
+        const char **nm = xmalloc((size_t)ncap * sizeof(char *));
+        if (a->nmodules) {
+            memcpy(nm, a->modules, (size_t)a->nmodules * sizeof(char *));
+        }
+        free(a->modules);
+        a->modules = nm;
+        a->capmodules = ncap;
+    }
+    a->modules[a->nmodules++] = name;
+}
+
+/* The style guide's meta chunk, as if this block were written in the
+   module. The newline after @= is layout and is already omitted.
+   The newline before the closing @ is content. */
+
+static const char META_BODY[] =
+    "{\n"
+    "    summary: |||\n"
+    "        @<summary@>\n"
+    "    |||,\n"
+    "    exported: [@<exported chunks@>],\n"
+    "}\n";
+
+static void insert_block(Archive *a, int index, Block blk) {
+    int last;
+    Block saved;
+    add_block(a, blk);
+    last = a->nblocks - 1;
+    if (index >= last) {
+        return;
+    }
+    saved = a->blocks[last];
+    memmove(&a->blocks[index + 1], &a->blocks[index],
+            (size_t)(last - index) * sizeof(Block));
+    a->blocks[index] = saved;
+}
+
+static void add_builtin_meta(Archive *a) {
+    const char *chunk = arena_strndup(&a->arena, "meta", 4);
+    int at = 0;
+    for (int i = 0; i < a->nmodules; i++) {
+        Block blk;
+        memset(&blk, 0, sizeof(blk));
+        blk.module = a->modules[i];
+        blk.chunk = chunk;
+        blk.content = META_BODY;
+        blk.content_len = sizeof(META_BODY) - 1;
+        /* Holes in the template stay in this module. */
+        blk.def_module = a->modules[i];
+        insert_block(a, at, blk);
+        at++;
+    }
 }
 
 static void copy_filters(Arena *a, QName *filters, int n, Filt **out, int *nout) {
@@ -673,6 +750,7 @@ static void parse_block(Parser *p, int execute) {
     blk.def_module = p->arc->current_module;
     qname_free(&qn);
     add_block(p->arc, blk);
+    note_module(p->arc, blk.module);
 }
 
 static void parse_module_sel(Parser *p, int execute) {
@@ -685,6 +763,7 @@ static void parse_module_sel(Parser *p, int execute) {
     consume_end(p);
     if (execute) {
         p->arc->current_module = name;
+        note_module(p->arc, name);
     }
 }
 
@@ -1626,6 +1705,173 @@ static void expand_ref(Archive *a, Visit *v, const char **labels, int nlabels,
     visit_pop(v);
 }
 
+/* Labels of the printed reference that this block does not already
+   carry. Matching walks the block labels in order through the reference
+   labels, the same way a block is chosen. The labels that walk steps
+   over are the ones still to be passed into the block. */
+
+static int labels_to_pass(const char **block, int bn, const char **ref, int rn,
+                          const char ***out, int *nout) {
+    int j = 0;
+    int n = 0;
+    int w = 0;
+    char *used;
+    const char **pass;
+    used = xmalloc(rn ? (size_t)rn : 1);
+    memset(used, 0, rn ? (size_t)rn : 1);
+    for (int i = 0; i < bn; i++) {
+        while (j < rn && strcmp(block[i], ref[j]) != 0) {
+            j++;
+        }
+        if (j >= rn) {
+            free(used);
+            return 0;
+        }
+        used[j] = 1;
+        j++;
+    }
+    for (int i = 0; i < rn; i++) {
+        if (!used[i]) {
+            n++;
+        }
+    }
+    pass = xmalloc((n ? (size_t)n : 1) * sizeof(char *));
+    for (int i = 0; i < rn; i++) {
+        if (!used[i]) {
+            pass[w++] = ref[i];
+        }
+    }
+    free(used);
+    *out = pass;
+    *nout = n;
+    return 1;
+}
+
+static void append_decoded(Buf *out, const char *s, size_t start, size_t end) {
+    size_t i = start;
+    while (i < end) {
+        if (s[i] == '@' && i + 1 < end && s[i + 1] == '@') {
+            buf_append(out, "@", 1);
+            i += 2;
+            continue;
+        }
+        {
+            size_t j = i + 1;
+            while (j < end && !(s[j] == '@' && j + 1 < end && s[j + 1] == '@')) {
+                j++;
+            }
+            buf_append(out, s + i, j - i);
+            i = j;
+        }
+    }
+}
+
+/* A name is written so that '@' followed by a control byte stays text. */
+
+static void append_raw_name(Buf *out, const char *name) {
+    size_t n = strlen(name);
+    for (size_t i = 0; i < n; i++) {
+        unsigned char next = 0;
+        int has_next = i + 1 < n;
+        int control = 1;
+        if (has_next) {
+            next = (unsigned char)name[i + 1];
+            control = next < 128 && !is_ascii_alpha(next);
+        }
+        if (name[i] == '@' && control) {
+            buf_append(out, "@@", 2);
+        } else {
+            buf_append(out, name + i, 1);
+        }
+    }
+}
+
+/* Block content with @@ read as the text @. References are not followed
+   and block filters are not run. A reference that writes no labels
+   gains the labels this block does not already carry. */
+
+static void append_literal(Archive *a, Buf *out, const Block *b, const char **pass, int npass,
+                           const char *where) {
+    const char *content = b->content;
+    size_t len = b->content_len;
+    size_t i = 0;
+    while (i < len) {
+        if (content[i] == '@' && i + 1 < len && content[i + 1] == '@') {
+            buf_append(out, "@", 1);
+            i += 2;
+            continue;
+        }
+        if (content[i] == '@' && i + 1 < len && content[i + 1] == '<') {
+            Parser sub;
+            QName qn;
+            size_t body;
+            memset(&sub, 0, sizeof(sub));
+            sub.buf = content;
+            sub.n = len;
+            sub.i = i + 2;
+            sub.arc = a;
+            sub.where = where;
+            sub.def_line = b->def_line;
+            sub.def_file = b->def_file;
+            body = sub.i;
+            parse_qname(&sub, &qn, Q_REF);
+            if (control_kind(&sub) != '>') {
+                qname_free(&qn);
+                fail_at(&sub, "expected '@>'");
+            }
+            if (npass > 0 && qn.labels.n == 0) {
+                buf_append(out, "@<", 2);
+                for (int k = 0; k < npass; k++) {
+                    append_raw_name(out, pass[k]);
+                    buf_append(out, "@:", 2);
+                }
+                append_decoded(out, content, body, sub.i);
+                buf_append(out, "@>", 2);
+            } else {
+                append_decoded(out, content, i, sub.i + 2);
+            }
+            qname_free(&qn);
+            i = sub.i + 2;
+            continue;
+        }
+        {
+            size_t j = i + 1;
+            while (j < len) {
+                if (content[j] == '@' && j + 1 < len &&
+                    (content[j + 1] == '@' || content[j + 1] == '<')) {
+                    break;
+                }
+                j++;
+            }
+            buf_append(out, content + i, j - i);
+            i = j;
+        }
+    }
+}
+
+static void literal_blocks(Archive *a, const char **labels, int nlabels,
+                           const char *module, const char *chunk, Buf *out) {
+    char *key = canonical(labels, nlabels, module, chunk);
+    for (int i = 0; i < a->nblocks; i++) {
+        Block *b = &a->blocks[i];
+        StrVec expanded = {0};
+        const char **pass = NULL;
+        int npass = 0;
+        if (strcmp(b->module, module) != 0 || strcmp(b->chunk, chunk) != 0) {
+            continue;
+        }
+        expand_label_list(a, b->labels, b->nlabels, &expanded);
+        if (!labels_to_pass(expanded.v, expanded.n, labels, nlabels, &pass, &npass)) {
+            free(expanded.v);
+            continue;
+        }
+        append_literal(a, out, b, pass, npass, key);
+        free(pass);
+        free(expanded.v);
+    }
+    free(key);
+}
+
 static char *read_file(const char *path, size_t *out_n) {
     FILE *f = fopen(path, "rb");
     long sz;
@@ -1816,25 +2062,35 @@ static void parse_include(Parser *p, int execute) {
 
 static void usage(FILE *fp, const char *argv0) {
     fprintf(fp,
-            "Usage:\n"
-            "  %s --help\n"
-            "  %s -p EXPRESSION ARCHIVE\n"
-            "  %s --print EXPRESSION ARCHIVE\n"
+            "usage: %s [options] ARCHIVE\n"
             "\n"
-            "--help\n"
-            "    print the usage\n"
-            "-p, --print EXPRESSION\n"
-            "    evaluate EXPRESSION, and print it\n"
+            "--help: print the usage\n"
+            "-p, --print EXPRESSION: evaluate EXPRESSION, and print it\n"
+            "-l, --literal CHUNK_REFERENCE: "
+            "print the blocks extending CHUNK_REFERENCE literally\n"
             "\n"
             "EXPRESSION follows "
-            "label1@:label2@:module name@/chunk name@|filter1@|filter2.\n",
-            argv0, argv0, argv0);
+            "label1@:label2@:module name@/chunk name@|filter1@|filter2.\n"
+            "CHUNK_REFERENCE follows "
+            "label1@:label2@:module name@/chunk name.\n",
+            argv0);
+}
+
+static void set_mode(int *mode, int next) {
+    if (*mode == next) {
+        fail("%s", next == MODE_PRINT ? "duplicate print option" : "duplicate literal option");
+    }
+    if (*mode != 0) {
+        fail("cannot combine print and literal");
+    }
+    *mode = next;
 }
 
 int main(int argc, char **argv) {
     const char *argv0 = (argc > 0 && argv[0] && argv[0][0]) ? argv[0] : "litar";
     const char *expr = NULL;
     const char *file = NULL;
+    int mode = 0;
     Archive arc;
     Parser ep;
     QName qn;
@@ -1853,19 +2109,25 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];
         if (strcmp(arg, "-p") == 0 || strcmp(arg, "--print") == 0) {
-            if (expr) {
-                fail("duplicate print option");
-            }
+            set_mode(&mode, MODE_PRINT);
             if (i + 1 >= argc) {
                 usage(stderr, argv0);
                 fail("%s requires an expression", arg);
             }
             expr = argv[++i];
         } else if (strncmp(arg, "--print=", 8) == 0) {
-            if (expr) {
-                fail("duplicate print option");
-            }
+            set_mode(&mode, MODE_PRINT);
             expr = arg + 8;
+        } else if (strcmp(arg, "-l") == 0 || strcmp(arg, "--literal") == 0) {
+            set_mode(&mode, MODE_LITERAL);
+            if (i + 1 >= argc) {
+                usage(stderr, argv0);
+                fail("%s requires a chunk reference", arg);
+            }
+            expr = argv[++i];
+        } else if (strncmp(arg, "--literal=", 10) == 0) {
+            set_mode(&mode, MODE_LITERAL);
+            expr = arg + 10;
         } else if (arg[0] == '-' && arg[1] != '\0') {
             usage(stderr, argv0);
             fail("unknown option '%s'", arg);
@@ -1876,10 +2138,10 @@ int main(int argc, char **argv) {
             file = arg;
         }
     }
-    if (!expr || !file) {
+    if (!mode || !file) {
         usage(stderr, argv0);
-        if (!expr) {
-            fail("missing -p or --print");
+        if (!mode) {
+            fail("missing -p, --print, -l, or --literal");
         }
         fail("missing archive");
     }
@@ -1888,13 +2150,15 @@ int main(int argc, char **argv) {
     arc.src = read_file(file, &arc.src_n);
     arc.anonymous_module = arena_strndup(&arc.arena, "", 0);
     arc.current_module = arc.anonymous_module;
+    note_module(&arc, arc.anonymous_module);
     parse_buffer(&arc, arc.src, arc.src_n, file);
+    add_builtin_meta(&arc);
 
     memset(&ep, 0, sizeof(ep));
     ep.buf = expr;
     ep.n = strlen(expr);
     ep.arc = &arc;
-    parse_qname(&ep, &qn, Q_EXPR);
+    parse_qname(&ep, &qn, mode == MODE_LITERAL ? Q_CHUNK : Q_EXPR);
     if (ep.i < ep.n) {
         int k = control_kind(&ep);
         if (k == 0) {
@@ -1911,19 +2175,25 @@ int main(int argc, char **argv) {
         fail("chunk '%s' is not defined", key);
     }
     free(key);
-    /* The chunk is built in memory and written only after every filter
-       has run, so a cycle or a failed filter leaves stdout empty and
-       each filter runs once. */
-    expand_ref(&arc, &visit, labels.v, labels.n, module, qn.chunk, &result);
-    if (qn.nfilters) {
-        Parser loc;
-        memset(&loc, 0, sizeof(loc));
-        for (int fi = 0; fi < qn.nfilters; fi++) {
-            QName *f = &qn.filters[fi];
-            /* A print expression is not inside a block, so a filter
-               with no module is in the anonymous module. */
-            run_filter(&arc, &visit, &result, f->labels.v, f->labels.n, f->has_module,
-                       f->module, f->chunk, labels.v, labels.n, "", &loc);
+    if (mode == MODE_LITERAL) {
+        /* Same block selection as -p. The texts are concatenated
+           with nothing added between them. */
+        literal_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
+    } else {
+        /* The chunk is built in memory and written only after every filter
+           has run, so a cycle or a failed filter leaves stdout empty and
+           each filter runs once. */
+        expand_ref(&arc, &visit, labels.v, labels.n, module, qn.chunk, &result);
+        if (qn.nfilters) {
+            Parser loc;
+            memset(&loc, 0, sizeof(loc));
+            for (int fi = 0; fi < qn.nfilters; fi++) {
+                QName *f = &qn.filters[fi];
+                /* A print expression is not inside a block, so a filter
+                   with no module is in the anonymous module. */
+                run_filter(&arc, &visit, &result, f->labels.v, f->labels.n, f->has_module,
+                           f->module, f->chunk, labels.v, labels.n, "", &loc);
+            }
         }
     }
     if (result.n && fwrite(result.data, 1, result.n, stdout) != result.n) {
@@ -1935,6 +2205,7 @@ int main(int argc, char **argv) {
     qname_free(&qn);
     free(visit.keys);
     free(arc.blocks);
+    free(arc.modules);
     free(arc.src);
     arena_free(&arc.arena);
     return 0;

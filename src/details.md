@@ -1,7 +1,7 @@
 # Bootstrap implementation details
 
 `src/boot.c` implements `design/litar.md` through Filters,
-and `--help` and `-p`/`--print` from `design/ui.md`.
+and `--help`, `-p`/`--print`, and `-l`/`--literal` from `design/ui.md`.
 This file records the concrete reading used
 where those design files leave a choice open.
 `make test` checks this reading.
@@ -49,9 +49,11 @@ In a qualified name the labels come first,
 then one optional module, then the chunk.
 A label after `@/`, or a second `@/`, is an error.
 
-The text of `-p` and `--print` is the reference itself.
+The text of `-p`, `--print`, `-l`, and `--literal` is the reference itself.
 It ends at the end of the argument,
 so a closing `@` is not written on the command line.
+`-l` and `--literal` name a chunk reference,
+so `@|` there is `unexpected control '@|' in name`.
 
 ## Blocks
 
@@ -84,6 +86,7 @@ expands to empty text.
 
 Only the chunk named by `-p` or `--print` is expanded,
 and then the references reached from it.
+`-l` and `--literal` do not expand any chunk.
 A cycle in some other chunk is left alone.
 
 Expanding a reference that is already being expanded
@@ -238,24 +241,33 @@ and the second visit takes the empty arm.
 
 `--help` in the arguments prints the usage to stdout and exits 0.
 It is recognized before the other arguments are checked,
-so `--help` with a missing expression or a missing archive
-still prints the usage.
+so `--help` with a missing expression, a missing chunk reference,
+or a missing archive still prints the usage.
+
+The synopsis is `usage: PROGRAM [options] ARCHIVE`.
+PROGRAM is the name used to invoke litar.
+The option lines follow `design/ui.md`,
+and the usage also spells the forms of `EXPRESSION` and `CHUNK_REFERENCE`.
 
 The print option is `-p EXPR`, `--print EXPR`, or `--print=EXPR`.
+The literal option is `-l REF`, `--literal REF`, or `--literal=REF`.
+Print and literal cannot be combined.
 The archive argument may come before or after the option.
 One archive is accepted.
 A single `-` is an archive name;
 any other argument that begins with `-` is an unknown option.
 
-A duplicate print option, an unknown option, a missing expression,
+A duplicate print option, a duplicate literal option,
+print combined with literal, an unknown option,
+a missing expression, a missing chunk reference,
 a missing archive, and an extra argument are errors.
 Unknown options and missing arguments also print the usage to stderr.
-The usage names the program as it was invoked.
 The expression form in the usage
 includes the filter syntax from `design/ui.md`.
 
-The archive is read to the end before the expression is evaluated.
-The chunk is written to stdout as raw bytes, with no added newline.
+The archive is read to the end before the expression is evaluated,
+and before literal blocks are printed.
+The result is written to stdout as raw bytes, with no added newline.
 
 Opening a file that cannot be opened
 reports `could not open 'path':` followed by the system message.
@@ -277,12 +289,85 @@ For an included archive,
 An error while expanding a block
 adds `in chunk '…' (defined at line N in 'path')`,
 with the same key spelling as a circular inclusion.
-An error in the print expression adds `in expression`.
+An error in the print expression,
+or in the chunk reference passed to `-l`,
+adds `in expression`.
 
 Parse errors, an unknown top-level chunk, a cycle,
 and a bad reference leave stdout empty.
 `could not write output` is reported
 if stdout cannot be written while the chunk is being emitted.
+
+## Literal blocks
+
+`-l` and `--literal` print the blocks that extend the chunk reference,
+in the same order `-p` would concatenate their expanded contents.
+`@@` in a block is the text `@`.
+Other controls in a block are copied too.
+Block filters are not run, and references are not followed,
+so a cycle that `-p` rejects is ordinary text for `-l`.
+A `@<` in a block is parsed as a reference.
+A malformed one is an error, reported in that chunk.
+The same blocks are chosen as for `-p`:
+the module and the chunk match,
+and the block's labels are an order-preserving subsequence
+of the reference's labels.
+Label groups in the reference and on each block
+are expanded before that test.
+A reference with no matching block is `chunk '…' is not defined`.
+The texts are concatenated, with no marker between blocks
+and no added newline.
+
+When the printed reference has labels,
+a chunk reference in a block that writes no labels of its own
+receives the printed labels that the block does not already carry.
+Those are the printed labels left over
+after the block's labels have been matched in order.
+They are written in front of that reference, in that same order.
+A reference that writes its own labels is copied with those labels alone.
+This is the example in `design/ui.md`:
+
+```
+@<chunk@=
+@<substructure 1@>
+@
+
+@<label@:chunk@=
+@<substructure 2@>
+@
+```
+
+`litar -l label@:chunk` prints
+
+```
+@<label@:substructure 1@>
+@<substructure 2@>
+```
+
+The block `chunk` does not carry `label`,
+so `@<substructure 1@>` gains it.
+The block `label@:chunk` already carries `label`,
+so `@<substructure 2@>` stays as written.
+A module, filters, and the chunk name on that reference stay after the new labels.
+`@<Mod@/part@>` printed under the extra label `a` is `@<a@:Mod@/part@>`.
+`@<part@|filt@>` printed the same way is `@<a@:part@|filt@>`.
+
+## Module meta chunk
+
+Every module the archive introduces has one built-in block named `meta`.
+The anonymous module is always introduced.
+`@- name @` introduces `name` when that arm is kept.
+A kept block whose header names a module introduces that module too.
+A module that is never selected and never receives a block has no `meta`.
+The built-in block is the jsonnet in `design/style.md`:
+the newline after `@=` is omitted,
+and the newline before the closing `@` is kept.
+It is the first block of that module's `meta`.
+Blocks the archive itself writes for `meta` follow it.
+`@<summary@>` and `@<exported chunks@>` in the built-in block
+use the module the block belongs to.
+`-p` evaluates them.
+`-l` prints them, and passes labels by the rule above.
 
 ## Filters
 
@@ -292,6 +377,8 @@ the text goes through `a`, then through `b`.
 On a reference the filters follow the chunk name,
 `@<chunk@|filter@>`,
 and the same spelling is accepted in `-p` and `--print`.
+`-l` rejects `@|`,
+because a chunk reference has no filters.
 On a block they follow the body:
 
 ```

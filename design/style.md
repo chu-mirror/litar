@@ -94,8 +94,7 @@ enough that those actions take a skilled engineer several minutes.
 Tokens count is a good measure of length;
 150 tokens is a comfortable length for human beings, at least for the author.
 
-Putting several items of a sequence to one block is much like giving them seperate blocks;
-so in practice, the length of a tree usually equals the length of a block.
+In practice, the length of a tree usually equals the length of a block.
 Here's a more practical guideline: **control the length of a block at or below about 150 tokens**.
 
 # Name a chunk with a phrase, whose grammatical role fits
@@ -140,7 +139,7 @@ handling of a failure, choosing of algorithm, etc.
 
 These details live outside the specification, scattered over implementation,
 but closely affect the finished program.
-litar requires these details to documented where they are introduced.
+litar requires these details to be documented where they are introduced.
 
 # Make blocks extending a sequence order-irrelerent
 
@@ -149,8 +148,7 @@ so a data type should be put after the data types it's based on.
 In this case, if the data type and the base data types are in different blocks,
 the dependency imposes an order on blocks.
 
-The blocks shall be loosely related in the sense of ordering
-to reduce the context needed for understanding or editing a block.
+The blocks shall be loosely related to reduce the context needed for understanding or editing a block.
 The `includes` in the above example is an ideal order-irrelerent sequence;
 if a block is created to introduce more header files,
 the only context information is the name of the chunk it ought to extend, `includes` here.
@@ -163,4 +161,21 @@ every later arm is skipped even if its condition would be true.
 The rule: **gather substructures of a sequence into a single block if the order matters**.
 This rule might conflict with the rule of block length limitation,
 if they conflict, prioritize this rule.
+
+# Reduce repetition by filters
+
+A single piece of information can appear at so many places of a project in different forms.
+The specification of command line interface is a good example.
+It shows exsistence in help information, parsing algorithm, and manpage.
+It's cumbersome to maintainance all three replicates,
+and these replicates can be programmatically generated from the original specification;
+filters fits implementing the generation perfectly.
+
+Write the specification of command line interface declaratively in a chunk;
+it can be in any format like json, yaml, toml,
+data structure in script languages (python, perl, for example), etc.
+Then for each form, write a filter to transform the specification,
+finally use chunk references to insert the transformed specification to proper places.
+
+The rule: **use filters to generate different forms of a single piece of information**.
 

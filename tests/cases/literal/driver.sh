@@ -53,24 +53,19 @@ assert_fail "print rejects a cycle" "circular inclusion of 'cycle'" \
 assert_text "skipped branch is not a block" $'yes\n' \
     "$LITAR" -l branched archive.la
 
-meta_src=$'{\n    summary: |||\n        @<summary@>\n    |||,\n    exported: [@<exported chunks@>],\n}\n'
 user_meta=$'{\n    summary: |||\n        @<summary@>\n    |||,\n}\n'
-anon_exp=$'{\n    summary: |||\n        \n    |||,\n    exported: [],\n}\n'
-mod_exp=$'{\n    summary: |||\n        hello module\n\n    |||,\n    exported: [],\n}\n'
 user_exp=$'{\n    summary: |||\n        hello module\n\n    |||,\n}\n'
-assert_text "anonymous meta is built in" "$meta_src" \
+assert_fail "anonymous meta is not built in" "chunk 'meta' is not defined" \
     "$LITAR" -l meta archive.la
-assert_text "anonymous meta evaluates holes" "$anon_exp" \
-    "$LITAR" -p meta archive.la
-assert_text "module meta keeps author blocks" "$meta_src$user_meta" \
+assert_text "author meta is an ordinary block" "$user_meta" \
     "$LITAR" -l 'Mod@/meta' archive.la
-assert_text "module meta evaluates" "$mod_exp$user_exp" \
+assert_text "author meta evaluates" "$user_exp" \
     "$LITAR" -p 'Mod@/meta' archive.la
-assert_text "selected module has meta" "$meta_src" \
+assert_fail "selected module has no built-in meta" "chunk 'Ghost@/meta' is not defined" \
     "$LITAR" -l 'Ghost@/meta' archive.la
-assert_text "labels pass into built-in meta" \
-    $'{\n    summary: |||\n        @<label@:summary@>\n    |||,\n    exported: [@<label@:exported chunks@>],\n}\n' \
-    "$LITAR" -l 'label@:meta' archive.la
+assert_text "labels pass into an author block" \
+    $'{\n    summary: |||\n        @<label@:summary@>\n    |||,\n}\n' \
+    "$LITAR" -l 'label@:Mod@/meta' archive.la
 assert_fail "unknown module has no meta" "chunk 'NoSuch@/meta' is not defined" \
     "$LITAR" -l 'NoSuch@/meta' archive.la
 

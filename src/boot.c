@@ -1,7 +1,7 @@
 /* Bootstrap of litar: the archive syntax through Filters.
    A filter is a chunk run as a script in the current directory.
-   --help, -p/--print, and -l/--literal follow design/ui.md.
-   Each module has the built-in meta chunk from design/style.md.
+   --help, -p/--print, -l/--literal, and -m/--modules follow design/ui.md.
+   summary is an ordinary chunk. The bootstrap does not invent one.
    File definitions and file sets belong to later stages.
    See design/litar.md and design/stages.md. */
 
@@ -150,7 +150,8 @@ enum {
 
 enum {
     MODE_PRINT = 1,
-    MODE_LITERAL
+    MODE_LITERAL,
+    MODE_MODULES
 };
 
 static void fail(const char *fmt, ...) NORETURN;
@@ -576,6 +577,12 @@ static void add_block(Archive *a, Block blk) {
     a->blocks[a->nblocks++] = blk;
 }
 
+/* Modules are recorded in the order they are introduced.
+   The anonymous module is recorded before the archive is read.
+   @- and a block header record a module when that arm is kept.
+   A later introduction of the same name does not add another entry.
+   -m prints this list. */
+
 static void note_module(Archive *a, const char *name) {
     if (!name) {
         name = "";
@@ -596,49 +603,6 @@ static void note_module(Archive *a, const char *name) {
         a->capmodules = ncap;
     }
     a->modules[a->nmodules++] = name;
-}
-
-/* The style guide's meta chunk, as if this block were written in the
-   module. The newline after @= is layout and is already omitted.
-   The newline before the closing @ is content. */
-
-static const char META_BODY[] =
-    "{\n"
-    "    summary: |||\n"
-    "        @<summary@>\n"
-    "    |||,\n"
-    "    exported: [@<exported chunks@>],\n"
-    "}\n";
-
-static void insert_block(Archive *a, int index, Block blk) {
-    int last;
-    Block saved;
-    add_block(a, blk);
-    last = a->nblocks - 1;
-    if (index >= last) {
-        return;
-    }
-    saved = a->blocks[last];
-    memmove(&a->blocks[index + 1], &a->blocks[index],
-            (size_t)(last - index) * sizeof(Block));
-    a->blocks[index] = saved;
-}
-
-static void add_builtin_meta(Archive *a) {
-    const char *chunk = arena_strndup(&a->arena, "meta", 4);
-    int at = 0;
-    for (int i = 0; i < a->nmodules; i++) {
-        Block blk;
-        memset(&blk, 0, sizeof(blk));
-        blk.module = a->modules[i];
-        blk.chunk = chunk;
-        blk.content = META_BODY;
-        blk.content_len = sizeof(META_BODY) - 1;
-        /* Holes in the template stay in this module. */
-        blk.def_module = a->modules[i];
-        insert_block(a, at, blk);
-        at++;
-    }
 }
 
 static void copy_filters(Arena *a, QName *filters, int n, Filt **out, int *nout) {
@@ -2060,6 +2024,18 @@ static void parse_include(Parser *p, int execute) {
     free(path);
 }
 
+/* One introduced module per line, in introduction order.
+   The anonymous module is the empty name, so its line is empty. */
+
+static void list_modules(const Archive *a) {
+    for (int i = 0; i < a->nmodules; i++) {
+        size_t n = strlen(a->modules[i]);
+        if ((n && fwrite(a->modules[i], 1, n, stdout) != n) || fputc('\n', stdout) == EOF) {
+            fail("could not write output");
+        }
+    }
+}
+
 static void usage(FILE *fp, const char *argv0) {
     fprintf(fp,
             "usage: %s [options] ARCHIVE\n"
@@ -2068,6 +2044,7 @@ static void usage(FILE *fp, const char *argv0) {
             "-p, --print EXPRESSION: evaluate EXPRESSION, and print it\n"
             "-l, --literal CHUNK_REFERENCE: "
             "print the blocks extending CHUNK_REFERENCE literally\n"
+            "-m, --modules: list all modules\n"
             "\n"
             "EXPRESSION follows "
             "label1@:label2@:module name@/chunk name@|filter1@|filter2.\n"
@@ -2076,12 +2053,32 @@ static void usage(FILE *fp, const char *argv0) {
             argv0);
 }
 
+/* Diagnostics name the options in enumerator order, print then literal
+   then modules, so the message does not depend on argument order. */
+
+static const char *mode_word(int mode) {
+    if (mode == MODE_PRINT) {
+        return "print";
+    }
+    if (mode == MODE_LITERAL) {
+        return "literal";
+    }
+    return "modules";
+}
+
 static void set_mode(int *mode, int next) {
     if (*mode == next) {
-        fail("%s", next == MODE_PRINT ? "duplicate print option" : "duplicate literal option");
+        fail("duplicate %s option", mode_word(next));
     }
     if (*mode != 0) {
-        fail("cannot combine print and literal");
+        int first = *mode;
+        int second = next;
+        if (first > second) {
+            int tmp = first;
+            first = second;
+            second = tmp;
+        }
+        fail("cannot combine %s and %s", mode_word(first), mode_word(second));
     }
     *mode = next;
 }
@@ -2128,6 +2125,8 @@ int main(int argc, char **argv) {
         } else if (strncmp(arg, "--literal=", 10) == 0) {
             set_mode(&mode, MODE_LITERAL);
             expr = arg + 10;
+        } else if (strcmp(arg, "-m") == 0 || strcmp(arg, "--modules") == 0) {
+            set_mode(&mode, MODE_MODULES);
         } else if (arg[0] == '-' && arg[1] != '\0') {
             usage(stderr, argv0);
             fail("unknown option '%s'", arg);
@@ -2141,7 +2140,7 @@ int main(int argc, char **argv) {
     if (!mode || !file) {
         usage(stderr, argv0);
         if (!mode) {
-            fail("missing -p, --print, -l, or --literal");
+            fail("missing -p, --print, -l, --literal, -m, or --modules");
         }
         fail("missing archive");
     }
@@ -2152,7 +2151,14 @@ int main(int argc, char **argv) {
     arc.current_module = arc.anonymous_module;
     note_module(&arc, arc.anonymous_module);
     parse_buffer(&arc, arc.src, arc.src_n, file);
-    add_builtin_meta(&arc);
+    if (mode == MODE_MODULES) {
+        list_modules(&arc);
+        free(arc.blocks);
+        free(arc.modules);
+        free(arc.src);
+        arena_free(&arc.arena);
+        return 0;
+    }
 
     memset(&ep, 0, sizeof(ep));
     ep.buf = expr;

@@ -6,6 +6,7 @@ usage: litar [options] ARCHIVE
 --help: print the usage
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
 -l, --literal CHUNK_REFERENCE: print the blocks extending CHUNK_REFERENCE literally
+-m, --modules: list all modules
 ```
 
 The format of EXPRESSION follows "label1@:label2@:module name@/chunk name@|filter1@|filter2".

@@ -179,29 +179,18 @@ finally use chunk references to insert the transformed specification to proper p
 
 The rule: **use filters to generate different forms of a single piece of information**.
 
-# Introduce a module in chunk named with "meta"
+# Introduce a module in chunk named with `summary`
 
 We have discussed the methodology of shaping and partitioning structures;
 the same thoughts can be applied to a litar archive itself
 to help understanding the litar archive.
 
 An litar archive consists of several modules.
-Each module has a built-in meta information chunk named `meta`.
+Each module can have an introductory chunk named `summary`;
+the chunk serves as a short summary of what this module provides.
+Agents or people can consult this chunk as an entry point to figure out what the module does.
 
-The chunk is written in jsonnet, which is a superset of json,
-and has a consistent structure. The built-in `meta` chunk is equivalent to
-the following example if it's created manually.
-
-```
-@- module @
-
-@<meta@=
-{
-    summary: |||
-        @<summary@>
-    |||,
-    exported: [@<exported chunks@>],
-}
-@
-```
+`summary` should start with a brief introduction to this module,
+then continue with a list of chunks and their explanation.
+The chunks explained in `summary` are chunks meant to be referred to from outside the module.
 

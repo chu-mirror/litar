@@ -1,7 +1,8 @@
 # Bootstrap implementation details
 
 `src/boot.c` implements `design/litar.md` through Filters,
-and `--help`, `-p`/`--print`, and `-l`/`--literal` from `design/ui.md`.
+and `--help`, `-p`/`--print`, `-l`/`--literal`, and `-m`/`--modules`
+from `design/ui.md`.
 This file records the concrete reading used
 where those design files leave a choice open.
 `make test` checks this reading.
@@ -87,6 +88,7 @@ expands to empty text.
 Only the chunk named by `-p` or `--print` is expanded,
 and then the references reached from it.
 `-l` and `--literal` do not expand any chunk.
+`-m` and `--modules` do not expand any chunk.
 A cycle in some other chunk is left alone.
 
 Expanding a reference that is already being expanded
@@ -251,23 +253,37 @@ and the usage also spells the forms of `EXPRESSION` and `CHUNK_REFERENCE`.
 
 The print option is `-p EXPR`, `--print EXPR`, or `--print=EXPR`.
 The literal option is `-l REF`, `--literal REF`, or `--literal=REF`.
-Print and literal cannot be combined.
+The modules option is `-m` or `--modules`.
+It takes no argument.
+`--modules=…` is an unknown option.
+Print, literal, and modules cannot be combined.
 The archive argument may come before or after the option.
 One archive is accepted.
 A single `-` is an archive name;
 any other argument that begins with `-` is an unknown option.
 
 A duplicate print option, a duplicate literal option,
-print combined with literal, an unknown option,
+a duplicate modules option,
+print combined with literal, print combined with modules,
+literal combined with modules, an unknown option,
 a missing expression, a missing chunk reference,
 a missing archive, and an extra argument are errors.
+With no action selected the error is
+`missing -p, --print, -l, --literal, -m, or --modules`.
+The combined-option errors are
+`cannot combine print and literal`,
+`cannot combine print and modules`,
+and `cannot combine literal and modules`.
+A repeated modules option is `duplicate modules option`.
 Unknown options and missing arguments also print the usage to stderr.
 The expression form in the usage
 includes the filter syntax from `design/ui.md`.
 
 The archive is read to the end before the expression is evaluated,
-and before literal blocks are printed.
-The result is written to stdout as raw bytes, with no added newline.
+before literal blocks are printed,
+and before the module list is written.
+A print or literal result is written to stdout as raw bytes,
+with no added newline.
 
 Opening a file that cannot be opened
 reports `could not open 'path':` followed by the system message.
@@ -352,22 +368,31 @@ A module, filters, and the chunk name on that reference stay after the new label
 `@<Mod@/part@>` printed under the extra label `a` is `@<a@:Mod@/part@>`.
 `@<part@|filt@>` printed the same way is `@<a@:part@|filt@>`.
 
-## Module meta chunk
+## Summary chunks
 
-Every module the archive introduces has one built-in block named `meta`.
-The anonymous module is always introduced.
+`summary` is an ordinary chunk.
+The bootstrap does not create one, and it does not create a `meta` chunk.
+A module may define `summary` the same way as any other chunk.
+`-p` evaluates that chunk and `-l` prints it.
+A module with no `summary` block is `chunk '…' is not defined`
+when that chunk is requested.
+
+## Listing modules
+
+`-m` and `--modules` print every module the archive introduces,
+one name per line, in the order it was introduced.
+Each line ends with LF, including the last.
+The anonymous module is introduced first.
+Its name is empty, so its line is empty.
 `@- name @` introduces `name` when that arm is kept.
-A kept block whose header names a module introduces that module too.
-A module that is never selected and never receives a block has no `meta`.
-The built-in block is the jsonnet in `design/style.md`:
-the newline after `@=` is omitted,
-and the newline before the closing `@` is kept.
-It is the first block of that module's `meta`.
-Blocks the archive itself writes for `meta` follow it.
-`@<summary@>` and `@<exported chunks@>` in the built-in block
-use the module the block belongs to.
-`-p` evaluates them.
-`-l` prints them, and passes labels by the rule above.
+A kept block whose header names a module introduces that module.
+A module that is only named by a reference is not introduced.
+An arm that is not kept does not introduce a module.
+An included archive introduces modules while it is read.
+Selecting or extending a module a second time does not list it again.
+
+`-m` does not expand chunks and does not run filters.
+A parse error is reported and nothing is listed.
 
 ## Filters
 

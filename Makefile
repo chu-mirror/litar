@@ -19,3 +19,7 @@ test: litar
 clean:
 	rm -f litar
 	$(MAKE) -C tests clean
+
+grok:
+	[ -d .grok ] || mkdir -p .grok/plugins && ln -s ../../plugin .grok/plugins/litar
+

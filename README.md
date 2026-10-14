@@ -6,7 +6,7 @@ This project proposes a system named litar, which is defined in [design/litar.md
 # Directories
 
 - design: design files describing what this project should be from human's view;
-- skills: skills for an agent to deal with this project;
+- plugin: plugin for an agent to interact with litar;
 - examples: some examples written in litar format;
 - src: the generated source files;
 - tests: tests for the features implemented so far.

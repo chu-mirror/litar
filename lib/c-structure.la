@@ -6,32 +6,24 @@
 
 @<summary@=
 A framework for constructing C program.
-@
 
-@<exported chunks@=
-"module",
-"interface",
-@
-
-@<Basics@/system prerequisites@=
-cproto
-clang-format-19
+- `module`: structure of a C module;
+- `module interface`;
+- `module properties`;
+- `invocation syntax`;
+- `executable@:module`: structure of an executable C module;
+- `command line usage`: command line usage generated from `invocation syntax`;
+- `manpage synopsis`: manpage synopsis generated from `invocation syntax`;
+- `manpage options`:  manpage options generated from `invocation syntax`.
 @
 
 @<module meta information@=
 (
     name => 'default',
     included_flag_format => '_MODULE_%s',
-    include_paths => [qw(@<include paths@>)],
     @<module properties@>
 )
 @
-
-@<-I flags@=@<Text Processing@/basic perl settings@>
-my %meta = @<module meta information@>;
-
-print join " ", map {"-I$_"} @@{ $meta{include_paths} };
-@|Basics@/evaluate@
 
 @<module@=
 @<include flags@>
@@ -525,7 +517,8 @@ print $usages_str;
 @|Basics@/evaluate@
 
 
-@<manpage synopsis@=@<Text Processing@/basic perl settings@>
+@<manpage synopsis@=
+@<Text Processing@/basic perl settings@>
 my $syntax = @<invocation syntax@>;
 
 sub option_to_str (_) {
@@ -559,7 +552,8 @@ my @usages = map usage_to_str, @@{$syntax->{usages}};
 print join "\n", @usages;
 @|Basics@/evaluate@
 
-@<manpage options@=@<Text Processing@/basic perl settings@>
+@<manpage options@=
+@<Text Processing@/basic perl settings@>
 my $syntax = @<invocation syntax@>;
 
 my $options = '';

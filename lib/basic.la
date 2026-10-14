@@ -1,6 +1,13 @@
 @? included Basics @|@|
 @- Basics @
 
+@<summary@=
+Some common filters used by other modules.
+
+- `evaluate`: executes the input as a script, the input must has a shebang,
+              use the output of that script as the output.
+@
+
 @<evaluate@=#!/bin/sh
 set -e
 temp_file=`mktemp`

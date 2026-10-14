@@ -1,4 +1,4 @@
-litar is a command line tool, supports both short options and long options.
+litar is a command line tool that supports both short options and long options.
 
 ```
 usage: litar [options] ARCHIVE

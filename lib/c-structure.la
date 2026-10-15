@@ -5,7 +5,7 @@
 @- C Structure @
 
 @<summary@=
-A framework for constructing C program.
+A framework for constructing a C program.
 
 - `module`: structure of a C module;
 - `module interface`;

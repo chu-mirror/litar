@@ -4,9 +4,9 @@
    -l prints each matching block as archive text: the comment before it,
    then the requested chunk reference, with its labels and the module
    name written, then the content and the filters on that block.
-   A less specialized block also receives those labels on included
-   references that name none. A reference that names no module matches
-   that chunk in every module.
+   A less specialized block receives, on included references that name
+   none, only the labels the request adds beyond that block's own.
+   A reference that names no module matches that chunk in every module.
    Less specialized blocks on the same specialization path are included.
    The anonymous module has no name, so its reference has no module piece.
    summary is an ordinary chunk. The bootstrap does not invent one.
@@ -44,7 +44,9 @@
    spec1 and the unspecialized chunk, and does not include spec2.
    The empty label list is the unspecialized chunk and matches any
    specialization. A reference with no labels keeps the labels of the
-   reference being expanded. A reference with no module uses the module
+   reference being expanded. When the block already carries a proper
+   suffix of those labels, the reference keeps only the labels in front
+   of that suffix. A reference with no module uses the module
    that was selected where its block was written. */
 
 typedef struct StrVec {
@@ -1562,11 +1564,37 @@ static void run_filter(Archive *a, Visit *v, Buf *data, const char **flabels, in
     free(key);
 }
 
+/* How many requested labels further specialize this block.
+   The block is less specialized when its labels are a proper suffix
+   of the request. The result is the length of the prefix in front of
+   that suffix. An unspecialized block has an empty suffix, so the
+   prefix is the whole request. -1 means the block is not less
+   specialized. An unlabeled reference in the block is specialized
+   by that prefix alone and does not repeat the block's own labels. */
+
+static int further_labels(Archive *a, const Block *b, const char **labels, int nlabels) {
+    StrVec expanded = {0};
+    int n = -1;
+    expand_label_list(a, b->labels, b->nlabels, &expanded);
+    if (expanded.n < nlabels && is_label_suffix(expanded.v, expanded.n, labels, nlabels)) {
+        n = nlabels - expanded.n;
+    }
+    free(expanded.v);
+    return n;
+}
+
 static void expand_content(Archive *a, Visit *v, const Block *b, const char **clabels, int cn,
                            const char *where, Buf *out) {
     const char *content = b->content;
     size_t len = b->content_len;
     size_t i = 0;
+    /* An unlabeled reference receives the labels that further specialize
+       this block: the requested labels in front of the block's own.
+       An unspecialized block has none of them, so the reference keeps
+       every label. A block that already has the requested labels is not
+       further specialized, and the reference keeps those labels too. */
+    int further = further_labels(a, b, clabels, cn);
+    int hole_n = further >= 0 ? further : cn;
     while (i < len) {
         if (content[i] == '@' && i + 1 < len) {
             unsigned char nch = (unsigned char)content[i + 1];
@@ -1612,7 +1640,7 @@ static void expand_content(Archive *a, Visit *v, const Block *b, const char **cl
                     use_n = resolved.n;
                 } else {
                     use_l = clabels;
-                    use_n = cn;
+                    use_n = hole_n;
                 }
                 use_m = qn.has_module ? qn.module : b->def_module;
                 expand_ref(a, v, use_l, use_n, use_m, qn.chunk, &piece);
@@ -1666,18 +1694,6 @@ static int block_in_chain(Archive *a, const Block *b, const char **labels,
     match = is_label_suffix(expanded.v, expanded.n, labels, nlabels);
     free(expanded.v);
     return match;
-}
-
-/* A block is less specialized when its labels are a proper suffix of
-   the requested labels: the request names further labels the block does not. */
-
-static int block_is_less(Archive *a, const Block *b, const char **labels, int nlabels) {
-    StrVec expanded = {0};
-    int less;
-    expand_label_list(a, b->labels, b->nlabels, &expanded);
-    less = expanded.n < nlabels && is_label_suffix(expanded.v, expanded.n, labels, nlabels);
-    free(expanded.v);
-    return less;
 }
 
 static int chunk_defined(Archive *a, const char **labels, int nlabels,
@@ -1837,9 +1853,11 @@ static size_t ref_end(const char *s, size_t n, size_t at, int *labeled) {
 
 /* A less specialized block is printed as the requested specialization.
    Chunk references in its content that name no label receive the
-   requested labels. A reference that already names labels is kept,
-   and so are the block's own filters. @@ is text, not a reference.
-   A malformed reference is copied as written and is not an error. */
+   labels passed here: the ones that further specialize the block,
+   not the labels the block already carries. A reference that already
+   names labels is kept, and so are the block's own filters.
+   @@ is text, not a reference. A malformed reference is copied as
+   written and is not an error. */
 
 static void append_specialized_tail(Buf *out, const char *s, size_t n, const char **labels,
                                     int nlabels) {
@@ -1905,11 +1923,12 @@ static int comment_is_blank(const char *s, size_t n) {
 /* -l prints archive text. Each matching block contributes the comment
    before it, the requested chunk reference, and the bytes after @=.
    The reference names the request's labels and the block's module.
-   A less specialized block passes those labels to included references
-   that name none. A block that already has the labels keeps its
-   content and filters as written. @@ stays @@, references are not
-   expanded, and filters are not run. Less specialized blocks on the
-   same specialization path are included, in archive order.
+   A less specialized block passes only the labels beyond its own
+   to included references that name none. It does not repeat the
+   labels it already carries. A block that already has the labels
+   keeps its content and filters as written. @@ stays @@, references
+   are not expanded, and filters are not run. Less specialized blocks
+   on the same specialization path are included, in archive order.
    A blank comment is left out when it would be the first text,
    so the result does not open with the spacing that followed a @-.
    A later blank comment is kept,
@@ -1920,15 +1939,17 @@ static void literal_blocks(Archive *a, const char **labels, int nlabels,
     int printed = 0;
     for (int i = 0; i < a->nblocks; i++) {
         Block *b = &a->blocks[i];
+        int further;
         if (!block_in_chain(a, b, labels, nlabels, module, chunk)) {
             continue;
         }
         if (b->comment_len && (printed || !comment_is_blank(b->comment, b->comment_len))) {
             buf_append(out, b->comment, b->comment_len);
         }
+        further = further_labels(a, b, labels, nlabels);
         append_block_ref(out, labels, nlabels, b);
-        if (block_is_less(a, b, labels, nlabels)) {
-            append_specialized_tail(out, b->tail, b->tail_len, labels, nlabels);
+        if (further >= 0) {
+            append_specialized_tail(out, b->tail, b->tail_len, labels, further);
         } else {
             buf_append(out, b->tail, b->tail_len);
         }

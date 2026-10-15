@@ -74,8 +74,8 @@ assert_text "predecessor receives the requested labels" \
 assert_text "explicit labels stay, and the predecessor is included" \
     $'@<kept@:outline@=\n@<kept@:substructure 1@>\n@\n\n@<kept@:outline@=\n@<keep@:named@>\n@<open@>\n@\n' \
     "$LITAR" -l 'kept@:outline' archive.la
-assert_text "less specialized bodies receive every requested label" \
-    $'@<a@:b@:outline@=\n@<a@:b@:substructure 1@>\n@\n\n@<a@:b@:outline@=\n@<a@:b@:inner@>\n@\n\n@<a@:b@:outline@=\n@<inner@>\n@<Mod@/inner@>\n@<inner@|upper@>\n@\n' \
+assert_text "a block does not repeat its own labels on included references" \
+    $'@<a@:b@:outline@=\n@<a@:b@:substructure 1@>\n@\n\n@<a@:b@:outline@=\n@<a@:inner@>\n@\n\n@<a@:b@:outline@=\n@<inner@>\n@<Mod@/inner@>\n@<inner@|upper@>\n@\n' \
     "$LITAR" -l 'a@:b@:outline' archive.la
 assert_text "label group is passed into the body" \
     $'@<lab@:extra@:grouped@=\n@<lab@:extra@:hole@>\n@\n' \
@@ -123,7 +123,7 @@ assert_text "a passed label writes @ as @@" \
     $'@<m@@n@:a@@b@/a@@c@=\nz\n@\n' \
     "$LITAR" -l 'm@@n@:a@@b@/a@@c' archive.la
 
-carrier=$'@<mark@:mid@:carrier@=\n@@<not@@>\n@<mark@:mid@:real@>\n@<keep@:named@>\n@<mark@:mid@:Mod@/inner@>\n@<mark@:mid@:inner@|upper@>\n@|upper@\n\n@<mark@:mid@:carrier@=\n@<mark@:mid@:hole@>\n@\n\n@<mark@:mid@:carrier@=\nkept\n@\n'
+carrier=$'@<mark@:mid@:carrier@=\n@@<not@@>\n@<mark@:mid@:real@>\n@<keep@:named@>\n@<mark@:mid@:Mod@/inner@>\n@<mark@:mid@:inner@|upper@>\n@|upper@\n\n@<mark@:mid@:carrier@=\n@<mark@:hole@>\n@\n\n@<mark@:mid@:carrier@=\nkept\n@\n'
 assert_text "labels pass through references and stop at the block filter" \
     "$carrier" "$LITAR" -l 'mark@:mid@:carrier' archive.la
 assert_text "an unspecialized request does not pass labels" \

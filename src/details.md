@@ -152,10 +152,19 @@ and on each block before this comparison.
 A reference that writes no labels
 keeps the labels of the reference being expanded.
 A reference that writes labels uses those labels alone.
+When the block that contains the reference
+already carries a proper suffix of those labels,
+the reference keeps only the labels in front of that suffix.
+It does not repeat the labels the block already has.
+An unspecialized block carries none,
+so the reference keeps every label.
 This is how `@<includes@>` inside an unspecialized template
 receives `program1`
 when the template is reached
 through `program1@:general structure for C program`.
+A block extending `spec1@:chunk`,
+reached through `spec2@:spec1@:chunk`,
+passes only `spec2` to an unlabeled reference.
 
 A reference that writes no module
 uses the module selected where the surrounding block was written.
@@ -382,7 +391,11 @@ A block whose labels are exactly the requested labels
 is copied as written.
 A block with fewer labels is printed as the requested specialization.
 Each chunk reference in its content that names no label
-receives the requested labels, in front of the name it already has.
+receives only the labels the request adds
+in front of that block's own labels.
+An unspecialized block receives every requested label.
+A block that already carries some of them
+does not copy those labels onto the reference.
 A reference that already names labels is kept as written,
 including one whose labels are only some of the requested labels.
 The module written on an included reference is not filled in.

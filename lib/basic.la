@@ -4,7 +4,7 @@
 @<summary@=
 Some common filters used by other modules.
 
-- `evaluate`: executes the input as a script, the input must has a shebang,
+- `evaluate`: executes the input as a script, the input must have a shebang,
               use the output of that script as the output.
 @
 

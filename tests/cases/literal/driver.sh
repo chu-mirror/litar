@@ -62,10 +62,10 @@ assert_text "other label" \
     $'@<base@=\nB\n@\n\n@<otherlab@:base@=\nO\n@\n' \
     "$LITAR" -l 'otherlab@:base' archive.la
 assert_text "deeper specialization" \
-    $'@<base@=\nB\n@\n\n@<lab@:base@=\nL\n@\n\n@<lab@:extra@:base@=\nX\n@\n' \
+    $'@<base@=\nB\n@\n\n@<lab@:extra@:base@=\nX\n@\n' \
     "$LITAR" -l 'lab@:extra@:base' archive.la
 assert_text "label group" \
-    $'@<base@=\nB\n@\n\n@<lab@:base@=\nL\n@\n\n@<lab@:extra@:base@=\nX\n@\n' \
+    $'@<base@=\nB\n@\n\n@<lab@:extra@:base@=\nX\n@\n' \
     "$LITAR" --literal 'pair@:base' archive.la
 
 assert_text "predecessor block is printed whole" \

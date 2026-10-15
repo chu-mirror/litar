@@ -5,7 +5,7 @@
    then the chunk reference it extends, with the module name written,
    then the content and the filters on that block.
    A reference that names no module matches that chunk in every module.
-   Less specialized blocks of the same chunk are included.
+   Less specialized blocks on the same specialization path are included.
    The anonymous module has no name, so its reference has no module piece.
    summary is an ordinary chunk. The bootstrap does not invent one.
    File definitions and file sets belong to later stages.
@@ -37,7 +37,9 @@
    The anonymous module is the empty string. A block stored under a
    reference extends that reference only. Evaluating a reference
    concatenates, in archive order, every block of that module and chunk
-   whose labels are an order-preserving subsequence of the reference.
+   whose labels are a suffix of the reference. Dropping labels from the
+   left walks back along one specialization path: spec2@:spec1 includes
+   spec1 and the unspecialized chunk, and does not include spec2.
    The empty label list is the unspecialized chunk and matches any
    specialization. A reference with no labels keeps the labels of the
    reference being expanded. A reference with no module uses the module
@@ -1002,20 +1004,21 @@ static void expand_label_list(Archive *a, const char **in, int n, StrVec *out) {
     }
 }
 
-/* Block labels match when each one occurs, in order, in the target.
-   Dropping any labels from the target still matches, so both a prefix
-   and a suffix are predecessors. The empty list always matches. */
+/* Block labels match when they are a suffix of the target.
+   Dropping labels from the left walks back along the specialization
+   path. A prefix, or a sequence that skips a label in the middle,
+   is a different path and does not match. The empty list always matches. */
 
-static int is_subsequence(const char **block, int bn, const char **target, int tn) {
-    int j = 0;
+static int is_label_suffix(const char **block, int bn, const char **target, int tn) {
+    int start;
+    if (bn > tn) {
+        return 0;
+    }
+    start = tn - bn;
     for (int i = 0; i < bn; i++) {
-        while (j < tn && strcmp(block[i], target[j]) != 0) {
-            j++;
-        }
-        if (j >= tn) {
+        if (strcmp(block[i], target[start + i]) != 0) {
             return 0;
         }
-        j++;
     }
     return 1;
 }
@@ -1658,7 +1661,7 @@ static int block_in_chain(Archive *a, const Block *b, const char **labels,
         return 0;
     }
     expand_label_list(a, b->labels, b->nlabels, &expanded);
-    match = is_subsequence(expanded.v, expanded.n, labels, nlabels);
+    match = is_label_suffix(expanded.v, expanded.n, labels, nlabels);
     free(expanded.v);
     return match;
 }
@@ -1759,11 +1762,12 @@ static int comment_is_blank(const char *s, size_t n) {
 /* -l prints archive text. Each matching block contributes the comment
    before it, the chunk reference it extends, and the bytes after @=:
    content and filters copied as written. @@ stays @@, references are
-   not expanded, and filters are not run. Less specialized blocks of
-   the same chunk are included, in archive order. A blank comment is
-   left out when it would be the first text, so the result does not
-   open with the spacing that followed a @-. A later blank comment is
-   kept, and a comment that has other text is kept whole. */
+   not expanded, and filters are not run. Less specialized blocks on
+   the same specialization path are included, in archive order.
+   A blank comment is left out when it would be the first text,
+   so the result does not open with the spacing that followed a @-.
+   A later blank comment is kept,
+   and a comment that has other text is kept whole. */
 
 static void literal_blocks(Archive *a, const char **labels, int nlabels,
                            const char *module, const char *chunk, Buf *out) {

@@ -198,7 +198,12 @@ printf("Hello from program1\n");
 `program1` and `program2` here are called labels. Labels, module name, and chunk name construct a chunk reference.
 Extending through a chunk reference does not affect other chunk references of same chunk.
 litar allows multiple specializations at once to further specialize a chunk reference.
-For example, `@<spec2@:spec1@:module@/chunk@=` specializes `spec1@:module@/chunk` further by spec2.
+For example, `@<spec2@:spec1@:module@/chunk@=` specializes `spec1@:module@/chunk` further by spec2,
+but it should be pointed out that, `spec2@:spec1@:module@/chunk` does not contain blocks
+of `spec2@:module@/chunk`.
+What `spec2@:spec1@:module@/chunk` specializes is `spec1@:module@/chunk`,
+and `spec1@:module@/chunk` does not contain blocks of `spec2@:module@/chunk`;
+`spec2@:module@/chunk` follows a different path to specialize `module@/chunk`.
 
 After introducing of chunk reference, We shall redefine what the content of a chunk is.
 

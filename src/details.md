@@ -118,17 +118,33 @@ still uses the module selected where the block was written.
 
 A block belongs to a reference
 when the module and the chunk are the same
-and the block's labels are an order-preserving subsequence
+and the block's labels are a suffix
 of the reference's labels.
-Each label of the reference is used at most once in that match.
-The block with an empty label list
-belongs to every reference of that module and chunk.
+Labels are dropped from the left
+to walk back along one specialization path.
+`spec2@:spec1@:chunk` therefore contains
+the blocks of `chunk`,
+the blocks of `spec1@:chunk`,
+and the blocks that extend `spec2@:spec1@:chunk`.
+It does not contain the blocks of `spec2@:chunk`.
+`spec2@:chunk` specializes `chunk` on another path,
+and `spec1@:chunk` does not contain those blocks either.
 
-`hello` and `executable` both belong to `hello@:executable`.
-`executable@:hello` does not.
-`a@:a` belongs to a reference that has at least two `a` labels.
-Matching blocks are concatenated in parse order,
-whether the block is less specialized or is the reference itself.
+The block with an empty label list
+is the unspecialized chunk
+and belongs to every reference of that module and chunk.
+
+`executable` belongs to `hello@:executable`.
+`hello` does not,
+and `executable@:hello` does not.
+`a@:a` belongs to a reference
+whose labels end in `a@:a`.
+`a` belongs to `a@:a`,
+because that single label is a suffix.
+Matching blocks are concatenated in parse order.
+A block is included
+whether it extends a predecessor on that path
+or the reference itself.
 
 Label groups are expanded on the reference
 and on each block before this comparison.
@@ -320,7 +336,7 @@ if stdout cannot be written while the chunk is being emitted.
 in the same order `-p` would concatenate their expanded contents.
 The same blocks are chosen as for `-p`:
 the module and the chunk match,
-and the block's labels are an order-preserving subsequence
+and the block's labels are a suffix
 of the reference's labels.
 Label groups in the reference and on each block
 are expanded before that test.
@@ -374,7 +390,8 @@ A `-l` reference that names no module
 matches that chunk in every module.
 `-p` still means the anonymous module when the expression names none.
 A `-l` reference that names a module matches only that module.
-Less specialized blocks are those of the same module and chunk.
+Less specialized blocks are those of the same module and chunk
+whose labels are a suffix of the reference.
 An included file starts in the anonymous module.
 Its blocks do not show the includer's `@-`.
 
@@ -415,7 +432,7 @@ Extend chunk through label.
 The reference names no module,
 so both modules are considered.
 The unspecialized block is printed
-because its labels are a subsequence of `label@:chunk`.
+because the empty label list is a suffix of `label@:chunk`.
 `chunk2` extends a different chunk, so it is left out.
 `Extend chunk through label.`
 is the comment before the specialized block.

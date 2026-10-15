@@ -6,10 +6,6 @@ A classic example at the beginning of learning programming.
 `hello.c` is the source file.
 @
 
-@<hello@:C Structure@/includes@=
-#include <unistd.h>
-@
-
 @<hello.c@=
 @<hello@:executable@:C Structure@/module@>
 @

@@ -51,7 +51,7 @@ assert_text "--print" $'OK\n' "$LITAR" --print chunk archive.la
 assert_text "--print=" $'OK\n' "$LITAR" --print=chunk archive.la
 assert_text "archive before -p" $'OK\n' "$LITAR" archive.la -p chunk
 
-lit=$'@-@\n@<chunk@=\nOK\n@\n'
+lit=$'@<chunk@=\nOK\n@\n'
 assert_text "-l" "$lit" "$LITAR" -l chunk archive.la
 assert_text "--literal" "$lit" "$LITAR" --literal chunk archive.la
 assert_text "--literal=" "$lit" "$LITAR" --literal=chunk archive.la

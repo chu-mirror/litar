@@ -326,11 +326,10 @@ Label groups in the reference and on each block
 are expanded before that test.
 A reference with no matching block is `chunk '…' is not defined`.
 
-Each matching block is printed as it stands in the archive.
+Each matching block is printed in archive order.
 The text is the comment immediately before that block,
-then the block expression:
-the chunk reference it extends,
-the content,
+then the chunk reference that block extends,
+then the content of the block,
 and the filters applied to the block.
 The comment is the text after the previous expression
 in that file, or from the start of the file,
@@ -338,39 +337,46 @@ up to the block.
 Inside a branch arm it starts after the `@|` that opens the arm.
 An expression between two blocks is not part of either comment,
 so it is left out.
+`@-` is not printed.
+A comment that is only spaces, tabs, and newlines
+is left out when it would be the first text printed,
+so the result does not open with the spacing that followed a `@-`.
+A later blank comment is printed,
+so a blank line between two printed blocks stays.
+A comment that contains other text is printed whole,
+including the blank lines around that text.
+The bytes after `@=` are copied as written:
+the layout newline, the content, the filters, and the closing `@`.
 `@@`, references, and filters stay as written.
 References are not followed, block filters are not run,
 and the body is not scanned again,
 so a cycle that `-p` rejects is ordinary text for `-l`.
 A malformed reference in a body is not an error for `-l`.
-The block header is the header in the file.
 Included blocks are printed from the included file.
 The pieces are concatenated in parse order,
 with nothing added between them.
+
+The chunk reference names every label, then the module, then the chunk.
+The module name is not omitted when the block extends a named module,
+even if the header in the file left the module out.
+`@<chunk@=` written while `module 1` is selected
+is printed as `@<module 1@/chunk@=`.
+`@<label@:chunk@=` written while `module 2` is selected
+is printed as `@<label@:module 2@/chunk@=`.
+A header that already names a module keeps that module:
+the block extends the named module,
+not the module selected around the header.
+The anonymous module has an empty name,
+so its reference has no `module@/` piece.
+`@` in a label, a module name, or a chunk name is written as `@@`.
 
 A `-l` reference that names no module
 matches that chunk in every module.
 `-p` still means the anonymous module when the expression names none.
 A `-l` reference that names a module matches only that module.
 Less specialized blocks are those of the same module and chunk.
-
-The module is indicated ahead of the first matching block
-that still uses that selection.
-A later block under the same selection does not print it again.
-A named module is indicated by the `@-` expression that selected it,
-together with the comment that precedes that `@-`.
-A block in the anonymous module is indicated by `@-@`,
-followed by a newline.
-That marker is used when the file started in the anonymous module
-and when a later `@-` selects it again.
-It replaces the source spelling of that `@-`,
-and the comment before the source `@-` is left out.
-A header may name another module.
-The indicator is still the module selected where the block was written.
 An included file starts in the anonymous module.
-A block there is marked `@-@`
-unless that file has selected another module.
-The includer's `@-` is not printed for those blocks.
+Its blocks do not show the includer's `@-`.
 
 This is the example in `design/ui.md`:
 
@@ -396,16 +402,12 @@ Extend chunk through label.
 `litar -l label@:chunk` prints
 
 ```
-@- module 1 @
-
-@<chunk@=
+@<module 1@/chunk@=
 @<substructure 1@>
 @
 
-@- module 2 @
-
 Extend chunk through label.
-@<label@:chunk@=
+@<label@:module 2@/chunk@=
 @<substructure 2@>
 @
 ```
@@ -417,8 +419,11 @@ because its labels are a subsequence of `label@:chunk`.
 `chunk2` extends a different chunk, so it is left out.
 `Extend chunk through label.`
 is the comment before the specialized block.
-`@- module 1 @` and `@- module 2 @`
-are the selections those blocks extend.
+The blank line before that comment is part of the comment.
+The blank line after `@- module 1 @` is a blank comment
+on the first block, so it is left out.
+`module 1` and `module 2` are written on the chunk references
+those blocks extend.
 
 ## Summary chunks
 

@@ -2,11 +2,11 @@
    A filter is a chunk run as a script in the current directory.
    --help, -p/--print, -l/--literal, and -m/--modules follow design/ui.md.
    -l prints each matching block as archive text: the comment before it,
-   then the block expression, including the filters on that block.
-   The @- that selected the block's module is printed with it.
-   A block in the anonymous module is marked @-@.
+   then the chunk reference it extends, with the module name written,
+   then the content and the filters on that block.
    A reference that names no module matches that chunk in every module.
    Less specialized blocks of the same chunk are included.
+   The anonymous module has no name, so its reference has no module piece.
    summary is an ordinary chunk. The bootstrap does not invent one.
    File definitions and file sets belong to later stages.
    See design/litar.md and design/stages.md. */
@@ -69,14 +69,6 @@ typedef struct Filt {
     const char *chunk;
 } Filt;
 
-/* One @- expression. -l prints it ahead of the blocks it applies to,
-   so the output shows which module those blocks extend. */
-typedef struct ModSel {
-    const char *name;
-    const char *literal;
-    size_t literal_len;
-} ModSel;
-
 typedef struct Block {
     const char **labels;
     int nlabels;
@@ -84,13 +76,14 @@ typedef struct Block {
     const char *chunk;
     const char *content;
     size_t content_len;
-    /* Comment immediately before this block, then the block expression,
-       copied from the archive. -l prints this span unchanged. */
-    const char *literal;
-    size_t literal_len;
-    /* The @- in effect where this block was written.
-       Null when the file was still in the initial anonymous module. */
-    const ModSel *modsel;
+    /* Text after the previous expression, up to this block.
+       -l prints it as the comment before the block. */
+    const char *comment;
+    size_t comment_len;
+    /* Bytes after @= through the end of the expression:
+       the layout newline, the content, the filters, and the closer. */
+    const char *tail;
+    size_t tail_len;
     Filt *filters;
     int nfilters;
     int def_line;
@@ -155,10 +148,8 @@ typedef struct Parser {
     int def_line;
     const char *def_file;
     /* Index where the text after the previous expression starts.
-       A block's literal span begins here and runs through that block. */
+       The comment before a block is the text from here to that block. */
     size_t gap;
-    /* The @- in effect in this file. An included file has its own. */
-    ModSel *selector;
 } Parser;
 
 typedef struct Visit {
@@ -661,6 +652,8 @@ static void copy_filters(Arena *a, QName *filters, int n, Filt **out, int *nout)
 static void parse_block(Parser *p, int execute) {
     QName qn;
     Block blk;
+    size_t header = p->i;
+    size_t equals;
     size_t body;
     size_t end;
     size_t lit_end;
@@ -671,6 +664,7 @@ static void parse_block(Parser *p, int execute) {
     if (control_kind(p) != '=') {
         fail_at(p, "expected '@='");
     }
+    equals = p->i;
     p->i += 2;
     body = p->i;
     /* `@|` ends the body only outside a reference. `@|` between `@<`
@@ -737,12 +731,13 @@ static void parse_block(Parser *p, int execute) {
     blk.content_len = end - body;
     blk.content = arena_strndup(&p->arc->arena, p->buf + body, blk.content_len);
     /* The include buffer is freed after the include is parsed, so the
-       span has to be copied. gap stays put while this expression is read. */
-    blk.literal_len = lit_end - p->gap;
-    blk.literal = arena_strndup(&p->arc->arena, p->buf + p->gap, blk.literal_len);
-    /* The header may name another module. The indicator follows the
-       module selected where the block is written. */
-    blk.modsel = p->selector;
+       spans have to be copied. gap stays put while this expression is read.
+       The tail starts after @=, so -l can write its own chunk reference
+       and then copy the content and the filters as they stand. */
+    blk.comment_len = header - p->gap;
+    blk.comment = arena_strndup(&p->arc->arena, p->buf + p->gap, blk.comment_len);
+    blk.tail_len = lit_end - (equals + 2);
+    blk.tail = arena_strndup(&p->arc->arena, p->buf + equals + 2, blk.tail_len);
     copy_filters(&p->arc->arena, qn.filters, qn.nfilters, &blk.filters, &blk.nfilters);
     blk.def_line = line;
     blk.def_file = p->filename;
@@ -754,25 +749,15 @@ static void parse_block(Parser *p, int execute) {
 
 static void parse_module_sel(Parser *p, int execute) {
     char *name;
-    size_t lit_end;
-    ModSel *sel;
     p->i += 2;
     name = read_name_until_control(p);
     if (!is_end_kind(control_kind(p))) {
         fail_at(p, "expected '@' to end the expression");
     }
     consume_end(p);
-    lit_end = p->i;
     if (!execute) {
         return;
     }
-    /* Keep the comment before @- and the expression itself. The include
-       buffer is freed later, so the span is copied. */
-    sel = arena_alloc(&p->arc->arena, sizeof(ModSel));
-    sel->name = name;
-    sel->literal_len = lit_end - p->gap;
-    sel->literal = arena_strndup(&p->arc->arena, p->buf + p->gap, sel->literal_len);
-    p->selector = sel;
     p->arc->current_module = name;
     note_module(p->arc, name);
 }
@@ -1721,38 +1706,79 @@ static void expand_ref(Archive *a, Visit *v, const char **labels, int nlabels,
     visit_pop(v);
 }
 
+/* A name is stored with @@ already decoded. Writing it back as archive
+   text escapes each @ so the printed reference can be read again. */
+
+static void append_name(Buf *out, const char *s) {
+    size_t i = 0;
+    size_t n = strlen(s);
+    while (i < n) {
+        size_t j = i;
+        while (j < n && s[j] != '@') {
+            j++;
+        }
+        if (j > i) {
+            buf_append(out, s + i, j - i);
+        }
+        if (j < n) {
+            buf_append(out, "@@", 2);
+            j++;
+        }
+        i = j;
+    }
+}
+
+/* The chunk reference the block extends. A named module is always
+   written, even when the header in the file left it out. The anonymous
+   module has an empty name, so it contributes no module@/ piece. */
+
+static void append_block_ref(Buf *out, const Block *b) {
+    buf_append(out, "@<", 2);
+    for (int i = 0; i < b->nlabels; i++) {
+        append_name(out, b->labels[i]);
+        buf_append(out, "@:", 2);
+    }
+    if (b->module && b->module[0]) {
+        append_name(out, b->module);
+        buf_append(out, "@/", 2);
+    }
+    append_name(out, b->chunk);
+    buf_append(out, "@=", 2);
+}
+
+static int comment_is_blank(const char *s, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /* -l prints archive text. Each matching block contributes the comment
-   that precedes it and the block expression, filters included.
-   The bytes are copied as written: @@ stays @@, references are not
-   expanded, and filters are not run. Less specialized blocks of the
-   same chunk are included, in archive order. */
+   before it, the chunk reference it extends, and the bytes after @=:
+   content and filters copied as written. @@ stays @@, references are
+   not expanded, and filters are not run. Less specialized blocks of
+   the same chunk are included, in archive order. A blank comment is
+   left out when it would be the first text, so the result does not
+   open with the spacing that followed a @-. A later blank comment is
+   kept, and a comment that has other text is kept whole. */
 
 static void literal_blocks(Archive *a, const char **labels, int nlabels,
                            const char *module, const char *chunk, Buf *out) {
-    const ModSel *shown = NULL;
-    int have_shown = 0;
+    int printed = 0;
     for (int i = 0; i < a->nblocks; i++) {
         Block *b = &a->blocks[i];
         if (!block_in_chain(a, b, labels, nlabels, module, chunk)) {
             continue;
         }
-        /* The same selection covers every following block that still
-           uses it. Print the indicator once, ahead of the first such
-           block. The anonymous module is always marked @-@, including
-           the module a file starts in. A named module keeps the @-
-           expression from the archive. */
-        if (!b->def_module || b->def_module[0] == '\0') {
-            if (!have_shown || b->modsel != shown) {
-                buf_append(out, "@-@\n", 4);
-                shown = b->modsel;
-                have_shown = 1;
-            }
-        } else if (b->modsel && (!have_shown || b->modsel != shown)) {
-            buf_append(out, b->modsel->literal, b->modsel->literal_len);
-            shown = b->modsel;
-            have_shown = 1;
+        if (b->comment_len && (printed || !comment_is_blank(b->comment, b->comment_len))) {
+            buf_append(out, b->comment, b->comment_len);
         }
-        buf_append(out, b->literal, b->literal_len);
+        append_block_ref(out, b);
+        buf_append(out, b->tail, b->tail_len);
+        printed = 1;
     }
 }
 
@@ -2108,9 +2134,8 @@ int main(int argc, char **argv) {
     }
     free(key);
     if (mode == MODE_LITERAL) {
-        /* The pieces are the archive spans, concatenated with nothing
-           added between them. A @- is written once, before the blocks
-           that extend its module. */
+        /* The pieces are concatenated with nothing added between them.
+           Each block's chunk reference names the module it extends. */
         literal_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
     } else {
         /* The chunk is built in memory and written only after every filter

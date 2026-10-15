@@ -11,6 +11,6 @@
 @- module 2 @
 
 Extend chunk through label.
-@<label@:chunk@=
+@<label@:module 1@/chunk@=
 @<substructure 2@>
 @

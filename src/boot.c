@@ -2,9 +2,11 @@
    A filter is a chunk run as a script in the current directory.
    --help, -p/--print, -l/--literal, and -m/--modules follow design/ui.md.
    -l prints each matching block as archive text: the comment before it,
-   then the chunk reference it extends, with the module name written,
-   then the content and the filters on that block.
-   A reference that names no module matches that chunk in every module.
+   then the requested chunk reference, with its labels and the module
+   name written, then the content and the filters on that block.
+   A less specialized block also receives those labels on included
+   references that name none. A reference that names no module matches
+   that chunk in every module.
    Less specialized blocks on the same specialization path are included.
    The anonymous module has no name, so its reference has no module piece.
    summary is an ordinary chunk. The bootstrap does not invent one.
@@ -1666,6 +1668,18 @@ static int block_in_chain(Archive *a, const Block *b, const char **labels,
     return match;
 }
 
+/* A block is less specialized when its labels are a proper suffix of
+   the requested labels: the request names further labels the block does not. */
+
+static int block_is_less(Archive *a, const Block *b, const char **labels, int nlabels) {
+    StrVec expanded = {0};
+    int less;
+    expand_label_list(a, b->labels, b->nlabels, &expanded);
+    less = expanded.n < nlabels && is_label_suffix(expanded.v, expanded.n, labels, nlabels);
+    free(expanded.v);
+    return less;
+}
+
 static int chunk_defined(Archive *a, const char **labels, int nlabels,
                          const char *module, const char *chunk) {
     for (int i = 0; i < a->nblocks; i++) {
@@ -1731,22 +1745,151 @@ static void append_name(Buf *out, const char *s) {
     }
 }
 
-/* The chunk reference the block extends. A named module is always
-   written, even when the header in the file left it out. The anonymous
-   module has an empty name, so it contributes no module@/ piece. */
-
-static void append_block_ref(Buf *out, const Block *b) {
-    buf_append(out, "@<", 2);
-    for (int i = 0; i < b->nlabels; i++) {
-        append_name(out, b->labels[i]);
+static void append_labels(Buf *out, const char **labels, int nlabels) {
+    for (int i = 0; i < nlabels; i++) {
+        append_name(out, labels[i]);
         buf_append(out, "@:", 2);
     }
+}
+
+/* The requested chunk reference. Its labels are written even when this
+   block's header left them out. A named module is always written, even
+   when the header left it out. The anonymous module has an empty name,
+   so it contributes no module@/ piece. */
+
+static void append_block_ref(Buf *out, const char **labels, int nlabels, const Block *b) {
+    buf_append(out, "@<", 2);
+    append_labels(out, labels, nlabels);
     if (b->module && b->module[0]) {
         append_name(out, b->module);
         buf_append(out, "@/", 2);
     }
     append_name(out, b->chunk);
     buf_append(out, "@=", 2);
+}
+
+/* End index of a chunk reference starting at '@<'.
+   0 means these bytes are not a well-formed reference.
+   *labeled is set when the reference itself names a label.
+   Filters between '@|' and '@>' stay inside the span. */
+
+static size_t ref_end(const char *s, size_t n, size_t at, int *labeled) {
+    Parser p;
+    int module = 0;
+    int labels = 0;
+    int k;
+    memset(&p, 0, sizeof(p));
+    p.buf = s;
+    p.n = n;
+    p.i = at;
+    if (control_kind(&p) != '<') {
+        return 0;
+    }
+    p.i += 2;
+    for (;;) {
+        scan_to_control(&p);
+        if (p.i >= p.n) {
+            return 0;
+        }
+        k = control_kind(&p);
+        if (k == ':') {
+            if (module) {
+                return 0;
+            }
+            labels = 1;
+            p.i += 2;
+            continue;
+        }
+        if (k == '/') {
+            if (module) {
+                return 0;
+            }
+            module = 1;
+            p.i += 2;
+            continue;
+        }
+        if (k == '|') {
+            p.i += 2;
+            for (;;) {
+                scan_to_control(&p);
+                if (p.i >= p.n) {
+                    return 0;
+                }
+                k = control_kind(&p);
+                if (k == '>') {
+                    *labeled = labels;
+                    return p.i + 2;
+                }
+                if (k == '|' || k == ':' || k == '/') {
+                    p.i += 2;
+                    continue;
+                }
+                return 0;
+            }
+        }
+        if (k == '>') {
+            *labeled = labels;
+            return p.i + 2;
+        }
+        return 0;
+    }
+}
+
+/* A less specialized block is printed as the requested specialization.
+   Chunk references in its content that name no label receive the
+   requested labels. A reference that already names labels is kept,
+   and so are the block's own filters. @@ is text, not a reference.
+   A malformed reference is copied as written and is not an error. */
+
+static void append_specialized_tail(Buf *out, const char *s, size_t n, const char **labels,
+                                    int nlabels) {
+    size_t i = 0;
+    while (i < n) {
+        Parser p;
+        int k;
+        int labeled = 0;
+        size_t end;
+        memset(&p, 0, sizeof(p));
+        p.buf = s;
+        p.n = n;
+        p.i = i;
+        k = control_kind(&p);
+        if (k < 0) {
+            buf_append(out, s + i, 1);
+            i++;
+            continue;
+        }
+        if (k == '@') {
+            buf_append(out, s + i, 2);
+            i += 2;
+            continue;
+        }
+        if (k == '|') {
+            buf_append(out, s + i, n - i);
+            return;
+        }
+        if (k == '<') {
+            end = ref_end(s, n, i, &labeled);
+            if (end > i) {
+                if (!labeled) {
+                    buf_append(out, "@<", 2);
+                    append_labels(out, labels, nlabels);
+                    buf_append(out, s + i + 2, end - (i + 2));
+                } else {
+                    buf_append(out, s + i, end - i);
+                }
+                i = end;
+                continue;
+            }
+        }
+        if (k == 0) {
+            buf_append(out, s + i, 1);
+            i++;
+            continue;
+        }
+        buf_append(out, s + i, 2);
+        i += 2;
+    }
 }
 
 static int comment_is_blank(const char *s, size_t n) {
@@ -1760,10 +1903,13 @@ static int comment_is_blank(const char *s, size_t n) {
 }
 
 /* -l prints archive text. Each matching block contributes the comment
-   before it, the chunk reference it extends, and the bytes after @=:
-   content and filters copied as written. @@ stays @@, references are
-   not expanded, and filters are not run. Less specialized blocks on
-   the same specialization path are included, in archive order.
+   before it, the requested chunk reference, and the bytes after @=.
+   The reference names the request's labels and the block's module.
+   A less specialized block passes those labels to included references
+   that name none. A block that already has the labels keeps its
+   content and filters as written. @@ stays @@, references are not
+   expanded, and filters are not run. Less specialized blocks on the
+   same specialization path are included, in archive order.
    A blank comment is left out when it would be the first text,
    so the result does not open with the spacing that followed a @-.
    A later blank comment is kept,
@@ -1780,8 +1926,12 @@ static void literal_blocks(Archive *a, const char **labels, int nlabels,
         if (b->comment_len && (printed || !comment_is_blank(b->comment, b->comment_len))) {
             buf_append(out, b->comment, b->comment_len);
         }
-        append_block_ref(out, b);
-        buf_append(out, b->tail, b->tail_len);
+        append_block_ref(out, labels, nlabels, b);
+        if (block_is_less(a, b, labels, nlabels)) {
+            append_specialized_tail(out, b->tail, b->tail_len, labels, nlabels);
+        } else {
+            buf_append(out, b->tail, b->tail_len);
+        }
         printed = 1;
     }
 }
@@ -2139,7 +2289,8 @@ int main(int argc, char **argv) {
     free(key);
     if (mode == MODE_LITERAL) {
         /* The pieces are concatenated with nothing added between them.
-           Each block's chunk reference names the module it extends. */
+           Each block's chunk reference names the request's labels
+           and the module that block extends. */
         literal_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
     } else {
         /* The chunk is built in memory and written only after every filter

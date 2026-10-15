@@ -122,3 +122,21 @@ hello module
 z
 @
 
+@- @
+
+@<carrier@=
+@@<not@@>
+@<real@>
+@<keep@:named@>
+@<Mod@/inner@>
+@<inner@|upper@>
+@|upper@
+
+@<mid@:carrier@=
+@<hole@>
+@
+
+@<mark@:mid@:carrier@=
+kept
+@
+

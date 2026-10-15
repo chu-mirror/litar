@@ -21,8 +21,8 @@ litar searches the included libraries in this order:
 6. /usr/share/litar.
 
 Printing the blocks literally means, for each block, printing the comment before the block,
-the chunk reference that the block extends (do not omit the module name), the content of the block,
-and the filters applied to the block.
+the chunk reference that the block extends (do not omit the labels and the module name),
+the content of the block, and the filters applied to the block.
 
 When the literally printed chunk reference is specialized,
 all the blocks extending the less specialized form of that chunk will be printed too.
@@ -42,20 +42,20 @@ For example,
 @- module 2 @
 
 Extend chunk through label.
-@<label@:chunk@=
+@<label@:module 1@/chunk@=
 @<substructure 2@>
 @
 ```
 
-if we run `litar -l label@:chunk` for this, it should print,
+if we run `litar -l label@:module 1@/chunk` for this, it should print,
 
 ```
-@<module 1@/chunk@=
-@<substructure 1@>
+@<label@:module 1@/chunk@=
+@<label@:substructure 1@>
 @
 
 Extend chunk through label.
-@<label@:module 2@/chunk@=
+@<label@:module 1@/chunk@=
 @<substructure 2@>
 @
 ```

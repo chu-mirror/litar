@@ -51,10 +51,11 @@ assert_text "--print" $'OK\n' "$LITAR" --print chunk archive.la
 assert_text "--print=" $'OK\n' "$LITAR" --print=chunk archive.la
 assert_text "archive before -p" $'OK\n' "$LITAR" archive.la -p chunk
 
-assert_text "-l" $'OK\n' "$LITAR" -l chunk archive.la
-assert_text "--literal" $'OK\n' "$LITAR" --literal chunk archive.la
-assert_text "--literal=" $'OK\n' "$LITAR" --literal=chunk archive.la
-assert_text "archive before -l" $'OK\n' "$LITAR" archive.la -l chunk
+lit=$'@-@\n@<chunk@=\nOK\n@\n'
+assert_text "-l" "$lit" "$LITAR" -l chunk archive.la
+assert_text "--literal" "$lit" "$LITAR" --literal chunk archive.la
+assert_text "--literal=" "$lit" "$LITAR" --literal=chunk archive.la
+assert_text "archive before -l" "$lit" "$LITAR" archive.la -l chunk
 
 assert_text "-m" $'\n' "$LITAR" -m archive.la
 assert_text "--modules" $'\n' "$LITAR" --modules archive.la

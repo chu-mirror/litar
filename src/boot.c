@@ -1,6 +1,12 @@
 /* Bootstrap of litar: the archive syntax through Filters.
    A filter is a chunk run as a script in the current directory.
    --help, -p/--print, -l/--literal, and -m/--modules follow design/ui.md.
+   -l prints each matching block as archive text: the comment before it,
+   then the block expression, including the filters on that block.
+   The @- that selected the block's module is printed with it.
+   A block in the anonymous module is marked @-@.
+   A reference that names no module matches that chunk in every module.
+   Less specialized blocks of the same chunk are included.
    summary is an ordinary chunk. The bootstrap does not invent one.
    File definitions and file sets belong to later stages.
    See design/litar.md and design/stages.md. */
@@ -63,6 +69,14 @@ typedef struct Filt {
     const char *chunk;
 } Filt;
 
+/* One @- expression. -l prints it ahead of the blocks it applies to,
+   so the output shows which module those blocks extend. */
+typedef struct ModSel {
+    const char *name;
+    const char *literal;
+    size_t literal_len;
+} ModSel;
+
 typedef struct Block {
     const char **labels;
     int nlabels;
@@ -70,6 +84,13 @@ typedef struct Block {
     const char *chunk;
     const char *content;
     size_t content_len;
+    /* Comment immediately before this block, then the block expression,
+       copied from the archive. -l prints this span unchanged. */
+    const char *literal;
+    size_t literal_len;
+    /* The @- in effect where this block was written.
+       Null when the file was still in the initial anonymous module. */
+    const ModSel *modsel;
     Filt *filters;
     int nfilters;
     int def_line;
@@ -133,6 +154,11 @@ typedef struct Parser {
     const char *where;
     int def_line;
     const char *def_file;
+    /* Index where the text after the previous expression starts.
+       A block's literal span begins here and runs through that block. */
+    size_t gap;
+    /* The @- in effect in this file. An included file has its own. */
+    ModSel *selector;
 } Parser;
 
 typedef struct Visit {
@@ -637,6 +663,7 @@ static void parse_block(Parser *p, int execute) {
     Block blk;
     size_t body;
     size_t end;
+    size_t lit_end;
     int depth = 0;
     int line = line_at(p, p->i);
     p->i += 2;
@@ -690,6 +717,7 @@ static void parse_block(Parser *p, int execute) {
         fail_at(p, "expected '@' to end the expression");
     }
     consume_end(p);
+    lit_end = p->i;
     if (!execute) {
         qname_free(&qn);
         return;
@@ -708,6 +736,13 @@ static void parse_block(Parser *p, int execute) {
     blk.chunk = qn.chunk;
     blk.content_len = end - body;
     blk.content = arena_strndup(&p->arc->arena, p->buf + body, blk.content_len);
+    /* The include buffer is freed after the include is parsed, so the
+       span has to be copied. gap stays put while this expression is read. */
+    blk.literal_len = lit_end - p->gap;
+    blk.literal = arena_strndup(&p->arc->arena, p->buf + p->gap, blk.literal_len);
+    /* The header may name another module. The indicator follows the
+       module selected where the block is written. */
+    blk.modsel = p->selector;
     copy_filters(&p->arc->arena, qn.filters, qn.nfilters, &blk.filters, &blk.nfilters);
     blk.def_line = line;
     blk.def_file = p->filename;
@@ -719,16 +754,27 @@ static void parse_block(Parser *p, int execute) {
 
 static void parse_module_sel(Parser *p, int execute) {
     char *name;
+    size_t lit_end;
+    ModSel *sel;
     p->i += 2;
     name = read_name_until_control(p);
     if (!is_end_kind(control_kind(p))) {
         fail_at(p, "expected '@' to end the expression");
     }
     consume_end(p);
-    if (execute) {
-        p->arc->current_module = name;
-        note_module(p->arc, name);
+    lit_end = p->i;
+    if (!execute) {
+        return;
     }
+    /* Keep the comment before @- and the expression itself. The include
+       buffer is freed later, so the span is copied. */
+    sel = arena_alloc(&p->arc->arena, sizeof(ModSel));
+    sel->name = name;
+    sel->literal_len = lit_end - p->gap;
+    sel->literal = arena_strndup(&p->arc->arena, p->buf + p->gap, sel->literal_len);
+    p->selector = sel;
+    p->arc->current_module = name;
+    note_module(p->arc, name);
 }
 
 static void parse_flag(Parser *p, int execute) {
@@ -914,6 +960,9 @@ static void parse_one(Parser *p, int execute) {
 }
 
 static void parse_items(Parser *p, int execute, int in_branch) {
+    /* An arm starts after its '@|'. The comment before a block in that
+       arm is the text from here, not text from outside the arm. */
+    p->gap = p->i;
     for (;;) {
         int k;
         size_t before;
@@ -930,6 +979,7 @@ static void parse_items(Parser *p, int execute, int in_branch) {
         }
         before = p->i;
         parse_one(p, execute);
+        p->gap = p->i;
         if (p->i <= before) {
             fail_at(p, "internal parse stall");
         }
@@ -1617,7 +1667,9 @@ static int block_in_chain(Archive *a, const Block *b, const char **labels,
                           int nlabels, const char *module, const char *chunk) {
     StrVec expanded = {0};
     int match;
-    if (strcmp(b->module, module) != 0 || strcmp(b->chunk, chunk) != 0) {
+    /* A null module matches every module. -l uses that when the chunk
+       reference does not name one. -p always passes a concrete module. */
+    if (strcmp(b->chunk, chunk) != 0 || (module && strcmp(b->module, module) != 0)) {
         return 0;
     }
     expand_label_list(a, b->labels, b->nlabels, &expanded);
@@ -1669,171 +1721,39 @@ static void expand_ref(Archive *a, Visit *v, const char **labels, int nlabels,
     visit_pop(v);
 }
 
-/* Labels of the printed reference that this block does not already
-   carry. Matching walks the block labels in order through the reference
-   labels, the same way a block is chosen. The labels that walk steps
-   over are the ones still to be passed into the block. */
-
-static int labels_to_pass(const char **block, int bn, const char **ref, int rn,
-                          const char ***out, int *nout) {
-    int j = 0;
-    int n = 0;
-    int w = 0;
-    char *used;
-    const char **pass;
-    used = xmalloc(rn ? (size_t)rn : 1);
-    memset(used, 0, rn ? (size_t)rn : 1);
-    for (int i = 0; i < bn; i++) {
-        while (j < rn && strcmp(block[i], ref[j]) != 0) {
-            j++;
-        }
-        if (j >= rn) {
-            free(used);
-            return 0;
-        }
-        used[j] = 1;
-        j++;
-    }
-    for (int i = 0; i < rn; i++) {
-        if (!used[i]) {
-            n++;
-        }
-    }
-    pass = xmalloc((n ? (size_t)n : 1) * sizeof(char *));
-    for (int i = 0; i < rn; i++) {
-        if (!used[i]) {
-            pass[w++] = ref[i];
-        }
-    }
-    free(used);
-    *out = pass;
-    *nout = n;
-    return 1;
-}
-
-static void append_decoded(Buf *out, const char *s, size_t start, size_t end) {
-    size_t i = start;
-    while (i < end) {
-        if (s[i] == '@' && i + 1 < end && s[i + 1] == '@') {
-            buf_append(out, "@", 1);
-            i += 2;
-            continue;
-        }
-        {
-            size_t j = i + 1;
-            while (j < end && !(s[j] == '@' && j + 1 < end && s[j + 1] == '@')) {
-                j++;
-            }
-            buf_append(out, s + i, j - i);
-            i = j;
-        }
-    }
-}
-
-/* A name is written so that '@' followed by a control byte stays text. */
-
-static void append_raw_name(Buf *out, const char *name) {
-    size_t n = strlen(name);
-    for (size_t i = 0; i < n; i++) {
-        unsigned char next = 0;
-        int has_next = i + 1 < n;
-        int control = 1;
-        if (has_next) {
-            next = (unsigned char)name[i + 1];
-            control = next < 128 && !is_ascii_alpha(next);
-        }
-        if (name[i] == '@' && control) {
-            buf_append(out, "@@", 2);
-        } else {
-            buf_append(out, name + i, 1);
-        }
-    }
-}
-
-/* Block content with @@ read as the text @. References are not followed
-   and block filters are not run. A reference that writes no labels
-   gains the labels this block does not already carry. */
-
-static void append_literal(Archive *a, Buf *out, const Block *b, const char **pass, int npass,
-                           const char *where) {
-    const char *content = b->content;
-    size_t len = b->content_len;
-    size_t i = 0;
-    while (i < len) {
-        if (content[i] == '@' && i + 1 < len && content[i + 1] == '@') {
-            buf_append(out, "@", 1);
-            i += 2;
-            continue;
-        }
-        if (content[i] == '@' && i + 1 < len && content[i + 1] == '<') {
-            Parser sub;
-            QName qn;
-            size_t body;
-            memset(&sub, 0, sizeof(sub));
-            sub.buf = content;
-            sub.n = len;
-            sub.i = i + 2;
-            sub.arc = a;
-            sub.where = where;
-            sub.def_line = b->def_line;
-            sub.def_file = b->def_file;
-            body = sub.i;
-            parse_qname(&sub, &qn, Q_REF);
-            if (control_kind(&sub) != '>') {
-                qname_free(&qn);
-                fail_at(&sub, "expected '@>'");
-            }
-            if (npass > 0 && qn.labels.n == 0) {
-                buf_append(out, "@<", 2);
-                for (int k = 0; k < npass; k++) {
-                    append_raw_name(out, pass[k]);
-                    buf_append(out, "@:", 2);
-                }
-                append_decoded(out, content, body, sub.i);
-                buf_append(out, "@>", 2);
-            } else {
-                append_decoded(out, content, i, sub.i + 2);
-            }
-            qname_free(&qn);
-            i = sub.i + 2;
-            continue;
-        }
-        {
-            size_t j = i + 1;
-            while (j < len) {
-                if (content[j] == '@' && j + 1 < len &&
-                    (content[j + 1] == '@' || content[j + 1] == '<')) {
-                    break;
-                }
-                j++;
-            }
-            buf_append(out, content + i, j - i);
-            i = j;
-        }
-    }
-}
+/* -l prints archive text. Each matching block contributes the comment
+   that precedes it and the block expression, filters included.
+   The bytes are copied as written: @@ stays @@, references are not
+   expanded, and filters are not run. Less specialized blocks of the
+   same chunk are included, in archive order. */
 
 static void literal_blocks(Archive *a, const char **labels, int nlabels,
                            const char *module, const char *chunk, Buf *out) {
-    char *key = canonical(labels, nlabels, module, chunk);
+    const ModSel *shown = NULL;
+    int have_shown = 0;
     for (int i = 0; i < a->nblocks; i++) {
         Block *b = &a->blocks[i];
-        StrVec expanded = {0};
-        const char **pass = NULL;
-        int npass = 0;
-        if (strcmp(b->module, module) != 0 || strcmp(b->chunk, chunk) != 0) {
+        if (!block_in_chain(a, b, labels, nlabels, module, chunk)) {
             continue;
         }
-        expand_label_list(a, b->labels, b->nlabels, &expanded);
-        if (!labels_to_pass(expanded.v, expanded.n, labels, nlabels, &pass, &npass)) {
-            free(expanded.v);
-            continue;
+        /* The same selection covers every following block that still
+           uses it. Print the indicator once, ahead of the first such
+           block. The anonymous module is always marked @-@, including
+           the module a file starts in. A named module keeps the @-
+           expression from the archive. */
+        if (!b->def_module || b->def_module[0] == '\0') {
+            if (!have_shown || b->modsel != shown) {
+                buf_append(out, "@-@\n", 4);
+                shown = b->modsel;
+                have_shown = 1;
+            }
+        } else if (b->modsel && (!have_shown || b->modsel != shown)) {
+            buf_append(out, b->modsel->literal, b->modsel->literal_len);
+            shown = b->modsel;
+            have_shown = 1;
         }
-        append_literal(a, out, b, pass, npass, key);
-        free(pass);
-        free(expanded.v);
+        buf_append(out, b->literal, b->literal_len);
     }
-    free(key);
 }
 
 static char *read_file(const char *path, size_t *out_n) {
@@ -2177,13 +2097,20 @@ int main(int argc, char **argv) {
     }
     module = qn.has_module ? qn.module : "";
     key = canonical(labels.v, labels.n, module, qn.chunk);
+    /* -l with no module names the chunk in every module. The diagnostic
+       still spells the reference that was passed. -p keeps the anonymous
+       module when the expression names none. */
+    if (mode == MODE_LITERAL && !qn.has_module) {
+        module = NULL;
+    }
     if (!chunk_defined(&arc, labels.v, labels.n, module, qn.chunk)) {
         fail("chunk '%s' is not defined", key);
     }
     free(key);
     if (mode == MODE_LITERAL) {
-        /* Same block selection as -p. The texts are concatenated
-           with nothing added between them. */
+        /* The pieces are the archive spans, concatenated with nothing
+           added between them. A @- is written once, before the blocks
+           that extend its module. */
         literal_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
     } else {
         /* The chunk is built in memory and written only after every filter

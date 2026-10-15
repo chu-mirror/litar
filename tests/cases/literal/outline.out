@@ -1,0 +1,12 @@
+@- module 1 @
+
+@<chunk@=
+@<substructure 1@>
+@
+
+@- module 2 @
+
+Extend chunk through label.
+@<label@:chunk@=
+@<substructure 2@>
+@

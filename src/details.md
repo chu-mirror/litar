@@ -318,12 +318,6 @@ if stdout cannot be written while the chunk is being emitted.
 
 `-l` and `--literal` print the blocks that extend the chunk reference,
 in the same order `-p` would concatenate their expanded contents.
-`@@` in a block is the text `@`.
-Other controls in a block are copied too.
-Block filters are not run, and references are not followed,
-so a cycle that `-p` rejects is ordinary text for `-l`.
-A `@<` in a block is parsed as a reference.
-A malformed one is an error, reported in that chunk.
 The same blocks are chosen as for `-p`:
 the module and the chunk match,
 and the block's labels are an order-preserving subsequence
@@ -331,23 +325,69 @@ of the reference's labels.
 Label groups in the reference and on each block
 are expanded before that test.
 A reference with no matching block is `chunk '…' is not defined`.
-The texts are concatenated, with no marker between blocks
-and no added newline.
 
-When the printed reference has labels,
-a chunk reference in a block that writes no labels of its own
-receives the printed labels that the block does not already carry.
-Those are the printed labels left over
-after the block's labels have been matched in order.
-They are written in front of that reference, in that same order.
-A reference that writes its own labels is copied with those labels alone.
+Each matching block is printed as it stands in the archive.
+The text is the comment immediately before that block,
+then the block expression:
+the chunk reference it extends,
+the content,
+and the filters applied to the block.
+The comment is the text after the previous expression
+in that file, or from the start of the file,
+up to the block.
+Inside a branch arm it starts after the `@|` that opens the arm.
+An expression between two blocks is not part of either comment,
+so it is left out.
+`@@`, references, and filters stay as written.
+References are not followed, block filters are not run,
+and the body is not scanned again,
+so a cycle that `-p` rejects is ordinary text for `-l`.
+A malformed reference in a body is not an error for `-l`.
+The block header is the header in the file.
+Included blocks are printed from the included file.
+The pieces are concatenated in parse order,
+with nothing added between them.
+
+A `-l` reference that names no module
+matches that chunk in every module.
+`-p` still means the anonymous module when the expression names none.
+A `-l` reference that names a module matches only that module.
+Less specialized blocks are those of the same module and chunk.
+
+The module is indicated ahead of the first matching block
+that still uses that selection.
+A later block under the same selection does not print it again.
+A named module is indicated by the `@-` expression that selected it,
+together with the comment that precedes that `@-`.
+A block in the anonymous module is indicated by `@-@`,
+followed by a newline.
+That marker is used when the file started in the anonymous module
+and when a later `@-` selects it again.
+It replaces the source spelling of that `@-`,
+and the comment before the source `@-` is left out.
+A header may name another module.
+The indicator is still the module selected where the block was written.
+An included file starts in the anonymous module.
+A block there is marked `@-@`
+unless that file has selected another module.
+The includer's `@-` is not printed for those blocks.
+
 This is the example in `design/ui.md`:
 
 ```
+@- module 1 @
+
 @<chunk@=
 @<substructure 1@>
 @
 
+@<chunk2@=
+@<substructure@>
+@
+
+@- module 2 @
+
+Extend chunk through label.
 @<label@:chunk@=
 @<substructure 2@>
 @
@@ -356,17 +396,29 @@ This is the example in `design/ui.md`:
 `litar -l label@:chunk` prints
 
 ```
-@<label@:substructure 1@>
+@- module 1 @
+
+@<chunk@=
+@<substructure 1@>
+@
+
+@- module 2 @
+
+Extend chunk through label.
+@<label@:chunk@=
 @<substructure 2@>
+@
 ```
 
-The block `chunk` does not carry `label`,
-so `@<substructure 1@>` gains it.
-The block `label@:chunk` already carries `label`,
-so `@<substructure 2@>` stays as written.
-A module, filters, and the chunk name on that reference stay after the new labels.
-`@<Mod@/part@>` printed under the extra label `a` is `@<a@:Mod@/part@>`.
-`@<part@|filt@>` printed the same way is `@<a@:part@|filt@>`.
+The reference names no module,
+so both modules are considered.
+The unspecialized block is printed
+because its labels are a subsequence of `label@:chunk`.
+`chunk2` extends a different chunk, so it is left out.
+`Extend chunk through label.`
+is the comment before the specialized block.
+`@- module 1 @` and `@- module 2 @`
+are the selections those blocks extend.
 
 ## Summary chunks
 

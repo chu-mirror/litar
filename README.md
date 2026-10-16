@@ -1,7 +1,8 @@
 # About the project
 
-This project proposes a system named litar, which is defined in [design/litar.md](design/litar.md).
-[design/stages.md](design/stages.md) describes the separated stages of the development.
+This project proposes a system named litar, which is defined in [litar.md](design/litar.md).
+[style.md](design/style.md) explains the construction of a litar archive.
+[ui.md] defines a command line tool for handling litar archives.
 
 # Directories
 

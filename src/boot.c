@@ -15,8 +15,7 @@
    Less specialized blocks on the same specialization path are included
    for -l. The anonymous module has no name, so its reference has no
    module piece. summary is an ordinary chunk. The bootstrap does not
-   invent one. File definitions and file sets belong to later stages.
-   See design/litar.md and design/stages.md. */
+   invent one. */
 
 #define _POSIX_C_SOURCE 200809L
 

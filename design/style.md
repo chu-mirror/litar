@@ -103,7 +103,7 @@ First of all, because the name of a chunk is a phrase,
 **do not capitalize the first character and do not append a period at the end**.
 And one principle is mandatory:
 **name a chunk with a short description of the encapsulated structure**.
-It might be unnecessary to stress this principle, but anyway, the principle is the most important.
+It might be unnecessary to stress this principle, but anyway, this principle is the most important.
 
 Naming a sequence is simple; a sequence is always a list of items,
 so **name a sequence with a plural noun phrase**.

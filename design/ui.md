@@ -7,6 +7,7 @@ usage: litar [options] ARCHIVE
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
 -l, --literal CHUNK_REFERENCE: print the blocks extending CHUNK_REFERENCE literally
 -m, --modules: list all modules
+-d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
 ```
 
 The format of EXPRESSION follows "label1@:label2@:module name@/chunk name@|filter1@|filter2".
@@ -59,4 +60,26 @@ Extend chunk through label.
 @<substructure 2@>
 @
 ```
+
+A block depending on a chunk reference means the content of the block contains, or is filtered by,
+the chunk reference or a chunk reference specialized from the chunk reference.
+
+```
+@<chunk 1@=
+content
+@
+
+@<chunk 2@=
+@<label 1@:chunk 1@>
+@
+
+@<chunk 3@=
+content
+@|label 2@:chunk 2@
+```
+
+The second block depends on `chunk 1` and `label 1@:chunk 1`;
+the third block depends on `chunk 2` and `label 2@:chunk 2`.
+
+The format of output of option `-d` agrees with `-l`.
 

@@ -1,16 +1,21 @@
 /* Bootstrap of litar: the archive syntax through Filters.
    A filter is a chunk run as a script in the current directory.
-   --help, -p/--print, -l/--literal, and -m/--modules follow design/ui.md.
+   --help, -p/--print, -l/--literal, -m/--modules, and -d/--depend
+   follow design/ui.md.
    -l prints each matching block as archive text: the comment before it,
    then the requested chunk reference, with its labels and the module
    name written, then the content and the filters on that block.
    A less specialized block receives, on included references that name
    none, only the labels the request adds beyond that block's own.
+   -d lists blocks whose content contains the chunk reference, or a
+   reference specialized from it, or whose content is filtered by one.
+   Each match is printed in the same form as -l, at the specialization
+   the block itself extends.
    A reference that names no module matches that chunk in every module.
-   Less specialized blocks on the same specialization path are included.
-   The anonymous module has no name, so its reference has no module piece.
-   summary is an ordinary chunk. The bootstrap does not invent one.
-   File definitions and file sets belong to later stages.
+   Less specialized blocks on the same specialization path are included
+   for -l. The anonymous module has no name, so its reference has no
+   module piece. summary is an ordinary chunk. The bootstrap does not
+   invent one. File definitions and file sets belong to later stages.
    See design/litar.md and design/stages.md. */
 
 #define _POSIX_C_SOURCE 200809L
@@ -18,6 +23,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <setjmp.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -174,8 +180,15 @@ enum {
 enum {
     MODE_PRINT = 1,
     MODE_LITERAL,
-    MODE_MODULES
+    MODE_MODULES,
+    MODE_DEPEND
 };
+
+/* -d parses references inside block bodies. A malformed reference is
+   not a use and is not an error, so that parse jumps out instead of
+   exiting. soft_fail is set only around that parse. */
+static jmp_buf soft_fail_jmp;
+static int soft_fail;
 
 static void fail(const char *fmt, ...) NORETURN;
 
@@ -206,6 +219,10 @@ static void fail_at(const Parser *p, const char *fmt, ...) NORETURN;
 
 static void fail_at(const Parser *p, const char *fmt, ...) {
     va_list ap;
+    if (soft_fail) {
+        soft_fail = 0;
+        longjmp(soft_fail_jmp, 1);
+    }
     fprintf(stderr, "Error: ");
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
@@ -1920,6 +1937,28 @@ static int comment_is_blank(const char *s, size_t n) {
     return 1;
 }
 
+/* One block in the literal form: the comment, a chunk reference,
+   then the bytes after @=. further >= 0 writes that many labels
+   onto included references that name none. -1 copies those bytes
+   as written. A blank comment is left out when it would be the
+   first text, so the result does not open with the spacing that
+   followed a @-. A later blank comment is kept, and a comment
+   that has other text is kept whole. */
+
+static void append_shown_block(const Block *b, const char **labels, int nlabels,
+                               int further, const char **pass, Buf *out, int *printed) {
+    if (b->comment_len && (*printed || !comment_is_blank(b->comment, b->comment_len))) {
+        buf_append(out, b->comment, b->comment_len);
+    }
+    append_block_ref(out, labels, nlabels, b);
+    if (further >= 0) {
+        append_specialized_tail(out, b->tail, b->tail_len, pass, further);
+    } else {
+        buf_append(out, b->tail, b->tail_len);
+    }
+    *printed = 1;
+}
+
 /* -l prints archive text. Each matching block contributes the comment
    before it, the requested chunk reference, and the bytes after @=.
    The reference names the request's labels and the block's module.
@@ -1928,11 +1967,7 @@ static int comment_is_blank(const char *s, size_t n) {
    labels it already carries. A block that already has the labels
    keeps its content and filters as written. @@ stays @@, references
    are not expanded, and filters are not run. Less specialized blocks
-   on the same specialization path are included, in archive order.
-   A blank comment is left out when it would be the first text,
-   so the result does not open with the spacing that followed a @-.
-   A later blank comment is kept,
-   and a comment that has other text is kept whole. */
+   on the same specialization path are included, in archive order. */
 
 static void literal_blocks(Archive *a, const char **labels, int nlabels,
                            const char *module, const char *chunk, Buf *out) {
@@ -1943,17 +1978,186 @@ static void literal_blocks(Archive *a, const char **labels, int nlabels,
         if (!block_in_chain(a, b, labels, nlabels, module, chunk)) {
             continue;
         }
-        if (b->comment_len && (printed || !comment_is_blank(b->comment, b->comment_len))) {
-            buf_append(out, b->comment, b->comment_len);
-        }
         further = further_labels(a, b, labels, nlabels);
-        append_block_ref(out, labels, nlabels, b);
-        if (further >= 0) {
-            append_specialized_tail(out, b->tail, b->tail_len, labels, further);
-        } else {
-            buf_append(out, b->tail, b->tail_len);
+        append_shown_block(b, labels, nlabels, further, labels, out, &printed);
+    }
+}
+
+/* A use of label@:chunk depends on label@:chunk and on chunk.
+   The query matches when its labels are a suffix of the use:
+   the use is the query, or a reference specialized from it.
+   spec2@:spec1 matches spec1 and the unspecialized chunk.
+   It does not match spec2. A query with no module matches every module.
+   A use of chunk does not match the query label@:chunk. */
+
+static int named_use_matches(Archive *a, const char **ulabels, int un, int has_module,
+                             const char *umodule, const char *uchunk, const char **own, int own_n,
+                             const char *def_module, const char **ql, int qn, const char *qmodule,
+                             const char *qchunk) {
+    StrVec resolved = {0};
+    const char **use_l;
+    int use_n;
+    const char *use_m;
+    int match;
+    if (!uchunk || strcmp(uchunk, qchunk) != 0) {
+        return 0;
+    }
+    if (un > 0) {
+        expand_label_list(a, ulabels, un, &resolved);
+        use_l = resolved.v;
+        use_n = resolved.n;
+    } else {
+        use_l = own;
+        use_n = own_n;
+    }
+    use_m = has_module ? umodule : def_module;
+    if (!use_m) {
+        use_m = "";
+    }
+    match = (!qmodule || strcmp(use_m, qmodule) == 0) && is_label_suffix(ql, qn, use_l, use_n);
+    free(resolved.v);
+    return match;
+}
+
+static int qname_depends(Archive *a, const QName *name, const char **own, int own_n,
+                         const char *def_module, const char **ql, int qn, const char *qmodule,
+                         const char *qchunk) {
+    if (named_use_matches(a, name->labels.v, name->labels.n, name->has_module, name->module,
+                          name->chunk, own, own_n, def_module, ql, qn, qmodule, qchunk)) {
+        return 1;
+    }
+    for (int i = 0; i < name->nfilters; i++) {
+        const QName *f = &name->filters[i];
+        if (named_use_matches(a, f->labels.v, f->labels.n, f->has_module, f->module, f->chunk, own,
+                              own_n, def_module, ql, qn, qmodule, qchunk)) {
+            return 1;
         }
-        printed = 1;
+    }
+    return 0;
+}
+
+/* Parse the chunk reference that starts at '@<'. The caller has set
+   soft_fail. 0 means the reference is not well formed. Names already
+   taken stay in the archive arena. This is separate from setjmp so
+   the parser's locals are not live across longjmp. */
+
+static int parse_content_ref_body(Archive *a, const char *s, size_t n, size_t at, QName *qn,
+                                  size_t *end) {
+    Parser sub;
+    memset(&sub, 0, sizeof(sub));
+    sub.buf = s;
+    sub.n = n;
+    sub.i = at + 2;
+    sub.arc = a;
+    parse_qname(&sub, qn, Q_REF);
+    if (sub.i >= sub.n || control_kind(&sub) != '>') {
+        return 0;
+    }
+    *end = sub.i + 2;
+    return 1;
+}
+
+static int parse_content_ref(Archive *a, const char *s, size_t n, size_t at, QName *qn,
+                             size_t *end) {
+    int ok;
+    memset(qn, 0, sizeof(*qn));
+    if (setjmp(soft_fail_jmp) != 0) {
+        qname_free(qn);
+        return 0;
+    }
+    soft_fail = 1;
+    ok = parse_content_ref_body(a, s, n, at, qn, end);
+    soft_fail = 0;
+    if (!ok) {
+        qname_free(qn);
+        return 0;
+    }
+    return 1;
+}
+
+static int content_depends(Archive *a, const Block *b, const char **own, int own_n,
+                           const char *def_module, const char **ql, int qn, const char *qmodule,
+                           const char *qchunk) {
+    const char *s = b->content;
+    size_t n = b->content_len;
+    size_t i = 0;
+    while (i < n) {
+        Parser p;
+        int k;
+        memset(&p, 0, sizeof(p));
+        p.buf = s;
+        p.n = n;
+        p.i = i;
+        k = control_kind(&p);
+        if (k < 0) {
+            i++;
+            continue;
+        }
+        if (k == '@') {
+            i += 2;
+            continue;
+        }
+        if (k == '<') {
+            QName ref;
+            size_t end = 0;
+            if (!parse_content_ref(a, s, n, i, &ref, &end)) {
+                i++;
+                continue;
+            }
+            if (qname_depends(a, &ref, own, own_n, def_module, ql, qn, qmodule, qchunk)) {
+                qname_free(&ref);
+                return 1;
+            }
+            qname_free(&ref);
+            i = end;
+            continue;
+        }
+        i += (k == 0) ? 1 : 2;
+    }
+    return 0;
+}
+
+/* The block is considered at the specialization it extends.
+   An unlabeled use takes those labels, after label groups expand.
+   A use that writes no module uses the module selected where the
+   block was written, which can differ from the module the block
+   extends. Filters on a reference and filters on the block count.
+   The comment does not. */
+
+static int block_depends(Archive *a, const Block *b, const char **ql, int qn,
+                         const char *qmodule, const char *qchunk) {
+    StrVec own = {0};
+    const char *def = b->def_module ? b->def_module : "";
+    int found = 0;
+    expand_label_list(a, b->labels, b->nlabels, &own);
+    for (int fi = 0; fi < b->nfilters && !found; fi++) {
+        Filt *f = &b->filters[fi];
+        found = named_use_matches(a, f->labels, f->nlabels, f->has_module, f->module, f->chunk,
+                                  own.v, own.n, def, ql, qn, qmodule, qchunk);
+    }
+    if (!found) {
+        found = content_depends(a, b, own.v, own.n, def, ql, qn, qmodule, qchunk);
+    }
+    free(own.v);
+    return found;
+}
+
+/* -d prints the same shape as -l, for each block that depends on the
+   reference, at that block's own labels. The module the block extends
+   is written. The body and its filters are copied as written, so a
+   less specialized body does not gain the query's labels. References
+   are not followed and filters are not run. An undefined reference
+   with no users prints nothing. */
+
+static void depend_blocks(Archive *a, const char **labels, int nlabels, const char *module,
+                          const char *chunk, Buf *out) {
+    int printed = 0;
+    for (int i = 0; i < a->nblocks; i++) {
+        Block *b = &a->blocks[i];
+        if (!block_depends(a, b, labels, nlabels, module, chunk)) {
+            continue;
+        }
+        append_shown_block(b, b->labels, b->nlabels, -1, NULL, out, &printed);
     }
 }
 
@@ -2166,6 +2370,8 @@ static void usage(FILE *fp, const char *argv0) {
             "-l, --literal CHUNK_REFERENCE: "
             "print the blocks extending CHUNK_REFERENCE literally\n"
             "-m, --modules: list all modules\n"
+            "-d, --depend CHUNK_REFERENCE: "
+            "list all blocks that depend on CHUNK_REFERENCE\n"
             "\n"
             "EXPRESSION follows "
             "label1@:label2@:module name@/chunk name@|filter1@|filter2.\n"
@@ -2175,7 +2381,8 @@ static void usage(FILE *fp, const char *argv0) {
 }
 
 /* Diagnostics name the options in enumerator order, print then literal
-   then modules, so the message does not depend on argument order. */
+   then modules then depend, so the message does not depend on
+   argument order. */
 
 static const char *mode_word(int mode) {
     if (mode == MODE_PRINT) {
@@ -2184,7 +2391,10 @@ static const char *mode_word(int mode) {
     if (mode == MODE_LITERAL) {
         return "literal";
     }
-    return "modules";
+    if (mode == MODE_MODULES) {
+        return "modules";
+    }
+    return "depend";
 }
 
 static void set_mode(int *mode, int next) {
@@ -2248,6 +2458,16 @@ int main(int argc, char **argv) {
             expr = arg + 10;
         } else if (strcmp(arg, "-m") == 0 || strcmp(arg, "--modules") == 0) {
             set_mode(&mode, MODE_MODULES);
+        } else if (strcmp(arg, "-d") == 0 || strcmp(arg, "--depend") == 0) {
+            set_mode(&mode, MODE_DEPEND);
+            if (i + 1 >= argc) {
+                usage(stderr, argv0);
+                fail("%s requires a chunk reference", arg);
+            }
+            expr = argv[++i];
+        } else if (strncmp(arg, "--depend=", 9) == 0) {
+            set_mode(&mode, MODE_DEPEND);
+            expr = arg + 9;
         } else if (arg[0] == '-' && arg[1] != '\0') {
             usage(stderr, argv0);
             fail("unknown option '%s'", arg);
@@ -2261,7 +2481,7 @@ int main(int argc, char **argv) {
     if (!mode || !file) {
         usage(stderr, argv0);
         if (!mode) {
-            fail("missing -p, --print, -l, --literal, -m, or --modules");
+            fail("missing -p, --print, -l, --literal, -m, --modules, -d, or --depend");
         }
         fail("missing archive");
     }
@@ -2285,7 +2505,7 @@ int main(int argc, char **argv) {
     ep.buf = expr;
     ep.n = strlen(expr);
     ep.arc = &arc;
-    parse_qname(&ep, &qn, mode == MODE_LITERAL ? Q_CHUNK : Q_EXPR);
+    parse_qname(&ep, &qn, (mode == MODE_LITERAL || mode == MODE_DEPEND) ? Q_CHUNK : Q_EXPR);
     if (ep.i < ep.n) {
         int k = control_kind(&ep);
         if (k == 0) {
@@ -2297,22 +2517,26 @@ int main(int argc, char **argv) {
         expand_label_list(&arc, qn.labels.v, qn.labels.n, &labels);
     }
     module = qn.has_module ? qn.module : "";
-    key = canonical(labels.v, labels.n, module, qn.chunk);
-    /* -l with no module names the chunk in every module. The diagnostic
-       still spells the reference that was passed. -p keeps the anonymous
-       module when the expression names none. */
-    if (mode == MODE_LITERAL && !qn.has_module) {
+    /* -l and -d with no module name the chunk in every module.
+       -p keeps the anonymous module when the expression names none.
+       -d lists users of the reference. The chunk need not be defined. */
+    if ((mode == MODE_LITERAL || mode == MODE_DEPEND) && !qn.has_module) {
         module = NULL;
     }
-    if (!chunk_defined(&arc, labels.v, labels.n, module, qn.chunk)) {
-        fail("chunk '%s' is not defined", key);
+    if (mode != MODE_DEPEND) {
+        key = canonical(labels.v, labels.n, module, qn.chunk);
+        if (!chunk_defined(&arc, labels.v, labels.n, module, qn.chunk)) {
+            fail("chunk '%s' is not defined", key);
+        }
+        free(key);
     }
-    free(key);
     if (mode == MODE_LITERAL) {
         /* The pieces are concatenated with nothing added between them.
            Each block's chunk reference names the request's labels
            and the module that block extends. */
         literal_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
+    } else if (mode == MODE_DEPEND) {
+        depend_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
     } else {
         /* The chunk is built in memory and written only after every filter
            has run, so a cycle or a failed filter leaves stdout empty and

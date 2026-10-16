@@ -1,0 +1,11 @@
+@<chunk 1@=
+content
+@
+
+@<chunk 2@=
+@<label 1@:chunk 1@>
+@
+
+@<chunk 3@=
+content
+@|label 2@:chunk 2@

@@ -1,7 +1,8 @@
 # Bootstrap implementation details
 
 `src/boot.c` implements `design/litar.md` through Filters,
-and `--help`, `-p`/`--print`, `-l`/`--literal`, and `-m`/`--modules`
+and `--help`, `-p`/`--print`, `-l`/`--literal`, `-m`/`--modules`,
+and `-d`/`--depend`
 from `design/ui.md`.
 This file records the concrete reading used
 where those design files leave a choice open.
@@ -50,10 +51,11 @@ In a qualified name the labels come first,
 then one optional module, then the chunk.
 A label after `@/`, or a second `@/`, is an error.
 
-The text of `-p`, `--print`, `-l`, and `--literal` is the reference itself.
+The text of `-p`, `--print`, `-l`, `--literal`, `-d`, and `--depend`
+is the reference itself.
 It ends at the end of the argument,
 so a closing `@` is not written on the command line.
-`-l` and `--literal` name a chunk reference,
+`-l`, `--literal`, `-d`, and `--depend` name a chunk reference,
 so `@|` there is `unexpected control '@|' in name`.
 
 ## Blocks
@@ -89,6 +91,7 @@ Only the chunk named by `-p` or `--print` is expanded,
 and then the references reached from it.
 `-l` and `--literal` do not expand any chunk.
 `-m` and `--modules` do not expand any chunk.
+`-d` and `--depend` do not expand any chunk.
 A cycle in some other chunk is left alone.
 
 Expanding a reference that is already being expanded
@@ -281,33 +284,40 @@ The literal option is `-l REF`, `--literal REF`, or `--literal=REF`.
 The modules option is `-m` or `--modules`.
 It takes no argument.
 `--modules=…` is an unknown option.
-Print, literal, and modules cannot be combined.
+The depend option is `-d REF`, `--depend REF`, or `--depend=REF`.
+Print, literal, modules, and depend cannot be combined.
 The archive argument may come before or after the option.
 One archive is accepted.
 A single `-` is an archive name;
 any other argument that begins with `-` is an unknown option.
 
 A duplicate print option, a duplicate literal option,
-a duplicate modules option,
+a duplicate modules option, a duplicate depend option,
 print combined with literal, print combined with modules,
-literal combined with modules, an unknown option,
-a missing expression, a missing chunk reference,
+print combined with depend, literal combined with modules,
+literal combined with depend, modules combined with depend,
+an unknown option, a missing expression, a missing chunk reference,
 a missing archive, and an extra argument are errors.
 With no action selected the error is
-`missing -p, --print, -l, --literal, -m, or --modules`.
+`missing -p, --print, -l, --literal, -m, --modules, -d, or --depend`.
 The combined-option errors are
 `cannot combine print and literal`,
 `cannot combine print and modules`,
-and `cannot combine literal and modules`.
+`cannot combine print and depend`,
+`cannot combine literal and modules`,
+`cannot combine literal and depend`,
+and `cannot combine modules and depend`.
 A repeated modules option is `duplicate modules option`.
+A repeated depend option is `duplicate depend option`.
 Unknown options and missing arguments also print the usage to stderr.
 The expression form in the usage
 includes the filter syntax from `design/ui.md`.
 
 The archive is read to the end before the expression is evaluated,
 before literal blocks are printed,
+before the blocks that depend on a reference are printed,
 and before the module list is written.
-A print or literal result is written to stdout as raw bytes,
+A print, literal, or depend result is written to stdout as raw bytes,
 with no added newline.
 
 Opening a file that cannot be opened
@@ -331,7 +341,7 @@ An error while expanding a block
 adds `in chunk '…' (defined at line N in 'path')`,
 with the same key spelling as a circular inclusion.
 An error in the print expression,
-or in the chunk reference passed to `-l`,
+or in the chunk reference passed to `-l` or `-d`,
 adds `in expression`.
 
 Parse errors, an unknown top-level chunk, a cycle,
@@ -472,6 +482,119 @@ The specialized block already has the requested labels,
 so `@<substructure 2@>` stays as written.
 Both printed references name `label` and `module 1`.
 
+## Blocks that depend
+
+`-d` and `--depend` list every block that depends on the chunk reference,
+in archive order.
+A block depends on the reference
+when a direct use in that block names it.
+A use is a chunk reference in the content,
+a filter on such a reference,
+or a filter on the block itself.
+Text in the comment is not a use.
+The search is not transitive:
+a block that names some other chunk
+does not depend on the chunks that other chunk names.
+Chunks are not expanded and filters are not run,
+so a missing filter is not an error
+and a cycle is ordinary text.
+The reference does not have to be defined.
+When no block depends on it,
+stdout is empty and the exit status is 0.
+A block that names itself is listed.
+
+Each use is resolved
+the way `-p` resolves it
+when the block is expanded
+at the specialization that block extends.
+A use that writes labels uses those labels.
+A use that writes none takes the block's own labels.
+An unspecialized block therefore sees an unlabeled use
+as the unspecialized chunk,
+not as a specialization passed in from outside.
+A use that writes a module uses that module.
+A use that writes none uses the module selected
+where the block was written.
+That can differ from the module named on the block header.
+Label groups on the query, on the block, and on the use
+are expanded before the comparison.
+The use matches the query
+when the query is that use
+or the use is a chunk reference specialized from the query.
+The query's labels are a suffix of the use's labels,
+the chunks are the same,
+and the modules agree.
+`label@:chunk` matches the query `chunk`
+and the query `label@:chunk`.
+`spec2@:spec1@:chunk` matches `spec1@:chunk` and `chunk`.
+It does not match `spec2@:chunk`,
+which is another specialization path.
+A use of `chunk` does not match the query `label@:chunk`.
+A query that names no module matches every module.
+A query that names a module matches only that module.
+
+This is the example in `design/ui.md`:
+
+```
+@<chunk 1@=
+content
+@
+
+@<chunk 2@=
+@<label 1@:chunk 1@>
+@
+
+@<chunk 3@=
+content
+@|label 2@:chunk 2@
+```
+
+`litar -d 'chunk 1'` and `litar -d 'label 1@:chunk 1'` print the second block.
+`@<label 1@:chunk 1@>` is `label 1@:chunk 1`,
+and that reference is specialized from `chunk 1`.
+The first block extends `chunk 1` and does not use it.
+`litar -d 'chunk 2'` and `litar -d 'label 2@:chunk 2'` print the third block,
+because its content is filtered by `label 2@:chunk 2`.
+`litar -d 'label 1@:chunk 2'` prints nothing.
+
+A reference in the content that is not well formed
+does not match and is not reported.
+Scanning continues after it,
+so a later well-formed reference in the same block still counts.
+An arm that is not kept contributes no block.
+
+The output has the same form as `-l`.
+Each matching block is the comment immediately before it,
+then the chunk reference that block extends,
+then the content and the filters as they were written.
+The block's labels are written as stored.
+A label that names a group is not expanded in that header.
+A named module is written
+even when the header left the module out.
+The anonymous module has an empty name,
+so its reference has no `module@/` piece.
+`@` in a printed label, module, or chunk is written as `@@`.
+The body is not rewritten as a further specialization,
+so labels are not added to references inside it.
+A blank comment is left out
+when it would be the first text printed.
+A later blank comment is printed.
+Nothing is added between blocks.
+
+On the example in the literal section,
+`litar -d 'module 1@/substructure 1'` prints the unspecialized block
+with the module filled in,
+and does not add `label` to its header or its body.
+The block under `label` does not depend on that reference.
+Its unlabeled `@<substructure 2@>` is `label@:substructure 2`
+in `module 2`,
+the module selected where that block was written.
+That use is specialized from `substructure 2`,
+so `litar -d 'substructure 2'` prints the block.
+`litar -d 'module 1@/substructure 2'` prints nothing,
+because the use is in `module 2`,
+not in `module 1`, the module the block extends.
+
 ## Summary chunks
 
 `summary` is an ordinary chunk.
@@ -506,7 +629,7 @@ the text goes through `a`, then through `b`.
 On a reference the filters follow the chunk name,
 `@<chunk@|filter@>`,
 and the same spelling is accepted in `-p` and `--print`.
-`-l` rejects `@|`,
+`-l` and `-d` reject `@|`,
 because a chunk reference has no filters.
 On a block they follow the body:
 

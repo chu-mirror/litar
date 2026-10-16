@@ -1,0 +1,31 @@
+
+before
+@<Mod@/user@=
+@<hole@>
+@<Mod@/other@|upper@>
+@
+
+@<lab@:Mod@/user@=
+@<hole@>
+@|upper@
+
+@<Mod@/explicit@=
+@<lab@:Mod@/hole@>
+@
+
+@<Other@/bridge@=
+@<hole@>
+@
+
+@<pair@:Mod@/grouped@=
+@<hole@>
+@
+
+@<Mod@/via group@=
+@<pair@:hole@>
+@
+
+kept arm
+@<Mod@/shown@=
+@<hole@>
+@

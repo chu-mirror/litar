@@ -1,0 +1,81 @@
+@<anchor@=
+@@<hole@@>
+@
+
+@- Mod @
+
+before
+@<user@=
+@<hole@>
+@<Mod@/other@|upper@>
+@
+
+@<lab@:user@=
+@<hole@>
+@|upper@
+
+@<onlyfilt@=
+text
+@|lab@:upper@
+
+@<marked@=
+@<text@|red@:upper@>
+@
+
+@<explicit@=
+@<lab@:Mod@/hole@>
+@
+
+@<elsewhere@=
+@<Other@/hole@>
+@
+
+@<Other@/bridge@=
+@<hole@>
+@
+
+@:pair@=red@:blue@
+
+@<pair@:grouped@=
+@<hole@>
+@
+
+@<via group@=
+@<pair@:hole@>
+@
+
+@! go @
+
+@? stop @|
+@<hidden@=
+@<hole@>
+@
+@|
+kept arm
+@<shown@=
+@<hole@>
+@
+@
+
+@- Other @
+
+@<user@=
+@<hole@>
+@
+
+@. lib.la @
+
+@<cycle@=
+@<cycle@>
+@
+
+@<messy@=
+@<@>
+@<hole@>
+@
+
+@- a@@b @
+
+@<a@@c@=
+@<kept@>
+@

@@ -26,15 +26,15 @@ X
 -
 @
 
-@<spec1@:item@=
+@<spec1@:item@+
 1
 @
 
-@<spec2@:item@=
+@<spec2@:item@+
 2
 @
 
-@<spec2@:spec1@:item@=
+@<spec2@:spec1@:item@+
 21
 @
 
@@ -54,7 +54,7 @@ X
 AA
 @
 
-@<a@:wid@=
+@<a@:wid@+
 A
 @
 

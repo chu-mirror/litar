@@ -60,27 +60,27 @@ while (<STDIN>) {
 print "#endif\n";
 @
 
-@<includes@=
+@<includes@+
 @<interface required includes@>
 @
 
-@<macros@=
+@<macros@+
 @<exported macros@>
 @
 
-@<data type declarations@=
+@<data type declarations@+
 @<exported data type declarations@>
 @
 
-@<data types@=
+@<data types@+
 @<exported data types@>
 @
 
-@<static inline functions@=
+@<static inline functions@+
 @<exported static inline functions@>
 @
 
-@<function declarations@=
+@<function declarations@+
 @<exported macros@>
 @<data type declarations@>
 @<functions@>
@@ -90,7 +90,7 @@ print "#endif\n";
 cproto -s @<-I flags@>
 @
 
-@<global declarations@=
+@<global declarations@+
 @<macros@>
 @<data type declarations@>
 @<global variables@>
@@ -196,7 +196,7 @@ my @arguments = keys %arguments;
 print (join "", map argument_definition, @arguments);
 @|Basics@/evaluate@
 
-@<executable@:global variables@=
+@<executable@:global variables@+
 struct {
     enum {@<usage enumeration@>} usage;
     struct {@<command line options@>} options;
@@ -204,7 +204,7 @@ struct {
 } command;
 @
 
-@<executable@:includes@=
+@<executable@:includes@+
 #include <getopt.h>
 @
 
@@ -240,7 +240,7 @@ for my $usage (@@{$syntax->{usages}}) {
 print (join "", map option_to_longopt, @options);
 @|Basics@/evaluate@
 
-@<executable@:global variables@=
+@<executable@:global variables@+
 const struct option long_options[] = {
     @<getopt long options@>
 };
@@ -460,13 +460,13 @@ do {
 } while (0);
 @
 
-@<executable@:includes@=
+@<executable@:includes@+
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 @
 
-@<executable@:functions@=
+@<executable@:functions@+
 int main(int argc, char *argv[])
 {
     @<parse command line arguments@>

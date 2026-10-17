@@ -35,7 +35,7 @@ assert_ok "anonymous file extends another module" cross.out \
     "$LITAR" -l 'Named@/includes' cross.la
 
 assert_text "literal keeps the block text" \
-    $'@<chunk@=\none\n@<other@>\n@\n\n@<chunk@=\n@@\n@\n' \
+    $'@<chunk@=\none\n@<other@>\n@\n\n@<chunk@+\n@@\n@\n' \
     "$LITAR" -l chunk archive.la
 assert_text "print expands references" $'one\nTWO\n\n@\n' \
     "$LITAR" -p chunk archive.la

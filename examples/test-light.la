@@ -38,7 +38,7 @@
 }
 @
 
-@<test light@:light@:executable@:C Structure@/includes@=
+@<test light@:light@:executable@:C Structure@/includes@+
 #include <assert.h>
 @
 
@@ -73,14 +73,14 @@ do {
 } while (0);
 @
 
-@<test light@:light@:executable@:C Structure@/data types@=
+@<test light@:light@:executable@:C Structure@/data types@+
 struct id_card {
     const char *name;
     int age;
 } *card;
 @
 
-@<test light@:light@:executable@:C Structure@/functions@=
+@<test light@:light@:executable@:C Structure@/functions@+
 void *id_card_serialize(const void *card, size_t *size, const void *base_addr)
 {
     size_t id_card_offset, name_offset;
@@ -102,7 +102,7 @@ void *id_card_serialize(const void *card, size_t *size, const void *base_addr)
 }
 @
 
-@<test cases@=
+@<test cases@+
 do {
     struct id_card *card;
     enter_frame();
@@ -119,7 +119,7 @@ do {
 } while (0);
 @
 
-@<test cases@=
+@<test cases@+
 do {
     int i;
     enter_frame();
@@ -154,7 +154,7 @@ do {
 } while (0);
 @
 
-@<test cases@=
+@<test cases@+
 do {
     enter_frame();
 #define LIST_SIZE 200000
@@ -185,7 +185,7 @@ do {
 } while (0);
 @
 
-@<test cases@=
+@<test cases@+
 do {
     enter_frame();
     int i;
@@ -214,7 +214,7 @@ do {
 } while (0);
 @
 
-@<test cases@=
+@<test cases@+
 do {
     enter_frame();
     Heap hp = new_heap(100, SEGMENT_SIZE(int elm[100]));
@@ -248,7 +248,7 @@ do {
 } while (0);
 @
 
-@<test cases@=
+@<test cases@+
 do {
     enter_frame();
     Heap hp = new_heap(100, SEGMENT_SIZE(char s[10]));
@@ -268,7 +268,7 @@ do {
 } while (0);
 @
 
-@<test cases@=
+@<test cases@+
 do {
     enter_frame();
     HashTable tbl = new_string_hash_table();
@@ -304,7 +304,7 @@ do {
 } while (0);
 @
 
-@<test cases@=
+@<test cases@+
 do {
     enter_frame();
     Set set = new_string_set();
@@ -337,7 +337,7 @@ do {
 } while (0);
 @
 
-@<test cases@=
+@<test cases@+
 do {
     enter_frame();
     struct number {

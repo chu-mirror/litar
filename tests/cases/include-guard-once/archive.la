@@ -4,7 +4,7 @@
 @<hello@:C structure@/C program@>
 @
 
-@<hello@:C structure@/includes@=
+@<hello@:C structure@/includes@+
 #include <stdio.h>
 @
 

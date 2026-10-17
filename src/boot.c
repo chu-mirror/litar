@@ -42,10 +42,11 @@
 
 /* A chunk reference is a label sequence, a module, and a chunk name.
    The anonymous module is the empty string. A block stored under a
-   reference extends that reference only. Evaluating a reference
-   concatenates, in archive order, every block of that module and chunk
-   whose labels are a suffix of the reference. Dropping labels from the
-   left walks back along one specialization path: spec2@:spec1 includes
+   reference names that reference only. Evaluating a reference applies,
+   in archive order, every block of that module and chunk whose labels
+   are a suffix of the reference. @= sets the text accumulated so far
+   to that block. @+ appends the block. Dropping labels from the left
+   walks back along one specialization path: spec2@:spec1 includes
    spec1 and the unspecialized chunk, and does not include spec2.
    The empty label list is the unspecialized chunk and matches any
    specialization. A reference with no labels keeps the labels of the
@@ -85,13 +86,15 @@ typedef struct Block {
     int nlabels;
     const char *module;
     const char *chunk;
+    /* '=' sets the chunk reference; '+' extends it. */
+    char op;
     const char *content;
     size_t content_len;
     /* Text after the previous expression, up to this block.
        -l prints it as the comment before the block. */
     const char *comment;
     size_t comment_len;
-    /* Bytes after @= through the end of the expression:
+    /* Bytes after @= or @+ through the end of the expression:
        the layout newline, the content, the filters, and the closer. */
     const char *tail;
     size_t tail_len;
@@ -577,7 +580,8 @@ static void parse_qname(Parser *p, QName *qn, int mode) {
             p->i += 2;
             continue;
         }
-        if (mode == Q_BLOCK && k == '=') {
+        /* @= sets the chunk. @+ extends it. Either ends the header. */
+        if (mode == Q_BLOCK && (k == '=' || k == '+')) {
             if (!name[0]) {
                 fail_at(p, "empty chunk name");
             }
@@ -675,18 +679,20 @@ static void parse_block(Parser *p, int execute) {
     QName qn;
     Block blk;
     size_t header = p->i;
-    size_t equals;
+    size_t op_at;
     size_t body;
     size_t end;
     size_t lit_end;
+    int op;
     int depth = 0;
     int line = line_at(p, p->i);
     p->i += 2;
     parse_qname(p, &qn, Q_BLOCK);
-    if (control_kind(p) != '=') {
-        fail_at(p, "expected '@='");
+    op = control_kind(p);
+    if (op != '=' && op != '+') {
+        fail_at(p, "expected '@=' or '@+'");
     }
-    equals = p->i;
+    op_at = p->i;
     p->i += 2;
     body = p->i;
     /* `@|` ends the body only outside a reference. `@|` between `@<`
@@ -715,7 +721,7 @@ static void parse_block(Parser *p, int execute) {
     if (p->i >= p->n) {
         fail_at(p, "unterminated block");
     }
-    /* The newline after '@=' is layout, not content.
+    /* The newline after '@=' or '@+' is layout, not content.
        The newline before the closing '@' or '@|' is content.
        @<msg@=\nHello\n@ therefore stores Hello\n. */
     end = p->i;
@@ -750,16 +756,17 @@ static void parse_block(Parser *p, int execute) {
     }
     blk.module = qn.has_module ? qn.module : p->arc->current_module;
     blk.chunk = qn.chunk;
+    blk.op = (char)op;
     blk.content_len = end - body;
     blk.content = arena_strndup(&p->arc->arena, p->buf + body, blk.content_len);
     /* The include buffer is freed after the include is parsed, so the
        spans have to be copied. gap stays put while this expression is read.
-       The tail starts after @=, so -l can write its own chunk reference
-       and then copy the content and the filters as they stand. */
+       The tail starts after the operator, so -l can write its own chunk
+       reference and then copy the content and the filters as they stand. */
     blk.comment_len = header - p->gap;
     blk.comment = arena_strndup(&p->arc->arena, p->buf + p->gap, blk.comment_len);
-    blk.tail_len = lit_end - (equals + 2);
-    blk.tail = arena_strndup(&p->arc->arena, p->buf + equals + 2, blk.tail_len);
+    blk.tail_len = lit_end - (op_at + 2);
+    blk.tail = arena_strndup(&p->arc->arena, p->buf + op_at + 2, blk.tail_len);
     copy_filters(&p->arc->arena, qn.filters, qn.nfilters, &blk.filters, &blk.nfilters);
     blk.def_line = line;
     blk.def_file = p->filename;
@@ -1725,6 +1732,7 @@ static int chunk_defined(Archive *a, const char **labels, int nlabels,
 static void expand_ref(Archive *a, Visit *v, const char **labels, int nlabels,
                        const char *module, const char *chunk, Buf *out) {
     char *key = canonical(labels, nlabels, module, chunk);
+    Buf acc = {0};
     if (visit_has(v, key)) {
         fail("circular inclusion of '%s'", key);
     }
@@ -1738,7 +1746,9 @@ static void expand_ref(Archive *a, Visit *v, const char **labels, int nlabels,
         }
         /* References in the body are expanded first. The block's filters
            then transform that text, and the filter output is what this
-           block contributes. The output is not scanned for references. */
+           block contributes. The output is not scanned for references.
+           A replaced block is still expanded, so a cycle or a filter
+           failure in it still stops evaluation. */
         expand_content(a, v, b, labels, nlabels, key, &body);
         memset(&loc, 0, sizeof(loc));
         loc.where = key;
@@ -1749,9 +1759,16 @@ static void expand_ref(Archive *a, Visit *v, const char **labels, int nlabels,
             run_filter(a, v, &body, f->labels, f->nlabels, f->has_module, f->module, f->chunk,
                        labels, nlabels, b->def_module, &loc);
         }
-        buf_append(out, body.data, body.n);
-        free(body.data);
+        if (b->op == '=') {
+            free(acc.data);
+            acc = body;
+        } else {
+            buf_append(&acc, body.data, body.n);
+            free(body.data);
+        }
     }
+    buf_append(out, acc.data, acc.n);
+    free(acc.data);
     visit_pop(v);
 }
 
@@ -1797,7 +1814,12 @@ static void append_block_ref(Buf *out, const char **labels, int nlabels, const B
         buf_append(out, "@/", 2);
     }
     append_name(out, b->chunk);
-    buf_append(out, "@=", 2);
+    {
+        char sig[2];
+        sig[0] = '@';
+        sig[1] = b->op == '+' ? '+' : '=';
+        buf_append(out, sig, 2);
+    }
 }
 
 /* End index of a chunk reference starting at '@<'.
@@ -1937,12 +1959,13 @@ static int comment_is_blank(const char *s, size_t n) {
 }
 
 /* One block in the literal form: the comment, a chunk reference,
-   then the bytes after @=. further >= 0 writes that many labels
-   onto included references that name none. -1 copies those bytes
-   as written. A blank comment is left out when it would be the
-   first text, so the result does not open with the spacing that
-   followed a @-. A later blank comment is kept, and a comment
-   that has other text is kept whole. */
+   then the bytes after @= or @+. The operator written is the one
+   on this block. further >= 0 writes that many labels onto included
+   references that name none. -1 copies those bytes as written.
+   A blank comment is left out when it would be the first text, so
+   the result does not open with the spacing that followed a @-.
+   A later blank comment is kept, and a comment that has other text
+   is kept whole. */
 
 static void append_shown_block(const Block *b, const char **labels, int nlabels,
                                int further, const char **pass, Buf *out, int *printed) {
@@ -1959,8 +1982,9 @@ static void append_shown_block(const Block *b, const char **labels, int nlabels,
 }
 
 /* -l prints archive text. Each matching block contributes the comment
-   before it, the requested chunk reference, and the bytes after @=.
-   The reference names the request's labels and the block's module.
+   before it, the requested chunk reference, and the bytes after the
+   operator. The reference names the request's labels, the block's
+   module, and that block's @= or @+.
    A less specialized block passes only the labels beyond its own
    to included references that name none. It does not repeat the
    labels it already carries. A block that already has the labels

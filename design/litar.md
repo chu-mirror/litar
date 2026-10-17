@@ -26,7 +26,7 @@ the readability is supposed to be improved a lot.
 Such a file is called a litar archive; the name litar is a portmanteau of
 "literate" and "archive".
 
-# Basic structure
+# Syntax
 
 Because a litar archive is supposed to contain text of all types, its own syntax
 should be as simple as possible. The syntax of a litar archive is built upon
@@ -49,26 +49,46 @@ Some other comments.
 
 # Block
 
-Block expressions extend a chunk by a piece of text.
-Each block expression consists of two basic parts:
-the name of a chunk and the content of current block.
+Block expressions extend or set a chunk by a piece of text.
+Each block expression consists of three basic parts:
+the name of a chunk, the operator, and the content of current block.
+
+There are two operators, `@=` and `@+`:
+`@=` sets the content of the chunk to the content of the block,
+`@+` extends the content of the chunk with the content of the block.
 
 ```
 @<chunk1@=
-    The contents of block1.
+The contents of block1.
 @
 
 @<chunk2@=
-    The contents of block2.
+The contents of block2.
 @
 
-@<chunk1@=
-    The contents of block3.
+@<chunk1@+
+The contents of block3.
 @
 
+@<chunk2@=
+The contents of block4.
+@
 ```
 
-We say: block1 and block3 extend chunk1, block2 extends chunk2.
+The expanded content of `chunk1` is
+
+```
+The contents of block1.
+The contents of block3.
+```
+
+, but the expanded content of `chunk2` is
+
+```
+The contents of block4.
+```
+
+A later `@-` overrides the previous content of a chunk.
 
 Here is another relation between chunk and block: include.
 
@@ -76,15 +96,15 @@ Here is another relation between chunk and block: include.
 Some comments.
 
 @<chunk1@=
-    The contents of block1.
+The contents of block1.
 @
 
 Some other comments
 
 @<chunk2@=
-    The contents of block2.
-    @<chunk1@>
-    The contents of block2.
+The contents of block2.
+@<chunk1@>
+The contents of block2.
 @
 
 ```
@@ -92,9 +112,17 @@ Some other comments
 block2 contains a reference to chunk1; we say: block2 includes chunk1
 at the position of the reference to chunk1.
 
-Let's define what the content of a chunk is.
+The content of block is evaluated to
 
-- the content of a chunk: the expanded content of all blocks extending the chunk concatenated in order.
+```
+The contents of block2.
+The contents of block1.
+The contents of block2.
+```
+
+Let's define formally what the content of a chunk is.
+
+- the content of a chunk: the expanded content of all blocks applied to the chunk in order.
 - the expanded content of a block: the content of the block
   that all references to chunk are replaced by the content of the corresponding chunk.
 
@@ -186,7 +214,7 @@ int main(int argc, char **argv)
 @<program2@:general structure for C program@>
 @
 
-@<program1@:includes@=
+@<program1@:includes@+
 #include <stdio.h>
 @
 
@@ -284,7 +312,7 @@ int main(int argc, char **argv) {
 @<hello@:C structure@/C program@>
 @
 
-@<hello@:C structure@/includes@=
+@<hello@:C structure@/includes@+
 #include <stdio.h>
 @
 

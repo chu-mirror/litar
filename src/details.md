@@ -60,13 +60,18 @@ so `@|` there is `unexpected control '@|' in name`.
 
 ## Blocks
 
-`@<name@=` starts a block and `@` followed by whitespace ends it.
-The block extends exactly the reference written on that header.
+`@<name@=` and `@<name@+` start a block,
+and `@` followed by whitespace ends it.
+`@=` sets the chunk reference to the expanded content of that block.
+`@+` extends the chunk reference with that content.
+A block header that is neither is `expected '@=' or '@+'`.
+The block names exactly the reference written on that header.
 The module is the one named after `@/`,
 or the module selected at that point in the file when `@/` is absent.
 
 One leading newline is layout, not content.
 That newline may be LF or CRLF.
+It is layout after `@=` and after `@+`.
 `@<msg@=` followed by a newline, `Hello`, a newline, and `@`
 stores `Hello` and the final newline.
 A newline that should remain at the start of the content
@@ -74,10 +79,17 @@ takes one extra newline in the file.
 The newline before the closing `@` or `@|` is content.
 Other whitespace is content.
 
-Several blocks may extend one chunk.
-Their expanded contents are concatenated
-in the order the blocks were parsed.
+Matching blocks are applied in the order they were parsed.
+`@=` replaces the text accumulated so far,
+including text from earlier unspecialized predecessors.
+`@+` appends the block to that text.
+A later `@=` overrides earlier blocks of the same reference.
+The first matching block is applied to empty text,
+so `@=` and `@+` agree when a reference has one matching block.
 An included file's blocks appear at its `@.`.
+A block that a later `@=` replaces is still expanded.
+Its references are followed and its filters run,
+so a cycle or a filter failure there still stops evaluation.
 
 A block with empty content is still a definition.
 Asking `-p` for a reference that has no matching block is an error,
@@ -144,9 +156,11 @@ and `executable@:hello` does not.
 whose labels end in `a@:a`.
 `a` belongs to `a@:a`,
 because that single label is a suffix.
-Matching blocks are concatenated in parse order.
+Matching blocks are applied in parse order.
+`@=` replaces the text accumulated so far.
+`@+` appends to it.
 A block is included
-whether it extends a predecessor on that path
+whether it names a predecessor on that path
 or the reference itself.
 
 Label groups are expanded on the reference
@@ -352,7 +366,7 @@ if stdout cannot be written while the chunk is being emitted.
 ## Literal blocks
 
 `-l` and `--literal` print the blocks that extend the chunk reference,
-in the same order `-p` would concatenate their expanded contents.
+in the same order `-p` applies them.
 The same blocks are chosen as for `-p`:
 the module and the chunk match,
 and the block's labels are a suffix
@@ -395,8 +409,10 @@ The anonymous module has an empty name,
 so its reference has no `module@/` piece.
 `@` in a label, a module name, or a chunk name is written as `@@`.
 
-The bytes after `@=` are the layout newline, the content,
+The bytes after `@=` or `@+` are the layout newline, the content,
 the block's filters, and the closing `@`.
+The printed header uses that block's operator,
+so an extending block is printed with `@+`.
 A block whose labels are exactly the requested labels
 is copied as written.
 A block with fewer labels is printed as the requested specialization.
@@ -639,7 +655,7 @@ body
 @|filter@
 ```
 
-`@|` in a block header, before `@=`,
+`@|` in a block header, before `@=` or `@+`,
 is `unexpected control '@|' in name`.
 `@|` in a label group is `unexpected control in label group`.
 `@|` as an expression of its own is still `unexpected '@|'`.
@@ -651,8 +667,10 @@ Each of the block's filters then runs on that text,
 and the filter output is the text the block contributes.
 A reference's filters run on the expanded chunk.
 Filter output is not scanned for further references.
-Blocks of one chunk are still concatenated in parse order;
-each block is filtered on its own before that concatenation.
+Blocks of one chunk are still applied in parse order.
+Each block is filtered on its own,
+then `@=` sets the accumulated text to that result
+and `@+` appends it.
 
 A filter with no labels keeps the labels
 of the reference being expanded.
@@ -700,5 +718,6 @@ Its result is the path printed by `which perl`.
 File definitions and file sets are recognized and rejected.
 
 - `@[` and `@(`: `file definitions are not implemented`
-- `` @` ``, `@+`, and `@,`: `file sets are not implemented`
+- `` @` ``, `@+`, and `@,` used as an expression: `file sets are not implemented`
+  `@<name@+` is a block that extends a chunk, not a file set.
 - any other control used as an expression: `unknown expression '@c'`

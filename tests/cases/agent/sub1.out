@@ -1,0 +1,13 @@
+[
+    {
+        "comment": "",
+        "labels": [],
+        "module": "module 1",
+        "chunk": "chunk",
+        "type": "set",
+        "content": "@<substructure 1@>\n",
+        "filters": [],
+        "file": "archive.la",
+        "line-range": [2, 5]
+    }
+]

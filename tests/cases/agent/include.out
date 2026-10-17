@@ -1,0 +1,13 @@
+[
+    {
+        "comment": "",
+        "labels": [],
+        "module": "",
+        "chunk": "fromlib",
+        "type": "set",
+        "content": "lib\n",
+        "filters": [],
+        "file": "./lib.la",
+        "line-range": [1, 3]
+    }
+]

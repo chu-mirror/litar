@@ -27,9 +27,10 @@ check_help() {
     for _needle in "usage: $LITAR [options] ARCHIVE" \
         "--help: print the usage" \
         "-p, --print EXPRESSION: evaluate EXPRESSION, and print it" \
-        "-l, --literal CHUNK_REFERENCE: print the blocks extending CHUNK_REFERENCE literally" \
         "-m, --modules: list all modules" \
+        "-l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally" \
         "-d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE" \
+        "-a, --agent: alter output to suit an agent's needs" \
         "label1@:label2@:module name@/chunk name@|filter1@|filter2" \
         "label1@:label2@:module name@/chunk name."; do
         if ! grep -F -q -e "$_needle" "$_out"; then
@@ -46,6 +47,7 @@ check_help "help wins over -p" "$LITAR" --help -p
 check_help "help wins over -l" "$LITAR" --help -l
 check_help "help wins over -m" "$LITAR" --help -m
 check_help "help wins over -d" "$LITAR" --help -d
+check_help "help wins over -a" "$LITAR" --help -a
 check_help "help ignores a missing archive" "$LITAR" --help no-such.la
 
 assert_text "-p" $'OK\n' "$LITAR" -p chunk archive.la
@@ -67,6 +69,14 @@ assert_text "-d" "" "$LITAR" -d chunk archive.la
 assert_text "--depend" "" "$LITAR" --depend chunk archive.la
 assert_text "--depend=" "" "$LITAR" --depend=chunk archive.la
 assert_text "archive before -d" "" "$LITAR" archive.la -d chunk
+
+agent=$'[\n    {\n        "comment": "",\n        "labels": [],\n        "module": "",\n        "chunk": "chunk",\n        "type": "set",\n        "content": "OK\\n",\n        "filters": [],\n        "file": "archive.la",\n        "line-range": [1, 3]\n    }\n]\n'
+assert_text "-a -l" "$agent" "$LITAR" -a -l chunk archive.la
+assert_text "--agent" "$agent" "$LITAR" --agent -l chunk archive.la
+assert_text "agent after the archive" "$agent" "$LITAR" archive.la -l chunk -a
+assert_text "agent does not change print" $'OK\n' "$LITAR" -a -p chunk archive.la
+assert_text "agent does not change modules" $'\n' "$LITAR" -a -m archive.la
+assert_text "agent depend with no users" $'[]\n' "$LITAR" -a -d chunk archive.la
 
 assert_fail "duplicate -p and --print" "duplicate print option" \
     "$LITAR" -p chunk --print chunk archive.la
@@ -90,6 +100,13 @@ assert_fail "literal and modules" "cannot combine literal and modules" \
     "$LITAR" -l chunk -m archive.la
 assert_fail "modules and literal" "cannot combine literal and modules" \
     "$LITAR" -m --literal chunk archive.la
+assert_fail "duplicate -a and --agent" "duplicate agent option" \
+    "$LITAR" -a --agent -l chunk archive.la
+assert_fail "--agent= is unknown" "unknown option '--agent=foo'" \
+    "$LITAR" --agent=foo -l chunk archive.la
+assert_fail "agent is not an action" \
+    "missing -p, --print, -l, --literal, -m, --modules, -d, or --depend" \
+    "$LITAR" -a archive.la
 assert_fail "duplicate -d and --depend" "duplicate depend option" \
     "$LITAR" -d chunk --depend chunk archive.la
 assert_fail "duplicate --depend=" "duplicate depend option" \

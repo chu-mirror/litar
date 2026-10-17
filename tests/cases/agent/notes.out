@@ -1,0 +1,13 @@
+[
+    {
+        "comment": "Say \"hello\" \\ there.\n",
+        "labels": [],
+        "module": "",
+        "chunk": "chunk",
+        "type": "set",
+        "content": "line\n",
+        "filters": [],
+        "file": "notes.la",
+        "line-range": [1, 4]
+    }
+]

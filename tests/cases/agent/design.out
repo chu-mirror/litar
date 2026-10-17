@@ -1,0 +1,24 @@
+[
+    {
+        "comment": "",
+        "labels": [],
+        "module": "module 1",
+        "chunk": "chunk",
+        "type": "set",
+        "content": "@<substructure 1@>\n",
+        "filters": [],
+        "file": "archive.la",
+        "line-range": [2, 5]
+    },
+    {
+        "comment": "Extend chunk through label.\n",
+        "labels": ["label"],
+        "module": "module 1",
+        "chunk": "chunk",
+        "type": "extend",
+        "content": "@<substructure 2@>\n",
+        "filters": [],
+        "file": "archive.la",
+        "line-range": [13, 16]
+    }
+]

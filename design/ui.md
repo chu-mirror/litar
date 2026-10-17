@@ -5,12 +5,11 @@ usage: litar [options] ARCHIVE
 
 --help: print the usage
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
--l, --literal CHUNK_REFERENCE: print the blocks extending CHUNK_REFERENCE literally
 -m, --modules: list all modules
+-l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
 -d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
+-a, --agent: alter output to suit an agent's needs
 ```
-
-The format of EXPRESSION follows "label1@:label2@:module name@/chunk name@|filter1@|filter2".
 
 litar searches the included libraries in this order:
 
@@ -20,6 +19,8 @@ litar searches the included libraries in this order:
 4. $HOME/.local/share/litar;
 5. /usr/local/share/litar;
 6. /usr/share/litar.
+
+The format of EXPRESSION follows "label1@:label2@:module name@/chunk name@|filter1@|filter2".
 
 Printing the blocks literally means, for each block, printing the comment before the block,
 the chunk reference that the block extends (do not omit the labels and the module name),
@@ -48,11 +49,11 @@ Extend chunk through label.
 @
 ```
 
-if we run `litar -l label@:module 1@/chunk` for this, it should print,
+If we run `litar -l label@:module 1@/chunk` for this, it should print,
 
 ```
-@<label@:module 1@/chunk@=
-@<label@:substructure 1@>
+@<module 1@/chunk@=
+@<substructure 1@>
 @
 
 Extend chunk through label.
@@ -83,3 +84,4 @@ the third block depends on `chunk 2` and `label 2@:chunk 2`.
 
 The format of output of option `-d` agrees with `-l`.
 
+Consult [agent.md](agent.md) for the behaviour of `-a`/`--agent` option.

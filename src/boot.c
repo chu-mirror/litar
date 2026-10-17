@@ -1,16 +1,17 @@
 /* Bootstrap of litar: the archive syntax through Filters.
    A filter is a chunk run as a script in the current directory.
-   --help, -p/--print, -l/--literal, -m/--modules, and -d/--depend
-   follow design/ui.md.
+   --help, -p/--print, -l/--literal, -m/--modules, -d/--depend, and
+   -a/--agent follow design/ui.md and design/agent.md.
    -l prints each matching block as archive text: the comment before it,
-   then the requested chunk reference, with its labels and the module
-   name written, then the content and the filters on that block.
-   A less specialized block receives, on included references that name
-   none, only the labels the request adds beyond that block's own.
+   then the chunk reference that block extends, with its own labels and
+   the module name written, then the content and the filters as written.
+   Labels from the request are not copied onto the header or the body.
    -d lists blocks whose content contains the chunk reference, or a
    reference specialized from it, or whose content is filtered by one.
-   Each match is printed in the same form as -l, at the specialization
-   the block itself extends.
+   Each match is printed in the same form as -l.
+   -a prints that same listing as JSON. Each object names the block's
+   type (set or extend), filters, file, and line range.
+   -p and -m are unchanged.
    A reference that names no module matches that chunk in every module.
    Less specialized blocks on the same specialization path are included
    for -l. The anonymous module has no name, so its reference has no
@@ -101,6 +102,8 @@ typedef struct Block {
     Filt *filters;
     int nfilters;
     int def_line;
+    /* Line of the closing '@'. With def_line, -a names the block's span. */
+    int end_line;
     const char *def_file;
     const char *def_module;
 } Block;
@@ -769,6 +772,16 @@ static void parse_block(Parser *p, int execute) {
     blk.tail = arena_strndup(&p->arc->arena, p->buf + op_at + 2, blk.tail_len);
     copy_filters(&p->arc->arena, qn.filters, qn.nfilters, &blk.filters, &blk.nfilters);
     blk.def_line = line;
+    /* '@' plus a space ends one byte earlier than '@' at end of buffer. */
+    {
+        size_t close_at = lit_end;
+        if (close_at > 0 && p->buf[close_at - 1] != '@') {
+            close_at -= 2;
+        } else if (close_at > 0) {
+            close_at -= 1;
+        }
+        blk.end_line = line_at(p, close_at);
+    }
     blk.def_file = p->filename;
     blk.def_module = p->arc->current_module;
     qname_free(&qn);
@@ -1801,10 +1814,11 @@ static void append_labels(Buf *out, const char **labels, int nlabels) {
     }
 }
 
-/* The requested chunk reference. Its labels are written even when this
-   block's header left them out. A named module is always written, even
-   when the header left it out. The anonymous module has an empty name,
-   so it contributes no module@/ piece. */
+/* The chunk reference this block extends. Labels are the ones stored
+   on the block, not the labels of the request, and a group name is not
+   expanded. A named module is always written, even when the header left
+   it out. The anonymous module has an empty name, so it contributes no
+   module@/ piece. */
 
 static void append_block_ref(Buf *out, const char **labels, int nlabels, const Block *b) {
     buf_append(out, "@<", 2);
@@ -1822,132 +1836,6 @@ static void append_block_ref(Buf *out, const char **labels, int nlabels, const B
     }
 }
 
-/* End index of a chunk reference starting at '@<'.
-   0 means these bytes are not a well-formed reference.
-   *labeled is set when the reference itself names a label.
-   Filters between '@|' and '@>' stay inside the span. */
-
-static size_t ref_end(const char *s, size_t n, size_t at, int *labeled) {
-    Parser p;
-    int module = 0;
-    int labels = 0;
-    int k;
-    memset(&p, 0, sizeof(p));
-    p.buf = s;
-    p.n = n;
-    p.i = at;
-    if (control_kind(&p) != '<') {
-        return 0;
-    }
-    p.i += 2;
-    for (;;) {
-        scan_to_control(&p);
-        if (p.i >= p.n) {
-            return 0;
-        }
-        k = control_kind(&p);
-        if (k == ':') {
-            if (module) {
-                return 0;
-            }
-            labels = 1;
-            p.i += 2;
-            continue;
-        }
-        if (k == '/') {
-            if (module) {
-                return 0;
-            }
-            module = 1;
-            p.i += 2;
-            continue;
-        }
-        if (k == '|') {
-            p.i += 2;
-            for (;;) {
-                scan_to_control(&p);
-                if (p.i >= p.n) {
-                    return 0;
-                }
-                k = control_kind(&p);
-                if (k == '>') {
-                    *labeled = labels;
-                    return p.i + 2;
-                }
-                if (k == '|' || k == ':' || k == '/') {
-                    p.i += 2;
-                    continue;
-                }
-                return 0;
-            }
-        }
-        if (k == '>') {
-            *labeled = labels;
-            return p.i + 2;
-        }
-        return 0;
-    }
-}
-
-/* A less specialized block is printed as the requested specialization.
-   Chunk references in its content that name no label receive the
-   labels passed here: the ones that further specialize the block,
-   not the labels the block already carries. A reference that already
-   names labels is kept, and so are the block's own filters.
-   @@ is text, not a reference. A malformed reference is copied as
-   written and is not an error. */
-
-static void append_specialized_tail(Buf *out, const char *s, size_t n, const char **labels,
-                                    int nlabels) {
-    size_t i = 0;
-    while (i < n) {
-        Parser p;
-        int k;
-        int labeled = 0;
-        size_t end;
-        memset(&p, 0, sizeof(p));
-        p.buf = s;
-        p.n = n;
-        p.i = i;
-        k = control_kind(&p);
-        if (k < 0) {
-            buf_append(out, s + i, 1);
-            i++;
-            continue;
-        }
-        if (k == '@') {
-            buf_append(out, s + i, 2);
-            i += 2;
-            continue;
-        }
-        if (k == '|') {
-            buf_append(out, s + i, n - i);
-            return;
-        }
-        if (k == '<') {
-            end = ref_end(s, n, i, &labeled);
-            if (end > i) {
-                if (!labeled) {
-                    buf_append(out, "@<", 2);
-                    append_labels(out, labels, nlabels);
-                    buf_append(out, s + i + 2, end - (i + 2));
-                } else {
-                    buf_append(out, s + i, end - i);
-                }
-                i = end;
-                continue;
-            }
-        }
-        if (k == 0) {
-            buf_append(out, s + i, 1);
-            i++;
-            continue;
-        }
-        buf_append(out, s + i, 2);
-        i += 2;
-    }
-}
-
 static int comment_is_blank(const char *s, size_t n) {
     for (size_t i = 0; i < n; i++) {
         unsigned char c = (unsigned char)s[i];
@@ -1958,51 +1846,41 @@ static int comment_is_blank(const char *s, size_t n) {
     return 1;
 }
 
-/* One block in the literal form: the comment, a chunk reference,
-   then the bytes after @= or @+. The operator written is the one
-   on this block. further >= 0 writes that many labels onto included
-   references that name none. -1 copies those bytes as written.
+/* One block in the literal form: the comment, the chunk reference that
+   block extends, then the bytes after @= or @+. The operator written
+   is the one on this block. Those bytes are copied as written, so a
+   less specialized body does not gain the request's labels.
    A blank comment is left out when it would be the first text, so
    the result does not open with the spacing that followed a @-.
    A later blank comment is kept, and a comment that has other text
    is kept whole. */
 
-static void append_shown_block(const Block *b, const char **labels, int nlabels,
-                               int further, const char **pass, Buf *out, int *printed) {
+static void append_shown_block(const Block *b, Buf *out, int *printed) {
     if (b->comment_len && (*printed || !comment_is_blank(b->comment, b->comment_len))) {
         buf_append(out, b->comment, b->comment_len);
     }
-    append_block_ref(out, labels, nlabels, b);
-    if (further >= 0) {
-        append_specialized_tail(out, b->tail, b->tail_len, pass, further);
-    } else {
-        buf_append(out, b->tail, b->tail_len);
-    }
+    append_block_ref(out, b->labels, b->nlabels, b);
+    buf_append(out, b->tail, b->tail_len);
     *printed = 1;
 }
 
 /* -l prints archive text. Each matching block contributes the comment
-   before it, the requested chunk reference, and the bytes after the
-   operator. The reference names the request's labels, the block's
-   module, and that block's @= or @+.
-   A less specialized block passes only the labels beyond its own
-   to included references that name none. It does not repeat the
-   labels it already carries. A block that already has the labels
-   keeps its content and filters as written. @@ stays @@, references
-   are not expanded, and filters are not run. Less specialized blocks
-   on the same specialization path are included, in archive order. */
+   before it, the chunk reference that block extends, and the bytes
+   after the operator. The reference names the block's own labels, the
+   module that block extends, and that block's @= or @+.
+   @@ stays @@, references are not expanded, and filters are not run.
+   Less specialized blocks on the same specialization path are included,
+   in archive order. */
 
 static void literal_blocks(Archive *a, const char **labels, int nlabels,
                            const char *module, const char *chunk, Buf *out) {
     int printed = 0;
     for (int i = 0; i < a->nblocks; i++) {
         Block *b = &a->blocks[i];
-        int further;
         if (!block_in_chain(a, b, labels, nlabels, module, chunk)) {
             continue;
         }
-        further = further_labels(a, b, labels, nlabels);
-        append_shown_block(b, labels, nlabels, further, labels, out, &printed);
+        append_shown_block(b, out, &printed);
     }
 }
 
@@ -2180,8 +2058,230 @@ static void depend_blocks(Archive *a, const char **labels, int nlabels, const ch
         if (!block_depends(a, b, labels, nlabels, module, chunk)) {
             continue;
         }
-        append_shown_block(b, b->labels, b->nlabels, -1, NULL, out, &printed);
+        append_shown_block(b, out, &printed);
     }
+}
+
+/* JSON string. Controls other than the usual escapes are \u00XX.
+   Bytes at 0x20 and above, including UTF-8, are copied. */
+
+static void append_json_string(Buf *out, const char *s, size_t n) {
+    buf_append(out, "\"", 1);
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        char ch;
+        if (c == '"' || c == '\\') {
+            char e[2];
+            e[0] = '\\';
+            e[1] = (char)c;
+            buf_append(out, e, 2);
+            continue;
+        }
+        if (c == '\n') {
+            buf_append(out, "\\n", 2);
+            continue;
+        }
+        if (c == '\r') {
+            buf_append(out, "\\r", 2);
+            continue;
+        }
+        if (c == '\t') {
+            buf_append(out, "\\t", 2);
+            continue;
+        }
+        if (c < 0x20) {
+            char hex[7];
+            int k = snprintf(hex, sizeof(hex), "\\u%04x", c);
+            if (k < 0) {
+                fail("could not format json");
+            }
+            buf_append(out, hex, (size_t)k);
+            continue;
+        }
+        ch = (char)c;
+        buf_append(out, &ch, 1);
+    }
+    buf_append(out, "\"", 1);
+}
+
+static void append_json_labels(Buf *out, const char **labels, int n) {
+    buf_append(out, "[", 1);
+    for (int i = 0; i < n; i++) {
+        if (i) {
+            buf_append(out, ", ", 2);
+        }
+        append_json_string(out, labels[i], strlen(labels[i]));
+    }
+    buf_append(out, "]", 1);
+}
+
+/* The comment reported to an agent drops leading blank lines.
+   A comment that is only blank is empty. *start is the first line of
+   the span: the first remaining comment line, or, when nothing remains,
+   the blank line before the header if the comment has one, else the
+   header line. Lines follow LF, as line_at does. */
+
+static void agent_comment(const Block *b, const char **text, size_t *len, int *start) {
+    const char *s = b->comment ? b->comment : "";
+    size_t n = b->comment_len;
+    size_t i = 0;
+    int newlines = 0;
+    int line;
+    for (size_t k = 0; k < n; k++) {
+        if (s[k] == '\n') {
+            newlines++;
+        }
+    }
+    line = b->def_line - newlines;
+    while (i < n) {
+        size_t j = i;
+        int blank = 1;
+        while (j < n && s[j] != '\n') {
+            unsigned char c = (unsigned char)s[j];
+            if (c != ' ' && c != '\t' && c != '\r') {
+                blank = 0;
+            }
+            j++;
+        }
+        if (!blank) {
+            break;
+        }
+        if (j < n && s[j] == '\n') {
+            i = j + 1;
+            line++;
+            continue;
+        }
+        i = n;
+        break;
+    }
+    if (i >= n) {
+        *text = "";
+        *len = 0;
+        if (n > 0 && s[n - 1] == '\n') {
+            *start = b->def_line - 1;
+        } else {
+            *start = b->def_line;
+        }
+        return;
+    }
+    *text = s + i;
+    *len = n - i;
+    *start = line;
+}
+
+/* The filters field only. The caller writes the comma after it.
+   A filter that names no module uses the module selected where the
+   block was written. */
+
+static void append_agent_filters(const Block *b, Buf *out) {
+    buf_append(out, "        \"filters\": ", 19);
+    if (b->nfilters == 0) {
+        buf_append(out, "[]", 2);
+        return;
+    }
+    buf_append(out, "[\n", 2);
+    for (int i = 0; i < b->nfilters; i++) {
+        Filt *f = &b->filters[i];
+        const char *fm = f->has_module ? f->module : b->def_module;
+        if (i) {
+            buf_append(out, ",\n", 2);
+        }
+        if (!fm) {
+            fm = "";
+        }
+        buf_append(out, "            {\n", 14);
+        buf_append(out, "                \"labels\": ", 26);
+        append_json_labels(out, f->labels, f->nlabels);
+        buf_append(out, ",\n", 2);
+        buf_append(out, "                \"module\": ", 26);
+        append_json_string(out, fm, strlen(fm));
+        buf_append(out, ",\n", 2);
+        buf_append(out, "                \"chunk\": ", 25);
+        append_json_string(out, f->chunk, strlen(f->chunk));
+        buf_append(out, "\n            }", 14);
+    }
+    buf_append(out, "\n        ]", 10);
+}
+
+static void append_agent_block(const Block *b, Buf *out) {
+    const char *ctext = "";
+    size_t clen = 0;
+    int start = b->def_line;
+    const char *file = b->def_file ? b->def_file : "";
+    const char *module = b->module ? b->module : "";
+    char range[64];
+    int rk;
+
+    agent_comment(b, &ctext, &clen, &start);
+    buf_append(out, "    {\n", 6);
+    buf_append(out, "        \"comment\": ", 19);
+    append_json_string(out, ctext, clen);
+    buf_append(out, ",\n", 2);
+    buf_append(out, "        \"labels\": ", 18);
+    append_json_labels(out, b->labels, b->nlabels);
+    buf_append(out, ",\n", 2);
+    buf_append(out, "        \"module\": ", 18);
+    append_json_string(out, module, strlen(module));
+    buf_append(out, ",\n", 2);
+    buf_append(out, "        \"chunk\": ", 17);
+    append_json_string(out, b->chunk, strlen(b->chunk));
+    buf_append(out, ",\n", 2);
+    /* @= sets the chunk; @+ extends it. */
+    buf_append(out, "        \"type\": ", 16);
+    if (b->op == '+') {
+        buf_append(out, "\"extend\"", 8);
+    } else {
+        buf_append(out, "\"set\"", 5);
+    }
+    buf_append(out, ",\n", 2);
+    buf_append(out, "        \"content\": ", 19);
+    append_json_string(out, b->content ? b->content : "", b->content_len);
+    buf_append(out, ",\n", 2);
+    append_agent_filters(b, out);
+    buf_append(out, ",\n", 2);
+    buf_append(out, "        \"file\": ", 16);
+    append_json_string(out, file, strlen(file));
+    buf_append(out, ",\n", 2);
+    rk = snprintf(range, sizeof(range), "[%d, %d]", start, b->end_line);
+    if (rk < 0 || (size_t)rk >= sizeof(range)) {
+        fail("could not format line range");
+    }
+    buf_append(out, "        \"line-range\": ", 22);
+    buf_append(out, range, (size_t)rk);
+    buf_append(out, "\n    }", 6);
+}
+
+/* -a lists the same blocks as -l or -d, as a JSON array.
+   An empty listing is [] followed by a newline. The caller passes
+   an empty buffer; a listing that finds nothing rewinds the '['. */
+
+static void agent_list(Archive *a, const char **labels, int nlabels, const char *module,
+                       const char *chunk, int literal, Buf *out) {
+    int n = 0;
+    buf_append(out, "[\n", 2);
+    for (int i = 0; i < a->nblocks; i++) {
+        Block *b = &a->blocks[i];
+        int match;
+        if (literal) {
+            match = block_in_chain(a, b, labels, nlabels, module, chunk);
+        } else {
+            match = block_depends(a, b, labels, nlabels, module, chunk);
+        }
+        if (!match) {
+            continue;
+        }
+        if (n) {
+            buf_append(out, ",\n", 2);
+        }
+        append_agent_block(b, out);
+        n++;
+    }
+    if (n == 0) {
+        out->n = 0;
+        buf_append(out, "[]\n", 3);
+        return;
+    }
+    buf_append(out, "\n]\n", 3);
 }
 
 static char *read_file(const char *path, size_t *out_n) {
@@ -2390,11 +2490,12 @@ static void usage(FILE *fp, const char *argv0) {
             "\n"
             "--help: print the usage\n"
             "-p, --print EXPRESSION: evaluate EXPRESSION, and print it\n"
-            "-l, --literal CHUNK_REFERENCE: "
-            "print the blocks extending CHUNK_REFERENCE literally\n"
             "-m, --modules: list all modules\n"
+            "-l, --literal CHUNK_REFERENCE: "
+            "print the blocks applied to CHUNK_REFERENCE literally\n"
             "-d, --depend CHUNK_REFERENCE: "
             "list all blocks that depend on CHUNK_REFERENCE\n"
+            "-a, --agent: alter output to suit an agent's needs\n"
             "\n"
             "EXPRESSION follows "
             "label1@:label2@:module name@/chunk name@|filter1@|filter2.\n"
@@ -2442,6 +2543,7 @@ int main(int argc, char **argv) {
     const char *expr = NULL;
     const char *file = NULL;
     int mode = 0;
+    int agent = 0;
     Archive arc;
     Parser ep;
     QName qn;
@@ -2491,6 +2593,11 @@ int main(int argc, char **argv) {
         } else if (strncmp(arg, "--depend=", 9) == 0) {
             set_mode(&mode, MODE_DEPEND);
             expr = arg + 9;
+        } else if (strcmp(arg, "-a") == 0 || strcmp(arg, "--agent") == 0) {
+            if (agent) {
+                fail("duplicate agent option");
+            }
+            agent = 1;
         } else if (arg[0] == '-' && arg[1] != '\0') {
             usage(stderr, argv0);
             fail("unknown option '%s'", arg);
@@ -2553,13 +2660,18 @@ int main(int argc, char **argv) {
         }
         free(key);
     }
-    if (mode == MODE_LITERAL) {
+    if (mode == MODE_LITERAL || mode == MODE_DEPEND) {
         /* The pieces are concatenated with nothing added between them.
-           Each block's chunk reference names the request's labels
-           and the module that block extends. */
-        literal_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
-    } else if (mode == MODE_DEPEND) {
-        depend_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
+           Each block's chunk reference names that block's own labels
+           and the module that block extends. -a emits the same blocks
+           as a JSON array. */
+        if (agent) {
+            agent_list(&arc, labels.v, labels.n, module, qn.chunk, mode == MODE_LITERAL, &result);
+        } else if (mode == MODE_LITERAL) {
+            literal_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
+        } else {
+            depend_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
+        }
     } else {
         /* The chunk is built in memory and written only after every filter
            has run, so a cycle or a failed filter leaves stdout empty and

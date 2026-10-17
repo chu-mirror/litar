@@ -2,8 +2,8 @@
 
 `src/boot.c` implements `design/litar.md` through Filters,
 and `--help`, `-p`/`--print`, `-l`/`--literal`, `-m`/`--modules`,
-and `-d`/`--depend`
-from `design/ui.md`.
+`-d`/`--depend`, and `-a`/`--agent`
+from `design/ui.md` and `design/agent.md`.
 This file records the concrete reading used
 where those design files leave a choice open.
 `make test` checks this reading.
@@ -299,7 +299,13 @@ The modules option is `-m` or `--modules`.
 It takes no argument.
 `--modules=…` is an unknown option.
 The depend option is `-d REF`, `--depend REF`, or `--depend=REF`.
+The agent option is `-a` or `--agent`.
+It takes no argument.
+`--agent=…` is an unknown option.
 Print, literal, modules, and depend cannot be combined.
+Agent may be combined with any of them.
+It changes the block listing from `-l` and from `-d`.
+`-p` and `-m` keep their usual text.
 The archive argument may come before or after the option.
 One archive is accepted.
 A single `-` is an archive name;
@@ -307,6 +313,7 @@ any other argument that begins with `-` is an unknown option.
 
 A duplicate print option, a duplicate literal option,
 a duplicate modules option, a duplicate depend option,
+a duplicate agent option,
 print combined with literal, print combined with modules,
 print combined with depend, literal combined with modules,
 literal combined with depend, modules combined with depend,
@@ -323,6 +330,7 @@ The combined-option errors are
 and `cannot combine modules and depend`.
 A repeated modules option is `duplicate modules option`.
 A repeated depend option is `duplicate depend option`.
+A repeated agent option is `duplicate agent option`.
 Unknown options and missing arguments also print the usage to stderr.
 The expression form in the usage
 includes the filter syntax from `design/ui.md`.
@@ -377,7 +385,7 @@ A reference with no matching block is `chunk '…' is not defined`.
 
 Each matching block is printed in archive order.
 The text is the comment immediately before that block,
-then the requested chunk reference,
+then the chunk reference that block extends,
 then the content of the block,
 and the filters applied to the block.
 The comment is the text after the previous expression
@@ -394,12 +402,10 @@ A later blank comment is printed,
 so a blank line between two printed blocks stays.
 A comment that contains other text is printed whole,
 including the blank lines around that text.
-The printed chunk reference names the labels of the request,
+The printed chunk reference names the labels stored on the block,
 then the module the block extends, then the chunk.
-Label groups in the request are expanded before they are written,
-so `pair@:base` is printed as `lab@:extra@:base`
-when `pair` stands for `lab@:extra`.
-The labels are not omitted when this block's header left them out.
+A label that names a group is not expanded in that header.
+The labels of the request are not written in place of those labels.
 The module name is not omitted when the block extends a named module,
 even if the header in the file left the module out.
 A header that already names a module keeps that module:
@@ -411,23 +417,14 @@ so its reference has no `module@/` piece.
 
 The bytes after `@=` or `@+` are the layout newline, the content,
 the block's filters, and the closing `@`.
+They are copied as written.
 The printed header uses that block's operator,
 so an extending block is printed with `@+`.
-A block whose labels are exactly the requested labels
-is copied as written.
-A block with fewer labels is printed as the requested specialization.
-Each chunk reference in its content that names no label
-receives only the labels the request adds
-in front of that block's own labels.
-An unspecialized block receives every requested label.
-A block that already carries some of them
-does not copy those labels onto the reference.
-A reference that already names labels is kept as written,
-including one whose labels are only some of the requested labels.
+The body is not rewritten as a further specialization,
+so labels are not added to references inside it.
 The module written on an included reference is not filled in.
 `@@` stays `@@` and does not become a reference.
-The block's own `@|` filters are copied as written
-and do not receive the labels.
+The block's own `@|` filters are copied as written.
 References are not followed, block filters are not run,
 and filter output is not scanned,
 so a cycle that `-p` rejects is ordinary text for `-l`.
@@ -470,8 +467,8 @@ Extend chunk through label.
 `litar -l label@:module 1@/chunk` prints
 
 ```
-@<label@:module 1@/chunk@=
-@<label@:substructure 1@>
+@<module 1@/chunk@=
+@<substructure 1@>
 @
 
 Extend chunk through label.
@@ -485,18 +482,80 @@ so the block under `module 2` is included
 only because its header names `module 1`.
 The unspecialized block is printed
 because the empty label list is a suffix of `label`.
-Its header gains `label` and `module 1`,
-and `@<substructure 1@>` gains `label`
-because that reference names no label.
+Its header gains `module 1` and does not gain `label`.
+`@<substructure 1@>` stays as written.
 `chunk2` extends a different chunk, so it is left out.
 `Extend chunk through label.`
 is the comment before the specialized block.
 The blank line before that comment is part of the comment.
 The blank line after `@- module 1 @` is a blank comment
 on the first block, so it is left out.
-The specialized block already has the requested labels,
-so `@<substructure 2@>` stays as written.
-Both printed references name `label` and `module 1`.
+The specialized block is printed with the labels on its header.
+`@<substructure 2@>` stays as written.
+
+## Agent output
+
+`-a` and `--agent` change the block listing from `-l` and from `-d`
+into a JSON array.
+The blocks are the same ones, in the same order.
+`-p` and `-m` are not changed.
+A listing with no blocks, which `-d` can produce, is `[]`.
+The text ends with LF.
+An undefined `-l` reference is still an error and leaves stdout empty.
+
+The array is indented by four spaces.
+Each element has `comment`, `labels`, `module`, `chunk`, `type`,
+`content`, `filters`, `file`, and `line-range`, in that order.
+Strings use JSON escapes:
+`\"`, `\\`, `\n`, `\r`, `\t`, and `\u00XX` for other bytes below 0x20.
+Bytes at 0x20 and above are copied, so UTF-8 stays UTF-8.
+
+`comment` is the comment before the block
+without its leading blank lines.
+A comment that has no other text is `""`.
+`labels` are the labels stored on the block.
+A group name is not expanded.
+`module` is the module the block extends.
+The anonymous module is `""`.
+`chunk` is the chunk name.
+`type` is `set` when the block uses `@=`,
+and `extend` when the block uses `@+`.
+`content` is the stored block content.
+It does not include the layout newline after `@=` or `@+`,
+and it does not include the filters.
+`file` is the path of the archive that contains the block.
+For the archive named on the command line, that path is the argument.
+For an included archive, it is the path the search returned.
+`line-range` is two integers, the first and last line in that file,
+both inclusive.
+Lines are counted by LF, the same way a parse error counts them.
+The last line is the line of the closing `@`.
+The first line is the first line of `comment` when that text is not empty.
+When the comment is only blank,
+the first line is the blank line immediately before the header
+if the comment contains one,
+and otherwise the header line.
+
+`filters` is the block's filter list, in order.
+An empty list is `[]`.
+Each filter is an object with `labels`, `module`, and `chunk`.
+`labels` are stored as written.
+`module` is the module written on the filter.
+When the filter names no module,
+`module` is the module selected where the block was written.
+That can differ from the module the block extends.
+
+On the example above,
+`litar -a -l label@:module 1@/chunk archive.la` prints two objects.
+The first has an empty comment, no labels,
+module `module 1`, chunk `chunk`, type `set`,
+content `@<substructure 1@>\n`,
+file `archive.la`, and line range 2 through 5.
+The second comment is `Extend chunk through label.\n`,
+its only label is `label`,
+and its line range is 13 through 16.
+The blank line before that comment is not part of the range.
+Both filter lists are empty.
 
 ## Blocks that depend
 
@@ -580,6 +639,7 @@ so a later well-formed reference in the same block still counts.
 An arm that is not kept contributes no block.
 
 The output has the same form as `-l`.
+With `-a`, both use the JSON form described above.
 Each matching block is the comment immediately before it,
 then the chunk reference that block extends,
 then the content and the filters as they were written.

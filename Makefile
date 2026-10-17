@@ -6,7 +6,7 @@
 CC ?= gcc
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror
 
-.PHONY: all test clean
+.PHONY: all test clean plugin grok
 
 all: litar
 
@@ -20,6 +20,10 @@ clean:
 	rm -f litar
 	$(MAKE) -C tests clean
 
+plugin: litar
+	[ -d plugin/bin ] || mkdir -p plugin/bin && cp src/mcp.py litar plugin/bin
+
 grok:
-	[ -d .grok ] || mkdir -p .grok/plugins && ln -s ../../plugin .grok/plugins/litar
+	grok mcp remove litar || true
+	grok mcp add --scope project litar -- ./src/mcp.py
 

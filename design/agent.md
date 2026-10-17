@@ -50,9 +50,9 @@ If we run `litar -a -l label@:module 1@/chunk` for this, it should print,
         "chunk": "chunk",
         "type": "set",
         "content": "@<substructure 1@>\n",
-        "filters": []
+        "filters": [],
         "file": "archive.la",
-        "line-range": [2, 5],
+        "line-range": [2, 5]
     },
     {
         "comment": "Extend chunk through label.\n",
@@ -61,9 +61,9 @@ If we run `litar -a -l label@:module 1@/chunk` for this, it should print,
         "chunk": "chunk",
         "type": "extend",
         "content": "@<substructure 2@>\n",
-        "filters": []
+        "filters": [],
         "file": "archive.la",
-        "line-range": [13, 16],
+        "line-range": [13, 16]
     }
 ]
 ```

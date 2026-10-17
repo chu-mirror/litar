@@ -14,7 +14,9 @@ This project proposes a system named litar, which is defined in [litar.md](desig
 
 # Build and test
 
-- `make` compiles `src/boot.c` into `./litar`.
+- `src/litar.la` is the literate source of the program. It includes `lib/c-structure.la`.
+- `make tangle` regenerates `src/litar.c` from that archive. Tangling needs a `./litar` binary, so the current `src/litar.c` is compiled first.
+- `make` compiles `src/litar.c` into `./litar`.
 - `make test` compiles it, then runs the tests under `tests/`.
 - `make clean` removes the binary.
 - `make grok` set up grok build.

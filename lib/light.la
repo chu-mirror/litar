@@ -11,6 +11,16 @@ how to manage memory, how to handle exception, etc.
 
 Light encourage using of statical memory rather than heap.
 
+@<summary@=
+A C framework: lists, heaps, segmented storage, strings, hash tables,
+sets, deques, contexts, and logging.
+
+- `light.h`: the generated header;
+- `light.c`: the generated implementation;
+- `light@@:executable@@:C Structure@@/module`: an executable using the framework;
+- `light options`: compile-time options.
+@
+
 @<lightlib@:C Structure@/module properties@=
 name => 'light',
 @

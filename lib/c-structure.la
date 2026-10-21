@@ -11,7 +11,7 @@ A framework for constructing a C program.
 - `module interface`;
 - `module properties`;
 - `invocation syntax`;
-- `executable@:module`: structure of an executable C module;
+- `executable@@:module`: structure of an executable C module;
 - `command line usage`: command line usage generated from `invocation syntax`;
 - `manpage synopsis`: manpage synopsis generated from `invocation syntax`;
 - `manpage options`:  manpage options generated from `invocation syntax`.

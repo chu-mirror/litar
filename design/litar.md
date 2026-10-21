@@ -34,8 +34,8 @@ control characters, which are @ followed by a non-alphabetic character.
 `@@` is a special control character that it behaves as normal text of `@`.
 
 A litar archive consists of comments and expressions. Expressions start with a control character,
-end with a special control character, @ followed by a space character;
-the space character can be either space, tab or newline.
+end with a special control character, @ followed by a space, tab, carriage return, newline,
+or the end of the archive.
 
 ```
 Some comments.
@@ -88,7 +88,7 @@ The contents of block3.
 The contents of block4.
 ```
 
-A later `@-` overrides the previous content of a chunk.
+A later `@=` overrides the previous content of a chunk.
 
 Here is another relation between chunk and block: include.
 

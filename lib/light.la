@@ -4,30 +4,27 @@
 
 @- Light @
 
+@<summary@=
 Light is a framework mainly for C programming.
 It reflects the author's preferences and customs,
 which includes how to format code,
 how to manage memory, how to handle exception, etc.
-
-Light encourage using of statical memory rather than heap.
-
-@<summary@=
-A C framework: lists, heaps, segmented storage, strings, hash tables,
-sets, deques, contexts, and logging.
+It also supports some common data structures.
 
 - `light.h`: the generated header;
 - `light.c`: the generated implementation;
+- `light options`: compile-time options;
 - `light@@:executable@@:C Structure@@/module`: an executable using the framework;
-- `light options`: compile-time options.
+- `light-single@@:executable@@:C Structure@@/module`: a single-file executable using the framework.
 @
 
-@<lightlib@:C Structure@/module properties@=
+@<lightlib@:C Structure@/module properties@+
 name => 'light',
 @
 
 There are some idioms to make life a bit easier.
 
-@<lightlib@:C Structure@/exported macros@=
+@<lightlib@:C Structure@/exported macros@+
 #define GLUE_TOKENS_INNER(a, b) a ## b
 #define GLUE_TOKENS(a, b) GLUE_TOKENS_INNER(a, b)
 
@@ -59,13 +56,13 @@ Copied from linux kernel.
     )
 @
 
-@<lightlib@:C Structure@/exported data types@=
+@<lightlib@:C Structure@/exported data types@+
 struct list {
     struct list *next;
 };
 @
 
-@<lightlib@:C Structure@/exported static inline functions@=
+@<lightlib@:C Structure@/exported static inline functions@+
 static inline struct list *
 cons(struct list *elm, struct list *l)
 {
@@ -79,7 +76,7 @@ cdr(const struct list *l)
 }
 @
 
-@<lightlib@:C Structure@/functions@=
+@<lightlib@:C Structure@/functions@+
 int list_length(const struct list *l)
 {
     int n = 0;
@@ -262,7 +259,7 @@ static inline char *sstrdup(const char *s)
 }
 @
 
-@<lightlib@:C Structure@/global variables@=
+@<lightlib@:C Structure@/global variables@+
 thread_local struct context *_light_top_context;
 @
 
@@ -383,7 +380,7 @@ static inline struct context *switch_context(struct context *ctx)
 #include <stdarg.h>
 @
 
-@<lightlib@:C Structure@/exported data type declarations@=
+@<lightlib@:C Structure@/exported data type declarations@+
 typedef enum {
     LOG_LEVEL_INFO,
     LOG_LEVEL_WARNING,
@@ -1119,18 +1116,18 @@ typedef Deque Queue;
 @<lightlib@:C Structure@/module@>
 @
 
-@<lightlib@:C Structure@/interface required includes@=
+@<lightlib@:C Structure@/interface required includes@+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 #include <threads.h>
 @
 
-@<light@:executable@:C Structure@/include flags@=
+@<light@:executable@:C Structure@/include flags@+
 @<light options@>
 @
 
-@<light options@=
+@<light options@+
 #ifndef light_option_context_main_size
 #define light_option_context_main_size (1 << 20)  /* 1 MB */
 #endif
@@ -1155,6 +1152,58 @@ struct context context_main = {
 @
 
 @<light@:C Structure@/main body@=
+do {
+    enter_context(&context_main);
+    @<main body@>
+    exit_context(&context_main);
+} while (0);
+@
+
+@<light-single@:executable@:C Structure@/include flags@+
+@<light options@>
+@
+
+@<light-single@:executable@:C Structure@/includes@+
+@<lightlib@:C Structure@/includes@>
+@
+
+@<light-single@:executable@:C Structure@/macros@+
+@<lightlib@:C Structure@/macros@>
+@
+
+@<light-single@:executable@:C Structure@/data type declarations@+
+@<lightlib@:C Structure@/data type declarations@>
+@
+
+@<light-single@:executable@:C Structure@/data types@+
+@<lightlib@:C Structure@/data types@>
+@
+
+@<light-single@:executable@:C Structure@/function declarations@+
+@<lightlib@:C Structure@/function declarations@>
+@
+
+@<light-single@:executable@:C Structure@/global variables@+
+@<lightlib@:C Structure@/global variables@>
+
+static uint8_t context_main_memory[light_option_context_main_size];
+struct context context_main = {
+    .name = "main",
+    .parent = NULL,
+    .memory_end = context_main_memory + sizeof(context_main_memory),
+    .stack_top = context_main_memory,
+};
+@
+
+@<light-single@:executable@:C Structure@/static inline functions@+
+@<lightlib@:C Structure@/static inline functions@>
+@
+
+@<light-single@:executable@:C Structure@/functions@+
+@<lightlib@:C Structure@/functions@>
+@
+
+@<light-single@:C Structure@/main body@=
 do {
     enter_context(&context_main);
     @<main body@>

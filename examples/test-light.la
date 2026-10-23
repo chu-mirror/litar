@@ -1,10 +1,18 @@
 @. lib/light.la @
 
-@<test-light.c@=
-@<test light@:light@:executable@:C Structure@/module@>
+@<summary@=
+Test cases for light.
+
+`test-light.c`: the source file for executable test.
 @
 
-@<test light@:light@:C Structure@/invocation syntax@=
+@:test@=test light@:light-single@:executable@
+
+@<test-light.c@=
+@<test@:C Structure@/module@>
+@
+
+@<test light@:light-single@:C Structure@/invocation syntax@=
 {
     name => 'test-light',
     usages => [
@@ -38,8 +46,13 @@
 }
 @
 
-@<test light@:light@:executable@:C Structure@/includes@+
+@<test@:C Structure@/includes@+
 #include <assert.h>
+@
+
+@<test light@:Light@/light options@=
+#define light_option_context_main_size (1<<23)
+#define light_option_logging_level INFO
 @
 
 @<test light@:Light@/main body@=
@@ -73,14 +86,14 @@ do {
 } while (0);
 @
 
-@<test light@:light@:executable@:C Structure@/data types@+
+@<test@:C Structure@/data types@+
 struct id_card {
     const char *name;
     int age;
 } *card;
 @
 
-@<test light@:light@:executable@:C Structure@/functions@+
+@<test@:C Structure@/functions@+
 void *id_card_serialize(const void *card, size_t *size, const void *base_addr)
 {
     size_t id_card_offset, name_offset;

@@ -20,7 +20,7 @@ This style guidance is for both human and LLMs to write a well-organized litar a
 The language used to constrain the authoring of a litar archive
 is based on the discussion of structure's shapes.
 
-The knowledge of human for something is always structured, so is for programs.
+The knowledge for something is always structured, so is for programs.
 For example, a C source file, at the outermost level,
 consists of includes, macros, variables, and functions, etc.
 A C source file hence shows itself in a litar archive typically as follows:

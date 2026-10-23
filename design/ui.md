@@ -27,7 +27,7 @@ the chunk reference that the block extends (do not omit the labels and the modul
 the content of the block, and the filters applied to the block.
 
 When the literally printed chunk reference is specialized,
-all the blocks extending the less specialized form of that chunk will be printed too.
+all the blocks applied to the predecessors of that chunk reference will be printed too.
 For example,
 
 ```

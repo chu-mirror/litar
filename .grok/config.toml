@@ -1,0 +1,4 @@
+[mcp_servers.litar]
+command = "./src/mcp.py"
+args = []
+enabled = true

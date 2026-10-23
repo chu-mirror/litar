@@ -26,10 +26,3 @@ clean:
 	rm -f litar
 	$(MAKE) -C tests clean
 
-plugin: litar
-	[ -d plugin/bin ] || mkdir -p plugin/bin && cp src/mcp.py litar plugin/bin
-
-grok:
-	grok mcp remove litar || true
-	grok mcp add --scope project litar -- ./src/mcp.py
-

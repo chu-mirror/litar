@@ -58,7 +58,7 @@ _APPEND = ToolAnnotations(
 
 INSTRUCTIONS = """
 This server inspects and edits one litar archive at a time.
-Do not open a .la file yourself. Every read goes through litar, and every edit goes through sed.
+Do not open a .la file yourself; send the operations on a .la file to this server.
 
 A chunk reference looks like label@:module name@/chunk and has no closing @.
 An expression may continue with filters: label@:module name@/chunk@|filter.

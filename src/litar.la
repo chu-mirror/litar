@@ -10,9 +10,10 @@ Litar, written as a literate program.
 
 @- Litar @
 
-@<summary@=
+@<Litar@/summary@=
 Litar reads one archive and answers one request.
 It prints a chunk, prints the blocks applied to a chunk,
+prints the effective blocks of a chunk,
 lists the modules, or lists the blocks that use a chunk.
 The same block listing can be printed as JSON.
 
@@ -41,6 +42,7 @@ from the module skeleton.
 - `expand chunk references`: apply the matching blocks and their filters;
 - `run filters`: run a chunk as a script in the current directory;
 - `print blocks literally`: the listing selected by -l;
+- `print effective blocks`: the listing selected by -e;
 - `list dependent blocks`: the listing selected by -d;
 - `print agent listings`: the JSON form selected by -a;
 - `search for an included archive`: the include path;
@@ -2505,21 +2507,23 @@ static void append_agent_block(const Block *b, Buf *out) {
 }
 @
 
-@<print an agent listing@=
+@<Litar@/print an agent listing@=
 
-/* -a lists the same blocks as -l or -d, as a JSON array.
+/* -a lists the same blocks as -l, -e, or -d, as a JSON array.
    An empty listing is [] followed by a newline. The caller passes
    an empty buffer; a listing that finds nothing rewinds the '['. */
 
 static void agent_list(Archive *a, const char **labels, int nlabels, const char *module,
-                       const char *chunk, int literal, Buf *out) {
+                       const char *chunk, int mode, Buf *out) {
     int n = 0;
     buf_append(out, "[\n", 2);
     for (int i = 0; i < a->nblocks; i++) {
         Block *b = &a->blocks[i];
         int match;
-        if (literal) {
+        if (mode == MODE_LITERAL) {
             match = block_in_chain(a, b, labels, nlabels, module, chunk);
+        } else if (mode == MODE_EFFECTIVE) {
+            match = block_is_effective(a, i, labels, nlabels, module, chunk);
         } else {
             match = block_depends(a, b, labels, nlabels, module, chunk);
         }
@@ -2778,7 +2782,7 @@ static void list_modules(const Archive *a) {
 }
 @
 
-@<print the usage text@=
+@<Litar@/print the usage text@=
 static void usage(FILE *fp, const char *argv0) {
     fprintf(fp,
             "usage: %s [options] ARCHIVE\n"
@@ -2788,6 +2792,8 @@ static void usage(FILE *fp, const char *argv0) {
             "-m, --modules: list all modules\n"
             "-l, --literal CHUNK_REFERENCE: "
             "print the blocks applied to CHUNK_REFERENCE literally\n"
+            "-e, --effective CHUNK_REFERENCE: "
+            "print the effective blocks of CHUNK_REFERENCE\n"
             "-d, --depend CHUNK_REFERENCE: "
             "list all blocks that depend on CHUNK_REFERENCE\n"
             "-a, --agent: alter output to suit an agent's needs\n"
@@ -2800,10 +2806,10 @@ static void usage(FILE *fp, const char *argv0) {
 }
 @
 
-@<name a mode@=
+@<Litar@/name a mode@=
 
 /* Diagnostics name the options in enumerator order, print then literal
-   then modules then depend, so the message does not depend on
+   then effective then modules then depend, so the message does not depend on
    argument order. */
 
 static const char *mode_word(int mode) {
@@ -2812,6 +2818,9 @@ static const char *mode_word(int mode) {
     }
     if (mode == MODE_LITERAL) {
         return "literal";
+    }
+    if (mode == MODE_EFFECTIVE) {
+        return "effective";
     }
     if (mode == MODE_MODULES) {
         return "modules";
@@ -3288,8 +3297,8 @@ A query that names no module matches every module.
 A query that names a module matches only that module.
 
 The output has the same form as -l.
-With -a, both use the JSON form of an agent listing.
-@<list dependent blocks@=
+With -a, -l, -e, and -d use the JSON form of an agent listing.
+@<Litar@/list dependent blocks@=
 @<test a named use@>
 @<resolve the labels of a use@>
 @<test a qualified name for a dependency@>
@@ -3303,11 +3312,11 @@ With -a, both use the JSON form of an agent listing.
 @<print dependent blocks@>
 @
 
--a and --agent change the block listing from -l and from -d into a JSON array.
+-a and --agent change the block listing from -l, from -e, and from -d into a JSON array.
 The blocks are the same ones, in the same order.
 -p and -m are not changed.
 A listing with no blocks, which -d can produce, is [] followed by LF.
-An undefined -l reference is still an error and leaves stdout empty.
+An undefined -l or -e reference is still an error and leaves stdout empty.
 
 The array is indented by four spaces.
 Each element has comment, labels, module, chunk, type,
@@ -3316,9 +3325,9 @@ Strings use JSON escapes: \", \\, \n, \r, \t,
 and \u00XX for other bytes below 0x20.
 Bytes at 0x20 and above are copied, so UTF-8 stays UTF-8.
 comment drops its leading blank lines.
-A comment that has no other text is "".
+A comment that has no other text is \"\".
 labels are the labels stored on the block. A group name is not expanded.
-module is the module the block extends. The anonymous module is "".
+module is the module the block extends. The anonymous module is \"\".
 chunk is the chunk name.
 type is set when the block uses @@=, and extend when the block uses @@+.
 content is the stored block content.
@@ -3335,7 +3344,7 @@ filters is the block's filter list, in order. An empty list is [].
 Each filter is an object with labels, module, and chunk.
 When the filter names no module, module is the module selected
 where the block was written.
-@<print agent listings@=
+@<Litar@/print agent listings@=
 @<append a json string@>
 @<escape a json quote@>
 @<escape a json newline@>
@@ -3428,9 +3437,9 @@ and spell the forms of EXPRESSION and CHUNK_REFERENCE, including filters.
 A repeated mode is duplicate <mode> option.
 A pair of modes is cannot combine <first> and <second>.
 The modes are named in a fixed order,
-print then literal then modules then depend,
+print then literal then effective then modules then depend,
 so the diagnostic does not depend on the order of the arguments.
-@<describe the command line@=
+@<Litar@/describe the command line@=
 @<print the usage text@>
 @<name a mode@>
 @<reject a repeated or combined mode@>
@@ -3532,11 +3541,12 @@ so the diagnostic does not depend on the order of the arguments.
     }
 @
 
-@<require a mode and an archive@=
+@<Litar@/require a mode and an archive@=
     if (!mode || !file) {
         usage(stderr, argv0);
         if (!mode) {
-            fail("missing -p, --print, -l, --literal, -m, --modules, -d, or --depend");
+            fail("missing -p, --print, -l, --literal, -e, --effective, -m, --modules, -d, or "
+                 "--depend");
         }
         fail("missing archive");
     }
@@ -3561,12 +3571,14 @@ so the diagnostic does not depend on the order of the arguments.
 
 @
 
-@<parse the request expression@=
+@<Litar@/parse the request expression@=
     memset(&ep, 0, sizeof(ep));
     ep.buf = expr;
     ep.n = strlen(expr);
     ep.arc = &arc;
-    parse_qname(&ep, &qn, (mode == MODE_LITERAL || mode == MODE_DEPEND) ? Q_CHUNK : Q_EXPR);
+    parse_qname(&ep, &qn,
+                (mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND) ? Q_CHUNK
+                                                                                        : Q_EXPR);
     if (ep.i < ep.n) {
         int k = control_kind(&ep);
         if (k == 0) {
@@ -3578,10 +3590,10 @@ so the diagnostic does not depend on the order of the arguments.
         expand_label_list(&arc, qn.labels.v, qn.labels.n, &labels);
     }
     module = qn.has_module ? qn.module : "";
-    /* -l and -d with no module name the chunk in every module.
+    /* -l, -e, and -d with no module name the chunk in every module.
        -p keeps the anonymous module when the expression names none.
        -d lists users of the reference. The chunk need not be defined. */
-    if ((mode == MODE_LITERAL || mode == MODE_DEPEND) && !qn.has_module) {
+    if ((mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND) && !qn.has_module) {
         module = NULL;
     }
 @
@@ -3596,16 +3608,18 @@ so the diagnostic does not depend on the order of the arguments.
     }
 @
 
-@<select a literal or dependency listing@=
-    if (mode == MODE_LITERAL || mode == MODE_DEPEND) {
+@<Litar@/select a literal or dependency listing@=
+    if (mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND) {
         /* The pieces are concatenated with nothing added between them.
            Each block's chunk reference names that block's own labels
            and the module that block extends. -a emits the same blocks
            as a JSON array. */
         if (agent) {
-            agent_list(&arc, labels.v, labels.n, module, qn.chunk, mode == MODE_LITERAL, &result);
+            agent_list(&arc, labels.v, labels.n, module, qn.chunk, mode, &result);
         } else if (mode == MODE_LITERAL) {
             literal_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
+        } else if (mode == MODE_EFFECTIVE) {
+            effective_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
         } else {
             depend_blocks(&arc, labels.v, labels.n, module, qn.chunk, &result);
         }
@@ -3652,10 +3666,11 @@ One archive is accepted. A single - is an archive name.
 Any other argument that begins with - is an unknown option.
 An extra archive is unexpected argument '…'.
 Unknown options and missing arguments also print the usage to stderr.
-@<read options and the archive name@=
+@<Litar@/read options and the archive name@=
 @<open the option loop@>
 @<accept a print option@>
 @<accept a literal option@>
+@<accept an effective option@>
 @<accept a modules option@>
 @<accept a depend option@>
 @<accept an agent option or the archive name@>
@@ -3669,19 +3684,20 @@ or a missing archive still prints the usage.
 
 Print is -p EXPR, --print EXPR, or --print=EXPR.
 Literal is -l REF, --literal REF, or --literal=REF.
+Effective is -e REF, --effective REF, or --effective=REF.
 Modules is -m or --modules and takes no argument.
 --modules=… is an unknown option.
 Depend is -d REF, --depend REF, or --depend=REF.
 Agent is -a or --agent and takes no argument.
 --agent=… is an unknown option.
-Print, literal, modules, and depend cannot be combined.
+Print, literal, effective, modules, and depend cannot be combined.
 Agent may be combined with any of them.
-It changes the listing from -l and from -d.
+It changes the listing from -l, from -e, and from -d.
 -p and -m keep their usual text.
 A duplicate agent option is duplicate agent option.
 With no action selected the error is
-missing -p, --print, -l, --literal, -m, --modules, -d, or --depend.
-@<parse the command line@=
+missing -p, --print, -l, --literal, -e, --effective, -m, --modules, -d, or --depend.
+@<Litar@/parse the command line@=
 @<declare the request locals@>
 @<return when help was requested@>
 @<read options and the archive name@>
@@ -3690,16 +3706,17 @@ missing -p, --print, -l, --literal, -m, --modules, -d, or --depend.
 
 The archive is read to the end before the expression is evaluated,
 before literal blocks are printed,
+before effective blocks are printed,
 before the blocks that depend on a reference are printed,
 and before the module list is written.
-A print, literal, or depend result is written to stdout as raw bytes,
+A print, literal, effective, or depend result is written to stdout as raw bytes,
 with no added newline.
 
 The chunk is built in memory and written only after every filter has run.
 A cycle or a failed filter writes nothing.
--l and -d do not expand references and do not run filters.
+-l, -e, and -d do not expand references and do not run filters.
 -m lists modules and returns before the expression is parsed.
-@<carry out the request@=
+@<Litar@/carry out the request@=
 @<load the archive@>
 @<parse the request expression@>
 @<require a defined chunk@>
@@ -3896,7 +3913,7 @@ typedef struct Visit {
 
 Q_ names which shape of qualified name the parser is reading.
 MODE_ names the command the process was asked for.
-@<litar@:executable@:data type declarations@+
+@<litar@:executable@:C Structure@/data type declarations@+
 enum {
     Q_BLOCK = 1,
     Q_REF,
@@ -3907,6 +3924,7 @@ enum {
 enum {
     MODE_PRINT = 1,
     MODE_LITERAL,
+    MODE_EFFECTIVE,
     MODE_MODULES,
     MODE_DEPEND
 };
@@ -3929,7 +3947,7 @@ The parser that actually runs is written by hand, below.
 The generated getopt parser treats each mode as its own usage,
 and it cannot express help taking priority, -a combined with a mode,
 a repeated option, or a usage line that prints argv[0].
-@<litar@:invocation syntax@=
+@<litar@:C Structure@/invocation syntax@=
 {
     name => 'litar',
     usages => [
@@ -3956,6 +3974,12 @@ a repeated option, or a usage line that prints argv[0].
                     opt => 'l',
                     argument => 'CHUNK_REFERENCE',
                     description => 'print the blocks applied to CHUNK_REFERENCE literally',
+                },
+                {
+                    long_opt => 'effective',
+                    opt => 'e',
+                    argument => 'CHUNK_REFERENCE',
+                    description => 'print the effective blocks of CHUNK_REFERENCE',
                 },
                 {
                     long_opt => 'depend',
@@ -3987,7 +4011,7 @@ a repeated option, or a usage line that prints argv[0].
 
 The declaration extractor prints a prototype before any body,
 so a group may call a function that a later group defines.
-@<litar@:executable@:functions@+
+@<litar@:executable@:C Structure@/functions@+
 @<Litar@/report a failure@>
 @<Litar@/allocate memory@>
 @<Litar@/parse qualified names@>
@@ -3995,9 +4019,102 @@ so a group may call a function that a later group defines.
 @<Litar@/expand chunk references@>
 @<Litar@/run filters@>
 @<Litar@/print blocks literally@>
+@<Litar@/print effective blocks@>
 @<Litar@/list dependent blocks@>
 @<Litar@/print agent listings@>
 @<Litar@/search for an included archive@>
 @<Litar@/list introduced modules@>
 @<Litar@/describe the command line@>
+@
+@- Litar @
+
+@<Litar@/accept an effective option@=
+        } else if (strcmp(arg, "-e") == 0 || strcmp(arg, "--effective") == 0) {
+            set_mode(&mode, MODE_EFFECTIVE);
+            if (i + 1 >= argc) {
+                usage(stderr, argv0);
+                fail("%s requires a chunk reference", arg);
+            }
+            expr = argv[++i];
+        } else if (strncmp(arg, "--effective=", 12) == 0) {
+            set_mode(&mode, MODE_EFFECTIVE);
+            expr = arg + 12;
+@
+@- Litar @
+
+@<Litar@/test whether a block is effective@=
+
+/* A block is effective when it is one of the blocks -l would print
+   and no later block in that same chain sets the chunk.
+   A chain is one module: a set in another module does not count,
+   which matters when the reference names no module.
+   @@= sets. @@+ does not. */
+
+static int block_is_effective(Archive *a, int index, const char **labels, int nlabels,
+                              const char *module, const char *chunk) {
+    Block *b = &a->blocks[index];
+    const char *bm;
+    if (!block_in_chain(a, b, labels, nlabels, module, chunk)) {
+        return 0;
+    }
+    bm = b->module ? b->module : "";
+    for (int j = index + 1; j < a->nblocks; j++) {
+        Block *later = &a->blocks[j];
+        const char *lm;
+        if (later->op != '=') {
+            continue;
+        }
+        if (!block_in_chain(a, later, labels, nlabels, module, chunk)) {
+            continue;
+        }
+        lm = later->module ? later->module : "";
+        if (!module && strcmp(lm, bm) != 0) {
+            continue;
+        }
+        return 0;
+    }
+    return 1;
+}
+@
+@- Litar @
+
+@<Litar@/print the effective blocks@=
+
+/* -e prints the same archive text as -l, limited to the effective blocks.
+   The pieces are concatenated in archive order, with nothing added. */
+
+static void effective_blocks(Archive *a, const char **labels, int nlabels,
+                             const char *module, const char *chunk, Buf *out) {
+    int printed = 0;
+    for (int i = 0; i < a->nblocks; i++) {
+        if (!block_is_effective(a, i, labels, nlabels, module, chunk)) {
+            continue;
+        }
+        append_shown_block(&a->blocks[i], out, &printed);
+    }
+}
+@
+@- Litar @
+
+-e and --effective print the effective blocks of the chunk reference.
+design/litar.md calls the effective blocks
+the sequence that remains after applying matching blocks in order.
+@@= sets the text accumulated so far, so a later @@= drops every block before it.
+@@+ appends, so those blocks stay when no later block sets the chunk.
+The blocks considered are the same ones -l prints, in archive order.
+A reference that names no module matches that chunk in every module,
+and a set in one module does not drop a block in another module.
+A reference that names a module matches only that module.
+Label matching is the same suffix test -l uses.
+An undefined reference is chunk '…' is not defined, as for -l.
+The output has the same form as -l.
+A block that a later set drops is not printed,
+including its comment.
+The first block that is printed still drops a blank comment.
+References are not followed and filters are not run,
+so a replaced block that -p would still expand is absent here.
+With -a, the same blocks are the JSON form of an agent listing.
+@<Litar@/print effective blocks@=
+@<test whether a block is effective@>
+@<print the effective blocks@>
 @

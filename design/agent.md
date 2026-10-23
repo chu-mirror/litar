@@ -6,11 +6,12 @@ the tools are based on blocks and chunks:
 
 1. fetch all modules and their description,
 2. check blocks applied to a chunk reference,
-3. check blocks depending on a chunk reference,
-4. evaluate the content of an expression,
-5. modify a certain block,
-6. delete a certain block,
-7. append a block to the archive.
+3. check effective blocks of a chunk reference,
+4. check blocks depending on a chunk reference,
+5. evaluate the content of an expression,
+6. modify a certain block,
+7. delete a certain block,
+8. append a block to the archive.
 
 The MCP server can not read or edit a litar archive directly,
 all the operations are based on two command line tools, litar and sed.

@@ -13,7 +13,7 @@ A literal `@` in a name is written `@@`.
 Read `doc/syntax.md` when the form is unclear.
 If the archive or the reference is missing, ask before calling a tool.
 
-Use the litar MCP tools `blocks_depending`, `blocks_applied`, `list_modules`, and `evaluate_expression`.
+Use the litar MCP tools `blocks_depending`, `blocks_effective`, `list_modules`, and `evaluate_expression`.
 Pass the archive path and the reference exactly.
 
 ## Steps
@@ -28,16 +28,16 @@ Pass the archive path and the reference exactly.
    An unlabeled reference takes the labels of the block that contains it.
    A reference with no module stays in the module selected where that block was written.
    Quote only the line or lines that contain the use.
-3. Call `blocks_applied`.
-   These are the effective blocks, in archive order, including less specialized blocks on the same path.
-   `@=` replaces the text accumulated so far.
+3. Call `blocks_effective`.
+   These are the blocks whose text remains after the chain is applied.
+   A later `@=` drops every earlier block on that chain.
    `@+` appends.
    An undefined reference is an error from this call.
    Report that, and still report the dependers from step 1.
 4. Explain how the reference implements the behavior its uses require.
    The dependers say what is required.
    The effective blocks, in order, are the implementation.
-   When a block's role is itself a reference, call `blocks_applied` on that inner reference.
+   When a block's role is itself a reference, call `blocks_effective` on that inner reference.
    Stop at a cycle, and stop once that inner reference's own text states the behavior.
    Call `list_modules` when the module summary is needed to name the intended role.
    Call `evaluate_expression` when the expanded text is needed to support a claim.

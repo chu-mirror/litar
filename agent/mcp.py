@@ -7,7 +7,7 @@
 # ///
 """MCP server that inspects and edits a litar archive.
 
-Run it with ``uv run src/mcp.py`` from the repository, or point a client at
+Run it with ``uv run agent/mcp.py`` from the repository, or point a client at
 ``uv run --script`` plus the absolute path of this file. The server speaks
 MCP over stdio.
 
@@ -65,7 +65,7 @@ An expression may continue with filters: label@:module name@/chunk@|filter.
 In those strings, write a literal @ inside a name as @@.
 
 list_modules returns every module and the evaluated text of its summary chunk.
-blocks_applied is litar -a -l. blocks_depending is litar -a -d.
+blocks_applied is litar -a -l. blocks_effective is litar -a -e. blocks_depending is litar -a -d.
 evaluate_expression is litar -p. Print and modules stay plain text; -a does not change them.
 modify_block and delete_block address a block with the file and the line numbers from a listing.
 Fetch the listing again after an edit, because line numbers move.
@@ -583,14 +583,42 @@ def blocks_applied(
 
     This is litar -a -l. The blocks are the ones -p would apply, in archive
     order, including less specialized blocks on the same specialization path.
-    file and line-range locate the block for modify_block and delete_block.
-    A reference with no module matches that chunk in every module.
-    An undefined reference is an error.
+    A later @= drops earlier blocks from the expanded text; blocks_effective
+    returns the blocks that remain. file and line-range locate the block for
+    modify_block and delete_block. A reference with no module matches that
+    chunk in every module. An undefined reference is an error.
     """
 
     with _LOCK:
         _require_archive(archive)
         return _load_blocks("-l", chunk_reference, archive)
+
+
+@mcp.tool(title="Effective blocks of a chunk", annotations=_READ_ONLY)
+def blocks_effective(
+    archive: Annotated[str, Field(description="Path of the litar archive.")],
+    chunk_reference: Annotated[
+        str,
+        Field(
+            description="Chunk reference in litar syntax, without a closing @. "
+            "Example: label@:module 1@/chunk. Write @ in a name as @@."
+        ),
+    ],
+) -> list[BlockRecord]:
+    """Check the effective blocks of a chunk reference.
+
+    This is litar -a -e. The blocks are the ones whose text remains after
+    the chain is applied in archive order. A later @= drops every earlier
+    block on that chain. @+ appends. Less specialized blocks stay when no
+    later set drops them. A reference with no module matches that chunk in
+    every module, and a set in one module does not drop a block in another.
+    file and line-range locate the block for modify_block and delete_block.
+    An undefined reference is an error.
+    """
+
+    with _LOCK:
+        _require_archive(archive)
+        return _load_blocks("-e", chunk_reference, archive)
 
 
 @mcp.tool(title="Blocks that depend on a chunk", annotations=_READ_ONLY)
@@ -682,7 +710,7 @@ def modify_block(
 ) -> EditResult:
     """Modify a block in place.
 
-    The span is the line-range from blocks_applied or blocks_depending.
+    The span is the line-range from blocks_applied, blocks_effective, or blocks_depending.
     The other fields replace that span. A blank line that the listing
     includes only because the comment is empty is kept. Names are decoded;
     the archive text escapes @ as @@. After the write, litar parses the file,

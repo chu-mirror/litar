@@ -147,7 +147,13 @@ typedef struct Visit {
 } Visit;
 enum { Q_BLOCK = 1, Q_REF, Q_EXPR, Q_CHUNK };
 
-enum { MODE_PRINT = 1, MODE_LITERAL, MODE_MODULES, MODE_DEPEND };
+enum {
+    MODE_PRINT = 1,
+    MODE_LITERAL,
+    MODE_EFFECTIVE,
+    MODE_MODULES,
+    MODE_DEPEND
+};
 
 /* stdin */
 int main(int argc, char *argv[]);
@@ -285,6 +291,22 @@ static void literal_blocks(
     const char *chunk,
     Buf *out
 );
+static int block_is_effective(
+    Archive *a,
+    int index,
+    const char **labels,
+    int nlabels,
+    const char *module,
+    const char *chunk
+);
+static void effective_blocks(
+    Archive *a,
+    const char **labels,
+    int nlabels,
+    const char *module,
+    const char *chunk,
+    Buf *out
+);
 static int named_use_matches(
     Archive *a,
     const char **ulabels,
@@ -356,7 +378,7 @@ static void agent_list(
     int nlabels,
     const char *module,
     const char *chunk,
-    int literal,
+    int mode,
     Buf *out
 );
 static char *read_file(const char *path, size_t *out_n);
@@ -380,6 +402,7 @@ struct {
         const char *print;
         int modules;
         const char *literal;
+        const char *effective;
         const char *depend;
         int agent;
     } options;
@@ -388,12 +411,13 @@ struct {
     } arguments;
 } command;
 const struct option long_options[] = {
-    {   "help",       no_argument, NULL,   0},
-    {  "print", required_argument, NULL, 'p'},
-    {"modules",       no_argument, NULL, 'm'},
-    {"literal", required_argument, NULL, 'l'},
-    { "depend", required_argument, NULL, 'd'},
-    {  "agent",       no_argument, NULL, 'a'},
+    {     "help",       no_argument, NULL,   0},
+    {    "print", required_argument, NULL, 'p'},
+    {  "modules",       no_argument, NULL, 'm'},
+    {  "literal", required_argument, NULL, 'l'},
+    {"effective", required_argument, NULL, 'e'},
+    {   "depend", required_argument, NULL, 'd'},
+    {    "agent",       no_argument, NULL, 'a'},
 };
 /* -d parses references inside block bodies. A malformed reference is
    not a use and is not an error, so that parse jumps out instead of
@@ -451,6 +475,17 @@ main(int argc, char *argv[])
             set_mode(&mode, MODE_LITERAL);
             expr = arg + 10;
 
+        } else if (strcmp(arg, "-e") == 0 || strcmp(arg, "--effective") == 0) {
+            set_mode(&mode, MODE_EFFECTIVE);
+            if (i + 1 >= argc) {
+                usage(stderr, argv0);
+                fail("%s requires a chunk reference", arg);
+            }
+            expr = argv[++i];
+        } else if (strncmp(arg, "--effective=", 12) == 0) {
+            set_mode(&mode, MODE_EFFECTIVE);
+            expr = arg + 12;
+
         } else if (strcmp(arg, "-m") == 0 || strcmp(arg, "--modules") == 0) {
             set_mode(&mode, MODE_MODULES);
 
@@ -484,7 +519,8 @@ main(int argc, char *argv[])
     if (!mode || !file) {
         usage(stderr, argv0);
         if (!mode) {
-            fail("missing -p, --print, -l, --literal, -m, --modules, -d, or "
+            fail("missing -p, --print, -l, --literal, -e, --effective, -m, "
+                 "--modules, -d, or "
                  "--depend");
         }
         fail("missing archive");
@@ -513,7 +549,10 @@ main(int argc, char *argv[])
     parse_qname(
         &ep,
         &qn,
-        (mode == MODE_LITERAL || mode == MODE_DEPEND) ? Q_CHUNK : Q_EXPR
+        (mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND
+        ) ?
+            Q_CHUNK :
+            Q_EXPR
     );
     if (ep.i < ep.n) {
         int k = control_kind(&ep);
@@ -526,10 +565,11 @@ main(int argc, char *argv[])
         expand_label_list(&arc, qn.labels.v, qn.labels.n, &labels);
     }
     module = qn.has_module ? qn.module : "";
-    /* -l and -d with no module name the chunk in every module.
+    /* -l, -e, and -d with no module name the chunk in every module.
        -p keeps the anonymous module when the expression names none.
        -d lists users of the reference. The chunk need not be defined. */
-    if ((mode == MODE_LITERAL || mode == MODE_DEPEND) && !qn.has_module) {
+    if ((mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND)
+        && !qn.has_module) {
         module = NULL;
     }
 
@@ -541,23 +581,22 @@ main(int argc, char *argv[])
         free(key);
     }
 
-    if (mode == MODE_LITERAL || mode == MODE_DEPEND) {
+    if (mode == MODE_LITERAL || mode == MODE_EFFECTIVE
+        || mode == MODE_DEPEND) {
         /* The pieces are concatenated with nothing added between them.
            Each block's chunk reference names that block's own labels
            and the module that block extends. -a emits the same blocks
            as a JSON array. */
         if (agent) {
             agent_list(
-                &arc,
-                labels.v,
-                labels.n,
-                module,
-                qn.chunk,
-                mode == MODE_LITERAL,
-                &result
+                &arc, labels.v, labels.n, module, qn.chunk, mode, &result
             );
         } else if (mode == MODE_LITERAL) {
             literal_blocks(
+                &arc, labels.v, labels.n, module, qn.chunk, &result
+            );
+        } else if (mode == MODE_EFFECTIVE) {
+            effective_blocks(
                 &arc, labels.v, labels.n, module, qn.chunk, &result
             );
         } else {
@@ -2579,6 +2618,68 @@ literal_blocks(
     }
 }
 
+/* A block is effective when it is one of the blocks -l would print
+   and no later block in that same chain sets the chunk.
+   A chain is one module: a set in another module does not count,
+   which matters when the reference names no module.
+   @= sets. @+ does not. */
+
+static int
+block_is_effective(
+    Archive *a,
+    int index,
+    const char **labels,
+    int nlabels,
+    const char *module,
+    const char *chunk
+)
+{
+    Block *b = &a->blocks[index];
+    const char *bm;
+    if (!block_in_chain(a, b, labels, nlabels, module, chunk)) {
+        return 0;
+    }
+    bm = b->module ? b->module : "";
+    for (int j = index + 1; j < a->nblocks; j++) {
+        Block *later = &a->blocks[j];
+        const char *lm;
+        if (later->op != '=') {
+            continue;
+        }
+        if (!block_in_chain(a, later, labels, nlabels, module, chunk)) {
+            continue;
+        }
+        lm = later->module ? later->module : "";
+        if (!module && strcmp(lm, bm) != 0) {
+            continue;
+        }
+        return 0;
+    }
+    return 1;
+}
+
+/* -e prints the same archive text as -l, limited to the effective blocks.
+   The pieces are concatenated in archive order, with nothing added. */
+
+static void
+effective_blocks(
+    Archive *a,
+    const char **labels,
+    int nlabels,
+    const char *module,
+    const char *chunk,
+    Buf *out
+)
+{
+    int printed = 0;
+    for (int i = 0; i < a->nblocks; i++) {
+        if (!block_is_effective(a, i, labels, nlabels, module, chunk)) {
+            continue;
+        }
+        append_shown_block(&a->blocks[i], out, &printed);
+    }
+}
+
 /* A use of label@:chunk depends on label@:chunk and on chunk.
    The query matches when its labels are a suffix of the use:
    the use is the query, or a reference specialized from it.
@@ -3067,7 +3168,7 @@ append_agent_block(const Block *b, Buf *out)
     buf_append(out, "\n    }", 6);
 }
 
-/* -a lists the same blocks as -l or -d, as a JSON array.
+/* -a lists the same blocks as -l, -e, or -d, as a JSON array.
    An empty listing is [] followed by a newline. The caller passes
    an empty buffer; a listing that finds nothing rewinds the '['. */
 
@@ -3078,7 +3179,7 @@ agent_list(
     int nlabels,
     const char *module,
     const char *chunk,
-    int literal,
+    int mode,
     Buf *out
 )
 {
@@ -3087,8 +3188,10 @@ agent_list(
     for (int i = 0; i < a->nblocks; i++) {
         Block *b = &a->blocks[i];
         int match;
-        if (literal) {
+        if (mode == MODE_LITERAL) {
             match = block_in_chain(a, b, labels, nlabels, module, chunk);
+        } else if (mode == MODE_EFFECTIVE) {
+            match = block_is_effective(a, i, labels, nlabels, module, chunk);
         } else {
             match = block_depends(a, b, labels, nlabels, module, chunk);
         }
@@ -3346,6 +3449,8 @@ usage(FILE *fp, const char *argv0)
         "-m, --modules: list all modules\n"
         "-l, --literal CHUNK_REFERENCE: "
         "print the blocks applied to CHUNK_REFERENCE literally\n"
+        "-e, --effective CHUNK_REFERENCE: "
+        "print the effective blocks of CHUNK_REFERENCE\n"
         "-d, --depend CHUNK_REFERENCE: "
         "list all blocks that depend on CHUNK_REFERENCE\n"
         "-a, --agent: alter output to suit an agent's needs\n"
@@ -3359,7 +3464,7 @@ usage(FILE *fp, const char *argv0)
 }
 
 /* Diagnostics name the options in enumerator order, print then literal
-   then modules then depend, so the message does not depend on
+   then effective then modules then depend, so the message does not depend on
    argument order. */
 
 static const char *
@@ -3370,6 +3475,9 @@ mode_word(int mode)
     }
     if (mode == MODE_LITERAL) {
         return "literal";
+    }
+    if (mode == MODE_EFFECTIVE) {
+        return "effective";
     }
     if (mode == MODE_MODULES) {
         return "modules";

@@ -29,6 +29,7 @@ check_help() {
         "-p, --print EXPRESSION: evaluate EXPRESSION, and print it" \
         "-m, --modules: list all modules" \
         "-l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally" \
+        "-e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE" \
         "-d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE" \
         "-a, --agent: alter output to suit an agent's needs" \
         "label1@:label2@:module name@/chunk name@|filter1@|filter2" \
@@ -45,6 +46,7 @@ check_help() {
 check_help "help" "$LITAR" --help
 check_help "help wins over -p" "$LITAR" --help -p
 check_help "help wins over -l" "$LITAR" --help -l
+check_help "help wins over -e" "$LITAR" --help -e
 check_help "help wins over -m" "$LITAR" --help -m
 check_help "help wins over -d" "$LITAR" --help -d
 check_help "help wins over -a" "$LITAR" --help -a
@@ -61,6 +63,11 @@ assert_text "--literal" "$lit" "$LITAR" --literal chunk archive.la
 assert_text "--literal=" "$lit" "$LITAR" --literal=chunk archive.la
 assert_text "archive before -l" "$lit" "$LITAR" archive.la -l chunk
 
+assert_text "-e" "$lit" "$LITAR" -e chunk archive.la
+assert_text "--effective" "$lit" "$LITAR" --effective chunk archive.la
+assert_text "--effective=" "$lit" "$LITAR" --effective=chunk archive.la
+assert_text "archive before -e" "$lit" "$LITAR" archive.la -e chunk
+
 assert_text "-m" $'\n' "$LITAR" -m archive.la
 assert_text "--modules" $'\n' "$LITAR" --modules archive.la
 assert_text "archive before -m" $'\n' "$LITAR" archive.la -m
@@ -72,6 +79,7 @@ assert_text "archive before -d" "" "$LITAR" archive.la -d chunk
 
 agent=$'[\n    {\n        "comment": "",\n        "labels": [],\n        "module": "",\n        "chunk": "chunk",\n        "type": "set",\n        "content": "OK\\n",\n        "filters": [],\n        "file": "archive.la",\n        "line-range": [1, 3]\n    }\n]\n'
 assert_text "-a -l" "$agent" "$LITAR" -a -l chunk archive.la
+assert_text "-a -e" "$agent" "$LITAR" -a -e chunk archive.la
 assert_text "--agent" "$agent" "$LITAR" --agent -l chunk archive.la
 assert_text "agent after the archive" "$agent" "$LITAR" archive.la -l chunk -a
 assert_text "agent does not change print" $'OK\n' "$LITAR" -a -p chunk archive.la
@@ -82,6 +90,26 @@ assert_fail "duplicate -p and --print" "duplicate print option" \
     "$LITAR" -p chunk --print chunk archive.la
 assert_fail "duplicate --print=" "duplicate print option" \
     "$LITAR" --print=chunk -p chunk archive.la
+assert_fail "duplicate -e and --effective" "duplicate effective option" \
+    "$LITAR" -e chunk --effective chunk archive.la
+assert_fail "duplicate --effective=" "duplicate effective option" \
+    "$LITAR" --effective=chunk -e chunk archive.la
+assert_fail "print and effective" "cannot combine print and effective" \
+    "$LITAR" -p chunk -e chunk archive.la
+assert_fail "effective and print" "cannot combine print and effective" \
+    "$LITAR" --effective chunk --print chunk archive.la
+assert_fail "literal and effective" "cannot combine literal and effective" \
+    "$LITAR" -l chunk -e chunk archive.la
+assert_fail "effective and literal" "cannot combine literal and effective" \
+    "$LITAR" -e chunk --literal chunk archive.la
+assert_fail "effective and modules" "cannot combine effective and modules" \
+    "$LITAR" -e chunk -m archive.la
+assert_fail "modules and effective" "cannot combine effective and modules" \
+    "$LITAR" -m --effective chunk archive.la
+assert_fail "effective and depend" "cannot combine effective and depend" \
+    "$LITAR" -e chunk -d chunk archive.la
+assert_fail "depend and effective" "cannot combine effective and depend" \
+    "$LITAR" -d chunk --effective chunk archive.la
 assert_fail "duplicate -l and --literal" "duplicate literal option" \
     "$LITAR" -l chunk --literal chunk archive.la
 assert_fail "duplicate --literal=" "duplicate literal option" \
@@ -105,7 +133,7 @@ assert_fail "duplicate -a and --agent" "duplicate agent option" \
 assert_fail "--agent= is unknown" "unknown option '--agent=foo'" \
     "$LITAR" --agent=foo -l chunk archive.la
 assert_fail "agent is not an action" \
-    "missing -p, --print, -l, --literal, -m, --modules, -d, or --depend" \
+    "missing -p, --print, -l, --literal, -e, --effective, -m, --modules, -d, or --depend" \
     "$LITAR" -a archive.la
 assert_fail "duplicate -d and --depend" "duplicate depend option" \
     "$LITAR" -d chunk --depend chunk archive.la
@@ -131,7 +159,7 @@ assert_fail "unknown short option" "unknown option '-z'" \
     "$LITAR" -z archive.la
 assert_fail "missing archive" "missing archive" "$LITAR" -p chunk
 assert_fail "missing print" \
-    "missing -p, --print, -l, --literal, -m, --modules, -d, or --depend" \
+    "missing -p, --print, -l, --literal, -e, --effective, -m, --modules, -d, or --depend" \
     "$LITAR" archive.la
 assert_fail "missing archive for -m" "missing archive" "$LITAR" -m
 assert_fail "missing archive for --modules" "missing archive" "$LITAR" --modules
@@ -145,6 +173,10 @@ assert_fail "--literal needs a chunk reference" \
     "--literal requires a chunk reference" "$LITAR" --literal
 assert_fail "-l needs a chunk reference" "-l requires a chunk reference" \
     "$LITAR" -l
+assert_fail "--effective needs a chunk reference" \
+    "--effective requires a chunk reference" "$LITAR" --effective
+assert_fail "-e needs a chunk reference" "-e requires a chunk reference" \
+    "$LITAR" -e
 assert_fail "--depend needs a chunk reference" \
     "--depend requires a chunk reference" "$LITAR" --depend
 assert_fail "-d needs a chunk reference" "-d requires a chunk reference" \

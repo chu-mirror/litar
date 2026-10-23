@@ -7,6 +7,7 @@ usage: litar [options] ARCHIVE
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
 -m, --modules: list all modules
 -l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
+-e, --effective CHUNK_REFERENCE: print the the effective blocks of CHUNK_REFERENCE
 -d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
 -a, --agent: alter output to suit an agent's needs
 ```
@@ -82,6 +83,6 @@ content
 The second block depends on `chunk 1` and `label 1@:chunk 1`;
 the third block depends on `chunk 2` and `label 2@:chunk 2`.
 
-The format of output of option `-d` agrees with `-l`.
+The format of output of option `-e` and `-d` agrees with `-l`.
 
 Consult [agent.md](agent.md) for the behaviour of `-a`/`--agent` option.

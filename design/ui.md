@@ -6,7 +6,7 @@ usage: litar [options] ARCHIVE
 --help: print the usage
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
 -m, --modules MODULE: list all modules under MODULE
--c, --chunks MODULE: list the names of all modules under MODULE
+-c, --chunks MODULE: list the names of all chunks under MODULE
 -l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
 -e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
 -d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE

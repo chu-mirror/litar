@@ -4,15 +4,16 @@ The implementation of the MCP server provides tools to
 inspect and modify a litar archive;
 the tools are based on blocks and chunks:
 
-1. fetch all modules and their description,
-2. check blocks applied to a chunk reference,
-3. check effective blocks of a chunk reference,
-4. check blocks depending on a chunk reference,
-5. check blocks that refer to a topic,
-6. evaluate the content of an expression,
-7. modify a certain block,
-8. delete a certain block,
-9. append a block to the archive.
+- fetch modules under a module and get their description,
+- fetch chunks under a module,
+- check blocks applied to a chunk reference,
+- check effective blocks of a chunk reference,
+- check blocks depending on a chunk reference,
+- check blocks that refer to a topic,
+- evaluate the content of an expression,
+- modify a certain block,
+- delete a certain block,
+- append a block to the archive.
 
 The MCP server can not read or edit a litar archive directly,
 all the operations are based on two command line tools, litar and sed.
@@ -23,22 +24,18 @@ to locate a block, and modify the format of output.
 Here's a sample archive, named `archive.la`, from [ui.md](ui.md):
 
 ```
-@- module 1 @
-
-@<chunk@=
-@<substructure 1@>
+@<module1@/chunk1@=
+@<.@/substructure 1@>
 @
 
-@<chunk2@=
-@<substructure@>
+@<module1@/chunk2@=
+@<.@/substructure@>
 @
-
-@- module 2 @
 
 Extend chunk through label.
-@<label@:module 1@/chunk@+
-@<substructure 2@>
-@
+@<label@:module1@/chunk1@+
+@<.@/substructure 2@>
+@~ topic @
 ```
 
 If we run `litar -a -l label@:module 1@/chunk` for this, it should print,
@@ -48,26 +45,26 @@ If we run `litar -a -l label@:module 1@/chunk` for this, it should print,
     {
         "comment": "",
         "labels": [],
-        "module": "module 1",
+        "module": "module1",
         "chunk": "chunk",
         "type": "set",
-        "content": "@<substructure 1@>\n",
+        "content": "@<.@/substructure 1@>\n",
         "filters": [],
         "topics": [],
         "file": "archive.la",
-        "line-range": [2, 5]
+        "line-range": [1, 3]
     },
     {
         "comment": "Extend chunk through label.\n",
         "labels": ["label"],
-        "module": "module 1",
+        "module": "module1",
         "chunk": "chunk",
         "type": "extend",
-        "content": "@<substructure 2@>\n",
+        "content": "@<.@/substructure 2@>\n",
         "filters": [],
-        "topics": [],
+        "topics": ["topic"],
         "file": "archive.la",
-        "line-range": [13, 16]
+        "line-range": [9, 12]
     }
 ]
 ```

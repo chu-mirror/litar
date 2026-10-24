@@ -14,8 +14,18 @@ Litar, written as a literate program.
 Litar reads one archive and answers one request.
 It prints a chunk, prints the blocks applied to a chunk,
 prints the effective blocks of a chunk,
-lists the modules, or lists the blocks that use a chunk.
+lists the modules, lists the blocks that use a chunk,
+or lists the blocks that refer to a topic.
 The same block listing can be printed as JSON.
+
+A block may name topics after its body and its filters.
+@@~ domain@@/item @@ attaches the topic domain@@/item.
+@@/ classifies a name under the domain before it,
+and further names classify that topic further.
+-r lists every block that names the query
+or a further classification of the query.
+The listing has the same form as -l.
+A topic is not part of the expanded text.
 
 This is the reading of design/litar.md through Filters,
 and of the command line in design/ui.md and design/agent.md,
@@ -44,6 +54,7 @@ from the module skeleton.
 - `print blocks literally`: the listing selected by -l;
 - `print effective blocks`: the listing selected by -e;
 - `list dependent blocks`: the listing selected by -d;
+- `list referring blocks`: the listing selected by -r;
 - `print agent listings`: the JSON form selected by -a;
 - `search for an included archive`: the include path;
 - `list introduced modules`: the listing selected by -m;
@@ -414,7 +425,8 @@ static void parse_filter_name(Parser *p, QName *filt, int expr) {
 @
 
 @<end a filter name@=
-        if (k == '|' || k == '>' || is_end_kind(k)) {
+        /* @@~ starts the block's topic list and ends this pipeline. */
+        if (k == '|' || k == '>' || k == '~' || is_end_kind(k)) {
             if (!name[0]) {
                 fail_at(p, "empty filter name");
             }
@@ -633,6 +645,87 @@ static void copy_filters(Arena *a, QName *filters, int n, Filt **out, int *nout)
 }
 @
 
+@@~ starts one topic reference.
+Names are separated by @@/.
+The reference ends at the block's closer or at the next @@~.
+An empty name is empty topic name.
+@<parse one topic@=
+static void parse_topic(Parser *p, StrVec *parts) {
+    memset(parts, 0, sizeof(*parts));
+    p->i += 2;
+    for (;;) {
+        size_t start = p->i;
+        char *name;
+        int k;
+        scan_to_control(p);
+        name = take_name(p, start, p->i);
+        if (p->i >= p->n) {
+            fail_at(p, "unterminated expression");
+        }
+        if (!name[0]) {
+            fail_at(p, "empty topic name");
+        }
+        k = control_kind(p);
+        sv_push(parts, name);
+        if (k == '/') {
+            p->i += 2;
+            continue;
+        }
+        if (k == '~' || is_end_kind(k)) {
+            return;
+        }
+        fail_at(p, "unexpected control '@@%c' in name", k);
+    }
+}
+@
+
+@<add a topic to a block@=
+static void add_topic(StrVec **topics, int *n, int *cap, StrVec topic) {
+    if (*n == *cap) {
+        int ncap = *cap ? *cap * 2 : 4;
+        StrVec *nt = xmalloc((size_t)ncap * sizeof(StrVec));
+        if (*n) {
+            memcpy(nt, *topics, (size_t)(*n) * sizeof(StrVec));
+        }
+        free(*topics);
+        *topics = nt;
+        *cap = ncap;
+    }
+    (*topics)[(*n)++] = topic;
+}
+@
+
+@<release topic vectors@=
+static void free_topic_vecs(StrVec *topics, int n) {
+    for (int i = 0; i < n; i++) {
+        free(topics[i].v);
+    }
+    free(topics);
+}
+@
+
+@<copy topics into an arena@=
+static void copy_topics(Arena *a, StrVec *topics, int n, Topic **out, int *nout) {
+    Topic *ts;
+    if (n == 0) {
+        *out = NULL;
+        *nout = 0;
+        return;
+    }
+    ts = arena_alloc(a, (size_t)n * sizeof(Topic));
+    for (int i = 0; i < n; i++) {
+        const char **parts = arena_alloc(a, (size_t)topics[i].n * sizeof(char *));
+        for (int j = 0; j < topics[i].n; j++) {
+            parts[j] = topics[i].v[j];
+        }
+        ts[i].parts = parts;
+        ts[i].nparts = topics[i].n;
+    }
+    *out = ts;
+    *nout = n;
+}
+@
+
 @<read a block header@=
 static void parse_block(Parser *p, int execute) {
     QName qn;
@@ -644,6 +737,9 @@ static void parse_block(Parser *p, int execute) {
     size_t lit_end;
     int op;
     int depth = 0;
+    StrVec *topics = NULL;
+    int ntopics = 0;
+    int captopics = 0;
     int line = line_at(p, p->i);
     p->i += 2;
     parse_qname(p, &qn, Q_BLOCK);
@@ -656,6 +752,8 @@ static void parse_block(Parser *p, int execute) {
     body = p->i;
     /* `@@|` ends the body only outside a reference. `@@|` between `@@<`
        and `@@>` belongs to that reference and stays in the body.
+       `@@~` at the top of the body ends it and starts the topic list.
+       Inside a reference it stays in the body.
        `@@` followed by whitespace still ends the block at any depth,
        so an unclosed reference does not swallow the block's closer. */
 @
@@ -671,6 +769,9 @@ static void parse_block(Parser *p, int execute) {
             break;
         }
         if (k == '|' && depth == 0) {
+            break;
+        }
+        if (k == '~' && depth == 0) {
             break;
         }
         if (k == '<') {
@@ -700,6 +801,11 @@ static void parse_block(Parser *p, int execute) {
         p->i += 2;
         parse_filter_list(p, &qn, 0);
     }
+    while (p->i < p->n && control_kind(p) == '~') {
+        StrVec topic;
+        parse_topic(p, &topic);
+        add_topic(&topics, &ntopics, &captopics, topic);
+    }
     if (p->i >= p->n || !is_end_kind(control_kind(p))) {
         fail_at(p, "expected '@@' to end the expression");
     }
@@ -710,6 +816,7 @@ static void parse_block(Parser *p, int execute) {
     lit_end = p->i;
     if (!execute) {
         qname_free(&qn);
+        free_topic_vecs(topics, ntopics);
         return;
     }
 @
@@ -742,6 +849,8 @@ static void parse_block(Parser *p, int execute) {
     blk.tail_len = lit_end - (op_at + 2);
     blk.tail = arena_strndup(&p->arc->arena, p->buf + op_at + 2, blk.tail_len);
     copy_filters(&p->arc->arena, qn.filters, qn.nfilters, &blk.filters, &blk.nfilters);
+    copy_topics(&p->arc->arena, topics, ntopics, &blk.topics, &blk.ntopics);
+    free_topic_vecs(topics, ntopics);
     blk.def_line = line;
 @
 
@@ -2491,8 +2600,29 @@ static void append_agent_block(const Block *b, Buf *out) {
     buf_append(out, ",\n", 2);
 @
 
+@<append agent topics@=
+static void append_agent_topics(const Block *b, Buf *out) {
+    buf_append(out, "        \"topics\": ", 18);
+    if (b->ntopics == 0) {
+        buf_append(out, "[]", 2);
+        return;
+    }
+    buf_append(out, "[\n", 2);
+    for (int i = 0; i < b->ntopics; i++) {
+        if (i) {
+            buf_append(out, ",\n", 2);
+        }
+        buf_append(out, "            ", 12);
+        append_json_labels(out, b->topics[i].parts, b->topics[i].nparts);
+    }
+    buf_append(out, "\n        ]", 10);
+}
+@
+
 @<append the agent file and line range@=
     append_agent_filters(b, out);
+    buf_append(out, ",\n", 2);
+    append_agent_topics(b, out);
     buf_append(out, ",\n", 2);
     buf_append(out, "        \"file\": ", 16);
     append_json_string(out, file, strlen(file));
@@ -2509,9 +2639,10 @@ static void append_agent_block(const Block *b, Buf *out) {
 
 @<Litar@/print an agent listing@=
 
-/* -a lists the same blocks as -l, -e, or -d, as a JSON array.
+/* -a lists the same blocks as -l, -e, -d, or -r, as a JSON array.
    An empty listing is [] followed by a newline. The caller passes
-   an empty buffer; a listing that finds nothing rewinds the '['. */
+   an empty buffer; a listing that finds nothing rewinds the '['.
+   For -r the label vector is the topic path. module and chunk are unused. */
 
 static void agent_list(Archive *a, const char **labels, int nlabels, const char *module,
                        const char *chunk, int mode, Buf *out) {
@@ -2524,8 +2655,10 @@ static void agent_list(Archive *a, const char **labels, int nlabels, const char 
             match = block_in_chain(a, b, labels, nlabels, module, chunk);
         } else if (mode == MODE_EFFECTIVE) {
             match = block_is_effective(a, i, labels, nlabels, module, chunk);
-        } else {
+        } else if (mode == MODE_DEPEND) {
             match = block_depends(a, b, labels, nlabels, module, chunk);
+        } else {
+            match = block_refers(b, labels, nlabels);
         }
         if (!match) {
             continue;
@@ -2796,12 +2929,16 @@ static void usage(FILE *fp, const char *argv0) {
             "print the effective blocks of CHUNK_REFERENCE\n"
             "-d, --depend CHUNK_REFERENCE: "
             "list all blocks that depend on CHUNK_REFERENCE\n"
+            "-r, --reference TOPIC: "
+            "list all blocks that refer to TOPIC\n"
             "-a, --agent: alter output to suit an agent's needs\n"
             "\n"
             "EXPRESSION follows "
             "label1@@:label2@@:module name@@/chunk name@@|filter1@@|filter2.\n"
             "CHUNK_REFERENCE follows "
-            "label1@@:label2@@:module name@@/chunk name.\n",
+            "label1@@:label2@@:module name@@/chunk name.\n"
+            "TOPIC follows "
+            "domain@@/subdomain@@/item.\n",
             argv0);
 }
 @
@@ -2809,8 +2946,8 @@ static void usage(FILE *fp, const char *argv0) {
 @<Litar@/name a mode@=
 
 /* Diagnostics name the options in enumerator order, print then literal
-   then effective then modules then depend, so the message does not depend on
-   argument order. */
+   then effective then modules then depend then reference,
+   so the message does not depend on argument order. */
 
 static const char *mode_word(int mode) {
     if (mode == MODE_PRINT) {
@@ -2825,7 +2962,10 @@ static const char *mode_word(int mode) {
     if (mode == MODE_MODULES) {
         return "modules";
     }
-    return "depend";
+    if (mode == MODE_DEPEND) {
+        return "depend";
+    }
+    return "reference";
 }
 @
 
@@ -2919,11 +3059,13 @@ label-group name, label inside a group, or archive name is an error.
 In a qualified name the labels come first,
 then one optional module, then the chunk.
 A label after @@/, or a second @@/, is an error.
-The text of -p, -l, and -d is the reference itself
+The text of -p, -l, -e, and -d is the reference itself
 and ends at the end of the argument,
 so a closing @@ is not written on the command line.
--l and -d name a chunk reference, so @@| there is
+-l, -e, and -d name a chunk reference, so @@| there is
 unexpected control '@@|' in name.
+The text of -r is a topic path.
+Names are separated by @@/, and the path ends at the end of the argument.
 @<parse qualified names@=
 @<test an ascii letter@>
 @<classify the control at the parser@>
@@ -3031,12 +3173,27 @@ File definitions and file sets are recognized and rejected.
 @@<name@@+ is a block that extends a chunk, not a file set.
 Any other control used as an expression is unknown expression '@@c'.
 @@| as an expression of its own is unexpected '@@|'.
+@@~ as an expression of its own is unknown expression '@@~'.
+
+A topic reference is written on a block, after the body and after any filters.
+@@~ domain@@/item @@ names the topic domain@@/item.
+@@/ separates one classification from the next.
+Further names are allowed, with no fixed depth.
+Several topics are written one after another,
+@@~one@@~two@@, and the block's closing @@ ends the last one.
+The topic is not part of the content, so -p does not print it.
+@@@@~ in the content is the text @@~ and does not open a topic.
+A topic inside a skipped arm is parsed and is not recorded.
 @<parse an archive@=
 @<add a block@>
 @<note an introduced module@>
 @<grow the module list@>
 @<copy filters into an arena@>
 @<copy one filter into the arena@>
+@<parse one topic@>
+@<add a topic to a block@>
+@<release topic vectors@>
+@<copy topics into an arena@>
 @<read a block header@>
 @<scan a block body@>
 @<close a block expression@>
@@ -3244,7 +3401,8 @@ The anonymous module has an empty name, so its reference has no module@@/ piece.
 @@ in a printed label, module, or chunk is written as @@@@.
 
 The bytes after @@= or @@+ are the layout newline, the content,
-the block's filters, and the closing @@. They are copied as written.
+the block's filters, the topic references, and the closing @@.
+They are copied as written.
 The printed header uses that block's operator,
 so an extending block is printed with @@+.
 The body is not rewritten, so labels are not added to references inside it,
@@ -3298,7 +3456,7 @@ A query that names a module matches only that module.
 
 The output has the same form as -l.
 With -a, -l, -e, and -d use the JSON form of an agent listing.
-@<Litar@/list dependent blocks@=
+@<list dependent blocks@=
 @<test a named use@>
 @<resolve the labels of a use@>
 @<test a qualified name for a dependency@>
@@ -3312,15 +3470,112 @@ With -a, -l, -e, and -d use the JSON form of an agent listing.
 @<print dependent blocks@>
 @
 
--a and --agent change the block listing from -l, from -e, and from -d into a JSON array.
+-r and --reference list every block that refers to the topic,
+in archive order.
+A block refers to the topic when one of its topic paths is the topic
+or a further classification of the topic.
+The query's names are a prefix of that path, compared one name at a time.
+C matches a block that names C and a block that names C@@/variables@@/times.
+C@@/variables@@/times does not match a block that names only C.
+A different branch does not match.
+C@@/var does not match C@@/variables.
+The topic does not have to occur on any block.
+When no block refers to it, stdout is empty and the exit status is 0.
+The comment, the content, and the filters are not topics.
+A topic on an arm that is not kept is not a reference.
+A topic in an included archive is included.
+
+The output has the same form as -l.
+With -a, -r uses the JSON form of an agent listing.
+@<list referring blocks@=
+@<parse a topic path@>
+@<test one topic path@>
+@<test whether a block refers to a topic@>
+@<print referring blocks@>
+@
+
+A topic on the command line is the path itself.
+It has no @@~ and no closing @@.
+@<parse a topic path@=
+static void parse_topic_path(Parser *p, StrVec *parts) {
+    memset(parts, 0, sizeof(*parts));
+    for (;;) {
+        size_t start = p->i;
+        char *name;
+        int k;
+        scan_to_control(p);
+        name = take_name(p, start, p->i);
+        if (!name[0]) {
+            fail_at(p, "empty topic name");
+        }
+        sv_push(parts, name);
+        if (p->i >= p->n) {
+            return;
+        }
+        k = control_kind(p);
+        if (k == '/') {
+            p->i += 2;
+            continue;
+        }
+        if (k == 0) {
+            fail_at(p, "unterminated name");
+        }
+        fail_at(p, "unexpected control '@@%c' in name", k);
+    }
+}
+@
+
+@<test one topic path@=
+static int topic_matches(const Topic *topic, const char **query, int nquery) {
+    if (nquery <= 0 || nquery > topic->nparts) {
+        return 0;
+    }
+    for (int i = 0; i < nquery; i++) {
+        if (strcmp(topic->parts[i], query[i]) != 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+@
+
+@<test whether a block refers to a topic@=
+static int block_refers(const Block *b, const char **query, int nquery) {
+    for (int i = 0; i < b->ntopics; i++) {
+        if (topic_matches(&b->topics[i], query, nquery)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+@
+
+/* -r prints the same shape as -l, for each block that refers to the topic.
+   The body, its filters, and its topic references are copied as written.
+   References are not followed and filters are not run.
+   A topic that no block names prints nothing. */
+@<print referring blocks@=
+static void reference_blocks(Archive *a, const char **query, int nquery, Buf *out) {
+    int printed = 0;
+    for (int i = 0; i < a->nblocks; i++) {
+        if (!block_refers(&a->blocks[i], query, nquery)) {
+            continue;
+        }
+        append_shown_block(&a->blocks[i], out, &printed);
+    }
+}
+@
+
+-a and --agent change the block listing
+from -l, from -e, from -d, and from -r into a JSON array.
 The blocks are the same ones, in the same order.
 -p and -m are not changed.
-A listing with no blocks, which -d can produce, is [] followed by LF.
+A listing with no blocks, which -d and -r can produce, is [] followed by LF.
 An undefined -l or -e reference is still an error and leaves stdout empty.
 
 The array is indented by four spaces.
 Each element has comment, labels, module, chunk, type,
-content, filters, file, and line-range, in that order.
+content, filters, topics, file, and line-range, in that order.
 Strings use JSON escapes: \", \\, \n, \r, \t,
 and \u00XX for other bytes below 0x20.
 Bytes at 0x20 and above are copied, so UTF-8 stays UTF-8.
@@ -3331,7 +3586,8 @@ module is the module the block extends. The anonymous module is \"\".
 chunk is the chunk name.
 type is set when the block uses @@=, and extend when the block uses @@+.
 content is the stored block content.
-It does not include the layout newline after @@= or @@+, and it does not include the filters.
+It does not include the layout newline after @@= or @@+,
+and it does not include the filters or the topic references.
 file is the path of the archive that contains the block:
 the command-line argument, or the path the include search returned.
 line-range is two inclusive line numbers, counted by LF.
@@ -3344,7 +3600,9 @@ filters is the block's filter list, in order. An empty list is [].
 Each filter is an object with labels, module, and chunk.
 When the filter names no module, module is the module selected
 where the block was written.
-@<Litar@/print agent listings@=
+topics is the block's topic list, in order. An empty list is [].
+Each topic is an array of names, from the domain through each further classification.
+@<print agent listings@=
 @<append a json string@>
 @<escape a json quote@>
 @<escape a json newline@>
@@ -3355,6 +3613,7 @@ where the block was written.
 @<publish the comment an agent sees@>
 @<append agent filters@>
 @<append one agent filter@>
+@<append agent topics@>
 @<append one agent block@>
 @<append the agent comment@>
 @<append the agent names@>
@@ -3437,7 +3696,7 @@ and spell the forms of EXPRESSION and CHUNK_REFERENCE, including filters.
 A repeated mode is duplicate <mode> option.
 A pair of modes is cannot combine <first> and <second>.
 The modes are named in a fixed order,
-print then literal then effective then modules then depend,
+print then literal then effective then modules then depend then reference,
 so the diagnostic does not depend on the order of the arguments.
 @<Litar@/describe the command line@=
 @<print the usage text@>
@@ -3455,7 +3714,8 @@ so the diagnostic does not depend on the order of the arguments.
     Parser ep;
     QName qn;
     StrVec labels = {0};
-    const char *module;
+    StrVec topic = {0};
+    const char *module = NULL;
     Visit visit = {0};
     Buf result = {0};
     char *key;
@@ -3520,6 +3780,19 @@ so the diagnostic does not depend on the order of the arguments.
             expr = arg + 9;
 @
 
+@<accept a reference option@=
+        } else if (strcmp(arg, "-r") == 0 || strcmp(arg, "--reference") == 0) {
+            set_mode(&mode, MODE_REFERENCE);
+            if (i + 1 >= argc) {
+                usage(stderr, argv0);
+                fail("%s requires a topic", arg);
+            }
+            expr = argv[++i];
+        } else if (strncmp(arg, "--reference=", 12) == 0) {
+            set_mode(&mode, MODE_REFERENCE);
+            expr = arg + 12;
+@
+
 @<accept an agent option or the archive name@=
         } else if (strcmp(arg, "-a") == 0 || strcmp(arg, "--agent") == 0) {
             if (agent) {
@@ -3545,8 +3818,8 @@ so the diagnostic does not depend on the order of the arguments.
     if (!mode || !file) {
         usage(stderr, argv0);
         if (!mode) {
-            fail("missing -p, --print, -l, --literal, -e, --effective, -m, --modules, -d, or "
-                 "--depend");
+            fail("missing -p, --print, -l, --literal, -e, --effective, -m, --modules, -d, "
+                 "--depend, -r, or --reference");
         }
         fail("missing archive");
     }
@@ -3571,35 +3844,41 @@ so the diagnostic does not depend on the order of the arguments.
 
 @
 
-@<Litar@/parse the request expression@=
+@<parse the request expression@=
     memset(&ep, 0, sizeof(ep));
     ep.buf = expr;
     ep.n = strlen(expr);
     ep.arc = &arc;
-    parse_qname(&ep, &qn,
-                (mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND) ? Q_CHUNK
-                                                                                        : Q_EXPR);
-    if (ep.i < ep.n) {
-        int k = control_kind(&ep);
-        if (k == 0) {
-            fail_at(&ep, "unterminated name");
+    memset(&qn, 0, sizeof(qn));
+    if (mode == MODE_REFERENCE) {
+        /* -r names a topic path, not a chunk. An unknown topic is empty output. */
+        parse_topic_path(&ep, &topic);
+    } else {
+        parse_qname(&ep, &qn,
+                    (mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND) ? Q_CHUNK
+                                                                                            : Q_EXPR);
+        if (ep.i < ep.n) {
+            int k = control_kind(&ep);
+            if (k == 0) {
+                fail_at(&ep, "unterminated name");
+            }
+            fail_at(&ep, "unexpected control '@@%c' in name", k);
         }
-        fail_at(&ep, "unexpected control '@@%c' in name", k);
-    }
-    if (qn.labels.n) {
-        expand_label_list(&arc, qn.labels.v, qn.labels.n, &labels);
-    }
-    module = qn.has_module ? qn.module : "";
-    /* -l, -e, and -d with no module name the chunk in every module.
-       -p keeps the anonymous module when the expression names none.
-       -d lists users of the reference. The chunk need not be defined. */
-    if ((mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND) && !qn.has_module) {
-        module = NULL;
+        if (qn.labels.n) {
+            expand_label_list(&arc, qn.labels.v, qn.labels.n, &labels);
+        }
+        module = qn.has_module ? qn.module : "";
+        /* -l, -e, and -d with no module name the chunk in every module.
+           -p keeps the anonymous module when the expression names none.
+           -d lists users of the reference. The chunk need not be defined. */
+        if ((mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND) && !qn.has_module) {
+            module = NULL;
+        }
     }
 @
 
 @<require a defined chunk@=
-    if (mode != MODE_DEPEND) {
+    if (mode != MODE_DEPEND && mode != MODE_REFERENCE) {
         key = canonical(labels.v, labels.n, module, qn.chunk);
         if (!chunk_defined(&arc, labels.v, labels.n, module, qn.chunk)) {
             fail("chunk '%s' is not defined", key);
@@ -3609,7 +3888,15 @@ so the diagnostic does not depend on the order of the arguments.
 @
 
 @<Litar@/select a literal or dependency listing@=
-    if (mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND) {
+    if (mode == MODE_REFERENCE) {
+        /* The same listing shape as -l. -a emits those blocks as JSON.
+           The topic path is not a chunk reference. */
+        if (agent) {
+            agent_list(&arc, topic.v, topic.n, NULL, NULL, mode, &result);
+        } else {
+            reference_blocks(&arc, topic.v, topic.n, &result);
+        }
+    } else if (mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND) {
         /* The pieces are concatenated with nothing added between them.
            Each block's chunk reference names that block's own labels
            and the module that block extends. -a emits the same blocks
@@ -3652,6 +3939,7 @@ so the diagnostic does not depend on the order of the arguments.
     free(result.data);
 
     free(labels.v);
+    free(topic.v);
     qname_free(&qn);
     free(visit.keys);
     free(arc.blocks);
@@ -3673,6 +3961,7 @@ Unknown options and missing arguments also print the usage to stderr.
 @<accept an effective option@>
 @<accept a modules option@>
 @<accept a depend option@>
+@<accept a reference option@>
 @<accept an agent option or the archive name@>
 @<close the option loop@>
 @
@@ -3688,15 +3977,16 @@ Effective is -e REF, --effective REF, or --effective=REF.
 Modules is -m or --modules and takes no argument.
 --modules=… is an unknown option.
 Depend is -d REF, --depend REF, or --depend=REF.
+Reference is -r TOPIC, --reference TOPIC, or --reference=TOPIC.
 Agent is -a or --agent and takes no argument.
 --agent=… is an unknown option.
-Print, literal, effective, modules, and depend cannot be combined.
+Print, literal, effective, modules, depend, and reference cannot be combined.
 Agent may be combined with any of them.
-It changes the listing from -l, from -e, and from -d.
+It changes the listing from -l, from -e, from -d, and from -r.
 -p and -m keep their usual text.
 A duplicate agent option is duplicate agent option.
 With no action selected the error is
-missing -p, --print, -l, --literal, -e, --effective, -m, --modules, -d, or --depend.
+missing -p, --print, -l, --literal, -e, --effective, -m, --modules, -d, --depend, -r, or --reference.
 @<Litar@/parse the command line@=
 @<declare the request locals@>
 @<return when help was requested@>
@@ -3708,13 +3998,14 @@ The archive is read to the end before the expression is evaluated,
 before literal blocks are printed,
 before effective blocks are printed,
 before the blocks that depend on a reference are printed,
+before the blocks that refer to a topic are printed,
 and before the module list is written.
-A print, literal, effective, or depend result is written to stdout as raw bytes,
+A print, literal, effective, depend, or reference result is written to stdout as raw bytes,
 with no added newline.
 
 The chunk is built in memory and written only after every filter has run.
 A cycle or a failed filter writes nothing.
--l, -e, and -d do not expand references and do not run filters.
+-l, -e, -d, and -r do not expand references and do not run filters.
 -m lists modules and returns before the expression is parsed.
 @<Litar@/carry out the request@=
 @<load the archive@>
@@ -3803,6 +4094,19 @@ typedef struct Filt {
 } Filt;
 @
 
+A topic is a path of names attached to a block.
+The first name is the domain.
+Each later name classifies that topic further.
+@<litar@:executable@:data type declarations@+
+/* A topic is a path of names. The strings live in the archive arena.
+   The first name is the domain. Each later name is a further
+   classification, written with @@/ in the archive. */
+typedef struct Topic {
+    const char **parts;
+    int nparts;
+} Topic;
+@
+
 A block stores one set or one extension of one chunk, plus the text around it.
 @<litar@:executable@:data type declarations@+
 typedef struct Block {
@@ -3819,11 +4123,14 @@ typedef struct Block {
     const char *comment;
     size_t comment_len;
     /* Bytes after @@= or @@+ through the end of the expression:
-       the layout newline, the content, the filters, and the closer. */
+       the layout newline, the content, the filters,
+       the topic references, and the closer. */
     const char *tail;
     size_t tail_len;
     Filt *filters;
     int nfilters;
+    Topic *topics;
+    int ntopics;
     int def_line;
     /* Line of the closing '@@'. With def_line, -a names the block's span. */
     int end_line;
@@ -3926,7 +4233,8 @@ enum {
     MODE_LITERAL,
     MODE_EFFECTIVE,
     MODE_MODULES,
-    MODE_DEPEND
+    MODE_DEPEND,
+    MODE_REFERENCE
 };
 @
 
@@ -3988,6 +4296,12 @@ a repeated option, or a usage line that prints argv[0].
                     description => 'list all blocks that depend on CHUNK_REFERENCE',
                 },
                 {
+                    long_opt => 'reference',
+                    opt => 'r',
+                    argument => 'TOPIC',
+                    description => 'list all blocks that refer to TOPIC',
+                },
+                {
                     long_opt => 'agent',
                     opt => 'a',
                     description => 'alter output to suit an agent\'s needs',
@@ -4021,6 +4335,7 @@ so a group may call a function that a later group defines.
 @<Litar@/print blocks literally@>
 @<Litar@/print effective blocks@>
 @<Litar@/list dependent blocks@>
+@<Litar@/list referring blocks@>
 @<Litar@/print agent listings@>
 @<Litar@/search for an included archive@>
 @<Litar@/list introduced modules@>

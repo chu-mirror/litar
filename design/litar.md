@@ -326,6 +326,31 @@ printf("Hello\n");
 @
 ```
 
+# Cross Reference
+
+litar allows browsing among related blocks. For example,
+
+- all effective blocks of a chunk reference;
+- all blocks that depend on a chunk reference.
+
+These relations help understanding of a litar archive,
+but litar does not have knowledge of text it manages.
+It does not recognize variable names or function names in programming languages,
+nor does it recognize a certain topic of a document.
+
+We can label out these concrete topics explicitly to build underlying connection.
+
+```
+Variable 'times' saves the number of occurrences of an event.
+@<chunk@=
+int times;
+@|filter
+@~ C@/variables@/times @
+```
+
+`@/` means that the topic is under a domain.
+litar allows arbitrary further classification of a domain.
+
 # Filter
 
 Another major extension is user defined filters.

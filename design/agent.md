@@ -1,4 +1,4 @@
-Agent interact with litar through MCP.
+An agent interact with litar through MCP.
 
 The implementation of the MCP server provides tools to
 inspect and modify a litar archive;
@@ -8,10 +8,11 @@ the tools are based on blocks and chunks:
 2. check blocks applied to a chunk reference,
 3. check effective blocks of a chunk reference,
 4. check blocks depending on a chunk reference,
-5. evaluate the content of an expression,
-6. modify a certain block,
-7. delete a certain block,
-8. append a block to the archive.
+5. check blocks that refer to a topic,
+6. evaluate the content of an expression,
+7. modify a certain block,
+8. delete a certain block,
+9. append a block to the archive.
 
 The MCP server can not read or edit a litar archive directly,
 all the operations are based on two command line tools, litar and sed.
@@ -52,6 +53,7 @@ If we run `litar -a -l label@:module 1@/chunk` for this, it should print,
         "type": "set",
         "content": "@<substructure 1@>\n",
         "filters": [],
+        "topics": [],
         "file": "archive.la",
         "line-range": [2, 5]
     },
@@ -63,6 +65,7 @@ If we run `litar -a -l label@:module 1@/chunk` for this, it should print,
         "type": "extend",
         "content": "@<substructure 2@>\n",
         "filters": [],
+        "topics": [],
         "file": "archive.la",
         "line-range": [13, 16]
     }

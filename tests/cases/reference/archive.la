@@ -1,0 +1,43 @@
+Variable 'times' saves the number of occurrences of an event.
+@<chunk@=
+int times;
+@|filter
+@~ C@/variables@/times @
+@<shown@=
+int times;
+@~C@/variables@/times@
+@<shown@+
+more
+@~C@/variables@/times@/extra@
+@<broad@=
+only
+@~C@
+@<other@=
+no
+@~C@/functions@/main@
+@<both@=
+two
+@~C@/variables@/times@~C@/functions@/main@
+@<plain@=
+int times;
+@~ C @/ variables @/ times @
+@. lib.la @
+@? skip me @|
+@<hidden@=
+no
+@~C@/variables@/hidden@
+@|
+@<elsechunk@=
+yes
+@~C@/variables@/else@
+@
+@<literal at@=
+@@~not a topic
+@
+@- Mod @
+@<kept@=
+mod
+@~a@@b@/item@
+@<lab@:kept@=
+still
+@~C@/variables@/n@

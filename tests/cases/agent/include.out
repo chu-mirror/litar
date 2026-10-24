@@ -7,6 +7,7 @@
         "type": "set",
         "content": "lib\n",
         "filters": [],
+        "topics": [],
         "file": "./lib.la",
         "line-range": [1, 3]
     }

@@ -53,7 +53,8 @@ These are the controls:
 | `@=` | set the chunk, or bind a label group |
 | `@+` | extend the chunk, or add a file set |
 | `@-` | select a module, or subtract a file set |
-| `@/` | separate the module from the chunk |
+| `@/` | separate the module from the chunk, or one level of a topic |
+| `@~` | start a topic reference on a block |
 | `@:` | separate labels, or start a label group |
 | <code>@&#124;</code> | filter, branch arm, or end of a block body |
 | `@!` | declare a flag, or remove one file |
@@ -74,7 +75,7 @@ At the start of an expression the control selects the form:
 `@[` or `@(` a file,
 `` @` `` a file-set declaration.
 A top-level `@+` or `@,` is a file-set control.
-A top-level `@|`, a bare end control, or any other control is an error.
+A top-level `@|`, a top-level `@~`, a bare end control, or any other control is an error.
 
 # Names
 
@@ -181,6 +182,34 @@ content
 @|filter@
 ```
 
+`@~` at the top of the body ends the content and starts a topic reference.
+Topics follow the filter pipeline when the block has one.
+The topic is not part of the content.
+Evaluating the block does not print it.
+
+```
+@<chunk@=
+int times;
+@|filter
+@~ C@/variables@/times @
+```
+
+A topic is one or more names separated by `@/`.
+The first name is the domain.
+Each later name classifies that topic further.
+There is no fixed depth.
+`@~ C@/variables@/times @` names `C`, then `variables`, then `times`.
+A second `@~` starts another topic on the same block:
+
+```
+@~C@/variables@/times@~C@/functions@/main@
+```
+
+The block's end control closes the last topic.
+An empty name in the path is an error.
+`@@~` in the content is the text `@~` and does not open a topic.
+A `@~` inside a chunk reference stays in the body.
+
 A reference in the body is `@<`, a qualified name, and `@>`.
 `@|` between that `@<` and its `@>` belongs to the reference
 and stays in the body.
@@ -191,6 +220,7 @@ An end control still ends the block at any depth.
 The body contains text, escapes, and references.
 Any other control in the body is an error.
 `@@<` is the text `@<` and does not open a reference.
+`@~` at the top of the body is the topic list above, not content.
 
 # Module, flag, and include
 
@@ -367,6 +397,21 @@ label1@:label2@:module name@/chunk name@|filter1@|filter2
 ```
 
 The name runs to the end of the argument.
-`-l` and `-d` take the same qualified name without a pipeline.
+`-l`, `-e`, and `-d` take the same qualified name without a pipeline.
 A module that is omitted on `-p` is the anonymous module.
-A module that is omitted on `-l` or `-d` is not filled in by this syntax.
+A module that is omitted on `-l`, `-e`, or `-d` is not filled in by this syntax.
+
+`-r` takes a topic, not a chunk reference.
+The topic is one or more names separated by `@/`,
+with no `@~` and no closing `@`:
+
+```
+domain@/subdomain@/item
+```
+
+A block refers to that topic when one of its topic paths is the topic
+or continues it with further names.
+`C` matches a path `C` and a path `C@/variables@/times`.
+`C@/variables@/times` does not match a block that names only `C`.
+`C@/var` does not match `C@/variables`.
+The listing has the same form as `-l`.

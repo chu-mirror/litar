@@ -55,7 +55,7 @@ assert_text "--effective=" \
     $'@<chunk2@=\nThe contents of block4.\n@\n' \
     "$LITAR" --effective=chunk2 archive.la
 
-agent=$'[\n    {\n        "comment": "",\n        "labels": [],\n        "module": "",\n        "chunk": "chunk2",\n        "type": "set",\n        "content": "The contents of block4.\\n",\n        "filters": [],\n        "file": "archive.la",\n        "line-range": [12, 15]\n    }\n]\n'
+agent=$'[\n    {\n        "comment": "",\n        "labels": [],\n        "module": "",\n        "chunk": "chunk2",\n        "type": "set",\n        "content": "The contents of block4.\\n",\n        "filters": [],\n        "topics": [],\n        "file": "archive.la",\n        "line-range": [12, 15]\n    }\n]\n'
 assert_text "agent listing" "$agent" "$LITAR" -a -e chunk2 archive.la
 
 assert_fail "undefined" "chunk 'missing' is not defined" \

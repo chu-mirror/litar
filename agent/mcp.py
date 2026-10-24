@@ -20,7 +20,7 @@ server uses the ``litar`` built beside ``src/``, then ``litar`` on ``PATH``.
 import sys
 from pathlib import Path
 
-# Running this file puts its directory, src/, first on sys.path. That would
+# Running this file puts its directory, agent/, first on sys.path. That would
 # shadow the installed mcp package, because this file is named mcp.py.
 _script_dir = Path(__file__).resolve().parent
 sys.path[:] = [
@@ -66,7 +66,10 @@ In those strings, write a literal @ inside a name as @@.
 
 list_modules returns every module and the evaluated text of its summary chunk.
 blocks_applied is litar -a -l. blocks_effective is litar -a -e. blocks_depending is litar -a -d.
+blocks_referring is litar -a -r. A topic looks like domain@/subdomain@/item, with no @~ and no closing @.
 evaluate_expression is litar -p. Print and modules stay plain text; -a does not change them.
+topics on a block are the cross-references @~domain@/item@ written after the body and the filters.
+They are not part of content. Pass them back to modify_block and append_block to keep them.
 modify_block and delete_block address a block with the file and the line numbers from a listing.
 Fetch the listing again after an edit, because line numbers move.
 append_block writes the block at the end of the archive.
@@ -96,6 +99,10 @@ class BlockRecord(BaseModel):
     type: Literal["set", "extend"]
     content: str
     filters: list[Filter]
+    topics: list[list[str]] = Field(
+        default_factory=list,
+        description="Topic paths on the block. Each path is domain, then further names.",
+    )
     file: str
     line_range: list[int] = Field(alias="line-range", min_length=2, max_length=2)
 
@@ -417,6 +424,13 @@ def _clean_filters(filters: list[Filter] | None) -> list[Filter]:
     return cleaned
 
 
+def _clean_topic(topic: list[str]) -> list[str]:
+    cleaned = [_clean_name("topic name", part, False) for part in topic]
+    if not cleaned:
+        raise ToolError("topic is empty")
+    return cleaned
+
+
 def format_block(
     comment: str,
     labels: list[str],
@@ -425,6 +439,7 @@ def format_block(
     block_type: str,
     content: str,
     filters: list[Filter] | None,
+    topics: list[list[str]] | None = None,
 ) -> str:
     """Serialize one block as archive text.
 
@@ -452,6 +467,8 @@ def format_block(
     parts.append(content)
     for item in filters:
         parts.append("@|" + encode_reference(item.labels, item.module, item.chunk))
+    for topic in topics or []:
+        parts.append("@~" + "@/".join(encode_name(part) for part in _clean_topic(topic)))
     parts.append("@\n")
     return "".join(parts)
 
@@ -645,6 +662,34 @@ def blocks_depending(
         return _load_blocks("-d", chunk_reference, archive)
 
 
+@mcp.tool(title="Blocks that refer to a topic", annotations=_READ_ONLY)
+def blocks_referring(
+    archive: Annotated[str, Field(description="Path of the litar archive.")],
+    topic: Annotated[
+        str,
+        Field(
+            description="Topic path, without @~ and without a closing @. "
+            "Example: C@/variables@/times. A block matches when one of its "
+            "topics is this path or a further classification of it."
+        ),
+    ],
+) -> list[BlockRecord]:
+    """Check the blocks that refer to a topic.
+
+    This is litar -a -r. A block refers to the topic when a topic reference
+    on that block, written @~domain@/item@ after the body and the filters,
+    is this path or continues it with further names. The search is not
+    transitive through chunk references. A topic that no block names returns
+    an empty list.
+    """
+
+    with _LOCK:
+        if not topic:
+            raise ToolError("topic is empty")
+        _require_archive(archive)
+        return _load_blocks("-r", topic, archive)
+
+
 @mcp.tool(title="Evaluate an expression", annotations=_READ_ONLY)
 def evaluate_expression(
     archive: Annotated[str, Field(description="Path of the litar archive.")],
@@ -707,10 +752,18 @@ def modify_block(
         list[Filter] | None,
         Field(description="Block filters, in order. Same objects the listing returns."),
     ] = None,
+    topics: Annotated[
+        list[list[str]] | None,
+        Field(
+            description="Topic paths from the listing. "
+            "Each path is domain, then further names. Omit them and they are removed."
+        ),
+    ] = None,
 ) -> EditResult:
     """Modify a block in place.
 
-    The span is the line-range from blocks_applied, blocks_effective, or blocks_depending.
+    The span is the line-range from blocks_applied, blocks_effective,
+    blocks_depending, or blocks_referring.
     The other fields replace that span. A blank line that the listing
     includes only because the comment is empty is kept. Names are decoded;
     the archive text escapes @ as @@. After the write, litar parses the file,
@@ -729,6 +782,7 @@ def modify_block(
             type,
             content,
             filters,
+            topics,
         )
 
         def mutate() -> None:
@@ -786,6 +840,10 @@ def append_block(
         Field(description="set writes @=. extend writes @+."),
     ] = "set",
     filters: Annotated[list[Filter] | None, Field(description="Block filters, in order.")] = None,
+    topics: Annotated[
+        list[list[str]] | None,
+        Field(description="Topic paths. Each path is domain, then further names."),
+    ] = None,
 ) -> EditResult:
     """Append a block at the end of the archive.
 
@@ -798,7 +856,9 @@ def append_block(
     with _LOCK:
         _require_archive(archive)
         block_labels = list(labels or [])
-        block = format_block(comment, block_labels, module, chunk, type, content, filters)
+        block = format_block(
+            comment, block_labels, module, chunk, type, content, filters, topics
+        )
         module_name = _clean_name("module", module, True)
         text = _module_selection(module_name) + "\n" + block
         before = line_count(archive)

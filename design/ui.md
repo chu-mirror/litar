@@ -7,10 +7,17 @@ usage: litar [options] ARCHIVE
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
 -m, --modules: list all modules
 -l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
--e, --effective CHUNK_REFERENCE: print the the effective blocks of CHUNK_REFERENCE
+-e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
 -d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
+-r, --reference TOPIC: list all blocks that refer to TOPIC
 -a, --agent: alter output to suit an agent's needs
 ```
+
+The formats:
+
+- EXPRESSION: `label1@:label2@:module name@/chunk name@|filter1@|filter2`;
+- CHUNK_REFERENCE: `label1@:label2@:module name@/chunk name`;
+- TOPIC: `domain@/subdomain@/item`.
 
 litar searches the included libraries in this order:
 
@@ -21,7 +28,6 @@ litar searches the included libraries in this order:
 5. /usr/local/share/litar;
 6. /usr/share/litar.
 
-The format of EXPRESSION follows "label1@:label2@:module name@/chunk name@|filter1@|filter2".
 
 Printing the blocks literally means, for each block, printing the comment before the block,
 the chunk reference that the block extends (do not omit the labels and the module name),
@@ -83,6 +89,6 @@ content
 The second block depends on `chunk 1` and `label 1@:chunk 1`;
 the third block depends on `chunk 2` and `label 2@:chunk 2`.
 
-The format of output of option `-e` and `-d` agrees with `-l`.
+The format of output of option `-e`, `-d`, and `-r` agrees with `-l`.
 
 Consult [agent.md](agent.md) for the behaviour of `-a`/`--agent` option.

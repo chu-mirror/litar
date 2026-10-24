@@ -7,6 +7,7 @@
         "type": "set",
         "content": "line\n",
         "filters": [],
+        "topics": [],
         "file": "notes.la",
         "line-range": [1, 4]
     }

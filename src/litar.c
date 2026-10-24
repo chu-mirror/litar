@@ -57,6 +57,13 @@ typedef struct Filt {
     const char *module;
     const char *chunk;
 } Filt;
+/* A topic is a path of names. The strings live in the archive arena.
+   The first name is the domain. Each later name is a further
+   classification, written with @/ in the archive. */
+typedef struct Topic {
+    const char **parts;
+    int nparts;
+} Topic;
 typedef struct Block {
     const char **labels;
     int nlabels;
@@ -71,11 +78,14 @@ typedef struct Block {
     const char *comment;
     size_t comment_len;
     /* Bytes after @= or @+ through the end of the expression:
-       the layout newline, the content, the filters, and the closer. */
+       the layout newline, the content, the filters,
+       the topic references, and the closer. */
     const char *tail;
     size_t tail_len;
     Filt *filters;
     int nfilters;
+    Topic *topics;
+    int ntopics;
     int def_line;
     /* Line of the closing '@'. With def_line, -a names the block's span. */
     int end_line;
@@ -152,7 +162,8 @@ enum {
     MODE_LITERAL,
     MODE_EFFECTIVE,
     MODE_MODULES,
-    MODE_DEPEND
+    MODE_DEPEND,
+    MODE_REFERENCE
 };
 
 /* stdin */
@@ -185,6 +196,11 @@ static void add_block(Archive *a, Block blk);
 static void note_module(Archive *a, const char *name);
 static void
 copy_filters(Arena *a, QName *filters, int n, Filt **out, int *nout);
+static void parse_topic(Parser *p, StrVec *parts);
+static void add_topic(StrVec **topics, int *n, int *cap, StrVec topic);
+static void free_topic_vecs(StrVec *topics, int n);
+static void
+copy_topics(Arena *a, StrVec *topics, int n, Topic **out, int *nout);
 static void parse_block(Parser *p, int execute);
 static void parse_module_sel(Parser *p, int execute);
 static void parse_flag(Parser *p, int execute);
@@ -366,11 +382,17 @@ static void depend_blocks(
     const char *chunk,
     Buf *out
 );
+static void parse_topic_path(Parser *p, StrVec *parts);
+static int topic_matches(const Topic *topic, const char **query, int nquery);
+static int block_refers(const Block *b, const char **query, int nquery);
+static void
+reference_blocks(Archive *a, const char **query, int nquery, Buf *out);
 static void append_json_string(Buf *out, const char *s, size_t n);
 static void append_json_labels(Buf *out, const char **labels, int n);
 static void
 agent_comment(const Block *b, const char **text, size_t *len, int *start);
 static void append_agent_filters(const Block *b, Buf *out);
+static void append_agent_topics(const Block *b, Buf *out);
 static void append_agent_block(const Block *b, Buf *out);
 static void agent_list(
     Archive *a,
@@ -404,6 +426,7 @@ struct {
         const char *literal;
         const char *effective;
         const char *depend;
+        const char *reference;
         int agent;
     } options;
     struct {
@@ -417,6 +440,7 @@ const struct option long_options[] = {
     {  "literal", required_argument, NULL, 'l'},
     {"effective", required_argument, NULL, 'e'},
     {   "depend", required_argument, NULL, 'd'},
+    {"reference", required_argument, NULL, 'r'},
     {    "agent",       no_argument, NULL, 'a'},
 };
 /* -d parses references inside block bodies. A malformed reference is
@@ -438,7 +462,8 @@ main(int argc, char *argv[])
     Parser ep;
     QName qn;
     StrVec labels = {0};
-    const char *module;
+    StrVec topic = {0};
+    const char *module = NULL;
     Visit visit = {0};
     Buf result = {0};
     char *key;
@@ -500,6 +525,17 @@ main(int argc, char *argv[])
             set_mode(&mode, MODE_DEPEND);
             expr = arg + 9;
 
+        } else if (strcmp(arg, "-r") == 0 || strcmp(arg, "--reference") == 0) {
+            set_mode(&mode, MODE_REFERENCE);
+            if (i + 1 >= argc) {
+                usage(stderr, argv0);
+                fail("%s requires a topic", arg);
+            }
+            expr = argv[++i];
+        } else if (strncmp(arg, "--reference=", 12) == 0) {
+            set_mode(&mode, MODE_REFERENCE);
+            expr = arg + 12;
+
         } else if (strcmp(arg, "-a") == 0 || strcmp(arg, "--agent") == 0) {
             if (agent) {
                 fail("duplicate agent option");
@@ -520,8 +556,8 @@ main(int argc, char *argv[])
         usage(stderr, argv0);
         if (!mode) {
             fail("missing -p, --print, -l, --literal, -e, --effective, -m, "
-                 "--modules, -d, or "
-                 "--depend");
+                 "--modules, -d, "
+                 "--depend, -r, or --reference");
         }
         fail("missing archive");
     }
@@ -546,34 +582,42 @@ main(int argc, char *argv[])
     ep.buf = expr;
     ep.n = strlen(expr);
     ep.arc = &arc;
-    parse_qname(
-        &ep,
-        &qn,
-        (mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND
-        ) ?
-            Q_CHUNK :
-            Q_EXPR
-    );
-    if (ep.i < ep.n) {
-        int k = control_kind(&ep);
-        if (k == 0) {
-            fail_at(&ep, "unterminated name");
+    memset(&qn, 0, sizeof(qn));
+    if (mode == MODE_REFERENCE) {
+        /* -r names a topic path, not a chunk. An unknown topic is empty
+         * output. */
+        parse_topic_path(&ep, &topic);
+    } else {
+        parse_qname(
+            &ep,
+            &qn,
+            (mode == MODE_LITERAL || mode == MODE_EFFECTIVE
+             || mode == MODE_DEPEND) ?
+                Q_CHUNK :
+                Q_EXPR
+        );
+        if (ep.i < ep.n) {
+            int k = control_kind(&ep);
+            if (k == 0) {
+                fail_at(&ep, "unterminated name");
+            }
+            fail_at(&ep, "unexpected control '@%c' in name", k);
         }
-        fail_at(&ep, "unexpected control '@%c' in name", k);
-    }
-    if (qn.labels.n) {
-        expand_label_list(&arc, qn.labels.v, qn.labels.n, &labels);
-    }
-    module = qn.has_module ? qn.module : "";
-    /* -l, -e, and -d with no module name the chunk in every module.
-       -p keeps the anonymous module when the expression names none.
-       -d lists users of the reference. The chunk need not be defined. */
-    if ((mode == MODE_LITERAL || mode == MODE_EFFECTIVE || mode == MODE_DEPEND)
-        && !qn.has_module) {
-        module = NULL;
+        if (qn.labels.n) {
+            expand_label_list(&arc, qn.labels.v, qn.labels.n, &labels);
+        }
+        module = qn.has_module ? qn.module : "";
+        /* -l, -e, and -d with no module name the chunk in every module.
+           -p keeps the anonymous module when the expression names none.
+           -d lists users of the reference. The chunk need not be defined. */
+        if ((mode == MODE_LITERAL || mode == MODE_EFFECTIVE
+             || mode == MODE_DEPEND)
+            && !qn.has_module) {
+            module = NULL;
+        }
     }
 
-    if (mode != MODE_DEPEND) {
+    if (mode != MODE_DEPEND && mode != MODE_REFERENCE) {
         key = canonical(labels.v, labels.n, module, qn.chunk);
         if (!chunk_defined(&arc, labels.v, labels.n, module, qn.chunk)) {
             fail("chunk '%s' is not defined", key);
@@ -581,8 +625,16 @@ main(int argc, char *argv[])
         free(key);
     }
 
-    if (mode == MODE_LITERAL || mode == MODE_EFFECTIVE
-        || mode == MODE_DEPEND) {
+    if (mode == MODE_REFERENCE) {
+        /* The same listing shape as -l. -a emits those blocks as JSON.
+           The topic path is not a chunk reference. */
+        if (agent) {
+            agent_list(&arc, topic.v, topic.n, NULL, NULL, mode, &result);
+        } else {
+            reference_blocks(&arc, topic.v, topic.n, &result);
+        }
+    } else if (mode == MODE_LITERAL || mode == MODE_EFFECTIVE
+               || mode == MODE_DEPEND) {
         /* The pieces are concatenated with nothing added between them.
            Each block's chunk reference names that block's own labels
            and the module that block extends. -a emits the same blocks
@@ -641,6 +693,7 @@ main(int argc, char *argv[])
     free(result.data);
 
     free(labels.v);
+    free(topic.v);
     qname_free(&qn);
     free(visit.keys);
     free(arc.blocks);
@@ -1036,7 +1089,8 @@ parse_filter_name(Parser *p, QName *filt, int expr)
             continue;
         }
 
-        if (k == '|' || k == '>' || is_end_kind(k)) {
+        /* @~ starts the block's topic list and ends this pipeline. */
+        if (k == '|' || k == '>' || k == '~' || is_end_kind(k)) {
             if (!name[0]) {
                 fail_at(p, "empty filter name");
             }
@@ -1233,6 +1287,84 @@ copy_filters(Arena *a, QName *filters, int n, Filt **out, int *nout)
 }
 
 static void
+parse_topic(Parser *p, StrVec *parts)
+{
+    memset(parts, 0, sizeof(*parts));
+    p->i += 2;
+    for (;;) {
+        size_t start = p->i;
+        char *name;
+        int k;
+        scan_to_control(p);
+        name = take_name(p, start, p->i);
+        if (p->i >= p->n) {
+            fail_at(p, "unterminated expression");
+        }
+        if (!name[0]) {
+            fail_at(p, "empty topic name");
+        }
+        k = control_kind(p);
+        sv_push(parts, name);
+        if (k == '/') {
+            p->i += 2;
+            continue;
+        }
+        if (k == '~' || is_end_kind(k)) {
+            return;
+        }
+        fail_at(p, "unexpected control '@%c' in name", k);
+    }
+}
+
+static void
+add_topic(StrVec **topics, int *n, int *cap, StrVec topic)
+{
+    if (*n == *cap) {
+        int ncap = *cap ? *cap * 2 : 4;
+        StrVec *nt = xmalloc((size_t)ncap * sizeof(StrVec));
+        if (*n) {
+            memcpy(nt, *topics, (size_t)(*n) * sizeof(StrVec));
+        }
+        free(*topics);
+        *topics = nt;
+        *cap = ncap;
+    }
+    (*topics)[(*n)++] = topic;
+}
+
+static void
+free_topic_vecs(StrVec *topics, int n)
+{
+    for (int i = 0; i < n; i++) {
+        free(topics[i].v);
+    }
+    free(topics);
+}
+
+static void
+copy_topics(Arena *a, StrVec *topics, int n, Topic **out, int *nout)
+{
+    Topic *ts;
+    if (n == 0) {
+        *out = NULL;
+        *nout = 0;
+        return;
+    }
+    ts = arena_alloc(a, (size_t)n * sizeof(Topic));
+    for (int i = 0; i < n; i++) {
+        const char **parts =
+            arena_alloc(a, (size_t)topics[i].n * sizeof(char *));
+        for (int j = 0; j < topics[i].n; j++) {
+            parts[j] = topics[i].v[j];
+        }
+        ts[i].parts = parts;
+        ts[i].nparts = topics[i].n;
+    }
+    *out = ts;
+    *nout = n;
+}
+
+static void
 parse_block(Parser *p, int execute)
 {
     QName qn;
@@ -1244,6 +1376,9 @@ parse_block(Parser *p, int execute)
     size_t lit_end;
     int op;
     int depth = 0;
+    StrVec *topics = NULL;
+    int ntopics = 0;
+    int captopics = 0;
     int line = line_at(p, p->i);
     p->i += 2;
     parse_qname(p, &qn, Q_BLOCK);
@@ -1256,6 +1391,8 @@ parse_block(Parser *p, int execute)
     body = p->i;
     /* `@|` ends the body only outside a reference. `@|` between `@<`
        and `@>` belongs to that reference and stays in the body.
+       `@~` at the top of the body ends it and starts the topic list.
+       Inside a reference it stays in the body.
        `@` followed by whitespace still ends the block at any depth,
        so an unclosed reference does not swallow the block's closer. */
 
@@ -1269,6 +1406,9 @@ parse_block(Parser *p, int execute)
             break;
         }
         if (k == '|' && depth == 0) {
+            break;
+        }
+        if (k == '~' && depth == 0) {
             break;
         }
         if (k == '<') {
@@ -1296,6 +1436,11 @@ parse_block(Parser *p, int execute)
         p->i += 2;
         parse_filter_list(p, &qn, 0);
     }
+    while (p->i < p->n && control_kind(p) == '~') {
+        StrVec topic;
+        parse_topic(p, &topic);
+        add_topic(&topics, &ntopics, &captopics, topic);
+    }
     if (p->i >= p->n || !is_end_kind(control_kind(p))) {
         fail_at(p, "expected '@' to end the expression");
     }
@@ -1304,6 +1449,7 @@ parse_block(Parser *p, int execute)
     lit_end = p->i;
     if (!execute) {
         qname_free(&qn);
+        free_topic_vecs(topics, ntopics);
         return;
     }
 
@@ -1336,6 +1482,8 @@ parse_block(Parser *p, int execute)
     copy_filters(
         &p->arc->arena, qn.filters, qn.nfilters, &blk.filters, &blk.nfilters
     );
+    copy_topics(&p->arc->arena, topics, ntopics, &blk.topics, &blk.ntopics);
+    free_topic_vecs(topics, ntopics);
     blk.def_line = line;
 
     /* '@' plus a space ends one byte earlier than '@' at end of buffer. */
@@ -2960,6 +3108,72 @@ depend_blocks(
     }
 }
 
+static void
+parse_topic_path(Parser *p, StrVec *parts)
+{
+    memset(parts, 0, sizeof(*parts));
+    for (;;) {
+        size_t start = p->i;
+        char *name;
+        int k;
+        scan_to_control(p);
+        name = take_name(p, start, p->i);
+        if (!name[0]) {
+            fail_at(p, "empty topic name");
+        }
+        sv_push(parts, name);
+        if (p->i >= p->n) {
+            return;
+        }
+        k = control_kind(p);
+        if (k == '/') {
+            p->i += 2;
+            continue;
+        }
+        if (k == 0) {
+            fail_at(p, "unterminated name");
+        }
+        fail_at(p, "unexpected control '@%c' in name", k);
+    }
+}
+
+static int
+topic_matches(const Topic *topic, const char **query, int nquery)
+{
+    if (nquery <= 0 || nquery > topic->nparts) {
+        return 0;
+    }
+    for (int i = 0; i < nquery; i++) {
+        if (strcmp(topic->parts[i], query[i]) != 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int
+block_refers(const Block *b, const char **query, int nquery)
+{
+    for (int i = 0; i < b->ntopics; i++) {
+        if (topic_matches(&b->topics[i], query, nquery)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void
+reference_blocks(Archive *a, const char **query, int nquery, Buf *out)
+{
+    int printed = 0;
+    for (int i = 0; i < a->nblocks; i++) {
+        if (!block_refers(&a->blocks[i], query, nquery)) {
+            continue;
+        }
+        append_shown_block(&a->blocks[i], out, &printed);
+    }
+}
+
 /* JSON string. Controls other than the usual escapes are \u00XX.
    Bytes at 0x20 and above, including UTF-8, are copied. */
 
@@ -3116,6 +3330,25 @@ append_agent_filters(const Block *b, Buf *out)
 }
 
 static void
+append_agent_topics(const Block *b, Buf *out)
+{
+    buf_append(out, "        \"topics\": ", 18);
+    if (b->ntopics == 0) {
+        buf_append(out, "[]", 2);
+        return;
+    }
+    buf_append(out, "[\n", 2);
+    for (int i = 0; i < b->ntopics; i++) {
+        if (i) {
+            buf_append(out, ",\n", 2);
+        }
+        buf_append(out, "            ", 12);
+        append_json_labels(out, b->topics[i].parts, b->topics[i].nparts);
+    }
+    buf_append(out, "\n        ]", 10);
+}
+
+static void
 append_agent_block(const Block *b, Buf *out)
 {
     const char *ctext = "";
@@ -3156,6 +3389,8 @@ append_agent_block(const Block *b, Buf *out)
 
     append_agent_filters(b, out);
     buf_append(out, ",\n", 2);
+    append_agent_topics(b, out);
+    buf_append(out, ",\n", 2);
     buf_append(out, "        \"file\": ", 16);
     append_json_string(out, file, strlen(file));
     buf_append(out, ",\n", 2);
@@ -3168,9 +3403,10 @@ append_agent_block(const Block *b, Buf *out)
     buf_append(out, "\n    }", 6);
 }
 
-/* -a lists the same blocks as -l, -e, or -d, as a JSON array.
+/* -a lists the same blocks as -l, -e, -d, or -r, as a JSON array.
    An empty listing is [] followed by a newline. The caller passes
-   an empty buffer; a listing that finds nothing rewinds the '['. */
+   an empty buffer; a listing that finds nothing rewinds the '['.
+   For -r the label vector is the topic path. module and chunk are unused. */
 
 static void
 agent_list(
@@ -3192,8 +3428,10 @@ agent_list(
             match = block_in_chain(a, b, labels, nlabels, module, chunk);
         } else if (mode == MODE_EFFECTIVE) {
             match = block_is_effective(a, i, labels, nlabels, module, chunk);
-        } else {
+        } else if (mode == MODE_DEPEND) {
             match = block_depends(a, b, labels, nlabels, module, chunk);
+        } else {
+            match = block_refers(b, labels, nlabels);
         }
         if (!match) {
             continue;
@@ -3453,19 +3691,23 @@ usage(FILE *fp, const char *argv0)
         "print the effective blocks of CHUNK_REFERENCE\n"
         "-d, --depend CHUNK_REFERENCE: "
         "list all blocks that depend on CHUNK_REFERENCE\n"
+        "-r, --reference TOPIC: "
+        "list all blocks that refer to TOPIC\n"
         "-a, --agent: alter output to suit an agent's needs\n"
         "\n"
         "EXPRESSION follows "
         "label1@:label2@:module name@/chunk name@|filter1@|filter2.\n"
         "CHUNK_REFERENCE follows "
-        "label1@:label2@:module name@/chunk name.\n",
+        "label1@:label2@:module name@/chunk name.\n"
+        "TOPIC follows "
+        "domain@/subdomain@/item.\n",
         argv0
     );
 }
 
 /* Diagnostics name the options in enumerator order, print then literal
-   then effective then modules then depend, so the message does not depend on
-   argument order. */
+   then effective then modules then depend then reference,
+   so the message does not depend on argument order. */
 
 static const char *
 mode_word(int mode)
@@ -3482,7 +3724,10 @@ mode_word(int mode)
     if (mode == MODE_MODULES) {
         return "modules";
     }
-    return "depend";
+    if (mode == MODE_DEPEND) {
+        return "depend";
+    }
+    return "reference";
 }
 
 static void

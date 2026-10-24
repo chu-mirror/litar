@@ -1,14 +1,13 @@
-@? included Basics @|@|
-@- Basics @
+@? included Basic @|@|
 
-@<summary@=
+@<Basic@/summary@=
 Some common filters used by other modules.
-
-- `evaluate`: executes the input as a script, the input must have a shebang,
-              use the output of that script as the output.
 @
 
-@<evaluate@=#!/bin/sh
+Executes the input as a script, the input must have a shebang,
+use the output of that script as the output.
+
+@<Basic@/evaluate@=#!/bin/sh
 set -e
 temp_file=`mktemp`
 cat - > $temp_file
@@ -17,5 +16,5 @@ $temp_file
 rm $temp_file
 @
 
-@! included Basics @
+@! included Basic @
 @

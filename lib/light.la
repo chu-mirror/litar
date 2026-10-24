@@ -2,9 +2,7 @@
 
 @. lib/c-structure.la @
 
-@- Light @
-
-@<summary@=
+@<Light@/summary@=
 Light is a framework mainly for C programming.
 It reflects the author's preferences and customs,
 which includes how to format code,
@@ -1108,11 +1106,11 @@ typedef Deque Queue;
 #define queue_get deque_pop_front
 @
 
-@<light.h@=
+@<Light@/light.h@=
 @<lightlib@:C Structure@/module interface@>
 @
 
-@<light.c@=
+@<Light@/light.c@=
 @<lightlib@:C Structure@/module@>
 @
 
@@ -1124,10 +1122,10 @@ typedef Deque Queue;
 @
 
 @<light@:executable@:C Structure@/include flags@+
-@<light options@>
+@<Light@/light options@>
 @
 
-@<light options@+
+@<Light@/light options@+
 #ifndef light_option_context_main_size
 #define light_option_context_main_size (1 << 20)  /* 1 MB */
 #endif
@@ -1154,13 +1152,13 @@ struct context context_main = {
 @<light@:C Structure@/main body@=
 do {
     enter_context(&context_main);
-    @<main body@>
+    @<Light@/main body@>
     exit_context(&context_main);
 } while (0);
 @
 
 @<light-single@:executable@:C Structure@/include flags@+
-@<light options@>
+@<Light@/light options@>
 @
 
 @<light-single@:executable@:C Structure@/includes@+
@@ -1206,7 +1204,7 @@ struct context context_main = {
 @<light-single@:C Structure@/main body@=
 do {
     enter_context(&context_main);
-    @<main body@>
+    @<Light@/main body@>
     exit_context(&context_main);
 } while (0);
 @

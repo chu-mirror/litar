@@ -8,13 +8,13 @@ cd "$(dirname "$0")"
 assert_ok "design example" outline.out \
     "$LITAR" -l 'label@:module 1@/chunk' outline.la
 assert_text "other chunk is left out of the example" \
-    $'@<module 1@/chunk2@=\n@<substructure@>\n@\n' \
-    "$LITAR" -l chunk2 outline.la
-assert_text "no module still names the module" \
-    $'@<module 1@/chunk@=\n@<substructure 1@>\n@\n' \
+    $'@<module 1@/chunk2@=\n@<.@/substructure@>\n@\n' \
+    "$LITAR" -l 'module 1@/chunk2' outline.la
+assert_fail "a root reference does not reach the module" \
+    "chunk 'chunk' is not defined" \
     "$LITAR" -l chunk outline.la
 assert_text "named module keeps that module" \
-    $'@<module 1@/chunk@=\n@<substructure 1@>\n@\n' \
+    $'@<module 1@/chunk@=\n@<.@/substructure 1@>\n@\n' \
     "$LITAR" -l 'module 1@/chunk' outline.la
 assert_fail "other module is a different chunk" \
     "chunk 'label@:module 2@/chunk' is not defined" \
@@ -23,7 +23,7 @@ assert_fail "unspecialized name misses the labeled block" \
     "chunk 'module 2@/chunk' is not defined" \
     "$LITAR" -l 'module 2@/chunk' outline.la
 
-assert_ok "each block names its module" modinfo.out \
+assert_text "the root chunk holds only the root block" $'@<chunk@=\nD\n@\n' \
     "$LITAR" -l chunk modinfo.la
 assert_text "one module names that module on each block" \
     $'@<One@/chunk@=\nA\n@\n\n@<One@/chunk@=\nB\n@\n' \
@@ -88,17 +88,18 @@ assert_fail "print rejects a cycle" "circular inclusion of 'cycle'" \
 assert_text "skipped branch is not a block" $'@<branched@=\nyes\n@\n' \
     "$LITAR" -l branched archive.la
 
-user_meta=$'@<Mod@/meta@=\n{\n    summary: |||\n        @<summary@>\n    |||,\n}\n@\n'
+user_meta=$'@<Mod@/meta@=\n{\n    summary: |||\n        @<.@/summary@>\n    |||,\n}\n@\n'
 user_exp=$'{\n    summary: |||\n        hello module\n\n    |||,\n}\n'
-assert_fail "print keeps the anonymous module" "chunk 'meta' is not defined" \
+assert_fail "print keeps the root module" "chunk 'meta' is not defined" \
     "$LITAR" -p meta archive.la
-assert_text "literal with no module finds Mod" "$user_meta" \
+assert_fail "a root request does not reach Mod" \
+    "chunk 'meta' is not defined" \
     "$LITAR" -l meta archive.la
 assert_text "author meta is an ordinary block" "$user_meta" \
     "$LITAR" -l 'Mod@/meta' archive.la
 assert_text "author meta evaluates" "$user_exp" \
     "$LITAR" -p 'Mod@/meta' archive.la
-assert_fail "selected module has no built-in meta" "chunk 'Ghost@/meta' is not defined" \
+assert_fail "a module without a meta chunk" "chunk 'Ghost@/meta' is not defined" \
     "$LITAR" -l 'Ghost@/meta' archive.la
 assert_text "a request label is not written into the body" \
     "$user_meta" \

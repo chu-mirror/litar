@@ -12,7 +12,7 @@ Test cases for light.
 @<test@:C Structure@/module@>
 @
 
-@<test light@:light-single@:C Structure@/invocation syntax@=
+@<test light@:light-single@:C Structure@/Invoke@/invocation syntax@=
 {
     name => 'test-light',
     usages => [

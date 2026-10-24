@@ -1,11 +1,9 @@
-@- Mine @
-
-@<before@=
+@<Mine@/before@=
 B
 @
 
 @. lib.la @
 
-@<after@=
+@<Mine@/after@=
 A
 @

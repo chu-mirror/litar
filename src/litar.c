@@ -18,8 +18,9 @@
 #include <sys/wait.h>
 
 typedef struct _IO_FILE FILE;
-/* A chunk reference is a label sequence, a module, and a chunk name.
-   The anonymous module is the empty string. A block stored under a
+/* A chunk reference is a label sequence, a module path, and a chunk name.
+   The root module is the empty string. Module components are separated
+   by '/', so "C Structure/Filters" is one module. A block stored under a
    reference names that reference only. Evaluating a reference applies,
    in archive order, every block of that module and chunk whose labels
    are a suffix of the reference. @= sets the text accumulated so far
@@ -30,8 +31,9 @@ typedef struct _IO_FILE FILE;
    specialization. A reference with no labels keeps the labels of the
    reference being expanded. When the block already carries a proper
    suffix of those labels, the reference keeps only the labels in front
-   of that suffix. A reference with no module uses the module
-   that was selected where its block was written. */
+   of that suffix. A reference with no module names the root module.
+   In block content, a module path that starts with '.' or '..' is
+   resolved against the module of the reference being expanded. */
 
 typedef struct StrVec {
     const char **v;
@@ -90,7 +92,6 @@ typedef struct Block {
     /* Line of the closing '@'. With def_line, -a names the block's span. */
     int end_line;
     const char *def_file;
-    const char *def_module;
 } Block;
 typedef struct Buf {
     char *data;
@@ -128,8 +129,6 @@ typedef struct Archive {
     int capblocks;
     Group *groups;
     Flag *flags;
-    const char *current_module;
-    const char *anonymous_module;
     const char **modules;
     int nmodules;
     int capmodules;
@@ -159,10 +158,13 @@ enum { Q_BLOCK = 1, Q_REF, Q_EXPR, Q_CHUNK };
 
 enum {
     MODE_PRINT = 1,
+    MODE_MODULES,
+    MODE_CHUNKS,
     MODE_LITERAL,
     MODE_EFFECTIVE,
-    MODE_MODULES,
     MODE_DEPEND,
+    MODE_SUBDOMAINS,
+    MODE_ITEMS,
     MODE_REFERENCE
 };
 
@@ -189,11 +191,26 @@ static char *read_name_until_control(Parser *p);
 static void consume_end(Parser *p);
 static void qname_add_filter(QName *qn, const QName *filt);
 static void qname_free(QName *qn);
+static void qname_finish(
+    Parser *p, QName *qn, StrVec *path, char *chunk, const char *empty_error
+);
 static void parse_filter_name(Parser *p, QName *filt, int expr);
 static void parse_filter_list(Parser *p, QName *qn, int expr);
 static void parse_qname(Parser *p, QName *qn, int mode);
 static void add_block(Archive *a, Block blk);
 static void note_module(Archive *a, const char *name);
+static void add_module(Archive *a, const char *name);
+static char *module_resolve(Arena *a, const char *base, const char *path);
+static int module_is_relative(const char *path);
+static int module_has_dot_component(const char *path);
+static int module_is_under(const char *parent, const char *module);
+static int module_is_child(const char *parent, const char *module);
+static char *parse_module_arg(Arena *a, const char *arg);
+static void append_module_path(Buf *out, const char *module);
+static void list_modules(const Archive *a, const char *module);
+static void list_chunks(const Archive *a, const char *module);
+static void list_subdomains(const Archive *a, const char **query, int nquery);
+static void list_items(const Archive *a, const char **query, int nquery);
 static void
 copy_filters(Arena *a, QName *filters, int n, Filt **out, int *nout);
 static void parse_topic(Parser *p, StrVec *parts);
@@ -202,7 +219,6 @@ static void free_topic_vecs(StrVec *topics, int n);
 static void
 copy_topics(Arena *a, StrVec *topics, int n, Topic **out, int *nout);
 static void parse_block(Parser *p, int execute);
-static void parse_module_sel(Parser *p, int execute);
 static void parse_flag(Parser *p, int execute);
 static int flag_is_set(Archive *a, const char *name);
 static Group *find_group(Archive *a, const char *name);
@@ -244,6 +260,7 @@ static void expand_content(
     const Block *b,
     const char **clabels,
     int cn,
+    const char *base_module,
     const char *where,
     Buf *out
 );
@@ -290,10 +307,11 @@ static void run_filter(
     const char *fchunk,
     const char **cur_labels,
     int cur_n,
-    const char *def_module,
+    const char *base_module,
     const Parser *loc
 );
 static void append_name(Buf *out, const char *s);
+static void append_module_path(Buf *out, const char *module);
 static void append_labels(Buf *out, const char **labels, int nlabels);
 static void
 append_block_ref(Buf *out, const char **labels, int nlabels, const Block *b);
@@ -332,7 +350,7 @@ static int named_use_matches(
     const char *uchunk,
     const char **own,
     int own_n,
-    const char *def_module,
+    const char *base_module,
     const char **ql,
     int qn,
     const char *qmodule,
@@ -343,7 +361,7 @@ static int qname_depends(
     const QName *name,
     const char **own,
     int own_n,
-    const char *def_module,
+    const char *base_module,
     const char **ql,
     int qn,
     const char *qmodule,
@@ -360,7 +378,7 @@ static int content_depends(
     const Block *b,
     const char **own,
     int own_n,
-    const char *def_module,
+    const char *base_module,
     const char **ql,
     int qn,
     const char *qmodule,
@@ -391,9 +409,9 @@ static void append_json_string(Buf *out, const char *s, size_t n);
 static void append_json_labels(Buf *out, const char **labels, int n);
 static void
 agent_comment(const Block *b, const char **text, size_t *len, int *start);
-static void append_agent_filters(const Block *b, Buf *out);
+static void append_agent_filters(Archive *a, const Block *b, Buf *out);
 static void append_agent_topics(const Block *b, Buf *out);
-static void append_agent_block(const Block *b, Buf *out);
+static void append_agent_block(Archive *a, const Block *b, Buf *out);
 static void agent_list(
     Archive *a,
     const char **labels,
@@ -412,7 +430,6 @@ static char *find_library(const char *name);
 static void
 parse_buffer(Archive *a, const char *buf, size_t n, const char *filename);
 static void parse_include(Parser *p, int execute);
-static void list_modules(const Archive *a);
 static void usage(FILE *fp, const char *argv0);
 static const char *mode_word(int mode);
 static void set_mode(int *mode, int next);
@@ -422,10 +439,13 @@ struct {
     struct {
         int help;
         const char *print;
-        int modules;
+        const char *modules;
+        const char *chunks;
         const char *literal;
         const char *effective;
         const char *depend;
+        const char *subdomains;
+        const char *items;
         const char *reference;
         int agent;
     } options;
@@ -434,14 +454,17 @@ struct {
     } arguments;
 } command;
 const struct option long_options[] = {
-    {     "help",       no_argument, NULL,   0},
-    {    "print", required_argument, NULL, 'p'},
-    {  "modules",       no_argument, NULL, 'm'},
-    {  "literal", required_argument, NULL, 'l'},
-    {"effective", required_argument, NULL, 'e'},
-    {   "depend", required_argument, NULL, 'd'},
-    {"reference", required_argument, NULL, 'r'},
-    {    "agent",       no_argument, NULL, 'a'},
+    {      "help",       no_argument, NULL,   0},
+    {     "print", required_argument, NULL, 'p'},
+    {   "modules", required_argument, NULL, 'm'},
+    {    "chunks", required_argument, NULL, 'c'},
+    {   "literal", required_argument, NULL, 'l'},
+    { "effective", required_argument, NULL, 'e'},
+    {    "depend", required_argument, NULL, 'd'},
+    {"subdomains", required_argument, NULL, 's'},
+    {      "item", required_argument, NULL, 'i'},
+    { "reference", required_argument, NULL, 'r'},
+    {     "agent",       no_argument, NULL, 'a'},
 };
 /* -d parses references inside block bodies. A malformed reference is
    not a use and is not an error, so that parse jumps out instead of
@@ -463,7 +486,7 @@ main(int argc, char *argv[])
     QName qn;
     StrVec labels = {0};
     StrVec topic = {0};
-    const char *module = NULL;
+    const char *module = "";
     Visit visit = {0};
     Buf result = {0};
     char *key;
@@ -513,6 +536,25 @@ main(int argc, char *argv[])
 
         } else if (strcmp(arg, "-m") == 0 || strcmp(arg, "--modules") == 0) {
             set_mode(&mode, MODE_MODULES);
+            if (i + 1 >= argc) {
+                usage(stderr, argv0);
+                fail("%s requires a module", arg);
+            }
+            expr = argv[++i];
+        } else if (strncmp(arg, "--modules=", 10) == 0) {
+            set_mode(&mode, MODE_MODULES);
+            expr = arg + 10;
+
+        } else if (strcmp(arg, "-c") == 0 || strcmp(arg, "--chunks") == 0) {
+            set_mode(&mode, MODE_CHUNKS);
+            if (i + 1 >= argc) {
+                usage(stderr, argv0);
+                fail("%s requires a module", arg);
+            }
+            expr = argv[++i];
+        } else if (strncmp(arg, "--chunks=", 9) == 0) {
+            set_mode(&mode, MODE_CHUNKS);
+            expr = arg + 9;
 
         } else if (strcmp(arg, "-d") == 0 || strcmp(arg, "--depend") == 0) {
             set_mode(&mode, MODE_DEPEND);
@@ -525,11 +567,34 @@ main(int argc, char *argv[])
             set_mode(&mode, MODE_DEPEND);
             expr = arg + 9;
 
+        } else if (strcmp(arg, "-s") == 0
+                   || strcmp(arg, "--subdomains") == 0) {
+            set_mode(&mode, MODE_SUBDOMAINS);
+            if (i + 1 >= argc) {
+                usage(stderr, argv0);
+                fail("%s requires a domain", arg);
+            }
+            expr = argv[++i];
+        } else if (strncmp(arg, "--subdomains=", 13) == 0) {
+            set_mode(&mode, MODE_SUBDOMAINS);
+            expr = arg + 13;
+
+        } else if (strcmp(arg, "-i") == 0 || strcmp(arg, "--item") == 0) {
+            set_mode(&mode, MODE_ITEMS);
+            if (i + 1 >= argc) {
+                usage(stderr, argv0);
+                fail("%s requires a domain", arg);
+            }
+            expr = argv[++i];
+        } else if (strncmp(arg, "--item=", 7) == 0) {
+            set_mode(&mode, MODE_ITEMS);
+            expr = arg + 7;
+
         } else if (strcmp(arg, "-r") == 0 || strcmp(arg, "--reference") == 0) {
             set_mode(&mode, MODE_REFERENCE);
             if (i + 1 >= argc) {
                 usage(stderr, argv0);
-                fail("%s requires a topic", arg);
+                fail("%s requires an item", arg);
             }
             expr = argv[++i];
         } else if (strncmp(arg, "--reference=", 12) == 0) {
@@ -555,9 +620,9 @@ main(int argc, char *argv[])
     if (!mode || !file) {
         usage(stderr, argv0);
         if (!mode) {
-            fail("missing -p, --print, -l, --literal, -e, --effective, -m, "
-                 "--modules, -d, "
-                 "--depend, -r, or --reference");
+            fail("missing -p, --print, -m, --modules, -c, --chunks, "
+                 "-l, --literal, -e, --effective, -d, --depend, "
+                 "-s, --subdomains, -i, --item, -r, or --reference");
         }
         fail("missing archive");
     }
@@ -565,12 +630,16 @@ main(int argc, char *argv[])
     int ret = 0;
     memset(&arc, 0, sizeof(arc));
     arc.src = read_file(file, &arc.src_n);
-    arc.anonymous_module = arena_strndup(&arc.arena, "", 0);
-    arc.current_module = arc.anonymous_module;
-    note_module(&arc, arc.anonymous_module);
+    note_module(&arc, "");
     parse_buffer(&arc, arc.src, arc.src_n, file);
-    if (mode == MODE_MODULES) {
-        list_modules(&arc);
+
+    if (mode == MODE_MODULES || mode == MODE_CHUNKS) {
+        char *query = parse_module_arg(&arc.arena, expr);
+        if (mode == MODE_MODULES) {
+            list_modules(&arc, query);
+        } else {
+            list_chunks(&arc, query);
+        }
         free(arc.blocks);
         free(arc.modules);
         free(arc.src);
@@ -583,10 +652,33 @@ main(int argc, char *argv[])
     ep.n = strlen(expr);
     ep.arc = &arc;
     memset(&qn, 0, sizeof(qn));
-    if (mode == MODE_REFERENCE) {
-        /* -r names a topic path, not a chunk. An unknown topic is empty
-         * output. */
+
+    if (mode == MODE_SUBDOMAINS || mode == MODE_ITEMS
+        || mode == MODE_REFERENCE) {
         parse_topic_path(&ep, &topic);
+        if (ep.i < ep.n) {
+            fail_at(
+                &ep, "unexpected control '@%c' in name", control_kind(&ep)
+            );
+        }
+        if (mode == MODE_SUBDOMAINS) {
+            list_subdomains(&arc, topic.v, topic.n);
+            free(topic.v);
+            free(arc.blocks);
+            free(arc.modules);
+            free(arc.src);
+            arena_free(&arc.arena);
+            return 0;
+        }
+        if (mode == MODE_ITEMS) {
+            list_items(&arc, topic.v, topic.n);
+            free(topic.v);
+            free(arc.blocks);
+            free(arc.modules);
+            free(arc.src);
+            arena_free(&arc.arena);
+            return 0;
+        }
     } else {
         parse_qname(
             &ep,
@@ -606,14 +698,11 @@ main(int argc, char *argv[])
         if (qn.labels.n) {
             expand_label_list(&arc, qn.labels.v, qn.labels.n, &labels);
         }
-        module = qn.has_module ? qn.module : "";
-        /* -l, -e, and -d with no module name the chunk in every module.
-           -p keeps the anonymous module when the expression names none.
-           -d lists users of the reference. The chunk need not be defined. */
-        if ((mode == MODE_LITERAL || mode == MODE_EFFECTIVE
-             || mode == MODE_DEPEND)
-            && !qn.has_module) {
-            module = NULL;
+        if (qn.has_module) {
+            if (module_is_relative(qn.module)) {
+                fail("relative module name in expression");
+            }
+            module = module_resolve(&arc.arena, "", qn.module);
         }
     }
 
@@ -668,7 +757,7 @@ main(int argc, char *argv[])
             for (int fi = 0; fi < qn.nfilters; fi++) {
                 QName *f = &qn.filters[fi];
                 /* A print expression is not inside a block, so a filter
-                   with no module is in the anonymous module. */
+                   with no module names the root module. */
                 run_filter(
                     &arc,
                     &visit,
@@ -680,7 +769,7 @@ main(int argc, char *argv[])
                     f->chunk,
                     labels.v,
                     labels.n,
-                    "",
+                    module,
                     &loc
                 );
             }
@@ -848,6 +937,232 @@ sv_push(StrVec *sv, const char *s)
         sv->cap = ncap;
     }
     sv->v[sv->n++] = s;
+}
+
+/* Join path components with '/'. The result lives in the arena. */
+
+static char *
+join_path(Arena *a, const StrVec *parts)
+{
+    size_t need = 1;
+    char *s;
+    char *w;
+    for (int i = 0; i < parts->n; i++) {
+        need += strlen(parts->v[i]) + 1;
+    }
+    s = arena_alloc(a, need);
+    w = s;
+    for (int i = 0; i < parts->n; i++) {
+        size_t n = strlen(parts->v[i]);
+        if (i) {
+            *w++ = '/';
+        }
+        memcpy(w, parts->v[i], n);
+        w += n;
+    }
+    *w = '\0';
+    return s;
+}
+
+/* A module path starts with '.' or '..' when it is relative to the
+   module of the reference being expanded. Every other path starts at
+   the root module. */
+
+static int
+module_is_relative(const char *path)
+{
+    if (!path) {
+        return 0;
+    }
+    if (strcmp(path, ".") == 0 || strcmp(path, "..") == 0) {
+        return 1;
+    }
+    if (strncmp(path, "./", 2) == 0 || strncmp(path, "../", 3) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+/* True when any component of an absolute path is "." or "..".
+   A block header names an absolute module, so it rejects these. */
+
+static int
+module_has_dot_component(const char *path)
+{
+    const char *s = path ? path : "";
+    while (*s) {
+        const char *slash;
+        size_t n;
+        while (*s == '/') {
+            s++;
+        }
+        if (!*s) {
+            break;
+        }
+        slash = strchr(s, '/');
+        n = slash ? (size_t)(slash - s) : strlen(s);
+        if ((n == 1 && s[0] == '.')
+            || (n == 2 && s[0] == '.' && s[1] == '.')) {
+            return 1;
+        }
+        if (!slash) {
+            break;
+        }
+        s = slash + 1;
+    }
+    return 0;
+}
+
+/* Resolve path against base. Both are canonical module paths: components
+   separated by '/', and the root module is "". A relative path starts at
+   base; an absolute path starts at the root. "." and ".." work as in a
+   file system, and ".." at the root stays at the root. */
+
+static char *
+module_resolve(Arena *a, const char *base, const char *path)
+{
+    StrVec out = {0};
+    const char *s;
+    char *result;
+
+    if (!base) {
+        base = "";
+    }
+    if (!path) {
+        path = "";
+    }
+
+    if (module_is_relative(path)) {
+        s = base;
+        while (*s) {
+            const char *slash = strchr(s, '/');
+            size_t n = slash ? (size_t)(slash - s) : strlen(s);
+            if (n) {
+                sv_push(&out, arena_strndup(a, s, n));
+            }
+            if (!slash) {
+                break;
+            }
+            s = slash + 1;
+        }
+    }
+
+    s = path;
+    while (*s) {
+        const char *slash;
+        size_t n;
+        while (*s == '/') {
+            s++;
+        }
+        if (!*s) {
+            break;
+        }
+        slash = strchr(s, '/');
+        n = slash ? (size_t)(slash - s) : strlen(s);
+        if (n == 1 && s[0] == '.') {
+            /* stay in the current module */
+        } else if (n == 2 && s[0] == '.' && s[1] == '.') {
+            if (out.n > 0) {
+                out.n--;
+            }
+        } else {
+            sv_push(&out, arena_strndup(a, s, n));
+        }
+        if (!slash) {
+            break;
+        }
+        s = slash + 1;
+    }
+
+    result = join_path(a, &out);
+    free(out.v);
+    return result;
+}
+
+/* parent equals the path, or is a prefix of it at a component boundary. */
+
+static int
+module_is_under(const char *parent, const char *module)
+{
+    size_t n;
+    if (!parent || !parent[0]) {
+        return module && module[0];
+    }
+    if (!module) {
+        return 0;
+    }
+    n = strlen(parent);
+    return strncmp(module, parent, n) == 0 && module[n] == '/';
+}
+
+/* A child is one component below parent, not any deeper descendant. */
+
+static int
+module_is_child(const char *parent, const char *module)
+{
+    size_t n;
+    if (!module_is_under(parent, module)) {
+        return 0;
+    }
+    n = parent && parent[0] ? strlen(parent) + 1 : 0;
+    return strchr(module + n, '/') == NULL;
+}
+
+/* Turn a command-line MODULE into a canonical module path. Both '/' and
+   '@/ are accepted as separators, so output from -m can be passed back.
+   "/" and the empty string name the root module. */
+
+static char *
+parse_module_arg(Arena *a, const char *arg)
+{
+    StrVec parts = {0};
+    const char *s = arg ? arg : "";
+    char *cur = arena_alloc(a, strlen(s) + 1);
+    size_t w = 0;
+    char *raw;
+    char *result;
+
+    while (*s) {
+        if (s[0] == '@' && s[1] == '@') {
+            cur[w++] = '@';
+            s += 2;
+            continue;
+        }
+        if ((s[0] == '@' && s[1] == '/') || s[0] == '/') {
+            size_t start = 0;
+            size_t end = w;
+            while (start < end && is_trim_space((unsigned char)cur[start])) {
+                start++;
+            }
+            while (end > start && is_trim_space((unsigned char)cur[end - 1])) {
+                end--;
+            }
+            if (end > start) {
+                sv_push(&parts, arena_strndup(a, cur + start, end - start));
+            }
+            w = 0;
+            s += (s[0] == '@') ? 2 : 1;
+            continue;
+        }
+        cur[w++] = *s++;
+    }
+    {
+        size_t start = 0;
+        size_t end = w;
+        while (start < end && is_trim_space((unsigned char)cur[start])) {
+            start++;
+        }
+        while (end > start && is_trim_space((unsigned char)cur[end - 1])) {
+            end--;
+        }
+        if (end > start) {
+            sv_push(&parts, arena_strndup(a, cur + start, end - start));
+        }
+    }
+    raw = join_path(a, &parts);
+    free(parts.v);
+    result = module_resolve(a, "", raw);
+    return result;
 }
 
 static void
@@ -1038,6 +1353,27 @@ qname_free(QName *qn)
     qn->capfilters = 0;
 }
 
+/* A qualified name ends with the chunk. Every name before it, separated
+   by @/, is one component of the module path. A leading @/ names the
+   root module explicitly and adds no component. */
+
+static void
+qname_finish(
+    Parser *p, QName *qn, StrVec *path, char *chunk, const char *empty_error
+)
+{
+    if (!chunk[0]) {
+        free(path->v);
+        fail_at(p, "%s", empty_error);
+    }
+    if (path->n) {
+        qn->has_module = 1;
+        qn->module = join_path(&p->arc->arena, path);
+    }
+    qn->chunk = chunk;
+    free(path->v);
+}
+
 /* A filter name is a qualified name. It ends at the next filter,
    at the end of a reference, or at the end of the expression.
    It does not itself take filters: `@|a@|b` is a pipeline. */
@@ -1045,6 +1381,7 @@ qname_free(QName *qn)
 static void
 parse_filter_name(Parser *p, QName *filt, int expr)
 {
+    StrVec path = {0};
     memset(filt, 0, sizeof(*filt));
     for (;;) {
         size_t start = p->i;
@@ -1054,21 +1391,21 @@ parse_filter_name(Parser *p, QName *filt, int expr)
         name = take_name(p, start, p->i);
         if (p->i >= p->n) {
             if (!expr) {
+                free(path.v);
                 fail_at(p, "unterminated name");
             }
-            if (!name[0]) {
-                fail_at(p, "empty filter name");
-            }
-            filt->chunk = name;
+            qname_finish(p, filt, &path, name, "empty filter name");
             return;
         }
         k = control_kind(p);
 
         if (k == ':') {
-            if (filt->has_module) {
+            if (path.n || filt->has_module) {
+                free(path.v);
                 fail_at(p, "label after module name");
             }
             if (!name[0]) {
+                free(path.v);
                 fail_at(p, "empty label");
             }
             sv_push(&filt->labels, name);
@@ -1077,26 +1414,25 @@ parse_filter_name(Parser *p, QName *filt, int expr)
         }
 
         if (k == '/') {
-            if (filt->has_module) {
-                fail_at(p, "extra '@/' in name");
-            }
             if (!name[0]) {
-                fail_at(p, "empty module name");
+                /* A leading @/ names the root module. */
+                if (path.n) {
+                    free(path.v);
+                    fail_at(p, "empty module name");
+                }
+            } else {
+                sv_push(&path, name);
             }
-            filt->has_module = 1;
-            filt->module = name;
             p->i += 2;
             continue;
         }
 
         /* @~ starts the block's topic list and ends this pipeline. */
         if (k == '|' || k == '>' || k == '~' || is_end_kind(k)) {
-            if (!name[0]) {
-                fail_at(p, "empty filter name");
-            }
-            filt->chunk = name;
+            qname_finish(p, filt, &path, name, "empty filter name");
             return;
         }
+        free(path.v);
         fail_at(p, "unexpected control '@%c' in name", k);
     }
 }
@@ -1124,6 +1460,7 @@ parse_filter_list(Parser *p, QName *qn, int expr)
 static void
 parse_qname(Parser *p, QName *qn, int mode)
 {
+    StrVec path = {0};
     memset(qn, 0, sizeof(*qn));
     for (;;) {
         size_t start = p->i;
@@ -1133,12 +1470,10 @@ parse_qname(Parser *p, QName *qn, int mode)
         name = take_name(p, start, p->i);
         if (p->i >= p->n) {
             if (mode != Q_EXPR && mode != Q_CHUNK) {
+                free(path.v);
                 fail_at(p, "unterminated name");
             }
-            if (!name[0]) {
-                fail_at(p, "empty chunk name");
-            }
-            qn->chunk = name;
+            qname_finish(p, qn, &path, name, "empty chunk name");
             return;
         }
         k = control_kind(p);
@@ -1148,22 +1483,22 @@ parse_qname(Parser *p, QName *qn, int mode)
                On a reference or a print expression it belongs here.
                A chunk reference (-l) does not take filters. */
             if (mode == Q_BLOCK || mode == Q_CHUNK) {
+                free(path.v);
                 fail_at(p, "unexpected control '@|' in name");
             }
-            if (!name[0]) {
-                fail_at(p, "empty chunk name");
-            }
-            qn->chunk = name;
+            qname_finish(p, qn, &path, name, "empty chunk name");
             p->i += 2;
             parse_filter_list(p, qn, mode == Q_EXPR);
             return;
         }
 
         if (k == ':') {
-            if (qn->has_module) {
+            if (path.n || qn->has_module) {
+                free(path.v);
                 fail_at(p, "label after module name");
             }
             if (!name[0]) {
+                free(path.v);
                 fail_at(p, "empty label");
             }
             sv_push(&qn->labels, name);
@@ -1172,38 +1507,35 @@ parse_qname(Parser *p, QName *qn, int mode)
         }
 
         if (k == '/') {
-            if (qn->has_module) {
-                fail_at(p, "extra '@/' in name");
-            }
             if (!name[0]) {
-                fail_at(p, "empty module name");
+                /* A leading @/ names the root module. */
+                if (path.n) {
+                    free(path.v);
+                    fail_at(p, "empty module name");
+                }
+            } else {
+                sv_push(&path, name);
             }
-            qn->has_module = 1;
-            qn->module = name;
             p->i += 2;
             continue;
         }
         /* @= sets the chunk. @+ extends it. Either ends the header. */
 
         if (mode == Q_BLOCK && (k == '=' || k == '+')) {
-            if (!name[0]) {
-                fail_at(p, "empty chunk name");
-            }
-            qn->chunk = name;
+            qname_finish(p, qn, &path, name, "empty chunk name");
             return;
         }
 
         if (mode == Q_REF && k == '>') {
-            if (!name[0]) {
-                fail_at(p, "empty chunk name");
-            }
-            qn->chunk = name;
+            qname_finish(p, qn, &path, name, "empty chunk name");
             return;
         }
 
         if (k == 0) {
+            free(path.v);
             fail_at(p, "unterminated name");
         }
+        free(path.v);
         fail_at(p, "unexpected control '@%c' in name", k);
     }
 }
@@ -1225,17 +1557,14 @@ add_block(Archive *a, Block blk)
 }
 
 /* Modules are recorded in the order they are introduced.
-   The anonymous module is recorded before the archive is read.
-   @- and a block header record a module when that arm is kept.
-   A later introduction of the same name does not add another entry.
-   -m prints this list. */
+   The root module is recorded before the archive is read.
+   A block header introduces its module and every parent module.
+   A later introduction of the same path does not add another entry.
+   -m lists the children of a module. */
 
 static void
-note_module(Archive *a, const char *name)
+add_module(Archive *a, const char *name)
 {
-    if (!name) {
-        name = "";
-    }
     for (int i = 0; i < a->nmodules; i++) {
         if (strcmp(a->modules[i], name) == 0) {
             return;
@@ -1253,6 +1582,23 @@ note_module(Archive *a, const char *name)
         a->capmodules = ncap;
     }
     a->modules[a->nmodules++] = name;
+}
+
+static void
+note_module(Archive *a, const char *name)
+{
+    const char *slash;
+    if (!name || !name[0]) {
+        add_module(a, "");
+        return;
+    }
+    add_module(a, "");
+    for (slash = strchr(name, '/'); slash; slash = strchr(slash + 1, '/')) {
+        size_t n = (size_t)(slash - name);
+        char *prefix = arena_strndup(&a->arena, name, n);
+        add_module(a, prefix);
+    }
+    add_module(a, name);
 }
 
 static void
@@ -1382,6 +1728,9 @@ parse_block(Parser *p, int execute)
     int line = line_at(p, p->i);
     p->i += 2;
     parse_qname(p, &qn, Q_BLOCK);
+    if (qn.has_module && module_has_dot_component(qn.module)) {
+        fail_at(p, "relative module name in a block header");
+    }
     op = control_kind(p);
     if (op != '=' && op != '+') {
         fail_at(p, "expected '@=' or '@+'");
@@ -1463,7 +1812,11 @@ parse_block(Parser *p, int execute)
         }
         blk.labels = labs;
     }
-    blk.module = qn.has_module ? qn.module : p->arc->current_module;
+    if (qn.has_module) {
+        blk.module = module_resolve(&p->arc->arena, "", qn.module);
+    } else {
+        blk.module = arena_strndup(&p->arc->arena, "", 0);
+    }
     blk.chunk = qn.chunk;
     blk.op = (char)op;
     blk.content_len = end - body;
@@ -1497,27 +1850,9 @@ parse_block(Parser *p, int execute)
         blk.end_line = line_at(p, close_at);
     }
     blk.def_file = p->filename;
-    blk.def_module = p->arc->current_module;
     qname_free(&qn);
     add_block(p->arc, blk);
     note_module(p->arc, blk.module);
-}
-
-static void
-parse_module_sel(Parser *p, int execute)
-{
-    char *name;
-    p->i += 2;
-    name = read_name_until_control(p);
-    if (!is_end_kind(control_kind(p))) {
-        fail_at(p, "expected '@' to end the expression");
-    }
-    consume_end(p);
-    if (!execute) {
-        return;
-    }
-    p->arc->current_module = name;
-    note_module(p->arc, name);
 }
 
 static void
@@ -1690,8 +2025,6 @@ parse_one(Parser *p, int execute)
     int k = control_kind(p);
     if (k == '<') {
         parse_block(p, execute);
-    } else if (k == '-') {
-        parse_module_sel(p, execute);
     } else if (k == '!') {
         parse_flag(p, execute);
     } else if (k == '?') {
@@ -1817,7 +2150,16 @@ canonical(const char **labels, int n, const char *module, const char *chunk)
         need += strlen(labels[i]) + 2;
     }
     if (has_mod) {
-        need += strlen(module) + 2;
+        const char *c = module;
+        while (*c) {
+            const char *slash = strchr(c, '/');
+            size_t L = slash ? (size_t)(slash - c) : strlen(c);
+            need += L + 2;
+            if (!slash) {
+                break;
+            }
+            c = slash + 1;
+        }
     }
 
     s = xmalloc(need);
@@ -1830,11 +2172,19 @@ canonical(const char **labels, int n, const char *module, const char *chunk)
         w += 2;
     }
     if (has_mod) {
-        size_t L = strlen(module);
-        memcpy(w, module, L);
-        w += L;
-        memcpy(w, "@/", 2);
-        w += 2;
+        const char *c = module;
+        while (*c) {
+            const char *slash = strchr(c, '/');
+            size_t L = slash ? (size_t)(slash - c) : strlen(c);
+            memcpy(w, c, L);
+            w += L;
+            memcpy(w, "@/", 2);
+            w += 2;
+            if (!slash) {
+                break;
+            }
+            c = slash + 1;
+        }
     }
     memcpy(w, chunk, strlen(chunk) + 1);
     return s;
@@ -1885,10 +2235,7 @@ block_in_chain(
 {
     StrVec expanded = {0};
     int match;
-    /* A null module matches every module. -l uses that when the chunk
-       reference does not name one. -p always passes a concrete module. */
-    if (strcmp(b->chunk, chunk) != 0
-        || (module && strcmp(b->module, module) != 0)) {
+    if (strcmp(b->chunk, chunk) != 0 || strcmp(b->module, module) != 0) {
         return 0;
     }
     expand_label_list(a, b->labels, b->nlabels, &expanded);
@@ -1943,6 +2290,7 @@ expand_content(
     const Block *b,
     const char **clabels,
     int cn,
+    const char *base_module,
     const char *where,
     Buf *out
 )
@@ -2008,7 +2356,9 @@ expand_content(
                     use_l = clabels;
                     use_n = hole_n;
                 }
-                use_m = qn.has_module ? qn.module : b->def_module;
+                use_m = qn.has_module ?
+                            module_resolve(&a->arena, base_module, qn.module) :
+                            "";
 
                 expand_ref(a, v, use_l, use_n, use_m, qn.chunk, &piece);
 
@@ -2032,7 +2382,7 @@ expand_content(
                         f->chunk,
                         clabels,
                         cn,
-                        b->def_module,
+                        base_module,
                         &loc
                     );
                 }
@@ -2094,7 +2444,7 @@ expand_ref(
            A replaced block is still expanded, so a cycle or a filter
            failure in it still stops evaluation. */
 
-        expand_content(a, v, b, labels, nlabels, key, &body);
+        expand_content(a, v, b, labels, nlabels, module, key, &body);
         memset(&loc, 0, sizeof(loc));
         loc.where = key;
         loc.def_line = b->def_line;
@@ -2113,7 +2463,7 @@ expand_ref(
                 f->chunk,
                 labels,
                 nlabels,
-                b->def_module,
+                module,
                 &loc
             );
         }
@@ -2571,7 +2921,7 @@ run_filter(
     const char *fchunk,
     const char **cur_labels,
     int cur_n,
-    const char *def_module,
+    const char *base_module,
     const Parser *loc
 )
 {
@@ -2585,8 +2935,8 @@ run_filter(
     int detail = 0;
     int err_no = 0;
     int rc;
-    if (!def_module) {
-        def_module = "";
+    if (!base_module) {
+        base_module = "";
     }
 
     if (fn > 0) {
@@ -2597,7 +2947,7 @@ run_filter(
         use_l = cur_labels;
         use_n = cur_n;
     }
-    use_m = has_module ? fmodule : def_module;
+    use_m = has_module ? module_resolve(&a->arena, base_module, fmodule) : "";
     if (!use_m) {
         use_m = "";
     }
@@ -2672,6 +3022,31 @@ append_name(Buf *out, const char *s)
     }
 }
 
+/* A module path is written as one name per component, each followed by
+   @/. The root module contributes nothing. */
+
+static void
+append_module_path(Buf *out, const char *module)
+{
+    const char *c = module ? module : "";
+    while (*c) {
+        const char *slash = strchr(c, '/');
+        size_t n = slash ? (size_t)(slash - c) : strlen(c);
+        for (size_t i = 0; i < n; i++) {
+            if (c[i] == '@') {
+                buf_append(out, "@@", 2);
+            } else {
+                buf_append(out, c + i, 1);
+            }
+        }
+        buf_append(out, "@/", 2);
+        if (!slash) {
+            break;
+        }
+        c = slash + 1;
+    }
+}
+
 static void
 append_labels(Buf *out, const char **labels, int nlabels)
 {
@@ -2683,19 +3058,16 @@ append_labels(Buf *out, const char **labels, int nlabels)
 
 /* The chunk reference this block extends. Labels are the ones stored
    on the block, not the labels of the request, and a group name is not
-   expanded. A named module is always written, even when the header left
-   it out. The anonymous module has an empty name, so it contributes no
-   module@/ piece. */
+   expanded. A module path is always written component by component.
+   The root module has an empty name, so it contributes no module@/
+   piece. */
 
 static void
 append_block_ref(Buf *out, const char **labels, int nlabels, const Block *b)
 {
     buf_append(out, "@<", 2);
     append_labels(out, labels, nlabels);
-    if (b->module && b->module[0]) {
-        append_name(out, b->module);
-        buf_append(out, "@/", 2);
-    }
+    append_module_path(out, b->module);
     append_name(out, b->chunk);
     {
         char sig[2];
@@ -2722,7 +3094,7 @@ comment_is_blank(const char *s, size_t n)
    is the one on this block. Those bytes are copied as written, so a
    less specialized body does not gain the request's labels.
    A blank comment is left out when it would be the first text, so
-   the result does not open with the spacing that followed a @-.
+   the result does not open with spacing after a previous expression.
    A later blank comment is kept, and a comment that has other text
    is kept whole. */
 
@@ -2768,8 +3140,6 @@ literal_blocks(
 
 /* A block is effective when it is one of the blocks -l would print
    and no later block in that same chain sets the chunk.
-   A chain is one module: a set in another module does not count,
-   which matters when the reference names no module.
    @= sets. @+ does not. */
 
 static int
@@ -2783,22 +3153,15 @@ block_is_effective(
 )
 {
     Block *b = &a->blocks[index];
-    const char *bm;
     if (!block_in_chain(a, b, labels, nlabels, module, chunk)) {
         return 0;
     }
-    bm = b->module ? b->module : "";
     for (int j = index + 1; j < a->nblocks; j++) {
         Block *later = &a->blocks[j];
-        const char *lm;
         if (later->op != '=') {
             continue;
         }
         if (!block_in_chain(a, later, labels, nlabels, module, chunk)) {
-            continue;
-        }
-        lm = later->module ? later->module : "";
-        if (!module && strcmp(lm, bm) != 0) {
             continue;
         }
         return 0;
@@ -2832,7 +3195,9 @@ effective_blocks(
    The query matches when its labels are a suffix of the use:
    the use is the query, or a reference specialized from it.
    spec2@:spec1 matches spec1 and the unspecialized chunk.
-   It does not match spec2. A query with no module matches every module.
+   It does not match spec2. A use that names no module is in the
+   root module. A use that starts with '.' or '..' is resolved
+   against the module of the block that contains it.
    A use of chunk does not match the query label@:chunk. */
 
 static int
@@ -2845,7 +3210,7 @@ named_use_matches(
     const char *uchunk,
     const char **own,
     int own_n,
-    const char *def_module,
+    const char *base_module,
     const char **ql,
     int qn,
     const char *qmodule,
@@ -2869,12 +3234,12 @@ named_use_matches(
         use_l = own;
         use_n = own_n;
     }
-    use_m = has_module ? umodule : def_module;
+    use_m = has_module ? module_resolve(&a->arena, base_module, umodule) : "";
     if (!use_m) {
         use_m = "";
     }
-    match = (!qmodule || strcmp(use_m, qmodule) == 0)
-            && is_label_suffix(ql, qn, use_l, use_n);
+    match =
+        strcmp(use_m, qmodule) == 0 && is_label_suffix(ql, qn, use_l, use_n);
     free(resolved.v);
     return match;
 }
@@ -2885,7 +3250,7 @@ qname_depends(
     const QName *name,
     const char **own,
     int own_n,
-    const char *def_module,
+    const char *base_module,
     const char **ql,
     int qn,
     const char *qmodule,
@@ -2901,7 +3266,7 @@ qname_depends(
             name->chunk,
             own,
             own_n,
-            def_module,
+            base_module,
             ql,
             qn,
             qmodule,
@@ -2920,7 +3285,7 @@ qname_depends(
                 f->chunk,
                 own,
                 own_n,
-                def_module,
+                base_module,
                 ql,
                 qn,
                 qmodule,
@@ -2983,7 +3348,7 @@ content_depends(
     const Block *b,
     const char **own,
     int own_n,
-    const char *def_module,
+    const char *base_module,
     const char **ql,
     int qn,
     const char *qmodule,
@@ -3018,7 +3383,7 @@ content_depends(
                 continue;
             }
             if (qname_depends(
-                    a, &ref, own, own_n, def_module, ql, qn, qmodule, qchunk
+                    a, &ref, own, own_n, base_module, ql, qn, qmodule, qchunk
                 )) {
                 qname_free(&ref);
                 return 1;
@@ -3034,10 +3399,9 @@ content_depends(
 
 /* The block is considered at the specialization it extends.
    An unlabeled use takes those labels, after label groups expand.
-   A use that writes no module uses the module selected where the
-   block was written, which can differ from the module the block
-   extends. Filters on a reference and filters on the block count.
-   The comment does not. */
+   A use that omits a module, or writes '.' or '..', is resolved from
+   the module the block extends. Filters on a reference and filters on
+   the block count. The comment does not. */
 
 static int
 block_depends(
@@ -3050,7 +3414,7 @@ block_depends(
 )
 {
     StrVec own = {0};
-    const char *def = b->def_module ? b->def_module : "";
+    const char *base = b->module ? b->module : "";
     int found = 0;
     expand_label_list(a, b->labels, b->nlabels, &own);
 
@@ -3065,7 +3429,7 @@ block_depends(
             f->chunk,
             own.v,
             own.n,
-            def,
+            base,
             ql,
             qn,
             qmodule,
@@ -3075,7 +3439,7 @@ block_depends(
 
     if (!found) {
         found =
-            content_depends(a, b, own.v, own.n, def, ql, qn, qmodule, qchunk);
+            content_depends(a, b, own.v, own.n, base, ql, qn, qmodule, qchunk);
     }
     free(own.v);
     return found;
@@ -3293,11 +3657,11 @@ agent_comment(const Block *b, const char **text, size_t *len, int *start)
 }
 
 /* The filters field only. The caller writes the comma after it.
-   A filter that names no module uses the module selected where the
-   block was written. */
+   A filter that omits a module is in the root module. A relative module
+   is resolved from the module the block extends. */
 
 static void
-append_agent_filters(const Block *b, Buf *out)
+append_agent_filters(Archive *a, const Block *b, Buf *out)
 {
     buf_append(out, "        \"filters\": ", 19);
     if (b->nfilters == 0) {
@@ -3307,7 +3671,9 @@ append_agent_filters(const Block *b, Buf *out)
     buf_append(out, "[\n", 2);
     for (int i = 0; i < b->nfilters; i++) {
         Filt *f = &b->filters[i];
-        const char *fm = f->has_module ? f->module : b->def_module;
+        const char *fm = f->has_module ?
+                             module_resolve(&a->arena, b->module, f->module) :
+                             "";
         if (i) {
             buf_append(out, ",\n", 2);
         }
@@ -3349,7 +3715,7 @@ append_agent_topics(const Block *b, Buf *out)
 }
 
 static void
-append_agent_block(const Block *b, Buf *out)
+append_agent_block(Archive *a, const Block *b, Buf *out)
 {
     const char *ctext = "";
     size_t clen = 0;
@@ -3387,7 +3753,7 @@ append_agent_block(const Block *b, Buf *out)
     append_json_string(out, b->content ? b->content : "", b->content_len);
     buf_append(out, ",\n", 2);
 
-    append_agent_filters(b, out);
+    append_agent_filters(a, b, out);
     buf_append(out, ",\n", 2);
     append_agent_topics(b, out);
     buf_append(out, ",\n", 2);
@@ -3439,7 +3805,7 @@ agent_list(
         if (n) {
             buf_append(out, ",\n", 2);
         }
-        append_agent_block(b, out);
+        append_agent_block(a, b, out);
         n++;
     }
 
@@ -3626,8 +3992,7 @@ parse_buffer(Archive *a, const char *buf, size_t n, const char *filename)
     a->inc_depth--;
 }
 
-/* @. name @ inserts that archive here. The included archive starts in
-   the anonymous module, and the including archive keeps its own module.
+/* @. name @ inserts that archive here.
    Chunks, flags, and label groups from the included archive remain. */
 
 static void
@@ -3637,7 +4002,6 @@ parse_include(Parser *p, int execute)
     char *path;
     char *buf;
     size_t n = 0;
-    const char *saved;
     p->i += 2;
     name = read_name_until_control(p);
     if (!name[0]) {
@@ -3652,27 +4016,231 @@ parse_include(Parser *p, int execute)
     }
     path = find_library(name);
     buf = read_file(path, &n);
-    saved = p->arc->current_module;
-    p->arc->current_module = p->arc->anonymous_module;
     parse_buffer(p->arc, buf, n, path);
-    p->arc->current_module = saved;
     free(buf);
     free(path);
 }
 
-/* One introduced module per line, in introduction order.
-   The anonymous module is the empty name, so its line is empty. */
+/* One module path per line, written with @/ between the components,
+   so it can be passed back to an option that takes a MODULE. */
 
 static void
-list_modules(const Archive *a)
+write_module_path(const char *module)
+{
+    Buf out = {0};
+    const char *c = module;
+    if (!module[0]) {
+        buf_append(&out, "/", 1);
+    }
+    while (*c) {
+        const char *slash = strchr(c, '/');
+        size_t n = slash ? (size_t)(slash - c) : strlen(c);
+        for (size_t i = 0; i < n; i++) {
+            if (c[i] == '@') {
+                buf_append(&out, "@@", 2);
+            } else {
+                buf_append(&out, c + i, 1);
+            }
+        }
+        if (slash) {
+            buf_append(&out, "@/", 2);
+        }
+        if (!slash) {
+            break;
+        }
+        c = slash + 1;
+    }
+    buf_append(&out, "\n", 1);
+    if (fwrite(out.data, 1, out.n, stdout) != out.n) {
+        fail("could not write output");
+    }
+    free(out.data);
+}
+
+/* One topic path per line, written with @/ between the names. */
+
+static void
+write_topic_path(const char **parts, int n)
+{
+    Buf out = {0};
+    for (int i = 0; i < n; i++) {
+        if (i) {
+            buf_append(&out, "@/", 2);
+        }
+        append_name(&out, parts[i]);
+    }
+    buf_append(&out, "\n", 1);
+    if (fwrite(out.data, 1, out.n, stdout) != out.n) {
+        fail("could not write output");
+    }
+    free(out.data);
+}
+
+static char *
+topic_key(const char **parts, int n)
+{
+    size_t need = 1;
+    char *s;
+    char *w;
+    for (int i = 0; i < n; i++) {
+        need += strlen(parts[i]) + 1;
+    }
+    s = xmalloc(need);
+    w = s;
+    for (int i = 0; i < n; i++) {
+        size_t len = strlen(parts[i]);
+        memcpy(w, parts[i], len);
+        w += len;
+        *w++ = '\x1f';
+    }
+    *w = '\0';
+    return s;
+}
+
+/* -m lists the immediate children of MODULE. The root module is "/".
+   Modules are listed in the order their first chunk was introduced. */
+
+static void
+list_modules(const Archive *a, const char *module)
 {
     for (int i = 0; i < a->nmodules; i++) {
-        size_t n = strlen(a->modules[i]);
-        if ((n && fwrite(a->modules[i], 1, n, stdout) != n)
-            || fputc('\n', stdout) == EOF) {
-            fail("could not write output");
+        if (module_is_child(module, a->modules[i])) {
+            write_module_path(a->modules[i]);
         }
     }
+}
+
+/* -c lists the chunks defined in MODULE itself, in archive order.
+   Chunks in its submodules belong to those submodules. */
+
+static void
+list_chunks(const Archive *a, const char *module)
+{
+    StrVec seen = {0};
+    for (int i = 0; i < a->nblocks; i++) {
+        const Block *b = &a->blocks[i];
+        int known = 0;
+        if (strcmp(b->module, module) != 0) {
+            continue;
+        }
+        for (int j = 0; j < seen.n; j++) {
+            if (strcmp(seen.v[j], b->chunk) == 0) {
+                known = 1;
+                break;
+            }
+        }
+        if (known) {
+            continue;
+        }
+        sv_push(&seen, b->chunk);
+        {
+            Buf out = {0};
+            append_name(&out, b->chunk);
+            buf_append(&out, "\n", 1);
+            if (fwrite(out.data, 1, out.n, stdout) != out.n) {
+                fail("could not write output");
+            }
+            free(out.data);
+        }
+    }
+    free(seen.v);
+}
+
+static int
+topic_prefix(const char **parts, int n, const char **query, int nquery)
+{
+    if (nquery > n) {
+        return 0;
+    }
+    for (int i = 0; i < nquery; i++) {
+        if (strcmp(parts[i], query[i]) != 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* -s lists the immediate subdomains of DOMAIN. A name is a subdomain
+   when a topic continues under it with at least one more name. It is an
+   item when the topic ends there. */
+
+static void
+list_subdomains(const Archive *a, const char **query, int nquery)
+{
+    StrVec seen = {0};
+    for (int i = 0; i < a->nblocks; i++) {
+        const Block *b = &a->blocks[i];
+        for (int t = 0; t < b->ntopics; t++) {
+            const Topic *topic = &b->topics[t];
+            const char **path;
+            char *key;
+            int known = 0;
+            if (!topic_prefix(topic->parts, topic->nparts, query, nquery)
+                || topic->nparts <= nquery + 1) {
+                continue;
+            }
+            path = xmalloc((size_t)(nquery + 1) * sizeof(char *));
+            for (int j = 0; j < nquery; j++) {
+                path[j] = topic->parts[j];
+            }
+            path[nquery] = topic->parts[nquery];
+            key = topic_key(path, nquery + 1);
+            for (int j = 0; j < seen.n; j++) {
+                if (strcmp(seen.v[j], key) == 0) {
+                    known = 1;
+                    break;
+                }
+            }
+            if (!known) {
+                sv_push(&seen, key);
+                write_topic_path(path, nquery + 1);
+            } else {
+                free(key);
+            }
+            free(path);
+        }
+    }
+    for (int i = 0; i < seen.n; i++) {
+        free((void *)seen.v[i]);
+    }
+    free(seen.v);
+}
+
+/* -i lists the immediate items of DOMAIN. An item ends its topic path. */
+
+static void
+list_items(const Archive *a, const char **query, int nquery)
+{
+    StrVec seen = {0};
+    for (int i = 0; i < a->nblocks; i++) {
+        const Block *b = &a->blocks[i];
+        for (int t = 0; t < b->ntopics; t++) {
+            const Topic *topic = &b->topics[t];
+            char *key;
+            int known = 0;
+            if (topic->nparts != nquery + 1
+                || !topic_prefix(topic->parts, topic->nparts, query, nquery)) {
+                continue;
+            }
+            key = topic_key(topic->parts, topic->nparts);
+            for (int j = 0; j < seen.n; j++) {
+                if (strcmp(seen.v[j], key) == 0) {
+                    known = 1;
+                    break;
+                }
+            }
+            if (!known) {
+                sv_push(&seen, key);
+                write_topic_path(topic->parts, topic->nparts);
+            } else {
+                free(key);
+            }
+        }
+    }
+    for (int i = 0; i < seen.n; i++) {
+        free((void *)seen.v[i]);
+    }
+    free(seen.v);
 }
 
 static void
@@ -3684,30 +4252,33 @@ usage(FILE *fp, const char *argv0)
         "\n"
         "--help: print the usage\n"
         "-p, --print EXPRESSION: evaluate EXPRESSION, and print it\n"
-        "-m, --modules: list all modules\n"
+        "-m, --modules MODULE: list all modules under MODULE\n"
+        "-c, --chunks MODULE: list all chunks under MODULE\n"
         "-l, --literal CHUNK_REFERENCE: "
         "print the blocks applied to CHUNK_REFERENCE literally\n"
         "-e, --effective CHUNK_REFERENCE: "
         "print the effective blocks of CHUNK_REFERENCE\n"
         "-d, --depend CHUNK_REFERENCE: "
         "list all blocks that depend on CHUNK_REFERENCE\n"
-        "-r, --reference TOPIC: "
-        "list all blocks that refer to TOPIC\n"
+        "-s, --subdomains DOMAIN: list all subdomains under DOMAIN\n"
+        "-i, --item DOMAIN: list all items under DOMAIN\n"
+        "-r, --reference ITEM: list all blocks that refer to ITEM\n"
         "-a, --agent: alter output to suit an agent's needs\n"
         "\n"
+        "MODULE follows module@/submodule@/subsubmodule; "
+        "the root module is /.\n"
         "EXPRESSION follows "
         "label1@:label2@:module name@/chunk name@|filter1@|filter2.\n"
         "CHUNK_REFERENCE follows "
         "label1@:label2@:module name@/chunk name.\n"
-        "TOPIC follows "
-        "domain@/subdomain@/item.\n",
+        "DOMAIN follows domain@/subdomain.\n"
+        "ITEM follows domain@/subdomain@/item.\n",
         argv0
     );
 }
 
-/* Diagnostics name the options in enumerator order, print then literal
-   then effective then modules then depend then reference,
-   so the message does not depend on argument order. */
+/* Diagnostics name the options in enumerator order, so the message
+   does not depend on argument order. */
 
 static const char *
 mode_word(int mode)
@@ -3715,17 +4286,26 @@ mode_word(int mode)
     if (mode == MODE_PRINT) {
         return "print";
     }
+    if (mode == MODE_MODULES) {
+        return "modules";
+    }
+    if (mode == MODE_CHUNKS) {
+        return "chunks";
+    }
     if (mode == MODE_LITERAL) {
         return "literal";
     }
     if (mode == MODE_EFFECTIVE) {
         return "effective";
     }
-    if (mode == MODE_MODULES) {
-        return "modules";
-    }
     if (mode == MODE_DEPEND) {
         return "depend";
+    }
+    if (mode == MODE_SUBDOMAINS) {
+        return "subdomains";
+    }
+    if (mode == MODE_ITEMS) {
+        return "item";
     }
     return "reference";
 }
@@ -3748,4 +4328,3 @@ set_mode(int *mode, int next)
     }
     *mode = next;
 }
-

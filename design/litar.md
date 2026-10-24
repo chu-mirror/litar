@@ -144,33 +144,29 @@ is usually a long sentence, names might conflict.
 So litar supports modularization.
 
 ```
-@- Module 1 @
-
-@<chunk@=
+@<module1@/submodule@/chunk@=
     The contents.
 @
 
-@<another chunk@=
-    @<chunk@>
+@<module1@/chunk@=
+    @<.@/submodule@/chunk@>
 @
 
-@- Module 2 @
-
-@<chunk@=
-    @<Module 1@/chunk@>
+@<module2@/chunk@=
+    @<module1@/chunk@>
 @
 ```
 
-The chunk in Module 2 refers to the chunk in Module 1 by preceding the chunk name "chunk"
-with the module name "Module 1". Chunks in the same module can ignore the module name.
+litar allows attaching a series of labels to a chunk name;
+the series of labels, from left to right, form a path like file path
+in an filesystem. Each label is a directory name, the chunk name is a file name;
+a module is a directory, a chunk is a file.
 
-litar does not stop users from modifying chunks of other modules,
-it's a powerful way to interact with other modules in fact, but use this feature
-with caution.
-
-Besides the named module, there's an anonymous module. If there's no @-,
-or there's no module name specified after @-, the chunks belong to this
-anonymous module.
+The parent module of all modules is called root module,
+written as `/`; it can be omitted usually, but if you must specify it, use this name.
+In the content of a block,
+you can refer to the module of the chunk reference that the block is applied to as `.`;
+`..` is also supported, just as `..` in a file path.
 
 # Specialization
 
@@ -294,10 +290,8 @@ litar supports C-style including.
 ```
 @? included common C structure @|@|
 
-@- C structure @
-
-@<C program@=
-@<includes@>
+@<C structure@/C program@=
+@<C structure@/includes@>
 int main(int argc, char **argv) {
     @<main body@>
     return 0;

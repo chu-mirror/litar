@@ -69,21 +69,17 @@ yes
 
 @
 
-@- Mod @
-
-@<meta@=
+@<Mod@/meta@=
 {
     summary: |||
-        @<summary@>
+        @<.@/summary@>
     |||,
 }
 @
 
-@<summary@=
+@<Mod@/summary@=
 hello module
 @
-
-@- @
 
 @. lib.la @
 
@@ -114,19 +110,13 @@ hello module
 @<hole@>
 @
 
-@- Ghost @
-
-@- a@@b @
-
-@<a@@c@=
+@<a@@b@/a@@c@=
 z
 @
 
-@<m@@n@:a@@c@=
+@<m@@n@:a@@b@/a@@c@=
 q
 @
-
-@- @
 
 @<carrier@=
 @@<not@@>

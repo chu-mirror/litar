@@ -1,18 +1,18 @@
-@- Mine @
-
 @? no @|
-
-@- Other @
 
 @! hidden @
 
-@<chunk@=
+@<Mine@/chunk@=
+NO
+@
+
+@<Hidden@/chunk@=
 NO
 @
 
 @|
 
-@<chunk@=
+@<Mine@/chunk@=
 YES
 @
 
@@ -20,13 +20,13 @@ YES
 
 @? hidden @|
 
-@<flag@=
+@<Mine@/flag@=
 BAD
 @
 
 @|
 
-@<flag@=
+@<Mine@/flag@=
 GOOD
 @
 

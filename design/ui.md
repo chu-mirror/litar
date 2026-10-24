@@ -5,19 +5,24 @@ usage: litar [options] ARCHIVE
 
 --help: print the usage
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
--m, --modules: list all modules
+-m, --modules MODULE: list all modules under MODULE
+-c, --chunks MODULE: list the names of all modules under MODULE
 -l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
 -e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
 -d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
--r, --reference TOPIC: list all blocks that refer to TOPIC
+-s, --subdomains DOMAIN: list all subdomains under DOMAIN
+-i, --item DOMAIN: list all items under DOMAIN
+-r, --reference ITEM: list all blocks that refer to ITEM
 -a, --agent: alter output to suit an agent's needs
 ```
 
 The formats:
 
+- MODULE: `module@/submodule@/subsubmodule`, the root module is `/`;
 - EXPRESSION: `label1@:label2@:module name@/chunk name@|filter1@|filter2`;
 - CHUNK_REFERENCE: `label1@:label2@:module name@/chunk name`;
-- TOPIC: `domain@/subdomain@/item`.
+- DOMAIN: `domain@/subdomain`;
+- ITEM: `domain@/subdomain@/item`.
 
 litar searches the included libraries in this order:
 
@@ -38,34 +43,30 @@ all the blocks applied to the predecessors of that chunk reference will be print
 For example,
 
 ```
-@- module 1 @
-
-@<chunk@=
+@<module1@/chunk1@=
 @<substructure 1@>
 @
 
-@<chunk2@=
-@<substructure@>
-@
-
-@- module 2 @
-
-Extend chunk through label.
-@<label@:module 1@/chunk@=
+@<module1@/chunk2@=
 @<substructure 2@>
 @
+
+Extend chunk through label.
+@<label@:module 1@/chunk1@=
+@<substructure 3@>
+@
 ```
 
-If we run `litar -l label@:module 1@/chunk` for this, it should print,
+If we run `litar -l 'label@:module 1@/chunk'` for this, it should print,
 
 ```
-@<module 1@/chunk@=
+@<module1@/chunk1@=
 @<substructure 1@>
 @
 
 Extend chunk through label.
-@<label@:module 1@/chunk@=
-@<substructure 2@>
+@<label@:module 1@/chunk1@=
+@<substructure 3@>
 @
 ```
 

@@ -71,7 +71,7 @@ agent_main=$'[\n    {\n        "comment": "",\n        "labels": [],\n        "m
 assert_text "agent listing" "$agent_main" \
     "$LITAR" -a -r 'C@/functions@/main' archive.la
 
-agent_kept=$'[\n    {\n        "comment": "",\n        "labels": [],\n        "module": "Mod",\n        "chunk": "kept",\n        "type": "set",\n        "content": "mod\\n",\n        "filters": [],\n        "topics": [\n            ["a@b", "item"]\n        ],\n        "file": "archive.la",\n        "line-range": [38, 40]\n    }\n]\n'
+agent_kept=$'[\n    {\n        "comment": "",\n        "labels": [],\n        "module": "Mod",\n        "chunk": "kept",\n        "type": "set",\n        "content": "mod\\n",\n        "filters": [],\n        "topics": [\n            ["a@b", "item"]\n        ],\n        "file": "archive.la",\n        "line-range": [37, 39]\n    }\n]\n'
 assert_text "agent decodes @@" "$agent_kept" \
     "$LITAR" -a -r 'a@@b' archive.la
 

@@ -2,80 +2,74 @@
 @@<hole@@>
 @
 
-@- Mod @
-
 before
-@<user@=
-@<hole@>
-@<Mod@/other@|upper@>
+@<Mod@/user@=
+@<Mod@/hole@>
+@<Mod@/other@|Mod@/upper@>
 @
 
-@<lab@:user@=
-@<hole@>
-@|upper@
+@<lab@:Mod@/user@=
+@<Mod@/hole@>
+@|Mod@/upper@
 
-@<onlyfilt@=
+@<Mod@/onlyfilt@=
 text
-@|lab@:upper@
+@|lab@:Mod@/upper@
 
-@<marked@=
-@<text@|red@:upper@>
+@<Mod@/marked@=
+@<text@|red@:Mod@/upper@>
 @
 
-@<explicit@=
+@<Mod@/explicit@=
 @<lab@:Mod@/hole@>
 @
 
-@<elsewhere@=
+@<Mod@/elsewhere@=
 @<Other@/hole@>
 @
 
 @<Other@/bridge@=
-@<hole@>
+@<Other@/hole@>
 @
 
 @:pair@=red@:blue@
 
-@<pair@:grouped@=
-@<hole@>
+@<pair@:Mod@/grouped@=
+@<Mod@/hole@>
 @
 
-@<via group@=
-@<pair@:hole@>
+@<Mod@/via group@=
+@<pair@:Mod@/hole@>
 @
 
 @! go @
 
 @? stop @|
-@<hidden@=
-@<hole@>
+@<Mod@/hidden@=
+@<Mod@/hole@>
 @
 @|
 kept arm
-@<shown@=
-@<hole@>
+@<Mod@/shown@=
+@<Mod@/hole@>
 @
 @
 
-@- Other @
-
-@<user@=
-@<hole@>
+@<Other@/user@=
+@<Other@/hole@>
 @
 
 @. lib.la @
 
-@<cycle@=
-@<cycle@>
+@<Other@/cycle@=
+@<Other@/cycle@>
 @
 
-@<messy@=
+@<Other@/messy@=
 @<@>
-@<hole@>
+@<Other@/hole@>
 @
 
-@- a@@b @
-
-@<a@@c@=
-@<kept@>
+@<a@@b@/a@@c@=
+@<a@@b@/kept@>
 @

@@ -1,18 +1,18 @@
 
 before
 @<Mod@/user@=
-@<hole@>
-@<Mod@/other@|upper@>
+@<Mod@/hole@>
+@<Mod@/other@|Mod@/upper@>
 @
 
 @<lab@:Mod@/user@=
-@<hole@>
-@|upper@
+@<Mod@/hole@>
+@|Mod@/upper@
 
 @<Mod@/onlyfilt@=
 text
-@|lab@:upper@
+@|lab@:Mod@/upper@
 
 @<Mod@/marked@=
-@<text@|red@:upper@>
+@<text@|red@:Mod@/upper@>
 @

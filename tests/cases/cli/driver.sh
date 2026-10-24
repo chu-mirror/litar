@@ -27,12 +27,16 @@ check_help() {
     for _needle in "usage: $LITAR [options] ARCHIVE" \
         "--help: print the usage" \
         "-p, --print EXPRESSION: evaluate EXPRESSION, and print it" \
-        "-m, --modules: list all modules" \
+        "-m, --modules MODULE: list all modules under MODULE" \
+        "-c, --chunks MODULE: list all chunks under MODULE" \
+        "-s, --subdomains DOMAIN: list all subdomains under DOMAIN" \
+        "-i, --item DOMAIN: list all items under DOMAIN" \
         "-l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally" \
         "-e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE" \
         "-d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE" \
-        "-r, --reference TOPIC: list all blocks that refer to TOPIC" \
+        "-r, --reference ITEM: list all blocks that refer to ITEM" \
         "-a, --agent: alter output to suit an agent's needs" \
+        "MODULE follows module@/submodule@/subsubmodule; the root module is /." \
         "label1@:label2@:module name@/chunk name@|filter1@|filter2" \
         "label1@:label2@:module name@/chunk name." \
         "domain@/subdomain@/item."; do
@@ -71,9 +75,12 @@ assert_text "--effective" "$lit" "$LITAR" --effective chunk archive.la
 assert_text "--effective=" "$lit" "$LITAR" --effective=chunk archive.la
 assert_text "archive before -e" "$lit" "$LITAR" archive.la -e chunk
 
-assert_text "-m" $'\n' "$LITAR" -m archive.la
-assert_text "--modules" $'\n' "$LITAR" --modules archive.la
-assert_text "archive before -m" $'\n' "$LITAR" archive.la -m
+assert_text "-m" "" "$LITAR" -m / archive.la
+assert_text "--modules" "" "$LITAR" --modules / archive.la
+assert_text "archive before -m" "" "$LITAR" archive.la -m /
+assert_text "-c" $'chunk\n' "$LITAR" -c / archive.la
+assert_text "-s" "" "$LITAR" -s C archive.la
+assert_text "-i" "" "$LITAR" -i C archive.la
 
 assert_text "-d" "" "$LITAR" -d chunk archive.la
 assert_text "--depend" "" "$LITAR" --depend chunk archive.la
@@ -86,7 +93,7 @@ assert_text "-a -e" "$agent" "$LITAR" -a -e chunk archive.la
 assert_text "--agent" "$agent" "$LITAR" --agent -l chunk archive.la
 assert_text "agent after the archive" "$agent" "$LITAR" archive.la -l chunk -a
 assert_text "agent does not change print" $'OK\n' "$LITAR" -a -p chunk archive.la
-assert_text "agent does not change modules" $'\n' "$LITAR" -a -m archive.la
+assert_text "agent does not change modules" "" "$LITAR" -a -m / archive.la
 assert_text "agent depend with no users" $'[]\n' "$LITAR" -a -d chunk archive.la
 
 assert_fail "duplicate -p and --print" "duplicate print option" \
@@ -105,10 +112,10 @@ assert_fail "literal and effective" "cannot combine literal and effective" \
     "$LITAR" -l chunk -e chunk archive.la
 assert_fail "effective and literal" "cannot combine literal and effective" \
     "$LITAR" -e chunk --literal chunk archive.la
-assert_fail "effective and modules" "cannot combine effective and modules" \
-    "$LITAR" -e chunk -m archive.la
-assert_fail "modules and effective" "cannot combine effective and modules" \
-    "$LITAR" -m --effective chunk archive.la
+assert_fail "effective and modules" "cannot combine modules and effective" \
+    "$LITAR" -e chunk -m / archive.la
+assert_fail "modules and effective" "cannot combine modules and effective" \
+    "$LITAR" -m / --effective chunk archive.la
 assert_fail "effective and depend" "cannot combine effective and depend" \
     "$LITAR" -e chunk -d chunk archive.la
 assert_fail "depend and effective" "cannot combine effective and depend" \
@@ -122,21 +129,21 @@ assert_fail "print and literal" "cannot combine print and literal" \
 assert_fail "literal and print" "cannot combine print and literal" \
     "$LITAR" --literal chunk --print chunk archive.la
 assert_fail "duplicate -m and --modules" "duplicate modules option" \
-    "$LITAR" -m --modules archive.la
+    "$LITAR" -m / --modules / archive.la
 assert_fail "print and modules" "cannot combine print and modules" \
-    "$LITAR" -p chunk -m archive.la
+    "$LITAR" -p chunk -m / archive.la
 assert_fail "modules and print" "cannot combine print and modules" \
-    "$LITAR" --modules -p chunk archive.la
-assert_fail "literal and modules" "cannot combine literal and modules" \
-    "$LITAR" -l chunk -m archive.la
-assert_fail "modules and literal" "cannot combine literal and modules" \
-    "$LITAR" -m --literal chunk archive.la
+    "$LITAR" --modules / -p chunk archive.la
+assert_fail "literal and modules" "cannot combine modules and literal" \
+    "$LITAR" -l chunk -m / archive.la
+assert_fail "modules and literal" "cannot combine modules and literal" \
+    "$LITAR" -m / --literal chunk archive.la
 assert_fail "duplicate -a and --agent" "duplicate agent option" \
     "$LITAR" -a --agent -l chunk archive.la
 assert_fail "--agent= is unknown" "unknown option '--agent=foo'" \
     "$LITAR" --agent=foo -l chunk archive.la
 assert_fail "agent is not an action" \
-    "missing -p, --print, -l, --literal, -e, --effective, -m, --modules, -d, --depend, -r, or --reference" \
+    "missing -p, --print, -m, --modules, -c, --chunks, -l, --literal, -e, --effective, -d, --depend, -s, --subdomains, -i, --item, -r, or --reference" \
     "$LITAR" -a archive.la
 assert_fail "duplicate -d and --depend" "duplicate depend option" \
     "$LITAR" -d chunk --depend chunk archive.la
@@ -151,9 +158,9 @@ assert_fail "literal and depend" "cannot combine literal and depend" \
 assert_fail "depend and literal" "cannot combine literal and depend" \
     "$LITAR" -d chunk --literal chunk archive.la
 assert_fail "modules and depend" "cannot combine modules and depend" \
-    "$LITAR" -m -d chunk archive.la
+    "$LITAR" -m / -d chunk archive.la
 assert_fail "depend and modules" "cannot combine modules and depend" \
-    "$LITAR" --depend chunk --modules archive.la
+    "$LITAR" --depend chunk --modules / archive.la
 assert_fail "duplicate -r and --reference" "duplicate reference option" \
     "$LITAR" -r 'C@/item' --reference 'C@/item' archive.la
 assert_fail "duplicate --reference=" "duplicate reference option" \
@@ -171,31 +178,45 @@ assert_fail "effective and reference" "cannot combine effective and reference" \
 assert_fail "reference and effective" "cannot combine effective and reference" \
     "$LITAR" --reference 'C@/item' -e chunk archive.la
 assert_fail "modules and reference" "cannot combine modules and reference" \
-    "$LITAR" -m -r 'C@/item' archive.la
+    "$LITAR" -m / -r 'C@/item' archive.la
 assert_fail "reference and modules" "cannot combine modules and reference" \
-    "$LITAR" -r 'C@/item' --modules archive.la
+    "$LITAR" -r 'C@/item' --modules / archive.la
 assert_fail "depend and reference" "cannot combine depend and reference" \
     "$LITAR" -d chunk -r 'C@/item' archive.la
 assert_fail "reference and depend" "cannot combine depend and reference" \
     "$LITAR" --reference 'C@/item' -d chunk archive.la
-assert_fail "--reference needs a topic" \
-    "--reference requires a topic" "$LITAR" --reference
-assert_fail "-r needs a topic" "-r requires a topic" \
+assert_fail "--reference needs an item" \
+    "--reference requires an item" "$LITAR" --reference
+assert_fail "-r needs an item" "-r requires an item" \
     "$LITAR" -r
-assert_fail "empty topic" "empty topic name" \
+assert_fail "empty item" "empty topic name" \
     "$LITAR" --reference= archive.la
-assert_fail "--modules= is unknown" "unknown option '--modules=foo'" \
+assert_text "--modules= names a module" "" \
     "$LITAR" --modules=foo archive.la
+assert_text "--chunks= names a module" "" \
+    "$LITAR" --chunks=foo archive.la
 assert_fail "unknown long option" "unknown option '--bogus'" \
     "$LITAR" --bogus archive.la
 assert_fail "unknown short option" "unknown option '-z'" \
     "$LITAR" -z archive.la
 assert_fail "missing archive" "missing archive" "$LITAR" -p chunk
 assert_fail "missing print" \
-    "missing -p, --print, -l, --literal, -e, --effective, -m, --modules, -d, --depend, -r, or --reference" \
+    "missing -p, --print, -m, --modules, -c, --chunks, -l, --literal, -e, --effective, -d, --depend, -s, --subdomains, -i, --item, -r, or --reference" \
     "$LITAR" archive.la
-assert_fail "missing archive for -m" "missing archive" "$LITAR" -m
-assert_fail "missing archive for --modules" "missing archive" "$LITAR" --modules
+assert_fail "missing archive for -m" "missing archive" "$LITAR" -m /
+assert_fail "missing archive for --modules" "missing archive" "$LITAR" --modules /
+assert_fail "--modules needs a module" "--modules requires a module" \
+    "$LITAR" --modules
+assert_fail "-m needs a module" "-m requires a module" "$LITAR" -m
+assert_fail "--chunks needs a module" "--chunks requires a module" \
+    "$LITAR" --chunks
+assert_fail "-c needs a module" "-c requires a module" "$LITAR" -c
+assert_fail "--subdomains needs a domain" "--subdomains requires a domain" \
+    "$LITAR" --subdomains
+assert_fail "-s needs a domain" "-s requires a domain" "$LITAR" -s
+assert_fail "--item needs a domain" "--item requires a domain" \
+    "$LITAR" --item
+assert_fail "-i needs a domain" "-i requires a domain" "$LITAR" -i
 assert_fail "missing archive for -d" "missing archive" "$LITAR" -d chunk
 assert_fail "missing archive for --depend" "missing archive" "$LITAR" --depend chunk
 assert_fail "--print needs an expression" "--print requires an expression" \

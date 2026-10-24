@@ -60,20 +60,22 @@ INSTRUCTIONS = """
 This server inspects and edits one litar archive at a time.
 Do not open a .la file yourself; send the operations on a .la file to this server.
 
-A chunk reference looks like label@:module name@/chunk and has no closing @.
-An expression may continue with filters: label@:module name@/chunk@|filter.
+A chunk reference looks like label@:module@/submodule@/chunk and has no closing @.
+An expression may continue with filters: label@:module@/submodule@/chunk@|filter.
 In those strings, write a literal @ inside a name as @@.
+A module is a path. The root module is /, and it may be omitted.
+A reference in block content may start its module with . or .. to name a
+module relative to the module of the reference being expanded.
 
 list_modules returns every module and the evaluated text of its summary chunk.
 blocks_applied is litar -a -l. blocks_effective is litar -a -e. blocks_depending is litar -a -d.
-blocks_referring is litar -a -r. A topic looks like domain@/subdomain@/item, with no @~ and no closing @.
-evaluate_expression is litar -p. Print and modules stay plain text; -a does not change them.
+blocks_referring is litar -a -r. An item looks like domain@/subdomain@/item, with no @~ and no closing @.
+evaluate_expression is litar -p. Print and listings stay plain text; -a does not change them.
 topics on a block are the cross-references @~domain@/item@ written after the body and the filters.
 They are not part of content. Pass them back to modify_block and append_block to keep them.
 modify_block and delete_block address a block with the file and the line numbers from a listing.
 Fetch the listing again after an edit, because line numbers move.
 append_block writes the block at the end of the archive.
-It first selects that block's module with @-, so a reference in the body that omits a module stays in that module.
 content is the raw body stored in the archive, not the evaluated text. @@ in content is a literal @.
 The newline after @= or @+ is layout and is not part of content.
 """.strip()
@@ -117,7 +119,7 @@ class BlockRecord(BaseModel):
 class ModuleInfo(BaseModel):
     """A module and the evaluated text of its summary chunk."""
 
-    module: str = Field(description="Module name. Empty for the anonymous module.")
+    module: str = Field(description="Module path. / is the root module.")
     description: str | None = Field(
         description="Evaluated summary. Null when the module defines no summary."
     )
@@ -355,12 +357,12 @@ def _edit(path: str, mutate) -> None:
     """Parse with litar, edit with sed, and restore the sed snapshot if parsing fails."""
 
     _require_archive(path)
-    require_litar("-m", path)
+    require_litar("-m", "/", path)
     snap = snapshot(path)
     try:
         mutate()
         try:
-            require_litar("-m", path)
+            require_litar("-m", "/", path)
         except ToolError:
             try:
                 restore(path, snap)
@@ -388,12 +390,55 @@ def encode_name(name: str) -> str:
     return name.replace("@", "@@")
 
 
+def decode_name(name: str) -> str:
+    """Decode the @@ escape litar uses for a literal @ in a name."""
+
+    out: list[str] = []
+    i = 0
+    while i < len(name):
+        if name[i] == "@" and i + 1 < len(name) and name[i + 1] == "@":
+            out.append("@")
+            i += 2
+        else:
+            out.append(name[i])
+            i += 1
+    return "".join(out)
+
+
+def decode_module(text: str) -> str:
+    """Turn the encoded output of litar -m into a decoded module path."""
+
+    text = text.strip()
+    if text in ("", "/"):
+        return "/"
+    text = text.replace("@/", "/")
+    parts = [decode_name(part.strip()) for part in text.split("/") if part.strip()]
+    return "/".join(parts)
+
+
+def module_parts(module: str) -> list[str]:
+    """Split a decoded module path into its components. / and empty are the root."""
+
+    text = module.strip()
+    if text in ("", "/"):
+        return []
+    text = text.replace("@/", "/")
+    return [part.strip() for part in text.split("/") if part.strip()]
+
+
+def encode_module(module: str) -> str:
+    """Write a module path with the @/ separators of litar syntax."""
+
+    return "@/".join(encode_name(part) for part in module_parts(module))
+
+
 def encode_reference(labels: list[str], module: str, chunk: str) -> str:
     """Build a chunk reference without the closing @, as the litar CLI spells it."""
 
     head = [encode_name(label) for label in labels]
-    if module:
-        tail = encode_name(module) + "@/" + encode_name(chunk)
+    tail_module = encode_module(module)
+    if tail_module:
+        tail = tail_module + "@/" + encode_name(chunk)
     else:
         tail = encode_name(chunk)
     if head:
@@ -494,28 +539,16 @@ def _anchor_blank(path: str, start: int, comment: str) -> str:
     return raw.decode("ascii")
 
 
-def _module_selection(module: str) -> str:
-    """A @- expression that selects module for the block written after it.
-
-    @- @ selects the anonymous module. A header that names a module still
-    extends that module, but a reference in the body that omits @/ uses the
-    module selected here.
-    """
-
-    if module == "":
-        return "@- @\n"
-    return "@- " + encode_name(module) + " @\n"
-
-
 def _missing_summary(stderr: str, module: str) -> bool:
-    key = "summary" if module == "" else f"{module}@/summary"
+    parts = module_parts(module)
+    key = "summary" if not parts else "@/".join(parts) + "@/" + "summary"
     return stderr.strip() == f"Error: chunk '{key}' is not defined"
 
 
 def _summary_expression(module: str) -> str:
-    if module == "":
+    if not module_parts(module):
         return "summary"
-    return encode_name(module) + "@/summary"
+    return encode_module(module) + "@/summary"
 
 
 def _load_blocks(flag: str, reference: str, archive: str) -> list[BlockRecord]:
@@ -539,6 +572,19 @@ def _fresh_blocks(path: str, labels: list[str], module: str, chunk: str) -> list
     return _load_blocks("-l", reference, path)
 
 
+def _child_modules(archive: str, module: str) -> list[str]:
+    """Ask litar -m for the immediate children of module. Names keep @/."""
+
+    argument = "/" if not module_parts(module) else encode_module(module)
+    listed = require_litar("-m", argument, archive)
+    raw = listed.stdout.decode("utf-8", "replace")
+    if raw == "":
+        return []
+    if raw.endswith("\n"):
+        raw = raw[:-1]
+    return [decode_module(line) for line in raw.split("\n")]
+
+
 mcp = MCPServer("litar", instructions=INSTRUCTIONS)
 
 
@@ -551,23 +597,20 @@ def list_modules(
     The description is the evaluated summary chunk: litar -m, then litar -p
     of summary or Module@/summary. References in the summary are expanded
     and its filters run. A module with no summary has a null description.
+    The root module is reported as /; every other module is a path.
     Call blocks_applied on Module@/summary for the summary's own blocks.
     """
 
     with _LOCK:
         _require_archive(archive)
-        listed = require_litar("-m", archive)
-        # litar ends each name with LF. splitlines() would also split on
-        # Unicode line breaks that can occur inside a name.
-        raw = listed.stdout.decode("utf-8", "replace")
-        if raw == "":
-            modules: list[str] = []
-        else:
-            if raw.endswith("\n"):
-                raw = raw[:-1]
-            modules = raw.split("\n")
         found: list[ModuleInfo] = []
-        for name in modules:
+        pending = ["/"]
+        seen: set[str] = set()
+        while pending:
+            name = pending.pop(0)
+            if name in seen:
+                continue
+            seen.add(name)
             evaluated = run_litar("-p", _summary_expression(name), archive)
             if evaluated.returncode == 0:
                 found.append(
@@ -576,12 +619,15 @@ def list_modules(
                         description=evaluated.stdout.decode("utf-8", "replace"),
                     )
                 )
-                continue
-            message = evaluated.stderr.decode("utf-8", "replace")
-            if _missing_summary(message, name):
-                found.append(ModuleInfo(module=name, description=None))
-                continue
-            found.append(ModuleInfo(module=name, description=None, error=message.strip()))
+            else:
+                message = evaluated.stderr.decode("utf-8", "replace")
+                if _missing_summary(message, name):
+                    found.append(ModuleInfo(module=name, description=None))
+                else:
+                    found.append(
+                        ModuleInfo(module=name, description=None, error=message.strip())
+                    )
+            pending.extend(_child_modules(archive, name))
         return found
 
 
@@ -602,8 +648,8 @@ def blocks_applied(
     order, including less specialized blocks on the same specialization path.
     A later @= drops earlier blocks from the expanded text; blocks_effective
     returns the blocks that remain. file and line-range locate the block for
-    modify_block and delete_block. A reference with no module matches that
-    chunk in every module. An undefined reference is an error.
+    modify_block and delete_block. A reference with no module names the root
+    module. An undefined reference is an error.
     """
 
     with _LOCK:
@@ -627,8 +673,7 @@ def blocks_effective(
     This is litar -a -e. The blocks are the ones whose text remains after
     the chain is applied in archive order. A later @= drops every earlier
     block on that chain. @+ appends. Less specialized blocks stay when no
-    later set drops them. A reference with no module matches that chunk in
-    every module, and a set in one module does not drop a block in another.
+    later set drops them. A reference with no module names the root module.
     file and line-range locate the block for modify_block and delete_block.
     An undefined reference is an error.
     """
@@ -742,7 +787,7 @@ def modify_block(
     labels: Annotated[list[str] | None, Field(description="Labels stored on the block.")] = None,
     module: Annotated[
         str,
-        Field(description="Module the block extends. Empty is the anonymous module."),
+        Field(description="Module path the block extends. Empty or / is the root module."),
     ] = "",
     type: Annotated[
         Literal["set", "extend"],
@@ -806,8 +851,8 @@ def delete_block(
 ) -> EditResult:
     """Delete the block that occupies this inclusive line range.
 
-    The range is the line-range from a listing. A preceding @- is outside
-    that range and stays. sed restores the file if it no longer parses.
+    The range is the line-range from a listing. sed restores the file if it
+    no longer parses.
     """
 
     with _LOCK:
@@ -833,7 +878,7 @@ def append_block(
     labels: Annotated[list[str] | None, Field(description="Labels stored on the block.")] = None,
     module: Annotated[
         str,
-        Field(description="Module the block extends. Empty is the anonymous module."),
+        Field(description="Module path the block extends. Empty or / is the root module."),
     ] = "",
     type: Annotated[
         Literal["set", "extend"],
@@ -847,10 +892,8 @@ def append_block(
 ) -> EditResult:
     """Append a block at the end of the archive.
 
-    A @- selection for the block's module is written first, then a blank
-    line, then the block. The selection is not part of the block's later
-    line-range. The returned line span covers everything written, including
-    that selection. blocks lists what litar -a -l now applies to the chunk.
+    The block is written at the end of the archive. The returned line span
+    covers the block. blocks lists what litar -a -l now applies to the chunk.
     """
 
     with _LOCK:
@@ -860,7 +903,7 @@ def append_block(
             comment, block_labels, module, chunk, type, content, filters, topics
         )
         module_name = _clean_name("module", module, True)
-        text = _module_selection(module_name) + "\n" + block
+        text = block
         before = line_count(archive)
 
         def mutate() -> None:

@@ -19,48 +19,48 @@ assert_ok "a specialized filter depends on the base" upper.out \
     "$LITAR" -d 'Mod@/upper' archive.la
 assert_ok "the reference itself" user.out \
     "$LITAR" -d 'Mod@/other' archive.la
-assert_ok "no module matches every specialized filter" upper.out \
-    "$LITAR" -d upper archive.la
+assert_ok "a module limits a specialized filter" upper.out \
+    "$LITAR" -d 'Mod@/upper' archive.la
 
 assert_ok "labels inherited from the block" lab-hole.out \
     "$LITAR" -d 'lab@:Mod@/hole' archive.la
-assert_ok "query without a module" lab-hole.out \
+assert_text "a root query does not match a module use" "" \
     "$LITAR" -d 'lab@:hole' archive.la
 
 assert_ok "block filter inherits the block labels" lab-upper.out \
-    "$LITAR" -d 'lab@:upper' archive.la
+    "$LITAR" -d 'lab@:Mod@/upper' archive.la
 assert_text "an explicit filter does not inherit" "" \
     "$LITAR" -d 'plain@:upper' archive.la
 
 assert_ok "filter labels are exact" marked.out \
-    "$LITAR" -d 'red@:upper' archive.la
+    "$LITAR" -d 'red@:Mod@/upper' archive.la
 assert_ok "filter module is the defining module" marked.out \
     "$LITAR" -d 'red@:Mod@/upper' archive.la
 assert_ok "the filtered reference" marked.out \
     "$LITAR" -d text archive.la
 assert_text "explicit filter labels do not match a longer name" "" \
-    "$LITAR" -d 'red@:blue@:upper' archive.la
+    "$LITAR" -d 'red@:blue@:Mod@/upper' archive.la
 assert_text "explicit reference labels do not grow" "" \
     "$LITAR" -d 'extra@:lab@:Mod@/hole' archive.la
 
 assert_ok "label group on the block and on the use" grouped.out \
-    "$LITAR" -d 'pair@:hole' archive.la
+    "$LITAR" -d 'pair@:Mod@/hole' archive.la
 assert_ok "expanded group" grouped.out \
     "$LITAR" -d 'red@:blue@:Mod@/hole' archive.la
 assert_ok "group on the query expands before the module is applied" grouped.out \
     "$LITAR" -d 'pair@:Mod@/hole' archive.la
 assert_ok "a suffix label is the same specialization path" grouped.out \
-    "$LITAR" -d 'blue@:hole' archive.la
+    "$LITAR" -d 'blue@:Mod@/hole' archive.la
 assert_text "a different specialization path does not match" "" \
-    "$LITAR" -d 'red@:hole' archive.la
+    "$LITAR" -d 'red@:Mod@/hole' archive.la
 
 assert_ok "a block that names itself" cycle.out \
     "$LITAR" -d 'Other@/cycle' archive.la
 assert_text "undefined and unused" "" "$LITAR" -d missing archive.la
 assert_text "extending a chunk is not depending on it" "" \
-    "$LITAR" -d user archive.la
+    "$LITAR" -d 'Mod@/user' archive.la
 assert_text "skipped arm is not a block" "" \
-    "$LITAR" -d hidden archive.la
+    "$LITAR" -d 'Mod@/hidden' archive.la
 
 assert_ok "@@ in the module and the chunk" kept.out \
     "$LITAR" -d 'a@@b@/kept' archive.la
@@ -77,24 +77,24 @@ assert_fail "empty reference" "empty chunk name" \
 
 assert_ok "design example, unspecialized use" outline-sub1.out \
     "$LITAR" -d 'module 1@/substructure 1' outline.la
-assert_ok "no module on that use" outline-sub1.out \
+assert_text "a root query does not match the use" "" \
     "$LITAR" -d 'substructure 1' outline.la
 assert_text "outer labels are not applied" "" \
     "$LITAR" -d 'label@:substructure 1' outline.la
 assert_text "extending chunk is not a use of chunk" "" \
     "$LITAR" -d 'module 1@/chunk' outline.la
 
-assert_ok "inherited label and defining module" outline-sub2.out \
-    "$LITAR" -d 'label@:module 2@/substructure 2' outline.la
-assert_ok "query may omit the module" outline-sub2.out \
+assert_ok "inherited label and target module" outline-sub2.out \
+    "$LITAR" -d 'label@:module 1@/substructure 2' outline.la
+assert_text "a root query does not match the module use" "" \
     "$LITAR" -d 'label@:substructure 2' outline.la
-assert_ok "a specialized use depends on the unspecialized chunk" outline-sub2.out \
+assert_text "a root query does not match the unspecialized use" "" \
     "$LITAR" -d 'substructure 2' outline.la
-assert_text "the header module is not the use module" "" \
+assert_ok "the target module names the use" outline-sub2.out \
     "$LITAR" -d 'module 1@/substructure 2' outline.la
 
 assert_ok "another unspecialized use" outline-sub.out \
-    "$LITAR" -d substructure outline.la
+    "$LITAR" -d 'module 1@/substructure' outline.la
 
 assert_ok "design example contains a specialized reference" example-chunk1.out \
     "$LITAR" -d 'chunk 1' example.la

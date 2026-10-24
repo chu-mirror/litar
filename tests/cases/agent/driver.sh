@@ -19,7 +19,7 @@ assert_fail "undefined literal stays an error" \
     "$LITAR" -a -l missing archive.la
 
 assert_ok "filters keep labels and fill a missing module" filters.out \
-    "$LITAR" -a -l seen filters.la
+    "$LITAR" -a -l 'Mod@/seen' filters.la
 
 assert_ok "strings escape quotes and backslashes" notes.out \
     "$LITAR" -a -l chunk notes.la

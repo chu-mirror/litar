@@ -26,7 +26,7 @@ Pass the archive path and the reference exactly.
    Use its comment, content, and filters.
    A use is an embedded reference, a filter name, or both.
    An unlabeled reference takes the labels of the block that contains it.
-   A reference with no module stays in the module selected where that block was written.
+   A reference with no module names the root module; a module path that starts with `.` or `..` is relative to the module of the reference being expanded.
    Quote only the line or lines that contain the use.
 3. Call `blocks_effective`.
    These are the blocks whose text remains after the chain is applied.

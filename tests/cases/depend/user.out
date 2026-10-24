@@ -1,6 +1,6 @@
 
 before
 @<Mod@/user@=
-@<hole@>
-@<Mod@/other@|upper@>
+@<Mod@/hole@>
+@<Mod@/other@|Mod@/upper@>
 @

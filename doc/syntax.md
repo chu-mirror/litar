@@ -52,8 +52,8 @@ These are the controls:
 | `@>` | end a reference |
 | `@=` | set the chunk, or bind a label group |
 | `@+` | extend the chunk, or add a file set |
-| `@-` | select a module, or subtract a file set |
-| `@/` | separate the module from the chunk, or one level of a topic |
+| `@-` | subtract a file set |
+| `@/` | separate two module components, separate the module from the chunk, or separate two names of a topic |
 | `@~` | start a topic reference on a block |
 | `@:` | separate labels, or start a label group |
 | <code>@&#124;</code> | filter, branch arm, or end of a block body |
@@ -67,7 +67,6 @@ These are the controls:
 
 At the start of an expression the control selects the form:
 `@<` a block,
-`@-` a module,
 `@!` a flag,
 `@?` a branch,
 `@:` a label group,
@@ -84,31 +83,43 @@ A name is the bytes from the current position up to the next control.
 Space, tab, carriage return, and line feed are removed from both ends
 after the name is taken and before `@@` is decoded.
 Interior whitespace stays, including a newline between two words.
-`@- Module 1 @` names `Module 1`.
+`@<Module 1@/chunk@=` names the chunk `chunk` in the module `Module 1`.
 
 A name that is empty after trimming is an empty name.
-An empty chunk, label, module, flag, label-group, filter, or archive name
-is an error.
-The module name on `@-` may be empty.
-An empty module name selects the anonymous module.
+An empty chunk, label, module component, flag, label-group, filter,
+or archive name is an error.
 
 # Qualified name
 
 A qualified name is zero or more labels,
-then an optional module,
+then a module path,
 then a chunk:
 
 ```
-label@:label@:module@/chunk
+label@:label@:module@/submodule@/chunk
 ```
 
 Each label is a name followed by `@:`.
-The module is a name followed by `@/`.
-The chunk is a name.
-The module may be omitted.
-Labels come first, then the module, then the chunk.
-A second `@/` is an error.
-A `@:` after the module is an error.
+Every later name separated by `@/` is one component of the module path;
+the last name is the chunk.
+The module path may be omitted, which names the root module.
+A leading `@/` names the root module explicitly.
+Labels come first, then the module path, then the chunk.
+A `@:` after the module path has started is an error.
+An empty component is an error, except for the leading `@/`.
+
+The module paths form a tree.
+A module is a directory and a chunk is a file in that tree.
+The parent of every module is the root module, written `/`.
+The components of a path are its directories below the root.
+The root module can usually be omitted.
+
+In the content of a block, a module path that starts with `.` or `..`
+is resolved against the module of the chunk reference the block is applied to.
+`.` names that module, and `..` names its parent.
+`..` at the root stays at the root.
+A module path in a block header is absolute: a `.` or `..` component
+there is an error.
 
 The chunk name is required in a block header,
 on the command line, and in a filter.
@@ -127,17 +138,12 @@ A comment is ordinary text under the same scan.
 The way to write that text is `@@<`.
 
 An included archive is parsed at the `@.` expression.
-It starts in the anonymous module.
-The module of the including archive is restored
-after the included archive ends.
-Included chunks, flags, and label groups remain.
+Every block in it names its own module, so inclusion needs no module state.
+Included chunks, flags, label groups, and modules remain.
 
-The selected module starts as the anonymous module,
-whose name is empty.
-An executed `@-` selects a module until the next executed `@-`.
-A block or file that omits `@/` belongs to the selected module.
-A reference that omits `@/` names the module selected
-where the containing block is written.
+A block or file that omits `@/` belongs to the root module.
+A reference that omits `@/` names the root module.
+Only a reference in block content resolves `.` and `..`.
 
 # Block
 
@@ -222,10 +228,7 @@ Any other control in the body is an error.
 `@@<` is the text `@<` and does not open a reference.
 `@~` at the top of the body is the topic list above, not content.
 
-# Module, flag, and include
-
-A module selection is `@-`, a name, and an end control.
-`@- @` and `@-@` select the anonymous module.
+# Flag and include
 
 A flag is `@!`, a non-empty name, and an end control.
 
@@ -332,7 +335,7 @@ content
 ```
 
 The path is the chunk name.
-The chunk belongs to the selected module.
+The chunk belongs to the root module.
 Each membership names a file set that contains this file.
 
 The program recognizes `@[` and `@(`
@@ -398,11 +401,35 @@ label1@:label2@:module name@/chunk name@|filter1@|filter2
 
 The name runs to the end of the argument.
 `-l`, `-e`, and `-d` take the same qualified name without a pipeline.
-A module that is omitted on `-p` is the anonymous module.
-A module that is omitted on `-l`, `-e`, or `-d` is not filled in by this syntax.
+A module that is omitted on any of them names the root module.
+There is no option that matches a chunk in every module.
 
-`-r` takes a topic, not a chunk reference.
-The topic is one or more names separated by `@/`,
+`-m` and `-c` take a module path, not a chunk reference:
+
+```
+module@/submodule@/subsubmodule
+```
+
+The root module is `/`.
+`-m` lists the immediate child modules of that module.
+`-c` lists the chunks defined in that module itself.
+The output of -m uses `@/` between components,
+so it can be passed back to an option that takes a module path.
+The output of -c is one chunk name per line.
+
+`-s` takes a domain and lists its immediate subdomains.
+`-i` takes a domain and lists its immediate items.
+A domain is a prefix of a topic path, and an item ends one:
+
+```
+domain@/subdomain
+domain@/subdomain@/item
+```
+
+The output of -s and -i uses `@/` between names.
+
+`-r` takes an item, not a chunk reference.
+The item is one or more names separated by `@/`,
 with no `@~` and no closing `@`:
 
 ```

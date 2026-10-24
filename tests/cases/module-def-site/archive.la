@@ -1,10 +1,6 @@
-@- Lib @
-
-@<template@=
-@<hole@>
+@<Lib@/template@=
+@<.@/hole@>
 @
-
-@- @
 
 @<hello@:Lib@/hole@=
 [@<msg@>]

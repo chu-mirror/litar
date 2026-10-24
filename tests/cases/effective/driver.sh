@@ -37,8 +37,8 @@ assert_text "named module keeps its own chain" \
 assert_text "another module is not dropped" \
     $'@<Right@/item@=\nright\n@\n\n@<Right@/item@+\nmore\n@\n' \
     "$LITAR" -e 'Right@/item' archive.la
-assert_text "no module lists each module's chain" \
-    $'@<Right@/item@=\nright\n@\n\n@<Right@/item@+\nmore\n@\n\nLater set in Left.\n@<Left@/item@=\nonly\n@\n' \
+assert_fail "a root request does not reach a module" \
+    "chunk 'item' is not defined" \
     "$LITAR" -e item archive.la
 
 assert_text "filters stay as written" \

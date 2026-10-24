@@ -1,10 +1,6 @@
-@- Early @
-
 @<Early@/first@=
 e
 @
-
-@- @
 
 @<cycle@=
 @<cycle@>
@@ -20,15 +16,11 @@ text
 
 @? unset @|
 
-@- Hidden @
-
 @<Hidden@/secret@=
 no
 @
 
 @|
-
-@- Shown @
 
 @<Shown@/piece@=
 yes
@@ -38,7 +30,9 @@ yes
 x
 @
 
-@- Shown @
+@<Deep@/Nested@/part@=
+d
+@
 
 @
 

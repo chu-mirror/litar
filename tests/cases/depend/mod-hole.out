@@ -1,31 +1,27 @@
 
 before
 @<Mod@/user@=
-@<hole@>
-@<Mod@/other@|upper@>
+@<Mod@/hole@>
+@<Mod@/other@|Mod@/upper@>
 @
 
 @<lab@:Mod@/user@=
-@<hole@>
-@|upper@
+@<Mod@/hole@>
+@|Mod@/upper@
 
 @<Mod@/explicit@=
 @<lab@:Mod@/hole@>
 @
 
-@<Other@/bridge@=
-@<hole@>
-@
-
 @<pair@:Mod@/grouped@=
-@<hole@>
+@<Mod@/hole@>
 @
 
 @<Mod@/via group@=
-@<pair@:hole@>
+@<pair@:Mod@/hole@>
 @
 
 kept arm
 @<Mod@/shown@=
-@<hole@>
+@<Mod@/hole@>
 @

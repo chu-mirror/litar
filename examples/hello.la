@@ -10,7 +10,7 @@ A classic example at the beginning of learning programming.
 @<hello@:executable@:C Structure@/module@>
 @
 
-@<hello@:C Structure@/invocation syntax@=
+@<hello@:C Structure@/Invoke@/invocation syntax@=
 {
     name => 'hello',
     usages => [

@@ -60,25 +60,19 @@ cd
 tr '[:lower:]' '[:upper:]'
 @
 
-@- Left @
-
-@<item@=
+@<Left@/item@=
 left
 @
 
-@- Right @
-
-@<item@=
+@<Right@/item@=
 right
 @
 
-@<item@+
+@<Right@/item@+
 more
 @
 
-@- Left @
-
 Later set in Left.
-@<item@=
+@<Left@/item@=
 only
 @

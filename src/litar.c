@@ -1,4 +1,3 @@
-/* Tangled from src/litar.la. Edit the archive, then make tangle. */
 #define _POSIX_C_SOURCE 200809L
 
 #include <getopt.h>

@@ -9,7 +9,7 @@ This project proposes a system named litar, which is defined in [litar.md](desig
 
 - design: design files describing what litar should be from a human's view;
 - doc: useful references for understanding litar;
-- src: the literate source and the tangled C translation unit;
+- src: the C source of the program;
 - lib: litar libraries;
 - examples: example litar archives;
 - tests: tests for the features implemented so far;
@@ -24,8 +24,6 @@ Prerequisites:
 
 Procedures:
 
-- `src/litar.la` is the literate source of the program, divided into numbered parts.
-- `make tangle` regenerates `src/litar.c` from that archive. Tangling needs a `./litar` binary, so the current `src/litar.c` is compiled first.
 - `make` compiles `src/litar.c` into `./litar`.
 - `make test` compiles it, then runs the tests under `tests/`.
 - `make clean` removes the binary.

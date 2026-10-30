@@ -1,18 +1,12 @@
-@. lib/light.la @
-
 @<summary@=
 Test cases for light.
 
 `test-light.c`: the source file for executable test.
 @
-
-@:test@=test light@:light-single@:executable@
-
 @<test-light.c@=
-@<test@:C Structure@/module@>
+@<test light@:light-single@:executable@:C Structure@/module@>
 @
-
-@<test light@:light-single@:C Structure@/Invoke@/invocation syntax@=
+@<test light@:light-single@:executable@:C Structure@/Invoke@/invocation syntax@=
 {
     name => 'test-light',
     usages => [
@@ -45,22 +39,18 @@ Test cases for light.
     ],
 }
 @
-
-@<test@:C Structure@/includes@+
+@<test light@:light-single@:executable@:C Structure@/includes@+
 #include <assert.h>
 @
-
-@<test light@:Light@/light options@=
+@<test light@:light-single@:executable@:Light@/light options@=
 #define light_option_context_main_size (1<<23)
 #define light_option_logging_level INFO
 @
-
-@<test light@:Light@/main body@=
+@<test light@:light-single@:executable@:Light@/main body@=
 light_log(INFO, "Testing light");
 @<test cases@>
 light_log(INFO, "All test passed");
 @
-
 @<test cases@=
 do {
     enter_frame();
@@ -85,15 +75,13 @@ do {
     exit_frame();
 } while (0);
 @
-
-@<test@:C Structure@/data types@+
+@<test light@:light-single@:executable@:C Structure@/data types@+
 struct id_card {
     const char *name;
     int age;
 } *card;
 @
-
-@<test@:C Structure@/functions@+
+@<test light@:light-single@:executable@:C Structure@/functions@+
 void *id_card_serialize(const void *card, size_t *size, const void *base_addr)
 {
     size_t id_card_offset, name_offset;
@@ -114,7 +102,6 @@ void *id_card_serialize(const void *card, size_t *size, const void *base_addr)
     return obj;
 }
 @
-
 @<test cases@+
 do {
     struct id_card *card;
@@ -131,7 +118,6 @@ do {
     light_log(INFO, "Passed frame_return_complex");
 } while (0);
 @
-
 @<test cases@+
 do {
     int i;
@@ -166,7 +152,6 @@ do {
     exit_frame();
 } while (0);
 @
-
 @<test cases@+
 do {
     enter_frame();
@@ -197,7 +182,6 @@ do {
     exit_frame();
 } while (0);
 @
-
 @<test cases@+
 do {
     enter_frame();
@@ -226,7 +210,6 @@ do {
     exit_frame();
 } while (0);
 @
-
 @<test cases@+
 do {
     enter_frame();
@@ -260,7 +243,6 @@ do {
     exit_frame();
 } while (0);
 @
-
 @<test cases@+
 do {
     enter_frame();
@@ -280,7 +262,6 @@ do {
     exit_frame();
 } while (0);
 @
-
 @<test cases@+
 do {
     enter_frame();
@@ -316,7 +297,6 @@ do {
     exit_frame();
 } while (0);
 @
-
 @<test cases@+
 do {
     enter_frame();
@@ -349,7 +329,6 @@ do {
     exit_frame();
 } while (0);
 @
-
 @<test cases@+
 do {
     enter_frame();

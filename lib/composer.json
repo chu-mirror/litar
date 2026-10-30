@@ -1,0 +1,36 @@
+[
+    {
+        "name": "Basic",
+        "archive": "./basic.la",
+        "description": "Some common filters used by other modules.",
+        "mappings": [],
+        "base": null
+    },
+    {
+        "name": "Text Processing",
+        "archive": "./text-processing.la",
+        "description": "Text processing based on perl.",
+        "mappings": [],
+        "base": "Basic"
+    },
+    {
+        "name": "C Structure",
+        "archive": "./c-structure.la",
+        "description": "A framework for constructing a C program.",
+        "mappings": [
+            {
+                "path": ".clang-format",
+                "fileset": [],
+                "origin": "../.clang-format"
+            }
+        ],
+        "base": "Text Processing"
+    },
+    {
+        "name": "Light",
+        "archive": "./light.la",
+        "description": "Light is a framework mainly for C programming.",
+        "mappings": [],
+        "base": "C Structure"
+    }
+]

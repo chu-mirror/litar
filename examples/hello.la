@@ -1,16 +1,14 @@
-@. lib/c-structure.la @
-
 @<summary@=
 A classic example at the beginning of learning programming.
 
 `hello.c` is the source file.
 @
 
-@<hello.c@=
+@[hello.c@=
 @<hello@:executable@:C Structure@/module@>
 @
 
-@<hello@:C Structure@/Invoke@/invocation syntax@=
+@<hello@:executable@:C Structure@/Invoke@/invocation syntax@=
 {
     name => 'hello',
     usages => [
@@ -23,7 +21,7 @@ A classic example at the beginning of learning programming.
 }
 @
 
-@<hello@:C Structure@/main body@=
+@<hello@:executable@:C Structure@/main body@=
 printf("Hello World!\n");
 @~ output @
 

@@ -1,5 +1,0 @@
-
-Extend chunk through label.
-@<label@:module 1@/chunk@=
-@<.@/substructure 2@>
-@

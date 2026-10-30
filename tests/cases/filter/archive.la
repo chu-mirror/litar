@@ -1,0 +1,20 @@
+@<upper@=
+#!/bin/sh
+tr '[:lower:]' '[:upper:]'
+@
+@<msg@=
+hello
+@|upper@
+@<bad@=
+echo hi
+@
+@<use@=
+hi
+@|bad@
+@<die@=
+#!/bin/sh
+exit 3
+@
+@<use2@=
+hi
+@|die@

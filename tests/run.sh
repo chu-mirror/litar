@@ -1,13 +1,10 @@
 #!/bin/bash
 # Run every case under tests/cases.
 # A case is a directory with one of:
-#   driver.sh              bash driver.sh LITAR ROOT
-#   argv                   one argument per line, passed to litar
-#   expr                   litar -p "$(cat expr)" archive.la
-#   NAME.expr              one -p check per file, compared with NAME.out,
-#                          NAME.err (stderr substring), and NAME.status
-# Successful checks expect empty stderr. A missing .out file expects empty
-# stdout. The default status is 0.
+#   driver.sh    bash driver.sh LITAR ROOT
+#   argv         one argument per line, passed to litar; cwd is the case dir
+# Successful checks expect empty stderr. A missing out file expects empty
+# stdout. The default status is 0. An err file is a substring of stderr.
 
 set -eu
 
@@ -87,24 +84,6 @@ check_one() {
     return "$_bad"
 }
 
-run_expr() {
-    _name=$1
-    _expr_file=$2
-    _out_file=$3
-    _err_file=$4
-    _status_file=$5
-    _expr=$(cat "$_expr_file")
-    _status=0
-    if [ -n "$_status_file" ]; then
-        _status=$(tr -d '[:space:]' < "$_status_file")
-    fi
-    if check_one "$_name" "$_status" "$_out_file" "$_err_file" \
-        "$LITAR" -p "$_expr" archive.la; then
-        return 0
-    fi
-    return 1
-}
-
 shopt -s nullglob
 
 for dir in "$CASEDIR"/*/; do
@@ -143,47 +122,9 @@ for dir in "$CASEDIR"/*/; do
             "$LITAR" "${args[@]}"; then
             case_bad=1
         fi
-    elif [ -f expr ]; then
-        out_file=
-        err_file=
-        status_file=
-        if [ -f out ]; then
-            out_file=$dir/out
-        fi
-        if [ -f err ]; then
-            err_file=$dir/err
-        fi
-        if [ -f status ]; then
-            status_file=$dir/status
-        fi
-        if ! run_expr "$name" "$dir/expr" "$out_file" "$err_file" "$status_file"; then
-            case_bad=1
-        fi
     else
-        exprs=("$dir"/*.expr)
-        if [ "${#exprs[@]}" -eq 0 ]; then
-            echo "FAIL $name: no driver.sh, argv, expr, or .expr files" >&2
-            case_bad=1
-        fi
-        for expr_file in "${exprs[@]}"; do
-            base=$(basename "$expr_file" .expr)
-            out_file=
-            err_file=
-            status_file=
-            if [ -f "$dir/$base.out" ]; then
-                out_file=$dir/$base.out
-            fi
-            if [ -f "$dir/$base.err" ]; then
-                err_file=$dir/$base.err
-            fi
-            if [ -f "$dir/$base.status" ]; then
-                status_file=$dir/$base.status
-            fi
-            if ! run_expr "$name/$base" "$expr_file" "$out_file" "$err_file" \
-                "$status_file"; then
-                case_bad=1
-            fi
-        done
+        echo "FAIL $name: no driver.sh or argv" >&2
+        case_bad=1
     fi
 
     cd "$back"

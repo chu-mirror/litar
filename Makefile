@@ -1,22 +1,19 @@
 # Build the litar binary and run the test set.
-#   make        compile ./litar from src/litar.c
-#   make test   compile, then run tests/
+#   make        compile ./litar
+#   make test   run go test, then tests/
 #   make clean  remove the binary
 
-CC ?= gcc
-CFLAGS ?= -std=c11 -Wall -Wextra -Werror
-
-.PHONY: all test clean plugin grok
+.PHONY: all test clean litar
 
 all: litar
 
-litar: src/litar.c
-	$(CC) $(CFLAGS) -o $@ src/litar.c
+litar:
+	go build -o litar ./cmd/litar
 
 test: litar
-	$(MAKE) -C tests test LITAR=$(abspath litar)
+	go test ./...
+	bash tests/run.sh $(abspath litar)
 
 clean:
 	rm -f litar
 	$(MAKE) -C tests clean
-

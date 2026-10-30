@@ -1,11 +1,6 @@
-@? included C Structure @|@|
-
-@. lib/text-processing.la @
-
 @<C Structure@/summary@=
 A framework for constructing a C program.
 @
-
 @<C Structure@/module meta information@=
 (
     name => 'default',
@@ -13,7 +8,6 @@ A framework for constructing a C program.
     @<.@/module properties@>
 )
 @
-
 @<C Structure@/module@=
 @<.@/include flags@>
 @<.@/includes@>
@@ -24,8 +18,7 @@ A framework for constructing a C program.
 @<.@/global variables@>
 @<.@/static inline functions@>
 @<.@/functions@>
-@|.@/Filters@/format C code@
-
+@|C Structure@/Filters@/format C code@,.clang-format@
 @<C Structure@/module interface@=
 @<.@/interface required includes@>
 @<.@/interface specific macros@>
@@ -34,9 +27,8 @@ A framework for constructing a C program.
 @<.@/exported data types@>
 @<.@/global declarations@>
 @<.@/exported static inline functions@>
-@|.@/Filters@/wrap with included flag
-@|.@/Filters@/format C code@
-
+@|C Structure@/Filters@/wrap with included flag
+@|C Structure@/Filters@/format C code@,.clang-format@
 @<C Structure@/Filters@/wrap with included flag@=
 @<Text Processing@/basic perl settings@>
 my %meta = @<..@/module meta information@>;
@@ -50,49 +42,39 @@ while (<STDIN>) {
 
 print "#endif\n";
 @
-
 @<C Structure@/includes@+
 @<.@/interface required includes@>
 @
-
 @<C Structure@/macros@+
 @<.@/exported macros@>
 @
-
 @<C Structure@/data type declarations@+
 @<.@/exported data type declarations@>
 @
-
 @<C Structure@/data types@+
 @<.@/exported data types@>
 @
-
 @<C Structure@/static inline functions@+
 @<.@/exported static inline functions@>
 @
-
 @<C Structure@/function declarations@+
 @<.@/exported macros@>
 @<.@/data type declarations@>
 @<.@/functions@>
-@|.@/Filters@/extract function declarations@
-
+@|C Structure@/Filters@/extract function declarations@
 @<C Structure@/Filters@/extract function declarations@=
 #!/bin/sh
 cproto -s
 @
-
 @<C Structure@/global declarations@+
 @<.@/macros@>
 @<.@/data type declarations@>
 @<.@/global variables@>
 @<.@/functions@>
-@|.@/Filters@/extract global declarations@
-
+@|C Structure@/Filters@/extract global declarations@
 @<C Structure@/Filters@/extract global declarations@=#!/bin/sh
 cproto -v -e @<-I flags@>
 @
-
 @<C Structure@/Filters@/format C code@=#!/bin/sh
 clang-format-19 -style=file
 @
@@ -125,7 +107,6 @@ The invocation syntax:
 @<C Structure@/Invoke@/invocation syntax@=
 {}
 @
-
 @<C Structure@/Invoke@/usage enumeration@=
 @<Text Processing@/basic perl settings@>
 my $syntax = @<.@/invocation syntax@>;
@@ -138,7 +119,6 @@ sub enum_constant (_) {
 
 print join ',', map enum_constant, @@{$syntax->{usages}};
 @|Basic@/evaluate@
-
 @<C Structure@/Invoke@/command line options@=
 @<Text Processing@/basic perl settings@>
 my $syntax = @<.@/invocation syntax@>;
@@ -165,7 +145,6 @@ while (@usages) {
 my $options_decl = join "\n", map option_to_c_decl, @options;
 print $options_decl;
 @|Basic@/evaluate@
-
 @<C Structure@/Invoke@/command line arguments@=
 @<Text Processing@/basic perl settings@>
 my $syntax = @<.@/invocation syntax@>;
@@ -191,7 +170,6 @@ my @arguments = keys %arguments;
 
 print (join "", map argument_definition, @arguments);
 @|Basic@/evaluate@
-
 @<executable@:C Structure@/global variables@+
 struct {
     enum {@<.@/Invoke@/usage enumeration@>} usage;
@@ -199,11 +177,9 @@ struct {
     struct {@<.@/Invoke@/command line arguments@>} arguments;
 } command;
 @
-
 @<executable@:C Structure@/includes@+
 #include <getopt.h>
 @
-
 @<C Structure@/Invoke@/getopt long options@=
 @<Text Processing@/basic perl settings@>
 my $syntax = @<.@/invocation syntax@>;
@@ -235,13 +211,11 @@ for my $usage (@@{$syntax->{usages}}) {
 
 print (join "", map option_to_longopt, @options);
 @|Basic@/evaluate@
-
 @<executable@:C Structure@/global variables@+
 const struct option long_options[] = {
     @<.@/Invoke@/getopt long options@>
 };
 @
-
 @<C Structure@/Invoke@/getopt string@=
 @<Text Processing@/basic perl settings@>
 my $syntax = @<.@/invocation syntax@>;
@@ -265,7 +239,6 @@ for my $usage (@@{$syntax->{usages}}) {
 
 print (join "", map option_to_str, @options);
 @|Basic@/evaluate@
-
 @<C Structure@/Invoke@/handle long option of index "idx"@=
 @<Text Processing@/basic perl settings@>
 my $syntax = @<.@/invocation syntax@>;
@@ -301,7 +274,6 @@ sub long_option_handling(_) {
 }
 print (join "", map long_option_handling, @options);
 @|Basic@/evaluate@
-
 @<C Structure@/Invoke@/cases for short options@=
 @<Text Processing@/basic perl settings@>
 my $syntax = @<.@/invocation syntax@>;
@@ -336,7 +308,6 @@ sub short_opt_case(_) {
 }
 print (join "", map short_opt_case, @options);
 @|Basic@/evaluate@
-
 @<C Structure@/Invoke@/choose usage and store arguments@=
 @<Text Processing@/basic perl settings@>
 my $syntax = @<.@/invocation syntax@>;
@@ -435,7 +406,6 @@ $str .= "}";
 $str .= "} while (0);";
 print $str;
 @|Basic@/evaluate@
-
 @<C Structure@/Invoke@/parse command line arguments@=
 do {
     int opt, idx;
@@ -455,13 +425,11 @@ do {
     @<.@/choose usage and store arguments@>
 } while (0);
 @
-
 @<executable@:C Structure@/includes@+
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 @
-
 @<executable@:C Structure@/functions@+
 int main(int argc, char *argv[])
 {
@@ -471,7 +439,6 @@ int main(int argc, char *argv[])
     return ret;
 }
 @
-
 @<C Structure@/Invoke@/command line usage@=
 @<Text Processing@/basic perl settings@>
 my $syntax = @<.@/invocation syntax@>;
@@ -511,7 +478,6 @@ $usages_str .= '\n';
 
 print $usages_str;
 @|Basic@/evaluate@
-
 @<C Structure@/Invoke@/manpage synopsis@=
 @<Text Processing@/basic perl settings@>
 my $syntax = @<.@/invocation syntax@>;
@@ -546,7 +512,6 @@ sub usage_to_str (_) {
 my @usages = map usage_to_str, @@{$syntax->{usages}};
 print join "\n", @usages;
 @|Basic@/evaluate@
-
 @<C Structure@/Invoke@/manpage options@=
 @<Text Processing@/basic perl settings@>
 my $syntax = @<.@/invocation syntax@>;
@@ -570,6 +535,3 @@ for my $usage (@@{$syntax->{usages}}) {
 
 print $options;
 @|Basic@/evaluate@
-
-@! included C Structure @
-@

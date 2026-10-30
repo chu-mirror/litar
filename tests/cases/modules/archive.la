@@ -1,7 +1,12 @@
-@<Module 1@/chunk@=
-    The contents.
+@<a@/b@/c@=
+x
 @
-
-@<Module 2@/chunk@=
-    @<Module 1@/chunk@>
+@<a@/d@=
+y
+@
+@<z@=
+q
+@~C@/variables@/times@~C@/functions@/main@~only@
+@[hello.c@`docs@=
+file
 @

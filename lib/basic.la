@@ -1,5 +1,3 @@
-@? included Basic @|@|
-
 @<Basic@/summary@=
 Some common filters used by other modules.
 @
@@ -14,7 +12,4 @@ cat - > $temp_file
 chmod +x $temp_file
 $temp_file
 rm $temp_file
-@
-
-@! included Basic @
 @

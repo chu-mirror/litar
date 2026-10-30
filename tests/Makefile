@@ -1,5 +1,4 @@
-# Run the test set. From the repo root, `make test` builds first.
-# `make -C tests` builds ../litar when it is missing or older than src/litar.c.
+# Run the acceptance cases. From the repo root, `make test` builds first.
 
 ROOT := ..
 LITAR ?= $(ROOT)/litar
@@ -8,11 +7,9 @@ LITAR ?= $(ROOT)/litar
 
 all: test
 
-test: $(LITAR)
-	bash run.sh $(abspath $(LITAR))
-
-$(LITAR): $(ROOT)/src/litar.c
+test:
 	$(MAKE) -C $(ROOT) litar
+	bash run.sh $(abspath $(LITAR))
 
 clean:
 	rm -rf tmp

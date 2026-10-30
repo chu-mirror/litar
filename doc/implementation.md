@@ -7,16 +7,9 @@ and [syntax.md](syntax.md).
 The binary is `litar`.
 It reads a composer file, not a positional archive.
 
-The C program in `src/litar.c` is a reference for byte-level scan details
-and for error tone.
-It is not the spec.
-Do not copy its `.` rule or its label rule.
-It resolves `.` against the reference being expanded,
-and it drops inherited labels when the block already carries
-a proper suffix of them.
-The design resolves `.` against the block header,
-and an omitted label list is the full list of the reference being expanded.
-The Go program does not parse `@.`, `@?`, label groups,
+`.` in a block body resolves against that block's header module.
+An omitted label list is the full list of the reference being expanded.
+The program does not parse `@.`, `@?`, label groups,
 or a positional `ARCHIVE` argument.
 
 # Layout
@@ -49,8 +42,6 @@ when their dependencies would otherwise weigh on unit tests.
 
 The Makefile builds `./litar` with `go build -o litar ./cmd/litar`.
 `make test` runs `go test ./...` and then `tests/run.sh`.
-`src/litar.c` stays until the Go binary covers the stages below;
-then the C target is dropped.
 
 Standard library first.
 `github.com/hanwen/go-fuse/v2` for the mount.
@@ -494,8 +485,7 @@ Stdio server, the tool arguments above, resources, apply, delete, dump,
 notifications.
 
 The libraries under `lib/` and the examples under `examples/`
-still use include and branch syntax.
-They are rewritten after stage 5, in the new language,
-as a separate archive task.
-They are not a requirement for the Go binary to parse them
-in the old form.
+are archives in this language.
+`lib/composer.json` composes Basic, Text Processing, C Structure, and Light.
+`examples/composer.json` adds Program Hello and Test Light on that chain.
+Select a node with `-n`.

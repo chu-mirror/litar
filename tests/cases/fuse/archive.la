@@ -1,0 +1,31 @@
+@[hello.txt@`docs@=
+hello world
+@
+@(run.sh@`docs@=
+echo run
+@
+@<show@=
+#!/bin/sh
+cat hello.txt
+@
+@<msg@=
+@|show@+docs@
+@<exe@=
+#!/bin/sh
+if test -x run.sh; then echo yes; else echo no; fi
+@
+@<ask@=
+@|exe@+docs@
+@<make@=
+#!/bin/sh
+printf overlay > created.txt
+cat created.txt
+@
+@<made@=
+@|make@
+@<ro@=
+#!/bin/sh
+echo x > hello.txt
+@
+@<row@=
+@|ro@,hello.txt@

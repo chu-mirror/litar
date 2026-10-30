@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -77,7 +78,10 @@ type createIn struct {
 	Name        string `json:"name" jsonschema:"node name"`
 	Archive     string `json:"archive" jsonschema:"archive path"`
 	Description string `json:"description" jsonschema:"node description"`
-	Base        string `json:"base" jsonschema:"base node name, empty to create the root"`
+	// A pointer so JSON null unmarshals. The property stays required:
+	// an absent base is not null. createNodeSchema publishes anyOf
+	// instead of the inferred type array.
+	Base *string `json:"base" jsonschema:"base node name, empty or null to create the root"`
 }
 
 type deleteNodeIn struct {
@@ -115,7 +119,8 @@ func (a *agent) ensureTools() {
 	a.tools = true
 	mcp.AddTool(a.server, &mcp.Tool{
 		Name:        "create_node",
-		Description: "Create a node. An empty base creates the root, and only when the composer has none. Create an empty archive if the file does not exist.",
+		Description: "Create a node. An empty or null base creates the root, and only when the composer has none. Create an empty archive if the file does not exist.",
+		InputSchema: createNodeSchema(),
 	}, a.createNode)
 	mcp.AddTool(a.server, &mcp.Tool{
 		Name:        "delete_node",
@@ -141,6 +146,25 @@ func (a *agent) ensureTools() {
 		Name:        "dump_archives",
 		Description: "Rewrite each archive, keeping only the effective blocks of each chunk reference.",
 	}, a.dumpArchives)
+}
+
+// createNodeSchema is the inferred object schema with base rewritten.
+// A *string infers "type": ["null", "string"]. Some clients accept only
+// one type per schema, so null and string are separate anyOf branches.
+func createNodeSchema() *jsonschema.Schema {
+	s, err := jsonschema.For[createIn](nil)
+	if err != nil {
+		panic(err)
+	}
+	prop := s.Properties["base"]
+	s.Properties["base"] = &jsonschema.Schema{
+		Description: prop.Description,
+		AnyOf: []*jsonschema.Schema{
+			{Type: "null"},
+			{Type: "string"},
+		},
+	}
+	return s
 }
 
 func toolErr(err error) (*mcp.CallToolResult, any, error) {
@@ -182,7 +206,11 @@ func (a *agent) createNode(ctx context.Context, _ *mcp.CallToolRequest, in creat
 	if a.world == nil {
 		return toolErr(errString("composer is not specified"))
 	}
-	if err := a.world.CreateNode(in.Name, in.Archive, in.Description, in.Base); err != nil {
+	base := ""
+	if in.Base != nil {
+		base = *in.Base
+	}
+	if err := a.world.CreateNode(in.Name, in.Archive, in.Description, base); err != nil {
 		return toolErr(err)
 	}
 	a.mu.Unlock()

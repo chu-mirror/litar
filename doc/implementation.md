@@ -395,7 +395,8 @@ Tool arguments:
 
 - specify the composer: `path`
 - create a node: `name`, `archive`, `description`, `base`
-  (`base` empty creates the root; the composer must have no root yet;
+  (`base` empty or null creates the root; the property is required;
+  the composer must have no root yet;
   a missing archive file is created empty)
 - delete a node: `name`
 - delete a chunk: `node`, `chunk reference`

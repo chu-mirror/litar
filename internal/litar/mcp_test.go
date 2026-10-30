@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -207,6 +208,144 @@ func TestMCP(t *testing.T) {
 		t.Fatal("archive still present", err)
 	}
 	assertMCPLists(t, ctx, session, wantResources, wantTemplates)
+}
+
+func TestCreateNodeEmptyBase(t *testing.T) {
+	cases := []struct {
+		name string
+		base any
+		set  bool
+		fail bool
+	}{
+		{name: "omit", fail: true},
+		{name: "empty", base: "", set: true},
+		{name: "null", base: nil, set: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			comp := filepath.Join(dir, "c.json")
+			ctx := context.Background()
+			ag := newAgent()
+			client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+			serverT, clientT := mcp.NewInMemoryTransports()
+			if _, err := ag.server.Connect(ctx, serverT, nil); err != nil {
+				t.Fatal(err)
+			}
+			session, err := client.Connect(ctx, clientT, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer session.Close()
+			res, err := session.CallTool(ctx, &mcp.CallToolParams{
+				Name:      "specify_composer",
+				Arguments: map[string]any{"path": comp},
+			})
+			if err != nil || res.IsError {
+				t.Fatalf("specify %v %+v", err, res)
+			}
+			tools, err := session.ListTools(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var schema map[string]any
+			for _, tool := range tools.Tools {
+				rejectTypeArrays(t, tool.InputSchema, tool.Name)
+				if tool.Name == "create_node" {
+					var ok bool
+					schema, ok = tool.InputSchema.(map[string]any)
+					if !ok {
+						t.Fatalf("schema %T", tool.InputSchema)
+					}
+				}
+			}
+			if schema == nil {
+				t.Fatal("create_node missing")
+			}
+			var required bool
+			for _, req := range schema["required"].([]any) {
+				if req == "base" {
+					required = true
+				}
+			}
+			if !required {
+				t.Fatal("base is not required")
+			}
+			props := schema["properties"].(map[string]any)
+			base := props["base"].(map[string]any)
+			if _, ok := base["type"]; ok {
+				t.Fatalf("base type %v", base["type"])
+			}
+			anyOf, ok := base["anyOf"].([]any)
+			if !ok || len(anyOf) != 2 {
+				t.Fatalf("anyOf %#v", base["anyOf"])
+			}
+			gotTypes := map[string]bool{}
+			for _, branch := range anyOf {
+				b := branch.(map[string]any)
+				typ, ok := b["type"].(string)
+				if !ok {
+					t.Fatalf("branch %#v", branch)
+				}
+				gotTypes[typ] = true
+			}
+			if !gotTypes["null"] || !gotTypes["string"] {
+				t.Fatalf("branch types %v", gotTypes)
+			}
+			args := map[string]any{
+				"name":        "root",
+				"archive":     "./a.la",
+				"description": "root node",
+			}
+			if tc.set {
+				args["base"] = tc.base
+			}
+			res, err = session.CallTool(ctx, &mcp.CallToolParams{
+				Name:      "create_node",
+				Arguments: args,
+			})
+			if tc.fail {
+				if err != nil || res == nil || !res.IsError {
+					t.Fatalf("omit should fail %v %+v", err, res)
+				}
+				raw, _ := os.ReadFile(comp)
+				if strings.TrimSpace(string(raw)) != "[]" {
+					t.Fatalf("composer %s", raw)
+				}
+				return
+			}
+			if err != nil || res.IsError {
+				t.Fatalf("create %v %+v", err, res)
+			}
+			raw, err := os.ReadFile(comp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(raw), `"base": null`) || !strings.Contains(string(raw), `"name": "root"`) {
+				t.Fatalf("composer %s", raw)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "a.la")); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func rejectTypeArrays(t *testing.T, v any, path string) {
+	t.Helper()
+	switch x := v.(type) {
+	case map[string]any:
+		if typ, ok := x["type"].([]any); ok {
+			t.Fatalf("%s type is an array: %v", path, typ)
+		}
+		for k, child := range x {
+			rejectTypeArrays(t, child, path+"."+k)
+		}
+	case []any:
+		for i, child := range x {
+			rejectTypeArrays(t, child, path+"["+strconv.Itoa(i)+"]")
+		}
+	}
 }
 
 func assertMCPLists(t *testing.T, ctx context.Context, session *mcp.ClientSession, wantRes, wantTmpl []string) {

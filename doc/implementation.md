@@ -358,12 +358,21 @@ on stdio.
 The composer path is process state, not a protocol session.
 Until a composer is specified,
 the only tool is the one that sets the composer,
-and resource lists are empty.
+and the resource list and the resource-template list are empty.
 That tool creates a JSON array `[ ]` if the file does not exist,
 then writes a root node on the first `create node`.
 
-Resources and tools are those in [design/ui.md](../design/ui.md).
-Percent-encode `@`, space, and slash in URI components.
+Once a composer is specified,
+the resource list is `path://composer` and `tree://node`.
+The resource-template list is the nine templates in [design/ui.md](../design/ui.md).
+Neither list grows when a node, chunk, or file is added.
+A read of a concrete URI uses the template it matches.
+Tools are those in [design/ui.md](../design/ui.md).
+
+Percent-encode `@`, space, and slash in each template variable.
+The design writes `{chunk reference}`.
+The template variable is `{chunk_reference}`,
+because an RFC 6570 name cannot contain a space.
 
 `path://composer` and `path://node/{node}` return a host path as text.
 `file://{node}/{path}` returns the evaluated bytes of that file.
@@ -405,9 +414,12 @@ Digest, from [design/style.md](../design/style.md), is not a tool.
 It is apply on the base, override or delete on the child, dump,
 then delete the child node.
 
-After a mutation, notify through `subscriptions/listen`
-with `resourcesListChanged` and `resourceSubscriptions`
-as the protocol requires.
+Publishing those resources and templates sends
+`notifications/resources/list_changed`.
+A later mutation leaves both lists unchanged.
+It sends `notifications/resources/updated`
+for `path://composer`, `tree://node`,
+and every concrete template URI present before or after the mutation.
 
 # Tests
 
@@ -481,8 +493,9 @@ Tests that need a mount skip when `/dev/fuse` is missing.
 
 ## 8. MCP
 
-Stdio server, the tool arguments above, resources, apply, delete, dump,
-notifications.
+Stdio server, the tool arguments above,
+the two resources, the resource templates,
+apply, delete, dump, notifications.
 
 The libraries under `lib/` and the examples under `examples/`
 are archives in this language.

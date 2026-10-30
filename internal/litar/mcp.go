@@ -14,11 +14,35 @@ import (
 )
 
 type agent struct {
-	server *mcp.Server
-	mu     sync.Mutex
-	world  *World
-	uris   []string
-	tools  bool
+	server    *mcp.Server
+	mu        sync.Mutex
+	world     *World
+	uris      []string
+	tools     bool
+	published bool
+}
+
+var fixedResources = []struct {
+	name, desc, uri, mime string
+}{
+	{"composer file path", "the path to the composer file", "path://composer", "text/plain"},
+	{"nodes", "the node tree", "tree://node", "application/json"},
+}
+
+// chunk_reference stands for the design name "chunk reference".
+// An RFC 6570 variable name cannot contain a space.
+var resourceTemplates = []struct {
+	name, desc, uri, mime string
+}{
+	{"archive file path", "the path to the node's archive", "path://node/{node}", "text/plain"},
+	{"chunk", "the chunk tree organized by modules under the node", "tree://chunk/{node}", "application/json"},
+	{"items", "the item tree under the node", "tree://item/{node}", "application/json"},
+	{"node blocks", "the blocks in the node", "blocks://node/{node}", "text/plain"},
+	{"applied blocks", "the blocks applied to the chunk reference", "blocks://apply/{node}/{chunk_reference}", "text/plain"},
+	{"effective blocks", "the effective blocks of the chunk reference", "blocks://effective/{node}/{chunk_reference}", "text/plain"},
+	{"dependent blocks", "the blocks depending on a chunk reference", "blocks://depend/{node}/{chunk_reference}", "text/plain"},
+	{"related blocks", "the blocks referring to the item", "blocks://refer/{node}/{item}", "text/plain"},
+	{"files", "the file of the path", "file://{node}/{path}", "text/plain"},
 }
 
 func newAgent() *agent {
@@ -289,37 +313,45 @@ func (a *agent) refresh() {
 	next := a.listURIsLocked()
 	prev := a.uris
 	a.uris = next
+	publish := a.world != nil && !a.published
+	if publish {
+		a.published = true
+	}
 	a.mu.Unlock()
+
+	// The two resources and the nine templates are registered once.
+	// A later mutation changes their contents, not the lists.
+	if publish {
+		for _, r := range fixedResources {
+			a.server.AddResource(&mcp.Resource{
+				URI:         r.uri,
+				Name:        r.name,
+				Description: r.desc,
+				MIMEType:    r.mime,
+			}, a.handle)
+		}
+		for _, t := range resourceTemplates {
+			a.server.AddResourceTemplate(&mcp.ResourceTemplate{
+				URITemplate: t.uri,
+				Name:        t.name,
+				Description: t.desc,
+				MIMEType:    t.mime,
+			}, a.handle)
+		}
+	}
 
 	prevSet := map[string]bool{}
 	for _, u := range prev {
 		prevSet[u] = true
-	}
-	nextSet := map[string]bool{}
-	for _, u := range next {
-		nextSet[u] = true
-	}
-	var gone []string
-	for _, u := range prev {
-		if !nextSet[u] {
-			gone = append(gone, u)
-		}
-	}
-	if len(gone) > 0 {
-		a.server.RemoveResources(gone...)
-	}
-	for _, u := range next {
-		a.server.AddResource(&mcp.Resource{
-			URI:      u,
-			Name:     u,
-			MIMEType: mimeOf(u),
-		}, a.handle)
 	}
 	union := append([]string{}, prev...)
 	for _, u := range next {
 		if !prevSet[u] {
 			union = append(union, u)
 		}
+	}
+	if len(union) == 0 {
+		return
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -345,6 +377,9 @@ func escJoin(parts ...string) string {
 	return strings.Join(out, "/")
 }
 
+// listURIsLocked lists concrete URIs whose contents may have changed.
+// path://composer and tree://node are registered resources.
+// Every other URI is a read of a resource template.
 func (a *agent) listURIsLocked() []string {
 	if a.world == nil {
 		return nil

@@ -4,11 +4,26 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+var wantResources = []string{"path://composer", "tree://node"}
+
+var wantTemplates = []string{
+	"blocks://apply/{node}/{chunk_reference}",
+	"blocks://depend/{node}/{chunk_reference}",
+	"blocks://effective/{node}/{chunk_reference}",
+	"blocks://node/{node}",
+	"blocks://refer/{node}/{item}",
+	"file://{node}/{path}",
+	"path://node/{node}",
+	"tree://chunk/{node}",
+	"tree://item/{node}",
+}
 
 func TestMCP(t *testing.T) {
 	dir := t.TempDir()
@@ -36,13 +51,7 @@ func TestMCP(t *testing.T) {
 	if len(tools.Tools) != 1 || tools.Tools[0].Name != "specify_composer" {
 		t.Fatalf("tools %+v", tools.Tools)
 	}
-	resources, err := session.ListResources(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(resources.Resources) != 0 {
-		t.Fatalf("resources %+v", resources.Resources)
-	}
+	assertMCPLists(t, ctx, session, nil, nil)
 
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      "specify_composer",
@@ -54,6 +63,7 @@ func TestMCP(t *testing.T) {
 	if _, err := os.Stat(comp); err != nil {
 		t.Fatal(err)
 	}
+	assertMCPLists(t, ctx, session, wantResources, wantTemplates)
 
 	res, err = session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "create_node",
@@ -67,6 +77,7 @@ func TestMCP(t *testing.T) {
 	if err != nil || res.IsError {
 		t.Fatalf("create %v %+v", err, res)
 	}
+	assertMCPLists(t, ctx, session, wantResources, wantTemplates)
 
 	res, err = session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "evaluate_expression",
@@ -103,6 +114,31 @@ func TestMCP(t *testing.T) {
 	}
 	if !strings.Contains(blocks.Contents[0].Text, "@<msg@=hello@") {
 		t.Fatalf("blocks %s", blocks.Contents[0].Text)
+	}
+	applied, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "blocks://apply/root/msg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(applied.Contents[0].Text, "@<msg@=hello@") {
+		t.Fatalf("applied %s", applied.Contents[0].Text)
+	}
+	chunk, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "tree://chunk/root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(chunk.Contents[0].Text, `"name":"msg"`) {
+		t.Fatalf("chunk tree %s", chunk.Contents[0].Text)
+	}
+	nodePath, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "path://node/root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(nodePath.Contents[0].Text) != "a.la" {
+		t.Fatalf("archive path %q", nodePath.Contents[0].Text)
+	}
+	_, err = session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "file://root/dir%2Fmissing"})
+	if err == nil || !strings.Contains(err.Error(), "file 'dir/missing' is not defined") {
+		t.Fatalf("encoded path: %v", err)
 	}
 
 	res, err = session.CallTool(ctx, &mcp.CallToolParams{
@@ -170,4 +206,52 @@ func TestMCP(t *testing.T) {
 	if _, err := os.Stat(arch); err != nil {
 		t.Fatal("archive removed", err)
 	}
+	assertMCPLists(t, ctx, session, wantResources, wantTemplates)
+}
+
+func assertMCPLists(t *testing.T, ctx context.Context, session *mcp.ClientSession, wantRes, wantTmpl []string) {
+	t.Helper()
+	lr, err := session.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotRes []string
+	names := map[string]string{}
+	mimes := map[string]string{}
+	for _, r := range lr.Resources {
+		gotRes = append(gotRes, r.URI)
+		names[r.URI] = r.Name
+		mimes[r.URI] = r.MIMEType
+	}
+	lt, err := session.ListResourceTemplates(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotTmpl []string
+	for _, r := range lt.ResourceTemplates {
+		gotTmpl = append(gotTmpl, r.URITemplate)
+	}
+	if !sameStrings(gotRes, wantRes) {
+		t.Fatalf("resources %v", gotRes)
+	}
+	if !sameStrings(gotTmpl, wantTmpl) {
+		t.Fatalf("templates %v", gotTmpl)
+	}
+	if len(wantRes) == 0 {
+		return
+	}
+	if names["path://composer"] != "composer file path" || mimes["path://composer"] != "text/plain" {
+		t.Fatalf("composer resource %+v", lr.Resources)
+	}
+	if names["tree://node"] != "nodes" || mimes["tree://node"] != "application/json" {
+		t.Fatalf("node resource %+v", lr.Resources)
+	}
+}
+
+func sameStrings(a, b []string) bool {
+	aa := append([]string{}, a...)
+	bb := append([]string{}, b...)
+	slices.Sort(aa)
+	slices.Sort(bb)
+	return slices.Equal(aa, bb)
 }

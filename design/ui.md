@@ -99,8 +99,11 @@ to deal with composed archives and tools to inspect and modify nodes.
 Resources:
 
 - composer file path, `path://composer`, the path to the composer file;
+- nodes, `tree://node`, the node tree.
+
+Resource templates:
+
 - archive file path, `path://node/{node}`, the path to the node's archive;
-- nodes, `tree://node`, the node tree;
 - chunk, `tree://chunk/{node}`, the chunk tree organized by modules under the node;
 - items, `tree://item/{node}`, the item tree under the node;
 - node blocks, `blocks://node/{node}`, the blocks in the node;

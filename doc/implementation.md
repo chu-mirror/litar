@@ -211,6 +211,10 @@ Otherwise look for that name as a file in:
 6. `/usr/share/litar`
 
 The first regular file wins.
+Loading a composer fails when an archive is missing.
+`create a node` writes an empty archive in that case.
+A spec that starts with `.` is created beside the composer file.
+Any other spec is created in the current directory.
 
 A mapping's `origin` is relative to the composer file.
 `path` is the path in the filter mount.
@@ -391,7 +395,8 @@ Tool arguments:
 
 - specify the composer: `path`
 - create a node: `name`, `archive`, `description`, `base`
-  (`base` empty creates the root; the composer must have no root yet)
+  (`base` empty creates the root; the composer must have no root yet;
+  a missing archive file is created empty)
 - delete a node: `name`
 - delete a chunk: `node`, `chunk reference`
 - delete a file: `node`, `path`
@@ -404,7 +409,10 @@ only when `ArchiveSpec` starts with `.` or `..`.
 `delete a chunk` and `delete a file` remove matching blocks
 from that node's own archive, not from the base.
 `delete a node` removes the node and every node based on it
-from the composer and does not delete archive files.
+from the composer, then deletes each removed node's archive file.
+A file that is already gone is not an error.
+If a file cannot be removed, the composer stays updated
+and the error names that file.
 `dump` rewrites each node's own archive:
 drop a block that is not an effective block
 of its own chunk reference in that same node;

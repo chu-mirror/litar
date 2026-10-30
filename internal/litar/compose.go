@@ -255,6 +255,40 @@ func resolveArchive(spec, composerDir string) (string, error) {
 	return "", fmt.Errorf("could not find archive '%s'", spec)
 }
 
+// createMissingArchive writes an empty archive when resolveArchive finds none.
+// A spec that starts with '.' is created beside the composer file.
+// Any other spec is created in the current directory, the first search directory.
+func createMissingArchive(spec, composerDir string) (string, error) {
+	if spec == "" {
+		return "", fmt.Errorf("could not find archive '%s'", spec)
+	}
+	path := filepath.Join(".", spec)
+	if strings.HasPrefix(spec, ".") {
+		path = filepath.Join(composerDir, spec)
+	}
+	st, err := os.Stat(path)
+	if err == nil {
+		if st.Mode().IsRegular() {
+			return path, nil
+		}
+		return "", fmt.Errorf("could not find archive '%s'", spec)
+	}
+	if !os.IsNotExist(err) {
+		return "", fmt.Errorf("could not read '%s'", path)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		if os.IsExist(err) && isRegular(path) {
+			return path, nil
+		}
+		return "", fmt.Errorf("could not write '%s'", path)
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("could not write '%s'", path)
+	}
+	return path, nil
+}
+
 func archiveSearchDirs() []string {
 	dirs := []string{"."}
 	if inc := os.Getenv("LITAR_INCLUDE"); inc != "" {
@@ -416,6 +450,7 @@ func SpecifyComposer(path string) (*World, error) {
 
 // CreateNode parses the archive, then appends the node and rewrites the composer.
 // An empty base creates the root, and only when the composer has none.
+// A missing archive file is created empty.
 func (w *World) CreateNode(name, archive, description, base string) error {
 	if name == "" {
 		return fmt.Errorf("empty name")
@@ -432,24 +467,38 @@ func (w *World) CreateNode(name, archive, description, base string) error {
 	}
 	dir := filepath.Dir(w.Composer)
 	resolved, err := resolveArchive(archive, dir)
+	created := false
 	if err != nil {
-		return err
+		resolved, err = createMissingArchive(archive, dir)
+		if err != nil {
+			return err
+		}
+		created = true
+	}
+	removeCreated := func() {
+		if created {
+			_ = os.Remove(resolved)
+		}
 	}
 	ident, err := identityPath(resolved)
 	if err != nil {
+		removeCreated()
 		return fmt.Errorf("could not read '%s'", resolved)
 	}
 	for _, n := range w.Nodes {
 		if n.Archive == ident {
+			removeCreated()
 			return fmt.Errorf("nodes '%s' and '%s' share archive '%s'", n.Name, name, ident)
 		}
 	}
 	data, err := os.ReadFile(resolved)
 	if err != nil {
+		removeCreated()
 		return fmt.Errorf("could not read '%s'", resolved)
 	}
 	arch, err := ParseArchive(data, resolved)
 	if err != nil {
+		removeCreated()
 		return err
 	}
 	w.Nodes = append(w.Nodes, Node{
@@ -464,13 +513,16 @@ func (w *World) CreateNode(name, archive, description, base string) error {
 	})
 	if err := w.save(); err != nil {
 		w.Nodes = w.Nodes[:len(w.Nodes)-1]
+		removeCreated()
 		return fmt.Errorf("could not write '%s'", w.Composer)
 	}
 	return nil
 }
 
-// DeleteNode removes the node and every node based on it.
-// Archive files are left in place.
+// DeleteNode removes the node and every node based on it,
+// then deletes each removed node's archive file.
+// A file that is already gone is not an error.
+// If a file cannot be removed, the composer stays updated.
 func (w *World) DeleteNode(name string) error {
 	if _, err := w.lookup(name); err != nil {
 		return err
@@ -487,16 +539,31 @@ func (w *World) DeleteNode(name string) error {
 		}
 	}
 	var keep []Node
+	var archives []string
 	for _, n := range w.Nodes {
-		if !drop[n.Name] {
-			keep = append(keep, n)
+		if drop[n.Name] {
+			archives = append(archives, n.Archive)
+			continue
 		}
+		keep = append(keep, n)
 	}
 	prev := w.Nodes
 	w.Nodes = keep
 	if err := w.save(); err != nil {
 		w.Nodes = prev
 		return fmt.Errorf("could not write '%s'", w.Composer)
+	}
+	var failed []string
+	for _, path := range archives {
+		if path == "" {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			failed = append(failed, path)
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("could not remove '%s'", strings.Join(failed, "', '"))
 	}
 	return nil
 }

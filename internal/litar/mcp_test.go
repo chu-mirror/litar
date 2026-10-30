@@ -203,8 +203,8 @@ func TestMCP(t *testing.T) {
 	if strings.TrimSpace(string(raw)) != "[]" {
 		t.Fatalf("composer %s", raw)
 	}
-	if _, err := os.Stat(arch); err != nil {
-		t.Fatal("archive removed", err)
+	if _, err := os.Stat(arch); !os.IsNotExist(err) {
+		t.Fatal("archive still present", err)
 	}
 	assertMCPLists(t, ctx, session, wantResources, wantTemplates)
 }

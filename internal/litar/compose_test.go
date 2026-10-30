@@ -186,4 +186,149 @@ func TestDumpAndDelete(t *testing.T) {
 	if strings.TrimSpace(string(raw)) != "[]" {
 		t.Fatalf("composer %s", raw)
 	}
+	if _, err := os.Stat(arch); !os.IsNotExist(err) {
+		t.Fatal("archive still present", err)
+	}
+}
+
+func TestDeleteNodeRemovesArchives(t *testing.T) {
+	dir := t.TempDir()
+	comp := filepath.Join(dir, "c.json")
+	w, err := SpecifyComposer(comp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.CreateNode("root", "./root.la", "root", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.CreateNode("child", "./child.la", "child", "root"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.CreateNode("grand", "./grand.la", "grand", "child"); err != nil {
+		t.Fatal(err)
+	}
+	rootArch := filepath.Join(dir, "root.la")
+	childArch := filepath.Join(dir, "child.la")
+	grandArch := filepath.Join(dir, "grand.la")
+	if err := w.DeleteNode("child"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(rootArch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(childArch); !os.IsNotExist(err) {
+		t.Fatal("child archive still present", err)
+	}
+	if _, err := os.Stat(grandArch); !os.IsNotExist(err) {
+		t.Fatal("grand archive still present", err)
+	}
+	raw, err := os.ReadFile(comp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if strings.Contains(text, "child") || strings.Contains(text, "grand") || !strings.Contains(text, "root") {
+		t.Fatalf("composer %s", text)
+	}
+	if err := os.Remove(rootArch); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.DeleteNode("root"); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = os.ReadFile(comp)
+	if strings.TrimSpace(string(raw)) != "[]" {
+		t.Fatalf("composer %s", raw)
+	}
+}
+
+func TestCreateMissingArchive(t *testing.T) {
+	dir := t.TempDir()
+	comp := filepath.Join(dir, "c.json")
+	w, err := SpecifyComposer(comp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.CreateNode("root", "./fresh.la", "new", ""); err != nil {
+		t.Fatal(err)
+	}
+	fresh := filepath.Join(dir, "fresh.la")
+	st, err := os.Stat(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Size() != 0 || !st.Mode().IsRegular() {
+		t.Fatalf("fresh mode %v size %d", st.Mode(), st.Size())
+	}
+	loaded, err := LoadComposer(comp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Nodes) != 1 || loaded.Nodes[0].ArchiveSpec != "./fresh.la" {
+		t.Fatalf("%+v", loaded.Nodes)
+	}
+	if err := w.ApplyBlock("root", "@<msg@=hi@\n"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(fresh)
+	if err != nil || !strings.Contains(string(data), "@<msg@=hi@") {
+		t.Fatalf("%v %s", err, data)
+	}
+
+	old := filepath.Join(dir, "old.la")
+	writeFile(t, old, "@<m@=keep@\n")
+	if err := w.CreateNode("child", "./old.la", "old", "root"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(old)
+	if string(data) != "@<m@=keep@\n" {
+		t.Fatalf("truncated %q", data)
+	}
+
+	if err := os.Mkdir(filepath.Join(dir, "dir.la"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err = w.CreateNode("bad", "./dir.la", "", "root")
+	if err == nil || !strings.Contains(err.Error(), "could not find archive './dir.la'") {
+		t.Fatal(err)
+	}
+	err = w.CreateNode("nested", "./no/such.la", "", "root")
+	if err == nil || !strings.Contains(err.Error(), "could not write") {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "no")); !os.IsNotExist(statErr) {
+		t.Fatal(statErr)
+	}
+
+	t.Chdir(dir)
+	if err := w.CreateNode("bare", "bare.la", "bare", "root"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "bare.la")); err != nil {
+		t.Fatal(err)
+	}
+	again, err := LoadComposer(comp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saw bool
+	for _, n := range again.Nodes {
+		if n.Name == "bare" && n.ArchiveSpec == "bare.la" {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatalf("%+v", again.Nodes)
+	}
+
+	if err := os.Remove(fresh); err != nil {
+		t.Fatal(err)
+	}
+	err = w.CreateNode("dup", "./fresh.la", "", "root")
+	if err == nil || !strings.Contains(err.Error(), "share archive") {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(fresh); !os.IsNotExist(statErr) {
+		t.Fatal("created archive left behind", statErr)
+	}
 }

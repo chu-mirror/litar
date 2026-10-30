@@ -116,8 +116,8 @@ Resource templates:
 Tools:
 
 - specify the composer file, create a new composer file if the file does not exist;
-- create a new node;
-- delete a node, all nodes based on that node will be deleted too;
+- create a new node, create a new archive file if it not exists;
+- delete a node, all nodes based on that node will be deleted too, all related archive files will be deleted;
 - delete a chunk, all applied blocks will be deleted;
 - delete a file, all applied blocks will be deleted;
 - evaluate the content of an expression;

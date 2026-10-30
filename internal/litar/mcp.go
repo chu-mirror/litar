@@ -115,11 +115,11 @@ func (a *agent) ensureTools() {
 	a.tools = true
 	mcp.AddTool(a.server, &mcp.Tool{
 		Name:        "create_node",
-		Description: "Create a node. An empty base creates the root, and only when the composer has none.",
+		Description: "Create a node. An empty base creates the root, and only when the composer has none. Create an empty archive if the file does not exist.",
 	}, a.createNode)
 	mcp.AddTool(a.server, &mcp.Tool{
 		Name:        "delete_node",
-		Description: "Delete a node and every node based on it. Archive files are kept.",
+		Description: "Delete a node and every node based on it, and delete their archive files.",
 	}, a.deleteNode)
 	mcp.AddTool(a.server, &mcp.Tool{
 		Name:        "delete_chunk",

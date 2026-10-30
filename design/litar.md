@@ -53,7 +53,7 @@ Some other comments.
 
 Block expressions extend or set a chunk by a piece of text.
 Each block expression consists of three basic parts:
-the name of a chunk, the operator, and the content of current block.
+the name of a chunk, the operator, and the content of the current block.
 
 There are two operators, `@=` and `@+`:
 `@=` sets the content of the chunk to the content of the block,
@@ -86,7 +86,7 @@ The contents of block1.
 The contents of block3.
 ```
 
-, but the expanded content of `chunk2` is
+but the expanded content of `chunk2` is
 
 ```
 The contents of block4.
@@ -127,8 +127,8 @@ The contents of block2.
 ```
 
 Let's define formally what the content of a chunk is:
-**the result content of all applying in order,
-and all references to chunk are replaced by the content of the corresponding chunk**.
+**the result of applying every matching block in order,
+with each references replaced by the content of that chunk**.
 
 It's a recursive procedure to evaluate the content of a chunk,
 so be careful to avoid circular dependency.
@@ -158,7 +158,7 @@ So litar supports modularization.
 ```
 
 litar allows attaching a series of module names to a chunk name;
-the series of module names, from left to right, form a path like file path
+the series of module names, from left to right, form a path like a file path
 in a filesystem. Each module name is a directory name, the chunk name is a file name;
 a module is a directory, a chunk is a file.
 
@@ -167,13 +167,13 @@ written as `/`; it can be omitted usually, but if you must specify it, use this 
 In the content of a block,
 you can refer to the module of the chunk reference that the block is applied to as `.`;
 `..` is also supported, just as `..` in a file path.
-`.` and `..` can not be used outside the content of a block.
+`.` and `..` cannot be used outside the content of a block.
 
 # Specialization
 
 A chunk can be used as a template naturally. Consider that a chunk
 defines a general structure for a C program, and we want to write two separate
-C programs in a single litar archive basing on that.
+C programs in a single litar archive based on that.
 The final result might look like,
 
 ```
@@ -263,7 +263,7 @@ sed 's/world/WORLD/'
 ```
 
 The final output of this program is "Hello, WORLD!". The creation
-of a chunk is pretty easy compared to files, so is the operating to
+of a chunk is pretty easy compared to files, and so is operating on
 the chunk. Operations are applied through pipes; an operation is called a filter.
 The filters themselves are nothing more than a chunk.
 Filter and pipe are borrowed directly from the context of Unix shell.
@@ -271,7 +271,7 @@ Filter and pipe are borrowed directly from the context of Unix shell.
 Filters are scripts whose first line is a shebang,
 so litar can support all script languages without extra effort.
 
-Filters can also be attached to a block. The following program print the same as the above.
+Filters can also be attached to a block. The following program prints the same as the above.
 
 ```
 @<hello.c@=
@@ -363,15 +363,14 @@ echo "Hello, world!"
 @
 ```
 
-There is two files in this example, "hello.c" and "hello.sh".
+There are two files in this example, "hello.c" and "hello.sh".
 The difference between `@[` and `@(` is that `@(` specifies
 an executable file but `@[` introduces a regular file.
 
 The discussion above implies that a litar archive has a file system inside.
 To be compatible with Unix programming environment, litar uses a technology called
 Filesystem in Userspace (FUSE), which allows litar to create a custom file system
-and mount it. So filters can access the files in a litar archive just like
-other files in the operating system.
+and mount it. So a filter can access an archive file when its view names that file.
 
 # Invocation
 
@@ -424,9 +423,9 @@ After the calculation, litar mounts a FUSE filesystem and runs the filter under 
 The FUSE filesystem has several characteristics:
 
 - it contains the files specified as above, all files are read-only;
-- it behaves as an overlay filesystem, a filter might creates files,
+- it behaves as an overlay filesystem, a filter might create files,
   litar creates a temporary directory in the host filesystem,
-  and map all writing to the temporary directory.
+  and maps all writing to the temporary directory.
 
 In the end, litar shall notice and provide helpful information if a circular dependency occurs.
 Users can use the information to limit the files that an invocation relates.
@@ -520,7 +519,7 @@ A composer file is in json format:
 
 Each record in this array is called a node.
 A node has a base node; the root node's base is `null`.
-A node's blocks consists of its base node's blocks
+A node's blocks consist of its base node's blocks
 followed by the blocks in the archive of the node, the ordering matters.
 
 litar reads this composer file first to build a tree of nodes.
@@ -531,11 +530,11 @@ Some limitations:
 - there's only one root node in a composer file;
 - node names must be unique;
 - if the archive name starts with '.' or '..', it's relative to the composer file;
-- if the archive name do not start with '.' or '..', it's searched through a list of directories;
+- if the archive name does not start with '.' or '..', it's searched through a list of directories;
 - two nodes cannot share one archive.
 
 The `mappings` field maps the files outside the archives
-to the FUSE filesystem created when an invocation happened.
+to the FUSE filesystem created when an invocation happens.
 
 ```
 [

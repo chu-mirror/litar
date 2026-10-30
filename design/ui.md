@@ -15,7 +15,7 @@ usage: litar [options]
 -e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
 -d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
 -s, --subdomains DOMAIN: list all subdomains under DOMAIN
--i, --item DOMAIN: list all items under DOMAIN
+-i, --items DOMAIN: list all items under DOMAIN
 -r, --reference ITEM: list all blocks that refer to ITEM
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
 ```
@@ -119,7 +119,7 @@ Tools:
 - delete a file, all applied blocks will be deleted;
 - evaluate the content of an expression;
 - apply a block to a node,
-  can not apply a block to a node whose archive path does not start with '.' or '..';
+  cannot apply a block to a node whose archive path does not start with '.' or '..';
 - dump the archives.
 
 Both resources and tools support changing notification.

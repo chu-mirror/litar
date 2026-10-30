@@ -76,7 +76,7 @@ and the lifecycle of a task consists of several stages:
 
 1. write down a brief description of what is going to be done,
    whether it's to develop a new feature, or to improve an existing framework,
-   or to add some testcases, etc;
+   or to add some test cases, etc;
 2. find the node this task is based on, create a new node that uses
    that node as its base node;
 3. apply new blocks to the new node, until the task is completed;
@@ -85,7 +85,7 @@ and the lifecycle of a task consists of several stages:
 5. test other nodes for integrity.
 
 The digest is to iterate through the newly applied blocks,
-apply them to the suitable base node, gather the left into a new node,
+apply them to the suitable base node, gather the blocks that remain into a new node,
 delete the old node. If no blocks are left, the new node will not be created.
 
 It's context dependent to decide what the suitable base node is.
@@ -196,7 +196,7 @@ A single piece of information can appear at so many places of a project in diffe
 The specification of command line interface is a good example.
 It appears in help information, parsing algorithm, and manpage.
 It's cumbersome to maintain all three copies,
-and these replicates can be programmatically generated from the original specification;
+and these copies can be programmatically generated from the original specification;
 filters are a good fit for that generation.
 
 Write the specification of command line interface declaratively in a chunk;

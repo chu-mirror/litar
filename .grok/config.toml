@@ -1,4 +1,0 @@
-[mcp_servers.litar]
-command = "./.agent/mcp.py"
-args = []
-enabled = true

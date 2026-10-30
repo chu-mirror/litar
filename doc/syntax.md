@@ -39,7 +39,6 @@ That `@` and the one whitespace byte are outside the name and the content.
 A line feed after that carriage return stays outside the expression.
 
 Any other `@` plus a non-letter starts a nested control.
-A nested block or branch consumes its own end control.
 A control that no form accepts is an error.
 
 These are the controls:
@@ -50,30 +49,22 @@ These are the controls:
 | `@` at a space, tab, carriage return, line feed, or end of input | end the current expression |
 | `@<` | block header, or a reference in a body |
 | `@>` | end a reference |
-| `@=` | set the chunk, or bind a label group |
+| `@=` | set the chunk |
 | `@+` | extend the chunk, or add a file set |
 | `@-` | subtract a file set |
-| `@/` | separate two module components, separate the module from the chunk, or separate two names of a topic |
-| `@~` | start a topic reference on a block |
-| `@:` | separate labels, or start a label group |
-| <code>@&#124;</code> | filter, branch arm, or end of a block body |
-| `@!` | declare a flag, or remove one file |
-| `@?` | branch |
-| `@.` | include an archive |
+| `@/` | separate two module components, separate the module from the chunk, or separate two names of an item |
+| `@~` | start an item reference on a block |
+| `@:` | separate labels |
+| <code>@&#124;</code> | filter or end of a block body |
+| `@!` | remove one file |
 | `@[` | regular file |
 | `@(` | executable file |
-| `` @` `` | file set |
+| `` @` `` | file-set membership on a file |
 | `@,` | one file in a file-set expression |
 
 At the start of an expression the control selects the form:
 `@<` a block,
-`@!` a flag,
-`@?` a branch,
-`@:` a label group,
-`@.` an include,
-`@[` or `@(` a file,
-`` @` `` a file-set declaration.
-A top-level `@+` or `@,` is a file-set control.
+`@[` or `@(` a file.
 A top-level `@|`, a top-level `@~`, a bare end control, or any other control is an error.
 
 # Names
@@ -86,8 +77,7 @@ Interior whitespace stays, including a newline between two words.
 `@<Module 1@/chunk@=` names the chunk `chunk` in the module `Module 1`.
 
 A name that is empty after trimming is an empty name.
-An empty chunk, label, module component, flag, label-group, filter,
-or archive name is an error.
+An empty chunk, label, module component, or filter name is an error.
 
 # Qualified name
 
@@ -100,6 +90,7 @@ label@:label@:module@/submodule@/chunk
 ```
 
 Each label is a name followed by `@:`.
+The leftmost label is the further specialization.
 Every later name separated by `@/` is one component of the module path;
 the last name is the chunk.
 The module path may be omitted, which names the root module.
@@ -126,9 +117,33 @@ on the command line, and in a filter.
 A reference may omit it only in the invocation form
 in the file-set section.
 
-A label may name a label group.
-The group stands for its sequence of labels.
-The sequence is expanded at the use.
+# Specialization
+
+A chunk reference is a qualified name.
+Applying a block through one chunk reference
+does not affect other chunk references of the same chunk.
+
+The predecessors of `spec2@:spec1@:module@/chunk`
+are `spec1@:module@/chunk` and `module@/chunk`.
+`spec2@:spec1@:module@/chunk` does not include blocks applied to
+`spec2@:module@/chunk`.
+That reference follows a different path to specialize `module@/chunk`.
+
+A block matches a chunk reference when the module and the chunk are the same
+and the block's labels are a suffix of the reference's labels.
+Empty labels match every specialization.
+Matching blocks are applied in the order they appear in the node:
+the base node's blocks, then the blocks of this node's archive.
+`@=` replaces the text accumulated so far.
+`@+` appends.
+The blocks that still contribute after this
+are the effective blocks of the chunk reference.
+
+When a reference in a body omits labels,
+it takes the labels of the chunk reference being expanded.
+Labels written on the inner reference are the labels of that reference.
+A reference that omits `@/` names the root module.
+Only a reference in block content resolves `.` and `..`.
 
 # Comments and expressions
 
@@ -137,13 +152,7 @@ A comment is ordinary text under the same scan.
 `@<` in a comment starts an expression.
 The way to write that text is `@@<`.
 
-An included archive is parsed at the `@.` expression.
-Every block in it names its own module, so inclusion needs no module state.
-Included chunks, flags, label groups, and modules remain.
-
 A block or file that omits `@/` belongs to the root module.
-A reference that omits `@/` names the root module.
-Only a reference in block content resolves `.` and `..`.
 
 # Block
 
@@ -188,9 +197,9 @@ content
 @|filter@
 ```
 
-`@~` at the top of the body ends the content and starts a topic reference.
-Topics follow the filter pipeline when the block has one.
-The topic is not part of the content.
+`@~` at the top of the body ends the content and starts an item reference.
+Items follow the filter pipeline when the block has one.
+The item is not part of the content.
 Evaluating the block does not print it.
 
 ```
@@ -200,20 +209,20 @@ int times;
 @~ C@/variables@/times @
 ```
 
-A topic is one or more names separated by `@/`.
+An item is one or more names separated by `@/`.
 The first name is the domain.
-Each later name classifies that topic further.
+Each later name classifies that item further.
 There is no fixed depth.
 `@~ C@/variables@/times @` names `C`, then `variables`, then `times`.
-A second `@~` starts another topic on the same block:
+A second `@~` starts another item on the same block:
 
 ```
 @~C@/variables@/times@~C@/functions@/main@
 ```
 
-The block's end control closes the last topic.
+The block's end control closes the last item.
 An empty name in the path is an error.
-`@@~` in the content is the text `@~` and does not open a topic.
+`@@~` in the content is the text `@~` and does not open an item.
 A `@~` inside a chunk reference stays in the body.
 
 A reference in the body is `@<`, a qualified name, and `@>`.
@@ -226,71 +235,7 @@ An end control still ends the block at any depth.
 The body contains text, escapes, and references.
 Any other control in the body is an error.
 `@@<` is the text `@<` and does not open a reference.
-`@~` at the top of the body is the topic list above, not content.
-
-# Flag and include
-
-A flag is `@!`, a non-empty name, and an end control.
-
-An include is `@.`, a non-empty archive name, and an end control:
-
-```
-@. c_structure.la @
-```
-
-# Branch
-
-A branch is one or more conditions, an optional else arm,
-and an end control:
-
-```
-@? condition A @|
-expressions
-@? condition B @|
-expressions
-@|
-expressions
-@
-```
-
-Each condition is `@?`, a non-empty name, and `@|`.
-The else arm is a `@|` that is not attached to a condition.
-Expressions in the arm follow that `@|`.
-An arm ends at the next `@?`, the next unattached `@|`,
-or the branch's end control.
-Text in an arm is a comment, or part of an expression in that arm.
-
-The kept arm is the first condition whose flag is declared.
-The else arm is kept when none of those flags is declared.
-A skipped arm contributes no blocks, modules, flags,
-label groups, includes, or files.
-
-The first condition comes first.
-Later conditions follow it.
-The else arm, when present, is last.
-A condition after the else arm is an error.
-A second else arm is an error.
-An arm contains no branch:
-an inner `@?` ends the arm.
-The include guard is this form with an empty first arm:
-
-```
-@? included common C structure @|@|
-```
-
-# Label group
-
-A label group binds a name to one or more labels:
-
-```
-@:spec@=spec2@:spec1@
-```
-
-The form is `@:`, a non-empty group name, `@=`,
-then one or more non-empty labels separated by `@:`,
-then an end control.
-A newline after `@=` is leading whitespace of the first label
-and is trimmed.
+`@~` at the top of the body is the item list above, not content.
 
 # Filter pipeline
 
@@ -307,7 +252,11 @@ In a reference or a print expression the pipeline follows the chunk:
 ```
 
 On a block or a file the pipeline follows the body, as above.
-A chunk reference used with `-l` or `-d` has no pipeline.
+A chunk reference used with `-l`, `-e`, or `-d` has no pipeline.
+
+The filter is a chunk.
+Its first line is a shebang.
+Each filter may have a view, in the file-set section.
 
 # File
 
@@ -329,7 +278,7 @@ content
 ```
 
 ```
-@(run_bigger_world.sh@=
+@(hello.sh@=
 content
 @
 ```
@@ -337,11 +286,6 @@ content
 The path is the chunk name.
 The chunk belongs to the root module.
 Each membership names a file set that contains this file.
-
-The program recognizes `@[` and `@(`
-at the start of an expression and rejects the expression
-before reading the path.
-The form above is the syntax those controls introduce.
 
 # File set
 
@@ -361,16 +305,9 @@ is every file in `file set1` that is not in `file set2`,
 plus `file1` and `file2`,
 except `file3`.
 
-A declaration is `` @` ``, a non-empty file-set name,
-a file-set expression, and an end control:
-
-```
-@`file set@+file set1@-file set2@,file1@,file2@!file3@
-```
-
 A view is a file-set expression attached to a filter,
 after that filter's chunk name and before `@|`, `@>`,
-or the end of a print expression:
+the end control of the block, or the end of a print expression:
 
 ```
 @<@|list files@+source files@>
@@ -382,12 +319,43 @@ The empty chunk name is allowed only on a reference
 that has a pipeline.
 The view belongs to the filter it follows.
 Each filter in a pipeline has its own view.
+By default an invocation sees no file exported from the archive.
 
-The program recognizes `` @` ``, `@+`, and `@,`
-at the start of an expression and rejects the expression.
-It also rejects an empty chunk name,
-and it rejects `@+`, `@-`, `@,`, and `@!` inside a filter name.
-Those controls are the file-set syntax in this section.
+# Composer file
+
+The command line reads a composer file, not a single archive.
+The `-f`/`--file` option names the composer file.
+[design/litar.md](../design/litar.md) defines its format:
+a JSON array of nodes.
+Each node has a `name`, an `archive`, a `description`,
+`mappings`, and a `base`.
+`base` is the name of another node, or `null` for the root node.
+The nodes form a tree with one root.
+Node names are unique.
+Two nodes cannot share one archive.
+
+If the archive name starts with `.` or `..`,
+it is relative to the composer file.
+Otherwise it is searched in this order:
+
+1. the current directory;
+2. directories in `$LITAR_INCLUDE`, in the same format as `$PATH`;
+3. `$HOME/.litar`;
+4. `$HOME/.local/share/litar`;
+5. `/usr/local/share/litar`;
+6. `/usr/share/litar`.
+
+A node's blocks are its base node's blocks
+followed by the blocks of its archive.
+The `-n`/`--node` option selects the node that the command line evaluates at.
+
+The `mappings` field maps files outside the archives
+into the filesystem used by an invocation.
+Each mapping has a `path`, a `fileset` array of file-set names,
+and an `origin`.
+`origin` is relative to the composer file.
+The mapped file is read-only.
+A child keeps its base's mappings and can add more.
 
 # Command-line name
 
@@ -400,33 +368,42 @@ label1@:label2@:module name@/chunk name@|filter1@|filter2
 ```
 
 The name runs to the end of the argument.
+Each filter may have a view, as in the file-set section.
 `-l`, `-e`, and `-d` take the same qualified name without a pipeline.
 A module that is omitted on any of them names the root module.
 There is no option that matches a chunk in every module.
 
-`-m` and `-c` take a module path, not a chunk reference:
+`-l` prints every matching block, including blocks applied to predecessors.
+`-e` prints the effective blocks of that chunk reference.
+`-d` lists blocks that depend on the chunk reference:
+a block whose content contains, or is filtered by,
+that reference or a reference specialized from it.
+
+`-m`/`--modules` and `-c`/`--chunks` take a module path,
+not a chunk reference:
 
 ```
 module@/submodule@/subsubmodule
 ```
 
 The root module is `/`.
-`-m` lists the immediate child modules of that module.
-`-c` lists the chunks defined in that module itself.
-The output of -m uses `@/` between components,
+`-m` lists all modules under that module.
+`-c` lists all chunk names under that module.
+The output of `-m` uses `@/` between components,
 so it can be passed back to an option that takes a module path.
-The output of -c is one chunk name per line.
+The output of `-c` is one chunk name per line.
 
-`-s` takes a domain and lists its immediate subdomains.
-`-i` takes a domain and lists its immediate items.
-A domain is a prefix of a topic path, and an item ends one:
+`-s` takes a domain and lists all subdomains under that domain.
+`-i` takes a domain and lists all items under that domain.
+A domain is a prefix of an item:
 
 ```
 domain@/subdomain
 domain@/subdomain@/item
 ```
 
-The output of -s and -i uses `@/` between names.
+The root domain is `/`.
+The output of `-s` and `-i` uses `@/` between names.
 
 `-r` takes an item, not a chunk reference.
 The item is one or more names separated by `@/`,
@@ -436,9 +413,5 @@ with no `@~` and no closing `@`:
 domain@/subdomain@/item
 ```
 
-A block refers to that topic when one of its topic paths is the topic
-or continues it with further names.
-`C` matches a path `C` and a path `C@/variables@/times`.
-`C@/variables@/times` does not match a block that names only `C`.
-`C@/var` does not match `C@/variables`.
-The listing has the same form as `-l`.
+A block refers to that item when one of the items on the block is that item.
+The listing of `-e`, `-d`, and `-r` has the same form as `-l`.

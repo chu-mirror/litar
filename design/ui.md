@@ -123,8 +123,7 @@ Tools:
 - delete a chunk, all applied blocks will be deleted;
 - delete a file, all applied blocks will be deleted;
 - evaluate the content of an expression;
-- apply a block to a node,
-  cannot apply a block to a node whose archive path does not start with '.' or '..';
+- apply a block to a node, cannot apply a block to a node in the ground archive;
 - dump the archives.
 
 Both resources and tools support changing notification.

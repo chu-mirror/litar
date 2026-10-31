@@ -64,7 +64,8 @@ func newAgent() *agent {
 	)
 	mcp.AddTool(a.server, &mcp.Tool{
 		Name:        "create_composed_archive",
-		Description: "Create a new composed archive, and use that composed archive.",
+		Description: "Create a new composed archive, and use that composed archive. Specify a ground, or leave the ground as null.",
+		InputSchema: nullableStringSchema[createArchiveIn]("ground"),
 	}, a.createComposedArchive)
 	mcp.AddTool(a.server, &mcp.Tool{
 		Name:        "specify_composed_archive",
@@ -83,6 +84,10 @@ type specifyIn struct {
 
 type createArchiveIn struct {
 	Path string `json:"path" jsonschema:"directory of the new composed archive"`
+	// A pointer so JSON null unmarshals. The property stays required:
+	// an absent ground is not null. nullableStringSchema publishes anyOf
+	// instead of the inferred type array.
+	Ground *string `json:"ground" jsonschema:"name of the ground composed archive, or null"`
 }
 
 type createIn struct {
@@ -90,7 +95,7 @@ type createIn struct {
 	Archive     string `json:"archive" jsonschema:"archive path"`
 	Description string `json:"description" jsonschema:"node description"`
 	// A pointer so JSON null unmarshals. The property stays required:
-	// an absent base is not null. createNodeSchema publishes anyOf
+	// an absent base is not null. nullableStringSchema publishes anyOf
 	// instead of the inferred type array.
 	Base *string `json:"base" jsonschema:"base node name, empty or null to create the root"`
 }
@@ -131,7 +136,7 @@ func (a *agent) ensureTools() {
 	mcp.AddTool(a.server, &mcp.Tool{
 		Name:        "create_node",
 		Description: "Create a node. An empty or null base creates the root, and only when the composer has none. Create an empty archive if the file does not exist.",
-		InputSchema: createNodeSchema(),
+		InputSchema: nullableStringSchema[createIn]("base"),
 	}, a.createNode)
 	mcp.AddTool(a.server, &mcp.Tool{
 		Name:        "delete_node",
@@ -151,7 +156,7 @@ func (a *agent) ensureTools() {
 	}, a.evaluate)
 	mcp.AddTool(a.server, &mcp.Tool{
 		Name:        "apply_block",
-		Description: "Append a block to a node whose archive path starts with '.' or '..'.",
+		Description: "Append a block to the node's own archive.",
 	}, a.applyBlock)
 	mcp.AddTool(a.server, &mcp.Tool{
 		Name:        "dump_archives",
@@ -159,16 +164,16 @@ func (a *agent) ensureTools() {
 	}, a.dumpArchives)
 }
 
-// createNodeSchema is the inferred object schema with base rewritten.
+// nullableStringSchema is the inferred object schema with field rewritten.
 // A *string infers "type": ["null", "string"]. Some clients accept only
 // one type per schema, so null and string are separate anyOf branches.
-func createNodeSchema() *jsonschema.Schema {
-	s, err := jsonschema.For[createIn](nil)
+func nullableStringSchema[T any](field string) *jsonschema.Schema {
+	s, err := jsonschema.For[T](nil)
 	if err != nil {
 		panic(err)
 	}
-	prop := s.Properties["base"]
-	s.Properties["base"] = &jsonschema.Schema{
+	prop := s.Properties[field]
+	s.Properties[field] = &jsonschema.Schema{
 		Description: prop.Description,
 		AnyOf: []*jsonschema.Schema{
 			{Type: "null"},
@@ -204,7 +209,11 @@ func (a *agent) createComposedArchive(ctx context.Context, _ *mcp.CallToolReques
 	if in.Path == "" {
 		return toolErr(errString("missing path"))
 	}
-	w, err := CreateComposedArchive(in.Path)
+	ground := ""
+	if in.Ground != nil {
+		ground = *in.Ground
+	}
+	w, err := CreateComposedArchive(in.Path, ground)
 	if err != nil {
 		return toolErr(err)
 	}

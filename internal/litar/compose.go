@@ -492,8 +492,23 @@ func (w *World) Mappings(name string) ([]Mapping, error) {
 	return maps, nil
 }
 
+func composerFileBytes(ground *string, nodes []composerNode) ([]byte, error) {
+	if nodes == nil {
+		nodes = []composerNode{}
+	}
+	data, err := json.MarshalIndent(composerFile{Ground: ground, Nodes: nodes}, "", "    ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
 func emptyComposerBytes() []byte {
-	return []byte("{\n    \"ground\": null,\n    \"nodes\": []\n}\n")
+	data, err := composerFileBytes(nil, nil)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }
 
 func (w *World) save() error {
@@ -524,15 +539,10 @@ func (w *World) save() error {
 			Base:        base,
 		}
 	}
-	file := composerFile{Ground: w.Ground, Nodes: raw}
-	if file.Nodes == nil {
-		file.Nodes = []composerNode{}
-	}
-	data, err := json.MarshalIndent(file, "", "    ")
+	data, err := composerFileBytes(w.Ground, raw)
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
 	return os.WriteFile(w.Composer, data, 0o644)
 }
 
@@ -561,16 +571,33 @@ func SpecifyComposer(path string) (*World, error) {
 
 // CreateComposedArchive creates dir/composer.json when that file is absent,
 // then loads it. An empty node list is allowed.
-func CreateComposedArchive(dir string) (*World, error) {
+// An empty ground is stored as null.
+// A named ground is resolved on the library search path before the file is written.
+// If the new file cannot be loaded, it is removed.
+func CreateComposedArchive(dir, ground string) (*World, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("missing path")
 	}
-	st, err := os.Stat(dir)
-	if err == nil && !st.IsDir() {
-		return nil, fmt.Errorf("could not write '%s': not a directory", dir)
+	var stored *string
+	if ground != "" {
+		if err := validGroundName(ground); err != nil {
+			return nil, err
+		}
+		if _, err := findGround(ground); err != nil {
+			return nil, err
+		}
+		name := ground
+		stored = &name
 	}
-	if err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("could not write '%s': %v", dir, err)
+	st, err := os.Stat(dir)
+	createdDir := false
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("could not write '%s': %v", dir, err)
+		}
+		createdDir = true
+	} else if !st.IsDir() {
+		return nil, fmt.Errorf("could not write '%s': not a directory", dir)
 	}
 	comp := filepath.Join(dir, "composer.json")
 	if _, err := os.Stat(comp); err == nil {
@@ -581,10 +608,27 @@ func CreateComposedArchive(dir string) (*World, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("could not write '%s': %v", dir, err)
 	}
-	if err := os.WriteFile(comp, emptyComposerBytes(), 0o644); err != nil {
+	removeNew := func() {
+		_ = os.Remove(comp)
+		if createdDir {
+			_ = os.Remove(dir)
+		}
+	}
+	data, err := composerFileBytes(stored, nil)
+	if err != nil {
+		removeNew()
+		return nil, err
+	}
+	if err := os.WriteFile(comp, data, 0o644); err != nil {
+		removeNew()
 		return nil, fmt.Errorf("could not write '%s': %v", comp, err)
 	}
-	return LoadComposerAllowEmpty(comp)
+	w, err := LoadComposerAllowEmpty(comp)
+	if err != nil {
+		removeNew()
+		return nil, err
+	}
+	return w, nil
 }
 
 // CreateNode parses the archive, then appends the node and rewrites the composer.
@@ -708,13 +752,6 @@ func (w *World) DeleteNode(name string) error {
 	return nil
 }
 
-func writableArchive(n *Node) error {
-	if !strings.HasPrefix(n.ArchiveSpec, ".") {
-		return fmt.Errorf("cannot apply a block to a node whose archive path does not start with '.' or '..'")
-	}
-	return nil
-}
-
 func writeFileKeepMode(path string, data []byte) error {
 	mode := os.FileMode(0o644)
 	if st, err := os.Stat(path); err == nil {
@@ -723,17 +760,15 @@ func writeFileKeepMode(path string, data []byte) error {
 	return os.WriteFile(path, data, mode)
 }
 
-// ApplyBlock appends text to the node's archive when the archive spec
-// starts with "." or "..", then reparses. A failed parse leaves the file.
+// ApplyBlock appends text to the node's own archive, then reparses.
+// A node defined in the ground is left unchanged.
+// A failed parse leaves the file.
 func (w *World) ApplyBlock(nodeName, text string) error {
 	if text == "" {
 		return fmt.Errorf("empty block text")
 	}
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
-		return err
-	}
-	if err := writableArchive(n); err != nil {
 		return err
 	}
 	orig, err := os.ReadFile(n.Archive)

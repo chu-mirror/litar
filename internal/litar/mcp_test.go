@@ -68,7 +68,7 @@ func TestMCP(t *testing.T) {
 	}
 	res, err = session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      "create_composed_archive",
-		Arguments: map[string]any{"path": archDir},
+		Arguments: map[string]any{"path": archDir, "ground": nil},
 	})
 	if err != nil || res.IsError {
 		t.Fatalf("create archive %v %+v", err, res)
@@ -83,7 +83,7 @@ func TestMCP(t *testing.T) {
 		Name: "create_node",
 		Arguments: map[string]any{
 			"name":        "root",
-			"archive":     "./a.la",
+			"archive":     "a.la",
 			"description": "root node",
 			"base":        "",
 		},
@@ -407,6 +407,197 @@ func assertMCPLists(t *testing.T, ctx context.Context, session *mcp.ClientSessio
 	}
 	if names["tree://node"] != "nodes" || mimes["tree://node"] != "application/json" {
 		t.Fatalf("node resource %+v", lr.Resources)
+	}
+}
+
+func TestCreateComposedArchiveGroundTool(t *testing.T) {
+	dir := t.TempDir()
+	lib := filepath.Join(dir, "lib")
+	common := filepath.Join(lib, "sample-ground")
+	if err := os.MkdirAll(common, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(common, "base.la"), "@<msg@=from-ground@")
+	writeFile(t, filepath.Join(common, "composer.json"), `{
+    "ground": null,
+    "nodes": [
+        {"name":"root","archive":"base.la","description":"ground","mappings":[],"base":null}
+    ]
+}
+`)
+	t.Setenv("LITAR_LIBRARY", lib)
+	work := filepath.Join(dir, "work")
+	if err := os.Mkdir(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(work)
+
+	ctx := context.Background()
+	ag := newAgent()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	serverT, clientT := mcp.NewInMemoryTransports()
+	if _, err := ag.server.Connect(ctx, serverT, nil); err != nil {
+		t.Fatal(err)
+	}
+	session, err := client.Connect(ctx, clientT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema map[string]any
+	for _, tool := range tools.Tools {
+		rejectTypeArrays(t, tool.InputSchema, tool.Name)
+		if tool.Name != "create_composed_archive" {
+			continue
+		}
+		var ok bool
+		schema, ok = tool.InputSchema.(map[string]any)
+		if !ok {
+			t.Fatalf("schema %T", tool.InputSchema)
+		}
+	}
+	if schema == nil {
+		t.Fatal("create_composed_archive missing")
+	}
+	var required bool
+	for _, req := range schema["required"].([]any) {
+		if req == "ground" {
+			required = true
+		}
+	}
+	if !required {
+		t.Fatal("ground is not required")
+	}
+	props := schema["properties"].(map[string]any)
+	groundProp := props["ground"].(map[string]any)
+	if _, ok := groundProp["type"]; ok {
+		t.Fatalf("ground type %v", groundProp["type"])
+	}
+	anyOf, ok := groundProp["anyOf"].([]any)
+	if !ok || len(anyOf) != 2 {
+		t.Fatalf("anyOf %#v", groundProp["anyOf"])
+	}
+	gotTypes := map[string]bool{}
+	for _, branch := range anyOf {
+		b := branch.(map[string]any)
+		typ, ok := b["type"].(string)
+		if !ok {
+			t.Fatalf("branch %#v", branch)
+		}
+		gotTypes[typ] = true
+	}
+	if !gotTypes["null"] || !gotTypes["string"] {
+		t.Fatalf("branch types %v", gotTypes)
+	}
+
+	call := func(path string, ground any, set bool) *mcp.CallToolResult {
+		t.Helper()
+		args := map[string]any{"path": path}
+		if set {
+			args["ground"] = ground
+		}
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{
+			Name:      "create_composed_archive",
+			Arguments: args,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+
+	omit := filepath.Join(dir, "omit")
+	if res := call(omit, nil, false); !res.IsError {
+		t.Fatalf("omit %+v", res)
+	}
+	if _, statErr := os.Stat(omit); !os.IsNotExist(statErr) {
+		t.Fatal("omit created a directory", statErr)
+	}
+
+	nullDir := filepath.Join(dir, "null")
+	if res := call(nullDir, nil, true); res.IsError {
+		t.Fatalf("null %+v", res)
+	}
+	raw, err := os.ReadFile(filepath.Join(nullDir, "composer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != string(emptyComposerBytes()) {
+		t.Fatalf("null ground %s", raw)
+	}
+
+	emptyDir := filepath.Join(dir, "empty")
+	if res := call(emptyDir, "", true); res.IsError {
+		t.Fatalf("empty %+v", res)
+	}
+	raw, err = os.ReadFile(filepath.Join(emptyDir, "composer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != string(emptyComposerBytes()) {
+		t.Fatalf("empty ground %s", raw)
+	}
+
+	named := filepath.Join(dir, "named")
+	if res := call(named, "sample-ground", true); res.IsError {
+		t.Fatalf("named %+v", res)
+	}
+	raw, err = os.ReadFile(filepath.Join(named, "composer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"ground": "sample-ground"`) || strings.Contains(string(raw), `"name"`) {
+		t.Fatalf("named %s", raw)
+	}
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "evaluate_expression",
+		Arguments: map[string]any{
+			"node":       "root",
+			"expression": "msg",
+		},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("eval %v %+v", err, res)
+	}
+	if text := res.Content[0].(*mcp.TextContent).Text; text != "from-ground" {
+		t.Fatalf("eval text %q", text)
+	}
+	res, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "create_node",
+		Arguments: map[string]any{
+			"name":        "child",
+			"archive":     "./child.la",
+			"description": "local",
+			"base":        "root",
+		},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("child %v %+v", err, res)
+	}
+	raw, err = os.ReadFile(filepath.Join(named, "composer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, `"ground": "sample-ground"`) || !strings.Contains(text, `"name": "child"`) || strings.Contains(text, `"name": "root"`) {
+		t.Fatalf("with child %s", text)
+	}
+
+	missing := filepath.Join(dir, "missing")
+	res = call(missing, "no-such-ground", true)
+	if !res.IsError {
+		t.Fatalf("missing %+v", res)
+	}
+	if msg := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(msg, "could not find ground 'no-such-ground'") {
+		t.Fatalf("missing text %q", msg)
+	}
+	if _, statErr := os.Stat(missing); !os.IsNotExist(statErr) {
+		t.Fatal("missing ground created a directory", statErr)
 	}
 }
 

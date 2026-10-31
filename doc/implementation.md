@@ -391,8 +391,11 @@ Until a composed archive is created or specified,
 the only tools are those two,
 and the resource list and the resource-template list are empty.
 `create a new composed archive` creates `path/composer.json`
-with a null ground and an empty node list when that file is absent,
+with the given ground and an empty node list when that file is absent,
 then uses it.
+A null or empty ground is stored as `null`.
+A named ground is resolved before the file is written.
+If that ground cannot be loaded, the new file is removed.
 `specify the composed archive` loads an existing composer file.
 A directory argument uses `composer.json` inside that directory.
 It does not create a missing file.
@@ -433,7 +436,10 @@ are the `-l` form of `-l`, `-e`, and `-d` on that node.
 
 Tool arguments:
 
-- create a new composed archive: `path`, the directory
+- create a new composed archive: `path`, the directory;
+  `ground`, a composed archive name, or null
+  (`ground` empty or null stores `null`; the property is required;
+  a named ground must already be on the library search path)
 - specify the composed archive: `path`,
   the composer file or the directory that contains it
 - create a node: `name`, `archive`, `description`, `base`
@@ -451,8 +457,7 @@ Edits apply to nodes declared in the composer that was specified.
 A node that arrived through `ground` can be evaluated and used as a base.
 Deleting, dumping, or editing it returns
 `node '…' is defined in the ground`.
-`apply a block` appends `text` to the node's archive
-only when `ArchiveSpec` starts with `.` or `..`.
+`apply a block` appends `text` to the node's own archive.
 `delete a chunk` and `delete a file` remove matching blocks
 from that node's own archive, not from the base.
 `delete a node` removes the node and every node based on it

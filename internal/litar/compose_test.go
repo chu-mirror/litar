@@ -170,6 +170,15 @@ func TestGroundPrecedes(t *testing.T) {
 	if err := w.DeleteNode("root"); err == nil || !strings.Contains(err.Error(), "defined in the ground") {
 		t.Fatal(err)
 	}
+	if err := w.ApplyBlock("root", "@<msg@+x@\n"); err == nil || !strings.Contains(err.Error(), "defined in the ground") {
+		t.Fatal(err)
+	}
+	if err := w.DeleteChunk("root", mustRef(t, "msg")); err == nil || !strings.Contains(err.Error(), "defined in the ground") {
+		t.Fatal(err)
+	}
+	if err := w.DeleteFile("root", "base.la"); err == nil || !strings.Contains(err.Error(), "defined in the ground") {
+		t.Fatal(err)
+	}
 	if err := w.save(); err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +279,7 @@ func TestDumpAndDelete(t *testing.T) {
 
 func TestDeleteNodeRemovesArchives(t *testing.T) {
 	dir := t.TempDir()
-	w, err := CreateComposedArchive(dir)
+	w, err := CreateComposedArchive(dir, "")
 	comp := filepath.Join(dir, "composer.json")
 	if err != nil {
 		t.Fatal(err)
@@ -321,7 +330,7 @@ func TestDeleteNodeRemovesArchives(t *testing.T) {
 
 func TestCreateMissingArchive(t *testing.T) {
 	dir := t.TempDir()
-	w, err := CreateComposedArchive(dir)
+	w, err := CreateComposedArchive(dir, "")
 	comp := filepath.Join(dir, "composer.json")
 	if err != nil {
 		t.Fatal(err)
@@ -388,6 +397,13 @@ func TestCreateMissingArchive(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "bare.la")); err != nil {
 		t.Fatal(err)
 	}
+	if err := w.ApplyBlock("bare", "@<msg@=bare@\n"); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(filepath.Join(dir, "bare.la"))
+	if err != nil || string(data) != "@<msg@=bare@\n" {
+		t.Fatalf("bare apply %v %q", err, data)
+	}
 	if _, err := os.Stat(filepath.Join(elsewhere, "bare.la")); !os.IsNotExist(err) {
 		t.Fatal("archive created in the working directory", err)
 	}
@@ -414,5 +430,122 @@ func TestCreateMissingArchive(t *testing.T) {
 	}
 	if _, statErr := os.Stat(fresh); !os.IsNotExist(statErr) {
 		t.Fatal("created archive left behind", statErr)
+	}
+}
+
+func TestCreateComposedArchiveGround(t *testing.T) {
+	dir := t.TempDir()
+	lib := filepath.Join(dir, "lib")
+	common := filepath.Join(lib, "sample-ground")
+	if err := os.MkdirAll(common, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(common, "base.la"), "@<msg@=from-ground@")
+	writeFile(t, filepath.Join(common, "composer.json"), composerDoc(`[
+        {"name":"root","archive":"base.la","description":"ground","mappings":[],"base":null}
+    ]`))
+	blank := filepath.Join(lib, "blank-ground")
+	if err := os.MkdirAll(blank, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(blank, "composer.json"), string(emptyComposerBytes()))
+	t.Setenv("LITAR_LIBRARY", lib)
+	work := filepath.Join(dir, "work")
+	if err := os.Mkdir(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(work)
+
+	bare := filepath.Join(dir, "bare")
+	w, err := CreateComposedArchive(bare, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Ground != nil || len(w.Nodes) != 0 {
+		t.Fatalf("ground %v nodes %+v", w.Ground, w.Nodes)
+	}
+	raw, err := os.ReadFile(filepath.Join(bare, "composer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != string(emptyComposerBytes()) {
+		t.Fatalf("null ground %s", raw)
+	}
+
+	named := filepath.Join(dir, "named")
+	w, err = CreateComposedArchive(named, "sample-ground")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Ground == nil || *w.Ground != "sample-ground" || w.localAt != 1 || len(w.Nodes) != 1 || w.Nodes[0].Name != "root" {
+		t.Fatalf("world ground %v local %d %+v", w.Ground, w.localAt, w.Nodes)
+	}
+	blocks, err := w.Chain("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewEvaluator(blocks, nil, nil).Eval(mustRef(t, "msg"), nil)
+	if err != nil || got != "from-ground" {
+		t.Fatal(err, got)
+	}
+	raw, err = os.ReadFile(filepath.Join(named, "composer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"ground": "sample-ground"`) || strings.Contains(string(raw), `"name"`) {
+		t.Fatalf("saved %s", raw)
+	}
+	if err := w.CreateNode("child", "./child.la", "local", "root"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile(filepath.Join(named, "composer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, `"ground": "sample-ground"`) || !strings.Contains(text, `"name": "child"`) || strings.Contains(text, `"name": "root"`) {
+		t.Fatalf("with child %s", text)
+	}
+
+	missing := filepath.Join(dir, "missing")
+	_, err = CreateComposedArchive(missing, "no-such-ground")
+	if err == nil || !strings.Contains(err.Error(), "could not find ground 'no-such-ground'") {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(missing); !os.IsNotExist(statErr) {
+		t.Fatal("missing ground created a directory", statErr)
+	}
+
+	invalid := filepath.Join(dir, "invalid")
+	_, err = CreateComposedArchive(invalid, "a/b")
+	if err == nil || !strings.Contains(err.Error(), "invalid ground 'a/b'") {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(invalid); !os.IsNotExist(statErr) {
+		t.Fatal("invalid ground created a directory", statErr)
+	}
+
+	failed := filepath.Join(dir, "failed")
+	_, err = CreateComposedArchive(failed, "blank-ground")
+	if err == nil || !strings.Contains(err.Error(), "composer has no root") {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(failed); !os.IsNotExist(statErr) {
+		t.Fatal("failed ground left a directory", statErr)
+	}
+
+	kept := filepath.Join(dir, "kept")
+	if err := os.Mkdir(kept, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err = CreateComposedArchive(kept, "blank-ground")
+	if err == nil || !strings.Contains(err.Error(), "composer has no root") {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(filepath.Join(kept, "composer.json")); !os.IsNotExist(statErr) {
+		t.Fatal("composer left behind", statErr)
+	}
+	if _, statErr := os.Stat(kept); statErr != nil {
+		t.Fatal(statErr)
 	}
 }

@@ -1,6 +1,7 @@
 package litar
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,6 +82,12 @@ func TestFUSEView(t *testing.T) {
 		"#!/bin/sh\n" +
 		"cat hello.txt\n" +
 		"@\n" +
+		"@<size@=\n" +
+		"#!/bin/sh\n" +
+		"stat -c %s hello.txt\n" +
+		"@\n" +
+		"@<sized@=\n" +
+		"@|size@,hello.txt@\n" +
 		"@<msg@=\n" +
 		"@|show@+docs@\n" +
 		"@<exe@=\n" +
@@ -108,6 +115,10 @@ func TestFUSEView(t *testing.T) {
 	if err != nil || got != "hello world\n" {
 		t.Fatalf("view %v %q", err, got)
 	}
+	got, err = ev.Eval(mustRef(t, "sized"), nil)
+	if err != nil || strings.TrimSpace(got) != "12" {
+		t.Fatalf("size %v %q", err, got)
+	}
 	got, err = ev.Eval(mustRef(t, "ask"), nil)
 	if err != nil || got != "yes\n" {
 		t.Fatalf("exec %v %q", err, got)
@@ -129,6 +140,79 @@ func TestFUSEView(t *testing.T) {
 	_, err = ev.Eval(ref, filters)
 	if err == nil || !strings.Contains(err.Error(), "invalid file path '../x'") {
 		t.Fatal(err)
+	}
+}
+
+func TestArchiveFileStatStable(t *testing.T) {
+	if _, err := os.Stat("/dev/fuse"); err != nil {
+		t.Skip("no /dev/fuse")
+	}
+	src := "" +
+		"@[hello.txt@=\n" +
+		"hello world\n" +
+		"@\n" +
+		"@[doc/note.txt@=\n" +
+		"note\n" +
+		"@\n" +
+		"@<probe@=\n" +
+		"#!/bin/sh\n" +
+		"fields='%i %s %f %h %X %Y %Z'\n" +
+		"s1=$(stat -c \"$fields\" hello.txt)\n" +
+		"cat hello.txt >/dev/null\n" +
+		"out=$(mktemp)\n" +
+		"cp hello.txt \"$out\" || exit 1\n" +
+		"cmp hello.txt \"$out\" || exit 1\n" +
+		"rm -f \"$out\"\n" +
+		"s2=$(stat -c \"$fields\" hello.txt)\n" +
+		"d1=$(stat -c %i doc)\n" +
+		"cat doc/note.txt >/dev/null\n" +
+		"d2=$(stat -c %i doc)\n" +
+		"n1=$(stat -c \"$fields\" doc/note.txt)\n" +
+		"if [ \"$s1\" != \"$s2\" ] || [ \"$d1\" != \"$d2\" ]; then\n" +
+		"  echo \"changed $s1 $s2 $d1 $d2\"\n" +
+		"  exit 1\n" +
+		"fi\n" +
+		"if touch hello.txt || chmod 644 hello.txt; then\n" +
+		"  echo mutable\n" +
+		"  exit 1\n" +
+		"fi\n" +
+		"s3=$(stat -c \"$fields\" hello.txt)\n" +
+		"if [ \"$s1\" != \"$s3\" ]; then\n" +
+		"  echo \"meta $s1 $s3\"\n" +
+		"  exit 1\n" +
+		"fi\n" +
+		"echo \"$s1\"\n" +
+		"echo \"$n1\"\n" +
+		"@\n" +
+		"@<run@=\n" +
+		"@|probe@,hello.txt@,doc/note.txt@\n"
+	var errb bytes.Buffer
+	ev := NewEvaluator(mustArch(t, src), nil, &errb)
+	got, err := ev.Eval(mustRef(t, "run"), nil)
+	if err != nil {
+		t.Fatalf("%v\n%s\n%s", err, got, errb.String())
+	}
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("%q", got)
+	}
+	hello := strings.Fields(lines[0])
+	note := strings.Fields(lines[1])
+	// ino, size, mode, nlink, atime, mtime, ctime
+	if len(hello) != 7 || len(note) != 7 {
+		t.Fatalf("%q", got)
+	}
+	if hello[0] == note[0] || hello[0] == "0" {
+		t.Fatalf("inode %q", got)
+	}
+	if hello[1] != "12" || note[1] != "5" {
+		t.Fatalf("size %q", got)
+	}
+	if hello[3] != "1" || note[3] != "1" {
+		t.Fatalf("nlink %q", got)
+	}
+	if hello[4] != "0" || hello[5] != "0" || hello[6] != "0" {
+		t.Fatalf("time %q", got)
 	}
 }
 

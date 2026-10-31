@@ -208,7 +208,7 @@ func (e *Evaluator) runFiltersLocked(text string, filters []Filter, attached Chu
 }
 
 // readChunk evaluates a root-module file chunk on the current visit stack.
-// It is called from a FUSE read while a filter is running, so the lock
+// Tangling calls it before the filter process starts, so the lock
 // is not already held.
 func (e *Evaluator) readChunk(chunk Name) ([]byte, error) {
 	e.mu.Lock()

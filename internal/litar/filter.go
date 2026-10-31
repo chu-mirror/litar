@@ -68,6 +68,10 @@ type viewFile struct {
 	executable bool
 	origin     string
 	archive    bool
+	body       []byte
+	// ino is assigned once for the mount. A fresh number on each
+	// lookup makes tools treat the file as replaced mid-invocation.
+	ino uint64
 }
 
 func validFilePath(p string) error {
@@ -218,6 +222,9 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 	if err != nil {
 		return "", err
 	}
+	if err := ev.tangle(files); err != nil {
+		return "", err
+	}
 	scriptFile, err := os.CreateTemp("", "litar-script-*")
 	if err != nil {
 		return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
@@ -231,7 +238,7 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 	scriptFile.Close()
 	defer os.Remove(scriptPath)
 
-	mnt, err := mountView(ev, files)
+	mnt, err := mountView(files)
 	if err != nil {
 		return "", err
 	}
@@ -284,4 +291,30 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 		return "", fmt.Errorf("filter '%s' exited with status %d", ref.String(), code)
 	}
 	return out.String(), nil
+}
+
+// tangle writes each view file's bytes before the filter process starts.
+// An archive file is the root-module chunk named by its path.
+// A mapped file is the contents of origin.
+func (e *Evaluator) tangle(files []viewFile) error {
+	for i := range files {
+		var (
+			data []byte
+			err  error
+		)
+		if files[i].archive {
+			data, err = e.readChunk(Name(files[i].path))
+		} else {
+			data, err = os.ReadFile(files[i].origin)
+			if err != nil {
+				err = fmt.Errorf("could not read '%s'", files[i].origin)
+				e.noteErr(err)
+			}
+		}
+		if err != nil {
+			return err
+		}
+		files[i].body = data
+	}
+	return nil
 }

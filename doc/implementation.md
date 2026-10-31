@@ -311,24 +311,29 @@ A non-zero status fails the evaluation.
 
 Just before `exec`, compute the view from the empty set
 with `@+`, `@-`, `@,`, `@!` left to right.
-Mount a FUSE filesystem that contains those files and no others.
+Tangle every file in that view before the process starts.
+An archive file's bytes are the evaluated root-module chunk
+named by its path, on the same visit stack as the chunk being expanded.
+A mapped file's bytes are the contents of `origin`.
+A cycle, or a file that cannot be read, fails the invocation
+and the process is not started.
+Mount a FUSE filesystem that contains those tangled files and no others.
 Archive files and mapped files are read-only.
 The process cwd is the mount.
 Absolute host paths such as `/bin/sh` remain reachable.
 Child processes inherit the same mount.
+The size of a file is the length of its tangled bytes.
+The stat of a tangled file does not change during the invocation.
+Its inode number, mode, size, link count, and timestamps
+are fixed when the file is tangled.
+Opening, reading, and stating the file report those same values.
+chmod, truncation, and timestamp updates fail
+and leave that stat unchanged.
 
 Writes go to a temporary overlay on the host,
 visible through the mount, so the process can create a file and read it back.
 The archive is unchanged.
 The overlay is discarded and the mount is removed when the process exits.
-
-A file's content is the evaluated root-module chunk named by its path.
-Mapped files are the bytes of `origin`.
-Content is produced when the process reads the file,
-on the same visit stack as the chunk being expanded.
-A read that re-enters a chunk reference already on that stack
-fails the invocation and names the chain.
-The view is not evaluated up front.
 
 `github.com/hanwen/go-fuse/v2` implements the mount.
 Tests that need a mount skip when `/dev/fuse` is missing.
@@ -495,9 +500,9 @@ There is no FUSE mount in this stage.
 
 ## 7. Files, views, and FUSE
 
-File sets, lazy views, read-only files, overlay writes
+File sets, files tangled before the filter runs, read-only files, overlay writes
 that the process can read back,
-mapped files, cycle reports when a file read re-enters the visit stack.
+mapped files, cycle reports when tangling a file re-enters the visit stack.
 Tests that need a mount skip when `/dev/fuse` is missing.
 
 ## 8. MCP

@@ -19,6 +19,7 @@ type ventry struct {
 
 type vdir struct {
 	kids map[string]*ventry
+	ino  uint64
 }
 
 func newVdir() *vdir {
@@ -54,7 +55,35 @@ func buildVTree(files []viewFile) (*vdir, error) {
 			dir = cur.dir
 		}
 	}
+	assignInos(root)
 	return root, nil
+}
+
+// assignInos gives every archive path one inode number for this mount.
+// Entry timeouts are zero, so the kernel may look the name up again
+// between stat and open. The same number keeps the stat stable.
+func assignInos(root *vdir) {
+	next := uint64(2)
+	var walk func(*vdir)
+	walk = func(d *vdir) {
+		names := make([]string, 0, len(d.kids))
+		for name := range d.kids {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			ch := d.kids[name]
+			if ch.file != nil {
+				ch.file.ino = next
+				next++
+				continue
+			}
+			ch.dir.ino = next
+			next++
+			walk(ch.dir)
+		}
+	}
+	walk(root)
 }
 
 func errPath(p string) error {
@@ -106,7 +135,7 @@ func (m *mount) close() {
 	}
 }
 
-func mountView(ev *Evaluator, files []viewFile) (*mount, error) {
+func mountView(files []viewFile) (*mount, error) {
 	tree, err := buildVTree(files)
 	if err != nil {
 		return nil, err
@@ -120,7 +149,7 @@ func mountView(ev *Evaluator, files []viewFile) (*mount, error) {
 		os.RemoveAll(dir)
 		return nil, fmtMount(err)
 	}
-	root := &dirNode{ev: ev, rel: "", spec: tree, overlay: overlay}
+	root := &dirNode{rel: "", spec: tree, overlay: overlay}
 	zero := time.Duration(0)
 	opts := &fs.Options{
 		EntryTimeout:    &zero,
@@ -139,7 +168,7 @@ func mountView(ev *Evaluator, files []viewFile) (*mount, error) {
 			return nil, fmtMount(err)
 		}
 		opts.DirectMount = false
-		root = &dirNode{ev: ev, rel: "", spec: tree, overlay: overlay}
+		root = &dirNode{rel: "", spec: tree, overlay: overlay}
 		server, err = fs.Mount(dir, root, opts)
 	}
 	if err != nil {
@@ -162,7 +191,6 @@ func (e *mountError) Error() string {
 
 type dirNode struct {
 	fs.Inode
-	ev      *Evaluator
 	rel     string
 	spec    *vdir
 	overlay string
@@ -170,7 +198,6 @@ type dirNode struct {
 
 type fileNode struct {
 	fs.Inode
-	ev   *Evaluator
 	file *viewFile
 }
 
@@ -203,23 +230,54 @@ func (d *dirNode) childRel(name string) string {
 
 func modeOf(f *viewFile) uint32 {
 	perm := uint32(0o444)
-	if f.executable {
+	if f != nil && f.executable {
 		perm = 0o555
 	}
 	return syscall.S_IFREG | perm
 }
 
+// fixedStatTime is the timestamp reported for every tangled file.
+// It does not move when the file is stated, opened, or read.
+var fixedStatTime = time.Unix(0, 0)
+
+func setFileAttr(f *viewFile, out *fuse.Attr) {
+	out.Mode = modeOf(f)
+	out.Nlink = 1
+	out.SetTimes(&fixedStatTime, &fixedStatTime, &fixedStatTime)
+	if f != nil {
+		out.Size = uint64(len(f.body))
+	}
+}
+
+func dirNlink(d *vdir) uint32 {
+	n := uint32(2)
+	if d == nil {
+		return n
+	}
+	for _, ch := range d.kids {
+		if ch.dir != nil {
+			n++
+		}
+	}
+	return n
+}
+
+func setDirAttr(d *vdir, out *fuse.Attr) {
+	out.Mode = syscall.S_IFDIR | 0o755
+	out.Nlink = dirNlink(d)
+	out.SetTimes(&fixedStatTime, &fixedStatTime, &fixedStatTime)
+}
+
 func (d *dirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	if ch := d.specChild(name); ch != nil {
 		if ch.file != nil {
-			mode := modeOf(ch.file)
-			out.Mode = mode
-			node := &fileNode{ev: d.ev, file: ch.file}
-			return d.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFREG}), 0
+			setFileAttr(ch.file, &out.Attr)
+			node := &fileNode{file: ch.file}
+			return d.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFREG, Ino: ch.file.ino}), 0
 		}
-		out.Mode = syscall.S_IFDIR | 0o755
-		node := &dirNode{ev: d.ev, rel: d.childRel(name), spec: ch.dir, overlay: d.overlay}
-		return d.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFDIR}), 0
+		setDirAttr(ch.dir, &out.Attr)
+		node := &dirNode{rel: d.childRel(name), spec: ch.dir, overlay: d.overlay}
+		return d.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFDIR, Ino: ch.dir.ino}), 0
 	}
 	host := filepath.Join(d.hostDir(), name)
 	st, err := os.Lstat(host)
@@ -228,7 +286,7 @@ func (d *dirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (
 	}
 	if st.IsDir() {
 		out.Mode = syscall.S_IFDIR | 0o755
-		node := &dirNode{ev: d.ev, rel: d.childRel(name), overlay: d.overlay}
+		node := &dirNode{rel: d.childRel(name), overlay: d.overlay}
 		return d.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFDIR}), 0
 	}
 	out.Mode = uint32(st.Mode())
@@ -277,8 +335,20 @@ func (d *dirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 }
 
 func (d *dirNode) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	out.Mode = syscall.S_IFDIR | 0o755
+	if d.spec == nil {
+		out.Mode = syscall.S_IFDIR | 0o755
+		return 0
+	}
+	setDirAttr(d.spec, &out.Attr)
 	return 0
+}
+
+func (d *dirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	if d.spec == nil {
+		return syscall.ENOTSUP
+	}
+	setDirAttr(d.spec, &out.Attr)
+	return syscall.EROFS
 }
 
 func (d *dirNode) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (*fs.Inode, fs.FileHandle, uint32, syscall.Errno) {
@@ -311,7 +381,7 @@ func (d *dirNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse
 		return nil, syscall.EIO
 	}
 	out.Mode = syscall.S_IFDIR | 0o755
-	node := &dirNode{ev: d.ev, rel: d.childRel(name), overlay: d.overlay}
+	node := &dirNode{rel: d.childRel(name), overlay: d.overlay}
 	return d.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFDIR}), 0
 }
 
@@ -344,16 +414,10 @@ func (d *dirNode) Rmdir(ctx context.Context, name string) syscall.Errno {
 }
 
 func (f *fileNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	out.Mode = modeOf(f.file)
-	// Mapped host files report their real size. Tools such as clang-format
-	// trust st_size and skip a file that looks empty. Archive files stay
-	// unevaluated here; reads use direct I/O.
-	if f.file != nil && !f.file.archive && f.file.origin != "" {
-		st, err := os.Stat(f.file.origin)
-		if err == nil {
-			out.Size = uint64(st.Size())
-		}
-	}
+	// The file is tangled before the process starts. Tools such as
+	// clang-format trust st_size and skip a file that looks empty.
+	// The rest of the stat stays at the values fixed for this invocation.
+	setFileAttr(f.file, &out.Attr)
 	return 0
 }
 
@@ -362,10 +426,11 @@ func (f *fileNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint3
 	if acc == syscall.O_WRONLY || acc == syscall.O_RDWR || flags&syscall.O_TRUNC != 0 || flags&syscall.O_APPEND != 0 {
 		return nil, 0, syscall.EROFS
 	}
-	return &archiveFH{ev: f.ev, file: f.file}, fuse.FOPEN_DIRECT_IO, 0
+	return &archiveFH{file: f.file}, fuse.FOPEN_DIRECT_IO, 0
 }
 
 func (f *fileNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	setFileAttr(f.file, &out.Attr)
 	return syscall.EROFS
 }
 
@@ -374,27 +439,14 @@ func (f *fileNode) Unlink(ctx context.Context, name string) syscall.Errno {
 }
 
 type archiveFH struct {
-	ev   *Evaluator
 	file *viewFile
 }
 
 func (h *archiveFH) Read(ctx context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
-	var (
-		data []byte
-		err  error
-	)
-	if h.file.archive {
-		data, err = h.ev.readChunk(Name(h.file.path))
-	} else {
-		data, err = os.ReadFile(h.file.origin)
-		if err != nil {
-			h.ev.noteErr(err)
-		}
-	}
-	if err != nil {
+	if h.file == nil {
 		return nil, syscall.EIO
 	}
-	return fuse.ReadResultData(window(data, dest, off)), 0
+	return fuse.ReadResultData(window(h.file.body, dest, off)), 0
 }
 
 func window(data, dest []byte, off int64) []byte {
@@ -434,6 +486,7 @@ var (
 	_ fs.NodeLookuper  = (*dirNode)(nil)
 	_ fs.NodeReaddirer = (*dirNode)(nil)
 	_ fs.NodeGetattrer = (*dirNode)(nil)
+	_ fs.NodeSetattrer = (*dirNode)(nil)
 	_ fs.NodeCreater   = (*dirNode)(nil)
 	_ fs.NodeMkdirer   = (*dirNode)(nil)
 	_ fs.NodeUnlinker  = (*dirNode)(nil)

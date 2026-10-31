@@ -128,7 +128,9 @@ func TestParseErrors(t *testing.T) {
 		{"@<msg@=\n@<inner@\n", "unterminated block"},
 		{"@<msg@|filt@=\nx@", "unexpected control '@|'"},
 		{"@<msg@=\n@=no@", "unexpected control '@='"},
-		{"@[path@/no@=x@", "unexpected control '@/'"},
+		{"@[path@/no@=x@", "files cannot be modularized"},
+		{"@[label@:hello.c@=x@", "files cannot be specialized"},
+		{"@[hello.c@+x@", "files are paired only with @="},
 	}
 	for _, tc := range cases {
 		_, err := ParseArchive([]byte(tc.src), "a.la")

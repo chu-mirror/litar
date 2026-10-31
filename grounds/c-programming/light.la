@@ -1,6 +1,4 @@
-@<Light@/summary@=
-Light is a framework mainly for C programming.
-It reflects the author's preferences and customs,
+Light reflects the author's preferences and customs,
 which includes how to format code,
 how to manage memory, how to handle exception, etc.
 It also supports some common data structures.
@@ -10,7 +8,13 @@ It also supports some common data structures.
 - `light options`: compile-time options;
 - `light@@:executable@@:C Structure@@/module`: an executable using the framework;
 - `light-single@@:executable@@:C Structure@@/module`: a single-file executable using the framework.
+
+@<Module@/Light@=
+{
+    "description": "Light is a framework mainly for C programming"
+}
 @
+
 @<lightlib@:C Structure@/module properties@+
 name => 'light',
 @

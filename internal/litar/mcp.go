@@ -36,14 +36,15 @@ var resourceTemplates = []struct {
 	name, desc, uri, mime string
 }{
 	{"archive file path", "the path to the node's archive", "path://node/{node}", "text/plain"},
-	{"chunk", "the chunk tree organized by modules under the node", "tree://chunk/{node}", "application/json"},
+	{"chunks", "the chunk tree organized by modules under the node", "tree://chunk/{node}", "application/json"},
 	{"items", "the item tree under the node", "tree://item/{node}", "application/json"},
+	{"files", "the file tree under the node", "tree://file/{node}", "application/json"},
 	{"node blocks", "the blocks in the node", "blocks://node/{node}", "text/plain"},
 	{"applied blocks", "the blocks applied to the chunk reference", "blocks://apply/{node}/{chunk_reference}", "text/plain"},
 	{"effective blocks", "the effective blocks of the chunk reference", "blocks://effective/{node}/{chunk_reference}", "text/plain"},
 	{"dependent blocks", "the blocks depending on a chunk reference", "blocks://depend/{node}/{chunk_reference}", "text/plain"},
 	{"related blocks", "the blocks referring to the item", "blocks://refer/{node}/{item}", "text/plain"},
-	{"files", "the file of the path", "file://{node}/{path}", "text/plain"},
+	{"file", "the file of the path", "file://{node}/{path}", "text/plain"},
 }
 
 func newAgent() *agent {
@@ -60,8 +61,12 @@ func newAgent() *agent {
 		},
 	)
 	mcp.AddTool(a.server, &mcp.Tool{
-		Name:        "specify_composer",
-		Description: "Specify the composer file. Create an empty composer if the file does not exist.",
+		Name:        "create_composed_archive",
+		Description: "Create a new composed archive, and use that composed archive.",
+	}, a.createComposedArchive)
+	mcp.AddTool(a.server, &mcp.Tool{
+		Name:        "specify_composed_archive",
+		Description: "Specify the composed archive.",
 	}, a.specifyComposer)
 	return a
 }
@@ -71,7 +76,11 @@ func (a *agent) serve(ctx context.Context) error {
 }
 
 type specifyIn struct {
-	Path string `json:"path" jsonschema:"path to the composer file"`
+	Path string `json:"path" jsonschema:"path to the composer file or the composed archive directory"`
+}
+
+type createArchiveIn struct {
+	Path string `json:"path" jsonschema:"directory of the new composed archive"`
 }
 
 type createIn struct {
@@ -180,6 +189,26 @@ func toolText(text string) (*mcp.CallToolResult, any, error) {
 	}, map[string]any{"text": text}, nil
 }
 
+func (a *agent) useWorld(w *World) (*mcp.CallToolResult, any, error) {
+	a.mu.Lock()
+	a.world = w
+	a.mu.Unlock()
+	a.ensureTools()
+	a.refresh()
+	return toolText(w.Composer)
+}
+
+func (a *agent) createComposedArchive(ctx context.Context, _ *mcp.CallToolRequest, in createArchiveIn) (*mcp.CallToolResult, any, error) {
+	if in.Path == "" {
+		return toolErr(errString("missing path"))
+	}
+	w, err := CreateComposedArchive(in.Path)
+	if err != nil {
+		return toolErr(err)
+	}
+	return a.useWorld(w)
+}
+
 func (a *agent) specifyComposer(ctx context.Context, _ *mcp.CallToolRequest, in specifyIn) (*mcp.CallToolResult, any, error) {
 	if in.Path == "" {
 		return toolErr(errString("missing path"))
@@ -188,12 +217,7 @@ func (a *agent) specifyComposer(ctx context.Context, _ *mcp.CallToolRequest, in 
 	if err != nil {
 		return toolErr(err)
 	}
-	a.mu.Lock()
-	a.world = w
-	a.mu.Unlock()
-	a.ensureTools()
-	a.refresh()
-	return toolText(w.Composer)
+	return a.useWorld(w)
 }
 
 type errString string
@@ -420,6 +444,7 @@ func (a *agent) listURIsLocked() []string {
 		add("path://node/" + escJoin(n.Name))
 		add("tree://chunk/" + escJoin(n.Name))
 		add("tree://item/" + escJoin(n.Name))
+		add("tree://file/" + escJoin(n.Name))
 		add("blocks://node/" + escJoin(n.Name))
 		chain, err := a.world.Chain(n.Name)
 		if err != nil {
@@ -508,6 +533,24 @@ func (a *agent) render(uri string) (text, mime string, blob []byte, err error) {
 			return "", "", nil, err
 		}
 		raw, err := json.Marshal(itemTree(chain))
+		if err != nil {
+			return "", "", nil, err
+		}
+		return string(raw), mime, nil, nil
+	case strings.HasPrefix(uri, "tree://file/"):
+		name, err := unescapeComp(strings.TrimPrefix(uri, "tree://file/"))
+		if err != nil {
+			return "", "", nil, err
+		}
+		chain, err := a.world.Chain(name)
+		if err != nil {
+			return "", "", nil, err
+		}
+		maps, err := a.world.Mappings(name)
+		if err != nil {
+			return "", "", nil, err
+		}
+		raw, err := json.Marshal(fileTree(chain, maps))
 		if err != nil {
 			return "", "", nil, err
 		}
@@ -690,6 +733,23 @@ func chunkTree(blocks []Block) treeJSON {
 		}
 		if b.Ref.Chunk != "" {
 			cur.addLeaf(string(b.Ref.Chunk))
+		}
+	}
+	return root.tree("/", "")
+}
+
+func fileTree(blocks []Block, mappings []Mapping) treeJSON {
+	cat := buildCatalog(blocks, mappings)
+	root := newNest()
+	for _, path := range cat.order {
+		parts := strings.Split(path, "/")
+		cur := root
+		for i, part := range parts {
+			if i == len(parts)-1 {
+				cur.addLeaf(part)
+				break
+			}
+			cur = cur.addSub(part)
 		}
 	}
 	return root.tree("/", "")

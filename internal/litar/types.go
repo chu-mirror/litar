@@ -94,7 +94,9 @@ type Node struct {
 
 type World struct {
 	Composer string
-	Nodes    []Node
+	Ground   *string // nil when this composer file has no ground
+	Nodes    []Node  // ground nodes, then nodes declared in Composer
+	localAt  int     // index of the first node declared in Composer
 }
 
 type Archive struct {

@@ -1,4 +1,4 @@
 [mcp_servers.litar]
-command = "litar"
+command = "./litar"
 args = ["-a"]
 enabled = true

@@ -1,0 +1,25 @@
+{
+    "ground": "common",
+    "nodes": [
+        {
+            "name": "C Structure",
+            "archive": "c-structure.la",
+            "description": "Gather common structures found in C programming.",
+            "mappings": [
+                {
+                    "path": ".clang-format",
+                    "fileset": [],
+                    "origin": ".clang-format"
+                }
+            ],
+            "base": "Basic"
+        },
+        {
+            "name": "Light",
+            "archive": "light.la",
+            "description": "Light is a framework mainly for C programming.",
+            "mappings": [],
+            "base": "C Structure"
+        }
+    ]
+}

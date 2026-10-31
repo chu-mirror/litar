@@ -180,7 +180,10 @@ An end control still ends the block.
 A file path is one name.
 A slash in it is ordinary.
 `` @` `` plus a non-empty file-set name may repeat after the path.
-Then `@=` or `@+` and a body like a block.
+Then `@=` and a body like a block.
+`@+` on a file is an error, `files are paired only with @=`.
+A label or a module on a file is an error:
+`files cannot be specialized`, `files cannot be modularized`.
 
 A command-line name uses the same qualified-name parser
 with the argument as the whole input and no surrounding `@<` `@>`.
@@ -191,30 +194,32 @@ Parse errors name the file, the line, and the unexpected control.
 
 # Composer
 
-`-f` names a JSON array of nodes.
+`-f` names a JSON object with `ground` and `nodes`.
+`ground` is the name of another composed archive, or `null`.
 Each node has `name`, `archive`, `description`, `mappings`, and `base`.
 `base` is another node name, or `null` for the root.
-Require exactly one root, unique names,
-an acyclic base graph,
-every node reachable from the root,
-and distinct archive paths.
-
-If `archive` starts with `.` or `..`,
-resolve it against the composer file's directory.
-Otherwise look for that name as a file in:
+A composed archive is a directory whose `composer.json` is the composer file.
+Search that directory for `ground` in this order:
 
 1. the process current directory
-2. directories in `$LITAR_INCLUDE`, `$PATH` form
+2. directories in `$LITAR_LIBRARY`, `$PATH` form
 3. `$HOME/.litar`
 4. `$HOME/.local/share/litar`
 5. `/usr/local/share/litar`
 6. `/usr/share/litar`
 
-The first regular file wins.
+The first regular file `NAME/composer.json` wins.
+Load that composer first.
+Its nodes, including its own ground, precede this file's nodes.
+The combined list has exactly one root, unique names,
+an acyclic base graph,
+every node reachable from the root,
+and distinct archive paths.
+A cycle among grounds names the ground names.
+
+An archive name is relative to the composer file that declares it.
 Loading a composer fails when an archive is missing.
-`create a node` writes an empty archive in that case.
-A spec that starts with `.` is created beside the composer file.
-Any other spec is created in the current directory.
+`create a node` writes an empty archive beside that composer file.
 
 A mapping's `origin` is relative to the composer file.
 `path` is the path in the filter mount.
@@ -355,7 +360,7 @@ The message names the earlier mode in the order above.
 
 `-f` is required for every action except `--help` and `-a`.
 `-a` may take `-f`; if it does not,
-the MCP tool that specifies the composer supplies it.
+the MCP tool that creates or specifies the composed archive supplies it.
 
 PROGRAM in the usage line is `argv[0]`.
 
@@ -365,15 +370,20 @@ PROGRAM in the usage line is `argv[0]`.
 [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28)
 on stdio.
 The composer path is process state, not a protocol session.
-Until a composer is specified,
-the only tool is the one that sets the composer,
+Until a composed archive is created or specified,
+the only tools are those two,
 and the resource list and the resource-template list are empty.
-That tool creates a JSON array `[ ]` if the file does not exist,
-then writes a root node on the first `create node`.
+`create a new composed archive` creates `path/composer.json`
+with a null ground and an empty node list when that file is absent,
+then uses it.
+`specify the composed archive` loads an existing composer file.
+A directory argument uses `composer.json` inside that directory.
+It does not create a missing file.
 
 Once a composer is specified,
 the resource list is `path://composer` and `tree://node`.
-The resource-template list is the nine templates in [design/ui.md](../design/ui.md).
+The resource-template list is the ten templates in [design/ui.md](../design/ui.md),
+including `tree://file/{node}`.
 Neither list grows when a node, chunk, or file is added.
 A read of a concrete URI uses the template it matches.
 Tools are those in [design/ui.md](../design/ui.md).
@@ -398,11 +408,13 @@ are the `-l` form of `-l`, `-e`, and `-d` on that node.
 
 Tool arguments:
 
-- specify the composer: `path`
+- create a new composed archive: `path`, the directory
+- specify the composed archive: `path`,
+  the composer file or the directory that contains it
 - create a node: `name`, `archive`, `description`, `base`
   (`base` empty or null creates the root; the property is required;
   the composer must have no root yet;
-  a missing archive file is created empty)
+  a missing archive file is created empty beside the composer file)
 - delete a node: `name`
 - delete a chunk: `node`, `chunk reference`
 - delete a file: `node`, `path`
@@ -410,19 +422,24 @@ Tool arguments:
 - apply a block: `node`, `text`
 - dump the archives: no arguments
 
+Edits apply to nodes declared in the composer that was specified.
+A node that arrived through `ground` can be evaluated and used as a base.
+Deleting, dumping, or editing it returns
+`node '…' is defined in the ground`.
 `apply a block` appends `text` to the node's archive
 only when `ArchiveSpec` starts with `.` or `..`.
 `delete a chunk` and `delete a file` remove matching blocks
 from that node's own archive, not from the base.
 `delete a node` removes the node and every node based on it
-from the composer, then deletes each removed node's archive file.
+in this composer file, then deletes each removed node's archive file.
 A file that is already gone is not an error.
 If a file cannot be removed, the composer stays updated
 and the error names that file.
-`dump` rewrites each node's own archive:
+`dump` rewrites each local node's own archive:
 drop a block that is not an effective block
 of its own chunk reference in that same node;
 keep the comment and `Raw` of the blocks that remain.
+Saving the composer writes `ground` and the local nodes only.
 
 Digest, from [design/style.md](../design/style.md), is not a tool.
 It is apply on the base, override or delete on the child, dump,
@@ -471,9 +488,10 @@ Reject nested top-level controls and unterminated blocks.
 
 ## 3. Composer and node chain
 
-JSON, search path, mappings inheritance,
+JSON object with `ground` and `nodes`, ground search path,
+archive paths relative to the composer file, mappings inheritance,
 concatenate blocks along `base`.
-Errors for two roots, a cycle, a missing archive,
+Errors for two roots, a cycle, a missing archive, a missing ground,
 and two nodes sharing an archive.
 
 ## 4. Evaluate without filters
@@ -511,8 +529,11 @@ Stdio server, the tool arguments above,
 the two resources, the resource templates,
 apply, delete, dump, notifications.
 
-The libraries under `lib/` and the examples under `examples/`
+The libraries under `grounds/` and the examples under `examples/`
 are archives in this language.
-`lib/composer.json` composes Basic, Text Processing, C Structure, and Light.
-`examples/composer.json` adds Program Hello and Test Light on that chain.
+`grounds/common` is Basic, and that archive also holds Text Processing.
+`grounds/c-programming` grounds `common` and adds C Structure and Light.
+`examples/composer.json` grounds `c-programming`
+and adds Program Hello and Test Light.
 Select a node with `-n`.
+Put `grounds` on `$LITAR_LIBRARY` when evaluating the examples.

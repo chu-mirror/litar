@@ -1,9 +1,12 @@
-[
-    {
-        "name": "root",
-        "archive": "./depend.la",
-        "description": "",
-        "mappings": [],
-        "base": null
-    }
-]
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "root",
+            "archive": "./depend.la",
+            "description": "",
+            "mappings": [],
+            "base": null
+        }
+    ]
+}

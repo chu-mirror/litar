@@ -104,19 +104,21 @@ Resources:
 Resource templates:
 
 - archive file path, `path://node/{node}`, the path to the node's archive;
-- chunk, `tree://chunk/{node}`, the chunk tree organized by modules under the node;
+- chunks, `tree://chunk/{node}`, the chunk tree organized by modules under the node;
 - items, `tree://item/{node}`, the item tree under the node;
+- files, `tree://file/{node}`, the file tree under the node;
 - node blocks, `blocks://node/{node}`, the blocks in the node;
 - applied blocks, `blocks://apply/{node}/{chunk reference}`, the blocks applied to the chunk reference;
 - effective blocks, `blocks://effective/{node}/{chunk reference}`, the effective blocks of the chunk reference;
 - dependent blocks, `blocks://depend/{node}/{chunk reference}`, the blocks depending on a chunk reference;
 - related blocks, `blocks://refer/{node}/{item}`, the blocks referring to the item;
-- files, `file://{node}/{path}`, the file of the path.
+- file, `file://{node}/{path}`, the file of the path.
 
 Tools:
 
-- specify the composer file, create a new composer file if the file does not exist;
-- create a new node, create a new archive file if it not exists;
+- create a new composed archive, and use that composed archive;
+- specify the composed archive;
+- create a new node, create a new archive file if it does not exist;
 - delete a node, all nodes based on that node will be deleted too, all related archive files will be deleted;
 - delete a chunk, all applied blocks will be deleted;
 - delete a file, all applied blocks will be deleted;
@@ -126,7 +128,7 @@ Tools:
 - dump the archives.
 
 Both resources and tools support changing notification.
-Clients cannot use any tool other than specifying the composer and cannot see any resource,
+Clients cannot use any tool other than creating or specifying the composed archive and cannot see any resource,
 until a composer file is specified.
 
 `path://` returns a file path.
@@ -179,10 +181,10 @@ Now we want to remove `#include <stdlib.h>`, the proper way:
 
 # Environment
 
-litar searches the archives in the composer files in this order:
+litar searches the ground composed archive in this order:
 
 1. current directory;
-2. directories in $LITAR_INCLUDE, in the same format as $PATH;
+2. directories in $LITAR_LIBRARY, in the same format as $PATH;
 3. $HOME/.litar;
 4. $HOME/.local/share/litar;
 5. /usr/local/share/litar;

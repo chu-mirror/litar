@@ -1,6 +1,9 @@
-@<C Structure@/summary@=
-A framework for constructing a C program.
+@<Module@/C Structure@=
+{
+    "description": "Common structures in C programming"
+}
 @
+
 @<C Structure@/module meta information@=
 (
     name => 'default',
@@ -8,6 +11,7 @@ A framework for constructing a C program.
     @<.@/module properties@>
 )
 @
+
 @<C Structure@/module@=
 @<.@/include flags@>
 @<.@/includes@>
@@ -19,6 +23,7 @@ A framework for constructing a C program.
 @<.@/static inline functions@>
 @<.@/functions@>
 @|C Structure@/Filters@/format C code@,.clang-format@
+
 @<C Structure@/module interface@=
 @<.@/interface required includes@>
 @<.@/interface specific macros@>
@@ -29,6 +34,7 @@ A framework for constructing a C program.
 @<.@/exported static inline functions@>
 @|C Structure@/Filters@/wrap with included flag
 @|C Structure@/Filters@/format C code@,.clang-format@
+
 @<C Structure@/Filters@/wrap with included flag@=
 @<Text Processing@/basic perl settings@>
 my %meta = @<..@/module meta information@>;
@@ -57,21 +63,25 @@ print "#endif\n";
 @<C Structure@/static inline functions@+
 @<.@/exported static inline functions@>
 @
+
 @<C Structure@/function declarations@+
 @<.@/exported macros@>
 @<.@/data type declarations@>
 @<.@/functions@>
 @|C Structure@/Filters@/extract function declarations@
+
 @<C Structure@/Filters@/extract function declarations@=
 #!/bin/sh
 cproto -s
 @
+
 @<C Structure@/global declarations@+
 @<.@/macros@>
 @<.@/data type declarations@>
 @<.@/global variables@>
 @<.@/functions@>
 @|C Structure@/Filters@/extract global declarations@
+
 @<C Structure@/Filters@/extract global declarations@=#!/bin/sh
 cproto -v -e @<-I flags@>
 @

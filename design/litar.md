@@ -367,6 +367,9 @@ There are two files in this example, "hello.c" and "hello.sh".
 The difference between `@[` and `@(` is that `@(` specifies
 an executable file but `@[` introduces a regular file.
 
+`@[` and `@(` are paired only with `@=`.
+The files cannot be specialized or modularized.
+
 The discussion above implies that a litar archive has a file system inside.
 To be compatible with Unix programming environment, litar uses a technology called
 Filesystem in Userspace (FUSE), which allows litar to create a custom file system
@@ -440,7 +443,28 @@ Composing archives follows the same pattern as building up of an archive:
 blocks are added in order.
 
 litar uses a composer file to express this structure.
-Here is an example.
+The structure for a composed archive is like,
+
+```
+composer name/ (a directory)
+   composer.json (the composer file)
+   archive1
+   archive2
+   sub-directory/
+       archive3
+       archive4
+```
+
+Here is an example:
+
+```
+examples/
+    composer.json
+    c-structure.la
+    hello.la
+    AplusB.la
+```
+
 'c-structure.la', a library of common C structures:
 
 ```
@@ -492,30 +516,36 @@ printf("Hello\n");
 A composer file is in json format:
 
 ```
-[
-    {
-        "name": "Basic C Structure",
-        "archive": "./c-structure.la",
-        "description": "Build common patterns that appear in C programs.",
-        "mappings": [],
-        "base": null
-    },
-    {
-        "name": "Program Hello",
-        "archive": "./hello.la",
-        "description": "Write the classic example in the first lesson of programming.",
-        "mappings": [],
-        "base": "Basic C Structure"
-    },
-    {
-        "name": "Program A+B",
-        "archive": "./AplusB.la",
-        "description": "Develop a program that reads two numbers then show the result of adding them.",
-        "mappings": [],
-        "base": "Basic C Structure"
-    }
-]
+{
+    "ground": "common",
+    "nodes": [
+        {
+            "name": "Basic C Structure",
+            "archive": "c-structure.la",
+            "description": "Build common patterns that appear in C programs.",
+            "mappings": [],
+            "base": null
+        },
+        {
+            "name": "Program Hello",
+            "archive": "hello.la",
+            "description": "Write the classic example in the first lesson of programming.",
+            "mappings": [],
+            "base": "Basic C Structure"
+        },
+        {
+            "name": "Program A+B",
+            "archive": "AplusB.la",
+            "description": "Develop a program that reads two numbers then show the result of adding them.",
+            "mappings": [],
+            "base": "Basic C Structure"
+        }
+    ]
+}
 ```
+
+The `ground` means a composed archive which this composed archive is based on;
+all nodes in `ground` precede the nodes in `examples`. The `ground` is nullable.
 
 Each record in this array is called a node.
 A node has a base node; the root node's base is `null`.
@@ -529,29 +559,31 @@ Some limitations:
 
 - there's only one root node in a composer file;
 - node names must be unique;
-- if the archive name starts with '.' or '..', it's relative to the composer file;
-- if the archive name does not start with '.' or '..', it's searched through a list of directories;
+- the archive name is relative to the composer file;
 - two nodes cannot share one archive.
 
 The `mappings` field maps the files outside the archives
 to the FUSE filesystem created when an invocation happens.
 
 ```
-[
-    {
-        "name": "Analysis",
-        "archive": "./analysis.la",
-        "description": "Analyze the samples.",
-        "mappings": [
-            {
-                "path": "data/samples.txt",
-                "fileset": ["data"],
-                "origin": "./samples.txt"
-            }
-        ],
-        "base": null
-    }
-]
+{
+    "ground": "common",
+    "nodes": [
+        {
+            "name": "Analysis",
+            "archive": "./analysis.la",
+            "description": "Analyze the samples.",
+            "mappings": [
+                {
+                    "path": "data/samples.txt",
+                    "fileset": ["data"],
+                    "origin": "./samples.txt"
+                }
+            ],
+            "base": null
+        }
+    ]
+}
 ```
 
 The example above adds a file `data/samples.txt` to the node and attaches it to the fileset `data`;

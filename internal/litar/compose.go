@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+type composerFile struct {
+	Ground *string        `json:"ground"`
+	Nodes  []composerNode `json:"nodes"`
+}
+
 type composerNode struct {
 	Name        string            `json:"name"`
 	Archive     string            `json:"archive"`
@@ -23,84 +28,174 @@ type composerMapping struct {
 	Origin  string   `json:"origin"`
 }
 
-// LoadComposer reads a composer file and requires exactly one root.
+// LoadComposer reads a composer file.
+// The combined ground and local nodes have exactly one root.
 func LoadComposer(path string) (*World, error) {
 	return loadComposer(path, false)
 }
 
-// LoadComposerAllowEmpty accepts a composer that is an empty array.
+// LoadComposerAllowEmpty accepts a composer with a null ground and no nodes.
 func LoadComposerAllowEmpty(path string) (*World, error) {
 	return loadComposer(path, true)
 }
 
+type groundFrame struct {
+	ident string
+	name  string
+}
+
 func loadComposer(path string, allowEmpty bool) (*World, error) {
+	ident, err := identityPath(path)
+	if err != nil {
+		return nil, fmt.Errorf("could not read composer '%s': %v", path, err)
+	}
+	return loadAt(path, ident, allowEmpty, nil)
+}
+
+func loadAt(path, ident string, allowEmpty bool, stack []groundFrame) (*World, error) {
+	for i, frame := range stack {
+		if frame.ident != ident {
+			continue
+		}
+		var parts []string
+		for _, g := range stack[i:] {
+			parts = append(parts, g.name)
+		}
+		parts = append(parts, frame.name)
+		return nil, fmt.Errorf("cycle in grounds: %s", strings.Join(parts, " -> "))
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("could not read composer '%s': %v", path, err)
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	var raw []composerNode
-	if err := dec.Decode(&raw); err != nil {
+	var file composerFile
+	if err := dec.Decode(&file); err != nil {
 		return nil, fmt.Errorf("could not read composer '%s': %v", path, err)
 	}
 	if dec.More() {
 		return nil, fmt.Errorf("could not read composer '%s': trailing data", path)
 	}
-	if len(raw) == 0 {
+	var ground *string
+	var groundNodes []Node
+	if file.Ground != nil {
+		gname := *file.Ground
+		ground = &gname
+		if err := validGroundName(gname); err != nil {
+			return nil, err
+		}
+		gpath, err := findGround(gname)
+		if err != nil {
+			return nil, err
+		}
+		gident, err := identityPath(gpath)
+		if err != nil {
+			return nil, fmt.Errorf("could not read composer '%s': %v", gpath, err)
+		}
+		gw, err := loadAt(gpath, gident, false, append(stack, groundFrame{ident: ident, name: gname}))
+		if err != nil {
+			return nil, err
+		}
+		groundNodes = gw.Nodes
+	}
+	if ground == nil && len(file.Nodes) == 0 {
 		if allowEmpty {
 			return &World{Composer: path}, nil
 		}
 		return nil, fmt.Errorf("composer has no root")
 	}
-	w, err := worldFrom(path, raw)
+	// Names, bases, and cycles are checked before archives are read,
+	// so a cycle is reported even when the nodes share one file.
+	if err := validateGraph(graphNodes(groundNodes, file.Nodes)); err != nil {
+		return nil, err
+	}
+	local, err := nodesFrom(path, file.Nodes)
 	if err != nil {
 		return nil, err
 	}
-	return w, nil
+	all := make([]Node, 0, len(groundNodes)+len(local))
+	all = append(all, groundNodes...)
+	all = append(all, local...)
+	if err := distinctArchives(all); err != nil {
+		return nil, err
+	}
+	return &World{
+		Composer: path,
+		Ground:   ground,
+		Nodes:    all,
+		localAt:  len(groundNodes),
+	}, nil
 }
 
-func worldFrom(composerPath string, raw []composerNode) (*World, error) {
-	seen := map[string]int{}
-	for i, n := range raw {
-		if n.Name == "" {
-			return nil, fmt.Errorf("empty name")
-		}
-		if _, ok := seen[n.Name]; ok {
-			return nil, fmt.Errorf("duplicate node '%s'", n.Name)
-		}
-		seen[n.Name] = i
+func validGroundName(name string) error {
+	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") || strings.Contains(name, `\`) {
+		return fmt.Errorf("invalid ground '%s'", name)
 	}
-	var roots []string
+	return nil
+}
+
+func findGround(name string) (string, error) {
+	for _, dir := range librarySearchDirs() {
+		path := filepath.Join(dir, name, "composer.json")
+		if isRegular(path) {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("could not find ground '%s'", name)
+}
+
+func graphNodes(ground []Node, raw []composerNode) []Node {
+	all := make([]Node, 0, len(ground)+len(raw))
+	for _, n := range ground {
+		all = append(all, Node{Name: n.Name, Base: n.Base})
+	}
 	for _, n := range raw {
 		base := ""
 		if n.Base != nil {
 			base = *n.Base
 		}
-		if base == "" {
+		all = append(all, Node{Name: n.Name, Base: base})
+	}
+	return all
+}
+
+func validateGraph(nodes []Node) error {
+	seen := map[string]int{}
+	for i, n := range nodes {
+		if n.Name == "" {
+			return fmt.Errorf("empty name")
+		}
+		if _, ok := seen[n.Name]; ok {
+			return fmt.Errorf("duplicate node '%s'", n.Name)
+		}
+		seen[n.Name] = i
+	}
+	var roots []string
+	for _, n := range nodes {
+		if n.Base == "" {
 			roots = append(roots, n.Name)
 			continue
 		}
-		if _, ok := seen[base]; !ok {
-			return nil, fmt.Errorf("base '%s' of node '%s' is not defined", base, n.Name)
+		if _, ok := seen[n.Base]; !ok {
+			return fmt.Errorf("base '%s' of node '%s' is not defined", n.Base, n.Name)
 		}
 	}
 	if len(roots) == 0 {
-		return nil, fmt.Errorf("composer has no root")
+		return fmt.Errorf("composer has no root")
 	}
 	if len(roots) > 1 {
-		return nil, fmt.Errorf("composer has more than one root")
+		return fmt.Errorf("composer has more than one root")
 	}
-	if err := nodeCycles(raw); err != nil {
-		return nil, err
+	if err := nodeCycles(nodes); err != nil {
+		return err
 	}
-	if err := nodeReachable(raw, roots[0]); err != nil {
-		return nil, err
-	}
+	return nodeReachable(nodes, roots[0])
+}
 
+func nodesFrom(composerPath string, raw []composerNode) ([]Node, error) {
 	dir := filepath.Dir(composerPath)
 	nodes := make([]Node, len(raw))
-	archives := map[string]string{}
 	for i, n := range raw {
 		base := ""
 		if n.Base != nil {
@@ -114,10 +209,6 @@ func worldFrom(composerPath string, raw []composerNode) (*World, error) {
 		if err != nil {
 			return nil, fmt.Errorf("could not read '%s'", resolved)
 		}
-		if other, ok := archives[ident]; ok {
-			return nil, fmt.Errorf("nodes '%s' and '%s' share archive '%s'", other, n.Name, ident)
-		}
-		archives[ident] = n.Name
 		data, err := os.ReadFile(resolved)
 		if err != nil {
 			return nil, fmt.Errorf("could not read '%s'", resolved)
@@ -154,25 +245,33 @@ func worldFrom(composerPath string, raw []composerNode) (*World, error) {
 			Trailing:    arch.Trailing,
 		}
 	}
-	return &World{Composer: composerPath, Nodes: nodes}, nil
+	return nodes, nil
 }
 
-func nodeCycles(raw []composerNode) error {
+func distinctArchives(nodes []Node) error {
+	archives := map[string]string{}
+	for _, n := range nodes {
+		if other, ok := archives[n.Archive]; ok {
+			return fmt.Errorf("nodes '%s' and '%s' share archive '%s'", other, n.Name, n.Archive)
+		}
+		archives[n.Archive] = n.Name
+	}
+	return nil
+}
+
+func nodeCycles(nodes []Node) error {
 	index := map[string]int{}
-	for i, n := range raw {
+	for i, n := range nodes {
 		index[n.Name] = i
 	}
 	const white, gray, black = 0, 1, 2
-	color := make([]int, len(raw))
+	color := make([]int, len(nodes))
 	var stack []string
 	var dfs func(i int) error
 	dfs = func(i int) error {
 		color[i] = gray
-		stack = append(stack, raw[i].Name)
-		base := ""
-		if raw[i].Base != nil {
-			base = *raw[i].Base
-		}
+		stack = append(stack, nodes[i].Name)
+		base := nodes[i].Base
 		if base != "" {
 			j := index[base]
 			switch color[j] {
@@ -193,7 +292,7 @@ func nodeCycles(raw []composerNode) error {
 		color[i] = black
 		return nil
 	}
-	for i := range raw {
+	for i := range nodes {
 		if color[i] == white {
 			if err := dfs(i); err != nil {
 				return err
@@ -203,15 +302,11 @@ func nodeCycles(raw []composerNode) error {
 	return nil
 }
 
-func nodeReachable(raw []composerNode, root string) error {
+func nodeReachable(nodes []Node, root string) error {
 	children := map[string][]string{}
-	for _, n := range raw {
-		base := ""
-		if n.Base != nil {
-			base = *n.Base
-		}
-		if base != "" {
-			children[base] = append(children[base], n.Name)
+	for _, n := range nodes {
+		if n.Base != "" {
+			children[n.Base] = append(children[n.Base], n.Name)
 		}
 	}
 	seen := map[string]bool{root: true}
@@ -226,7 +321,7 @@ func nodeReachable(raw []composerNode, root string) error {
 			}
 		}
 	}
-	for _, n := range raw {
+	for _, n := range nodes {
 		if !seen[n.Name] {
 			return fmt.Errorf("node '%s' is not reachable from the root", n.Name)
 		}
@@ -235,37 +330,23 @@ func nodeReachable(raw []composerNode, root string) error {
 }
 
 func resolveArchive(spec, composerDir string) (string, error) {
-	if spec == "" {
+	if spec == "" || filepath.IsAbs(spec) {
 		return "", fmt.Errorf("could not find archive '%s'", spec)
 	}
-	if strings.HasPrefix(spec, ".") {
-		path := filepath.Join(composerDir, spec)
-		if isRegular(path) {
-			return path, nil
-		}
-		return "", fmt.Errorf("could not find archive '%s'", spec)
-	}
-	dirs := archiveSearchDirs()
-	for _, dir := range dirs {
-		path := filepath.Join(dir, spec)
-		if isRegular(path) {
-			return path, nil
-		}
+	path := filepath.Join(composerDir, spec)
+	if isRegular(path) {
+		return path, nil
 	}
 	return "", fmt.Errorf("could not find archive '%s'", spec)
 }
 
-// createMissingArchive writes an empty archive when resolveArchive finds none.
-// A spec that starts with '.' is created beside the composer file.
-// Any other spec is created in the current directory, the first search directory.
+// createMissingArchive writes an empty archive beside the composer file.
+// The archive name is relative to that file.
 func createMissingArchive(spec, composerDir string) (string, error) {
-	if spec == "" {
+	if spec == "" || filepath.IsAbs(spec) {
 		return "", fmt.Errorf("could not find archive '%s'", spec)
 	}
-	path := filepath.Join(".", spec)
-	if strings.HasPrefix(spec, ".") {
-		path = filepath.Join(composerDir, spec)
-	}
+	path := filepath.Join(composerDir, spec)
 	st, err := os.Stat(path)
 	if err == nil {
 		if st.Mode().IsRegular() {
@@ -289,9 +370,9 @@ func createMissingArchive(spec, composerDir string) (string, error) {
 	return path, nil
 }
 
-func archiveSearchDirs() []string {
+func librarySearchDirs() []string {
 	dirs := []string{"."}
-	if inc := os.Getenv("LITAR_INCLUDE"); inc != "" {
+	if inc := os.Getenv("LITAR_LIBRARY"); inc != "" {
 		for _, dir := range filepath.SplitList(inc) {
 			if dir == "" {
 				dir = "."
@@ -324,6 +405,21 @@ func identityPath(path string) (string, error) {
 		return filepath.Clean(resolved), nil
 	}
 	return abs, nil
+}
+
+// requireLocal returns a node declared in this composer file.
+// A node that arrived through ground is visible, and it is not edited here.
+func (w *World) requireLocal(name string) (*Node, error) {
+	for i := range w.Nodes {
+		if w.Nodes[i].Name != name {
+			continue
+		}
+		if i < w.localAt {
+			return nil, fmt.Errorf("node '%s' is defined in the ground", name)
+		}
+		return &w.Nodes[i], nil
+	}
+	return nil, fmt.Errorf("unknown node '%s'", name)
 }
 
 func (w *World) lookup(name string) (*Node, error) {
@@ -396,9 +492,14 @@ func (w *World) Mappings(name string) ([]Mapping, error) {
 	return maps, nil
 }
 
+func emptyComposerBytes() []byte {
+	return []byte("{\n    \"ground\": null,\n    \"nodes\": []\n}\n")
+}
+
 func (w *World) save() error {
-	raw := make([]composerNode, len(w.Nodes))
-	for i, n := range w.Nodes {
+	local := w.Nodes[w.localAt:]
+	raw := make([]composerNode, len(local))
+	for i, n := range local {
 		maps := make([]composerMapping, len(n.Mappings))
 		for j, m := range n.Mappings {
 			sets := m.FileSet
@@ -423,7 +524,11 @@ func (w *World) save() error {
 			Base:        base,
 		}
 	}
-	data, err := json.MarshalIndent(raw, "", "    ")
+	file := composerFile{Ground: w.Ground, Nodes: raw}
+	if file.Nodes == nil {
+		file.Nodes = []composerNode{}
+	}
+	data, err := json.MarshalIndent(file, "", "    ")
 	if err != nil {
 		return err
 	}
@@ -431,21 +536,55 @@ func (w *World) save() error {
 	return os.WriteFile(w.Composer, data, 0o644)
 }
 
-// SpecifyComposer creates an empty composer when path does not exist,
-// then loads it. An empty array is allowed.
+// SpecifyComposer loads an existing composer file.
+// A directory uses the composer.json inside it.
 func SpecifyComposer(path string) (*World, error) {
+	if path == "" {
+		return nil, fmt.Errorf("missing path")
+	}
 	st, err := os.Stat(path)
 	if err != nil {
-		if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("could not read composer '%s': %v", path, err)
+	}
+	if st.IsDir() {
+		path = filepath.Join(path, "composer.json")
+		st, err = os.Stat(path)
+		if err != nil {
 			return nil, fmt.Errorf("could not read composer '%s': %v", path, err)
 		}
-		if err := os.WriteFile(path, []byte("[]\n"), 0o644); err != nil {
-			return nil, fmt.Errorf("could not read composer '%s': %v", path, err)
-		}
-	} else if st.IsDir() {
+	}
+	if st.IsDir() {
 		return nil, fmt.Errorf("could not read composer '%s': is a directory", path)
 	}
 	return LoadComposerAllowEmpty(path)
+}
+
+// CreateComposedArchive creates dir/composer.json when that file is absent,
+// then loads it. An empty node list is allowed.
+func CreateComposedArchive(dir string) (*World, error) {
+	if dir == "" {
+		return nil, fmt.Errorf("missing path")
+	}
+	st, err := os.Stat(dir)
+	if err == nil && !st.IsDir() {
+		return nil, fmt.Errorf("could not write '%s': not a directory", dir)
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("could not write '%s': %v", dir, err)
+	}
+	comp := filepath.Join(dir, "composer.json")
+	if _, err := os.Stat(comp); err == nil {
+		return nil, fmt.Errorf("composed archive '%s' already exists", dir)
+	} else if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("could not write '%s': %v", comp, err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("could not write '%s': %v", dir, err)
+	}
+	if err := os.WriteFile(comp, emptyComposerBytes(), 0o644); err != nil {
+		return nil, fmt.Errorf("could not write '%s': %v", comp, err)
+	}
+	return LoadComposerAllowEmpty(comp)
 }
 
 // CreateNode parses the archive, then appends the node and rewrites the composer.
@@ -519,28 +658,29 @@ func (w *World) CreateNode(name, archive, description, base string) error {
 	return nil
 }
 
-// DeleteNode removes the node and every node based on it,
-// then deletes each removed node's archive file.
+// DeleteNode removes the node and every node based on it
+// from this composer file, then deletes each removed node's archive file.
+// A node defined in the ground is left in place.
 // A file that is already gone is not an error.
 // If a file cannot be removed, the composer stays updated.
 func (w *World) DeleteNode(name string) error {
-	if _, err := w.lookup(name); err != nil {
+	if _, err := w.requireLocal(name); err != nil {
 		return err
 	}
 	drop := map[string]bool{name: true}
 	changed := true
 	for changed {
 		changed = false
-		for _, n := range w.Nodes {
+		for _, n := range w.Nodes[w.localAt:] {
 			if !drop[n.Name] && n.Base != "" && drop[n.Base] {
 				drop[n.Name] = true
 				changed = true
 			}
 		}
 	}
-	var keep []Node
+	keep := append([]Node{}, w.Nodes[:w.localAt]...)
 	var archives []string
-	for _, n := range w.Nodes {
+	for _, n := range w.Nodes[w.localAt:] {
 		if drop[n.Name] {
 			archives = append(archives, n.Archive)
 			continue
@@ -589,7 +729,7 @@ func (w *World) ApplyBlock(nodeName, text string) error {
 	if text == "" {
 		return fmt.Errorf("empty block text")
 	}
-	n, err := w.lookup(nodeName)
+	n, err := w.requireLocal(nodeName)
 	if err != nil {
 		return err
 	}
@@ -648,7 +788,7 @@ func (w *World) rewriteOwn(n *Node, keep func(Block, int) bool) error {
 
 // DeleteChunk removes own blocks that match ref, the same set -l prints.
 func (w *World) DeleteChunk(nodeName string, ref ChunkRef) error {
-	n, err := w.lookup(nodeName)
+	n, err := w.requireLocal(nodeName)
 	if err != nil {
 		return err
 	}
@@ -660,7 +800,7 @@ func (w *World) DeleteChunk(nodeName string, ref ChunkRef) error {
 // DeleteFile removes file blocks with that path and blocks applied to
 // the root chunk of that path.
 func (w *World) DeleteFile(nodeName, path string) error {
-	n, err := w.lookup(nodeName)
+	n, err := w.requireLocal(nodeName)
 	if err != nil {
 		return err
 	}
@@ -702,7 +842,7 @@ func (w *World) DumpArchives() error {
 		arch *Archive
 	}
 	var all []pending
-	for i := range w.Nodes {
+	for i := w.localAt; i < len(w.Nodes); i++ {
 		n := &w.Nodes[i]
 		cache := map[string]map[int]bool{}
 		var b strings.Builder

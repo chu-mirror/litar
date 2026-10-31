@@ -1,16 +1,19 @@
-[
-    {
-        "name": "base",
-        "archive": "./base.la",
-        "description": "base",
-        "mappings": [],
-        "base": null
-    },
-    {
-        "name": "child",
-        "archive": "./child.la",
-        "description": "child",
-        "mappings": [],
-        "base": "base"
-    }
-]
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "base",
+            "archive": "./base.la",
+            "description": "base",
+            "mappings": [],
+            "base": null
+        },
+        {
+            "name": "child",
+            "archive": "./child.la",
+            "description": "child",
+            "mappings": [],
+            "base": "base"
+        }
+    ]
+}

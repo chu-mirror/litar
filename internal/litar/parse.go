@@ -481,6 +481,12 @@ func (p *parser) parseFile(executable bool) (Block, error) {
 	if path == "" {
 		return Block{}, p.fail("empty name")
 	}
+	if kind == ':' && n == 2 {
+		return Block{}, p.fail("files cannot be specialized")
+	}
+	if kind == '/' && n == 2 {
+		return Block{}, p.fail("files cannot be modularized")
+	}
 	var sets []Name
 	for kind == '`' && n == 2 {
 		p.i += n
@@ -494,7 +500,10 @@ func (p *parser) parseFile(executable bool) (Block, error) {
 		sets = append(sets, setName)
 		kind, n = k2, n2
 	}
-	if n != 2 || (kind != '=' && kind != '+') {
+	if kind == '+' && n == 2 {
+		return Block{}, p.fail("files are paired only with @=")
+	}
+	if n != 2 || kind != '=' {
 		if n == 0 {
 			return Block{}, p.fail("unterminated block")
 		}

@@ -1,0 +1,13 @@
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "Basic",
+            "archive": "basic.la",
+            "description": "Build up some common filters.",
+            "mappings": [],
+            "base": null
+        }
+    ]
+}
+

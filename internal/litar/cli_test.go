@@ -54,10 +54,9 @@ func TestCLIErrors(t *testing.T) {
 func TestCLIPrint(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "a.la"), "@<msg@=\nHello\n@\n")
-	writeFile(t, filepath.Join(dir, "c.json"), `[
+	writeFile(t, filepath.Join(dir, "c.json"), composerDoc(`[
     {"name":"root","archive":"./a.la","description":"","mappings":[],"base":null}
-]
-`)
+]`))
 	old, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

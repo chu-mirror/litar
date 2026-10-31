@@ -1,0 +1,43 @@
+@<Module@/Basic@=
+{
+    "description": "Some common structures and filters."
+}
+@
+
+Executes the input as a script, the input must have a shebang,
+use the output of that script as the output.
+
+@<Basic@/evaluate@=#!/bin/sh
+set -e
+temp_file=`mktemp`
+cat - > $temp_file
+chmod +x $temp_file
+$temp_file
+rm $temp_file
+@
+
+@<Module@/Text Processing@=
+{
+    "description": "Text processing based on perl."
+}
+@
+
+@<Text Processing@/Internals@/path to perl interpreter@=
+#!/bin/sh
+which perl
+@|Basic@/evaluate@
+
+@<Text Processing@/basic perl settings@=
+#!@<.@/Internals@/path to perl interpreter@>
+use v5.14;
+use warnings FATAL => 'all';
+use strict;
+@
+
+@<Text Processing@/remove newlines@=
+@<.@/basic perl settings@>
+my @pres = <STDIN>;
+chomp @pres;
+print "@pres";
+@
+

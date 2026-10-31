@@ -268,8 +268,10 @@ A slash in the path is an ordinary byte.
 
 Zero or more file-set memberships follow the path.
 Each membership is `` @` `` and a non-empty file-set name.
-`@=` or `@+` follows, and the body is the body of a block,
-including a filter pipeline after the content:
+`@=` follows, and the body is the body of a block,
+including a filter pipeline after the content.
+`@+` is not paired with `@[` or `@(` .
+A file has no labels and no module.
 
 ```
 @[hello.c@`source files@`executables@=
@@ -326,24 +328,28 @@ By default an invocation sees no file exported from the archive.
 The command line reads a composer file, not a single archive.
 The `-f`/`--file` option names the composer file.
 [design/litar.md](../design/litar.md) defines its format:
-a JSON array of nodes.
+a JSON object with `ground` and `nodes`.
+`ground` is the name of a composed archive this one is based on,
+or `null`.
 Each node has a `name`, an `archive`, a `description`,
 `mappings`, and a `base`.
 `base` is the name of another node, or `null` for the root node.
-The nodes form a tree with one root.
-Node names are unique.
-Two nodes cannot share one archive.
-
-If the archive name starts with `.` or `..`,
-it is relative to the composer file.
-Otherwise it is searched in this order:
+A composed archive is a directory that contains `composer.json`.
+litar searches the ground in this order:
 
 1. the current directory;
-2. directories in `$LITAR_INCLUDE`, in the same format as `$PATH`;
+2. directories in `$LITAR_LIBRARY`, in the same format as `$PATH`;
 3. `$HOME/.litar`;
 4. `$HOME/.local/share/litar`;
 5. `/usr/local/share/litar`;
 6. `/usr/share/litar`.
+
+The first directory `NAME/composer.json` that is a regular file wins.
+Every node in the ground precedes the nodes in this file.
+The combined nodes have one root.
+Node names are unique.
+Two nodes cannot share one archive.
+An archive name is relative to the composer file that names it.
 
 A node's blocks are its base node's blocks
 followed by the blocks of its archive.

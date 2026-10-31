@@ -1,9 +1,12 @@
-[
-    {
-        "name": "root",
-        "archive": "./literal.la",
-        "description": "",
-        "mappings": [],
-        "base": null
-    }
-]
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "root",
+            "archive": "./literal.la",
+            "description": "",
+            "mappings": [],
+            "base": null
+        }
+    ]
+}

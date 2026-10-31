@@ -23,14 +23,15 @@ var wantTemplates = []string{
 	"file://{node}/{path}",
 	"path://node/{node}",
 	"tree://chunk/{node}",
+	"tree://file/{node}",
 	"tree://item/{node}",
 }
 
 func TestMCP(t *testing.T) {
 	dir := t.TempDir()
-	arch := filepath.Join(dir, "a.la")
-	writeFile(t, arch, "@<msg@=hello@\n@<msg@=replaced@\n")
-	comp := filepath.Join(dir, "c.json")
+	archDir := filepath.Join(dir, "archive")
+	arch := filepath.Join(archDir, "a.la")
+	comp := filepath.Join(archDir, "composer.json")
 
 	ctx := context.Background()
 	ag := newAgent()
@@ -49,18 +50,30 @@ func TestMCP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools.Tools) != 1 || tools.Tools[0].Name != "specify_composer" {
+	names := map[string]bool{}
+	for _, tool := range tools.Tools {
+		names[tool.Name] = true
+	}
+	if len(tools.Tools) != 2 || !names["create_composed_archive"] || !names["specify_composed_archive"] {
 		t.Fatalf("tools %+v", tools.Tools)
 	}
 	assertMCPLists(t, ctx, session, nil, nil)
 
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      "specify_composer",
-		Arguments: map[string]any{"path": comp},
+		Name:      "specify_composed_archive",
+		Arguments: map[string]any{"path": filepath.Join(dir, "missing.json")},
+	})
+	if err != nil || res == nil || !res.IsError {
+		t.Fatalf("missing specify %v %+v", err, res)
+	}
+	res, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "create_composed_archive",
+		Arguments: map[string]any{"path": archDir},
 	})
 	if err != nil || res.IsError {
-		t.Fatalf("specify %v %+v", err, res)
+		t.Fatalf("create archive %v %+v", err, res)
 	}
+	writeFile(t, arch, "@<msg@=hello@\n@<msg@=replaced@\n")
 	if _, err := os.Stat(comp); err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +142,13 @@ func TestMCP(t *testing.T) {
 	}
 	if !strings.Contains(chunk.Contents[0].Text, `"name":"msg"`) {
 		t.Fatalf("chunk tree %s", chunk.Contents[0].Text)
+	}
+	files, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "tree://file/root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(files.Contents[0].Text, `"sub-trees":[]`) {
+		t.Fatalf("file tree %s", files.Contents[0].Text)
 	}
 	nodePath, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "path://node/root"})
 	if err != nil {
@@ -201,7 +221,7 @@ func TestMCP(t *testing.T) {
 		t.Fatalf("delete node %v %+v", err, res)
 	}
 	raw, _ := os.ReadFile(comp)
-	if strings.TrimSpace(string(raw)) != "[]" {
+	if strings.TrimSpace(string(raw)) != strings.TrimSpace(string(emptyComposerBytes())) {
 		t.Fatalf("composer %s", raw)
 	}
 	if _, err := os.Stat(arch); !os.IsNotExist(err) {
@@ -225,6 +245,7 @@ func TestCreateNodeEmptyBase(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			comp := filepath.Join(dir, "c.json")
+			writeFile(t, comp, string(emptyComposerBytes()))
 			ctx := context.Background()
 			ag := newAgent()
 			client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
@@ -238,7 +259,7 @@ func TestCreateNodeEmptyBase(t *testing.T) {
 			}
 			defer session.Close()
 			res, err := session.CallTool(ctx, &mcp.CallToolParams{
-				Name:      "specify_composer",
+				Name:      "specify_composed_archive",
 				Arguments: map[string]any{"path": comp},
 			})
 			if err != nil || res.IsError {
@@ -309,7 +330,7 @@ func TestCreateNodeEmptyBase(t *testing.T) {
 					t.Fatalf("omit should fail %v %+v", err, res)
 				}
 				raw, _ := os.ReadFile(comp)
-				if strings.TrimSpace(string(raw)) != "[]" {
+				if strings.TrimSpace(string(raw)) != strings.TrimSpace(string(emptyComposerBytes())) {
 					t.Fatalf("composer %s", raw)
 				}
 				return

@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
 const usageBody = `--help: print the usage
 -a, --agent: open an MCP server to handle the requests from agents
--f, --file COMPOSER_FILE: read in COMPOSER_FILE
+-t, --target COMPOSER_DIRECTORY: read in the composer file in COMPOSER_DIRECTORY
 -n, --node NODE: specify the NODE
 -m, --modules MODULE: list all modules under MODULE
 -c, --chunks MODULE: list all chunk names under MODULE
@@ -70,12 +71,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	var (
-		mode    string
-		file    string
-		node    string
-		operand string
-		sawFile bool
-		sawNode bool
+		mode      string
+		dir       string
+		node      string
+		operand   string
+		sawTarget bool
+		sawNode   bool
 	)
 	fail := func(format string, a ...any) int {
 		fmt.Fprintf(stderr, "Error: "+format+"\n", a...)
@@ -142,15 +143,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 		var code int
 		switch opt {
-		case "-f", "--file":
-			if sawFile {
-				return fail("duplicate file option")
+		case "-t", "--target":
+			if sawTarget {
+				return fail("duplicate target option")
 			}
-			file, code = takes("a composer file")
+			dir, code = takes("a composer directory")
 			if code != 0 {
 				return code
 			}
-			sawFile = true
+			sawTarget = true
 		case "-n", "--node":
 			if sawNode {
 				return fail("duplicate node option")
@@ -221,14 +222,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if mode == "" {
 		return fail("%s", missingAction)
 	}
-	if mode != "agent" && !sawFile {
-		return fail("missing -f, --file")
+	if mode != "agent" && !sawTarget {
+		return fail("missing -t, --target")
 	}
 
 	var world *World
-	if sawFile {
-		var err error
-		world, err = LoadComposer(file)
+	if sawTarget {
+		st, err := os.Stat(dir)
+		if err != nil {
+			return fail("could not read composer directory '%s': %v", dir, err)
+		}
+		if !st.IsDir() {
+			return fail("target '%s' is not a directory", dir)
+		}
+		world, err = LoadComposer(filepath.Join(dir, "composer.json"))
 		if err != nil {
 			return fail("%s", err.Error())
 		}
@@ -265,7 +272,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 func optionTakesValue(opt string) bool {
 	switch opt {
-	case "-f", "--file", "-n", "--node", "-p", "--print",
+	case "-t", "--target", "-n", "--node", "-p", "--print",
 		"-l", "--literal", "-e", "--effective", "-d", "--depend",
 		"-m", "--modules", "-c", "--chunks", "-s", "--subdomains",
 		"-i", "--items", "-r", "--reference":

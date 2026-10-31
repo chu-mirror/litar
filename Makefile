@@ -17,3 +17,7 @@ test: litar
 clean:
 	rm -f litar
 	$(MAKE) -C tests clean
+
+mcp:
+	npx @modelcontextprotocol/inspector
+

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -26,7 +27,7 @@ type agent struct {
 var fixedResources = []struct {
 	name, desc, uri, mime string
 }{
-	{"composer file path", "the path to the composer file", "path://composer", "text/plain"},
+	{"composer path", "the path to the composer directory", "path://composer", "text/plain"},
 	{"nodes", "the node tree", "tree://node", "application/json"},
 }
 
@@ -492,7 +493,7 @@ func (a *agent) render(uri string) (text, mime string, blob []byte, err error) {
 	mime = mimeOf(uri)
 	switch {
 	case uri == "path://composer":
-		return a.world.Composer, mime, nil, nil
+		return filepath.Dir(a.world.Composer), mime, nil, nil
 	case uri == "tree://node":
 		raw, err := json.Marshal(nodeTree(a.world))
 		if err != nil {

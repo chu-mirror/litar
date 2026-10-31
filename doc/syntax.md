@@ -325,8 +325,10 @@ By default an invocation sees no file exported from the archive.
 
 # Composer file
 
-The command line reads a composer file, not a single archive.
-The `-f`/`--file` option names the composer file.
+The command line reads the composer file in a directory,
+not a single archive.
+The `-t`/`--target` option names that directory.
+litar reads `composer.json` inside it.
 [design/litar.md](../design/litar.md) defines its format:
 a JSON object with `ground` and `nodes`.
 `ground` is the name of a composed archive this one is based on,

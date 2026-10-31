@@ -5,7 +5,8 @@ This is the plan for a Go program that implements
 [design/ui.md](../design/ui.md),
 and [syntax.md](syntax.md).
 The binary is `litar`.
-It reads a composer file, not a positional archive.
+It reads `composer.json` in a directory named by `-t`,
+not a positional archive.
 
 `.` in a block body resolves against that block's header module.
 An omitted label list is the full list of the reference being expanded.
@@ -194,7 +195,9 @@ Parse errors name the file, the line, and the unexpected control.
 
 # Composer
 
-`-f` names a JSON object with `ground` and `nodes`.
+`-t` names a directory.
+litar reads `composer.json` in that directory:
+a JSON object with `ground` and `nodes`.
 `ground` is the name of another composed archive, or `null`.
 Each node has `name`, `archive`, `description`, `mappings`, and `base`.
 `base` is another node name, or `null` for the root.
@@ -358,9 +361,11 @@ One action per invocation.
 Combining two of `-p -l -e -d -m -c -s -i -r -a` is an error.
 The message names the earlier mode in the order above.
 
-`-f` is required for every action except `--help` and `-a`.
-`-a` may take `-f`; if it does not,
+`-t` is required for every action except `--help` and `-a`.
+`-a` may take `-t`; if it does not,
 the MCP tool that creates or specifies the composed archive supplies it.
+The argument is a directory.
+A path that is not a directory is an error.
 
 PROGRAM in the usage line is `argv[0]`.
 
@@ -393,7 +398,8 @@ The design writes `{chunk reference}`.
 The template variable is `{chunk_reference}`,
 because an RFC 6570 name cannot contain a space.
 
-`path://composer` and `path://node/{node}` return a host path as text.
+`path://composer` returns the composer directory.
+`path://node/{node}` returns a host path as text.
 `file://{node}/{path}` returns the evaluated bytes of that file.
 `tree://` returns the JSON object with `name`, `description`, and `sub-trees`.
 Node descriptions come from the composer.
@@ -460,7 +466,7 @@ effective-block sequences, and depend/item queries.
 
 CLI tests stay in `tests/` with `run.sh`.
 A case is a directory with `driver.sh` or `argv`.
-`argv` is one argument per line and includes `-f` and the composer.
+`argv` is one argument per line and includes `-t` and the composer directory.
 `run.sh` no longer treats a bare `expr` as
 `litar -p EXPR archive.la`.
 Do not keep the C cases for `@.`, `@?`, or label groups
@@ -505,7 +511,7 @@ A pipeline is the error `filters are not implemented`.
 
 `-l -e -d -m -c -s -i -r`,
 literal form, CLI combination errors, `--help`.
-`run.sh` takes `argv` with `-f`.
+`run.sh` takes `argv` with `-t`.
 
 ## 6. Filters without a mount
 

@@ -111,7 +111,7 @@ func TestMCP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contents[0].Text != comp {
+	if got.Contents[0].Text != archDir {
 		t.Fatalf("composer path %q", got.Contents[0].Text)
 	}
 	tree, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "tree://node"})
@@ -377,10 +377,12 @@ func assertMCPLists(t *testing.T, ctx context.Context, session *mcp.ClientSessio
 	}
 	var gotRes []string
 	names := map[string]string{}
+	descs := map[string]string{}
 	mimes := map[string]string{}
 	for _, r := range lr.Resources {
 		gotRes = append(gotRes, r.URI)
 		names[r.URI] = r.Name
+		descs[r.URI] = r.Description
 		mimes[r.URI] = r.MIMEType
 	}
 	lt, err := session.ListResourceTemplates(ctx, nil)
@@ -400,7 +402,7 @@ func assertMCPLists(t *testing.T, ctx context.Context, session *mcp.ClientSessio
 	if len(wantRes) == 0 {
 		return
 	}
-	if names["path://composer"] != "composer file path" || mimes["path://composer"] != "text/plain" {
+	if names["path://composer"] != "composer path" || descs["path://composer"] != "the path to the composer directory" || mimes["path://composer"] != "text/plain" {
 		t.Fatalf("composer resource %+v", lr.Resources)
 	}
 	if names["tree://node"] != "nodes" || mimes["tree://node"] != "application/json" {

@@ -9,7 +9,7 @@ exp=$(mktemp)
     cat <<'EOF'
 --help: print the usage
 -a, --agent: open an MCP server to handle the requests from agents
--f, --file COMPOSER_FILE: read in COMPOSER_FILE
+-t, --target COMPOSER_DIRECTORY: read in the composer file in COMPOSER_DIRECTORY
 -n, --node NODE: specify the NODE
 -m, --modules MODULE: list all modules under MODULE
 -c, --chunks MODULE: list all chunk names under MODULE

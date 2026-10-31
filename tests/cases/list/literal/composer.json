@@ -3,7 +3,7 @@
     "nodes": [
         {
             "name": "root",
-            "archive": "./literal.la",
+            "archive": "../literal.la",
             "description": "",
             "mappings": [],
             "base": null

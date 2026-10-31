@@ -38,8 +38,8 @@ func TestCLIErrors(t *testing.T) {
 		{[]string{"litar", "-p", "a", "-l", "a"}, "cannot combine print and literal"},
 		{[]string{"litar", "-l", "a", "-p", "b"}, "cannot combine print and literal"},
 		{[]string{"litar", "-p", "a", "-p", "b"}, "duplicate print option"},
-		{[]string{"litar", "-f", "a", "-f", "b", "-p", "c"}, "duplicate file option"},
-		{[]string{"litar", "-p", "msg"}, "missing -f, --file"},
+		{[]string{"litar", "-t", "a", "-t", "b", "-p", "c"}, "duplicate target option"},
+		{[]string{"litar", "-p", "msg"}, "missing -t, --target"},
 		{[]string{"litar", "-al"}, "unknown option '-al'"},
 		{[]string{"litar", "archive.la"}, "unexpected argument 'archive.la'"},
 	}
@@ -54,7 +54,7 @@ func TestCLIErrors(t *testing.T) {
 func TestCLIPrint(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "a.la"), "@<msg@=\nHello\n@\n")
-	writeFile(t, filepath.Join(dir, "c.json"), composerDoc(`[
+	writeFile(t, filepath.Join(dir, "composer.json"), composerDoc(`[
     {"name":"root","archive":"./a.la","description":"","mappings":[],"base":null}
 ]`))
 	old, err := os.Getwd()
@@ -65,27 +65,31 @@ func TestCLIPrint(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(old) })
-	code, out, errText := runOut(t, "litar", "-f", "c.json", "-p", "msg")
+	code, out, errText := runOut(t, "litar", "-t", ".", "-p", "msg")
 	if code != 0 || errText != "" || out != "Hello\n" {
 		t.Fatalf("%d %q %q", code, out, errText)
 	}
-	code, out, errText = runOut(t, "litar", "-f", "c.json", "-l", "msg")
+	code, out, errText = runOut(t, "litar", "-t.", "-l", "msg")
 	if code != 0 || errText != "" || !strings.Contains(out, "@<msg@=") {
 		t.Fatalf("literal %d %q %q", code, out, errText)
 	}
-	code, out, errText = runOut(t, "litar", "-f", "c.json", "-p", "missing")
+	code, out, errText = runOut(t, "litar", "--target=.", "-p", "missing")
 	if code == 0 || out != "" || !strings.Contains(errText, "chunk 'missing' is not defined") {
 		t.Fatalf("missing %d %q %q", code, out, errText)
 	}
-	code, out, errText = runOut(t, "litar", "-f", "c.json", "-d", "nope")
+	code, out, errText = runOut(t, "litar", "-t", ".", "-d", "nope")
 	if code != 0 || out != "" || errText != "" {
 		t.Fatalf("depend %d %q %q", code, out, errText)
 	}
-	code, out, errText = runOut(t, "litar", "-f", "c.json", "-m", "/")
+	code, out, errText = runOut(t, "litar", "-t", ".", "-m", "/")
 	if code != 0 || out != "" || errText != "" {
 		t.Fatalf("modules %d %q %q", code, out, errText)
 	}
-	code, out, errText = runOut(t, "litar", "-pfoo", "-f", "c.json")
+	code, out, errText = runOut(t, "litar", "-t", "composer.json", "-p", "msg")
+	if code == 0 || out != "" || !strings.Contains(errText, "target 'composer.json' is not a directory") {
+		t.Fatalf("file target %d %q %q", code, out, errText)
+	}
+	code, out, errText = runOut(t, "litar", "-pfoo", "-t", ".")
 	if code != 0 || errText != "" || out != "" {
 		// foo is not defined. Attached value is the expression.
 		if code == 0 || !strings.Contains(errText, "chunk 'foo' is not defined") {

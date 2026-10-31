@@ -294,6 +294,8 @@ The root is written `/`.
 `-c MODULE` lists chunk names whose module equals `MODULE`,
 one name per line, first-introduction order.
 A chunk in a descendant module is not included.
+`-m` and `-c` omit the reserved namespaces
+`Module`, `Chunk`, `Domain`, and `Index`.
 
 Each `@~` path is one item.
 The root domain is `/`, the empty prefix.
@@ -306,6 +308,16 @@ whose prefix before the last name is `DOMAIN`,
 joined by `@/`.
 `-i /` lists item paths of one name.
 `-r` matches an item path exactly.
+
+On `-m`, `-c`, `-s`, and `-i`,
+a non-empty description is printed as `Name:` and the description.
+Tabs after the colon put every description in that list
+at the same column.
+Tab stops are eight columns apart,
+and the column is the next stop after the longest `Name:`.
+The description is the `description` of the reserved meta chunk
+for that module, chunk, domain, or item.
+A name with no description is the name alone.
 
 # Filters
 
@@ -403,8 +415,15 @@ because an RFC 6570 name cannot contain a space.
 `file://{node}/{path}` returns the evaluated bytes of that file.
 `tree://` returns the JSON object with `name`, `description`, and `sub-trees`.
 Node descriptions come from the composer.
-Module, chunk, and item descriptions are empty
-until reserved-namespace lookup is specified without clashing with `@/`.
+A chunk whose module path starts with `Module`, `Chunk`, `Domain`, or `Index`
+is a reserved meta chunk.
+The rest of that path, then the chunk name,
+names the module, chunk, domain, or item.
+The chunk evaluates to a JSON object,
+and its `description` is the description of that object.
+`tree://chunk` omits those chunks.
+Module and chunk descriptions appear on `tree://chunk`.
+Domain and item descriptions appear on `tree://item`.
 
 `blocks://` returns text in the `-l` form.
 `blocks://node/{node}` is every block in that node's own archive.

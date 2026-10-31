@@ -323,6 +323,40 @@ The view belongs to the filter it follows.
 Each filter in a pipeline has its own view.
 By default an invocation sees no file exported from the archive.
 
+# Reserved namespaces
+
+Four module names hold meta chunks:
+`Module`, `Chunk`, `Domain`, and `Index`.
+The rest of the module path, followed by the chunk name,
+is the path of the object the chunk describes.
+
+```
+Module@/Basic
+Module@/Text Processing@/Internals
+Chunk@/Basic@/evaluate
+Domain@/C@/variables
+Index@/C@/variables@/times
+```
+
+`Module@/Basic` describes the module `Basic`.
+`Chunk@/Basic@/evaluate` describes the chunk `evaluate` in that module.
+`Chunk@/name` describes a chunk in the root module.
+`Domain@/C@/variables` describes the domain `C@/variables`.
+`Index@/C@/variables@/times` describes the item `times` in that domain.
+
+The block evaluates to a JSON object:
+
+```
+{"description": "<description of that module, chunk, domain, or item>"}
+```
+
+The chunk tree, `-m`, and `-c` do not list these chunks.
+The description is shown on the module, chunk, domain, or item.
+`-m`, `-c`, `-s`, and `-i` print the name.
+When the description is not empty, the line is `Name:`,
+then tabs, then the description.
+The tabs put every description in that list at the same column.
+
 # Composer file
 
 The command line reads the composer file in a directory,

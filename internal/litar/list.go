@@ -1,6 +1,10 @@
 package litar
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+	"unicode/utf8"
+)
 
 func matchingBlocks(blocks []Block, ref ChunkRef) []Block {
 	var out []Block
@@ -106,6 +110,14 @@ func Refer(blocks []Block, item Item) string {
 	return FormatBlocks(got)
 }
 
+func nodeMeta(world *World, node string, chain []Block) (metaInfo, error) {
+	maps, err := world.Mappings(node)
+	if err != nil {
+		return metaInfo{}, err
+	}
+	return describe(chain, maps)
+}
+
 func moduleSeen(seen []ModulePath, m ModulePath) bool {
 	for _, s := range seen {
 		if modulesEqual(s, m) {
@@ -116,7 +128,8 @@ func moduleSeen(seen []ModulePath, m ModulePath) bool {
 }
 
 // Modules lists module paths strictly under parent, in first-introduction order.
-func Modules(blocks []Block, parent ModulePath) string {
+// A reserved namespace is omitted. A description follows `Name:`, aligned with tabs.
+func Modules(blocks []Block, parent ModulePath, meta metaInfo) string {
 	var seen []ModulePath
 	for _, b := range blocks {
 		mod := b.Ref.Module
@@ -128,21 +141,29 @@ func Modules(blocks []Block, parent ModulePath) string {
 			seen = append(seen, copyModule(pre))
 		}
 	}
-	var lines []string
+	var rows []namedLine
 	for _, m := range seen {
+		if _, reserved := reservedNamespace(m); reserved {
+			continue
+		}
 		if len(m) <= len(parent) || !modulesEqual(m[:len(parent)], parent) {
 			continue
 		}
-		lines = append(lines, formatModule(m))
+		line := formatModule(m)
+		rows = append(rows, namedLine{line, meta.modules[line]})
 	}
-	return joinLines(lines)
+	return formatNamed(rows)
 }
 
 // Chunks lists chunk names whose module equals mod.
-func Chunks(blocks []Block, mod ModulePath) string {
+// Chunks in a reserved namespace are omitted.
+func Chunks(blocks []Block, mod ModulePath, meta metaInfo) string {
 	seen := map[Name]bool{}
-	var lines []string
+	var rows []namedLine
 	for _, b := range blocks {
+		if _, reserved := reservedNamespace(b.Ref.Module); reserved {
+			continue
+		}
 		if b.Ref.Chunk == "" || !modulesEqual(b.Ref.Module, mod) {
 			continue
 		}
@@ -150,9 +171,55 @@ func Chunks(blocks []Block, mod ModulePath) string {
 			continue
 		}
 		seen[b.Ref.Chunk] = true
-		lines = append(lines, string(b.Ref.Chunk))
+		name := string(b.Ref.Chunk)
+		rows = append(rows, namedLine{name, meta.chunks[leafKey(mod, name)]})
+	}
+	return formatNamed(rows)
+}
+
+type namedLine struct {
+	name string
+	desc string
+}
+
+// formatNamed prints one name per line.
+// A description is `Name:` then tabs, then the description.
+// Tab stops are eight columns apart, and every description in the list
+// starts at the same column, past the longest `Name:`.
+func formatNamed(rows []namedLine) string {
+	const tabWidth = 8
+	width := 0
+	for _, row := range rows {
+		if row.desc == "" {
+			continue
+		}
+		if n := utf8.RuneCountInString(row.name) + 1; n > width {
+			width = n
+		}
+	}
+	col := 0
+	if width > 0 {
+		col = (width/tabWidth + 1) * tabWidth
+	}
+	lines := make([]string, len(rows))
+	for i, row := range rows {
+		if row.desc == "" {
+			lines[i] = row.name
+			continue
+		}
+		lines[i] = row.name + ":" + tabPad(utf8.RuneCountInString(row.name)+1, col, tabWidth) + row.desc
 	}
 	return joinLines(lines)
+}
+
+func tabPad(from, col, tabWidth int) string {
+	var b strings.Builder
+	pos := from
+	for pos < col {
+		b.WriteByte('\t')
+		pos += tabWidth - pos%tabWidth
+	}
+	return b.String()
 }
 
 func formatUnder(domain []Name, name Name) string {
@@ -163,9 +230,9 @@ func formatUnder(domain []Name, name Name) string {
 }
 
 // Subdomains lists the name that follows domain, once each.
-func Subdomains(blocks []Block, domain []Name) string {
+func Subdomains(blocks []Block, domain []Name, meta metaInfo) string {
 	seen := map[string]bool{}
-	var lines []string
+	var rows []namedLine
 	for _, b := range blocks {
 		for _, it := range b.Items {
 			if len(it) <= len(domain) || !namePrefix(it, domain) {
@@ -176,16 +243,16 @@ func Subdomains(blocks []Block, domain []Name) string {
 				continue
 			}
 			seen[line] = true
-			lines = append(lines, line)
+			rows = append(rows, namedLine{line, meta.domains[line]})
 		}
 	}
-	return joinLines(lines)
+	return formatNamed(rows)
 }
 
 // Items lists item paths whose prefix before the last name is domain.
-func Items(blocks []Block, domain []Name) string {
+func Items(blocks []Block, domain []Name, meta metaInfo) string {
 	seen := map[string]bool{}
-	var lines []string
+	var rows []namedLine
 	for _, b := range blocks {
 		for _, it := range b.Items {
 			if len(it) != len(domain)+1 || !namePrefix(it, domain) {
@@ -196,8 +263,8 @@ func Items(blocks []Block, domain []Name) string {
 				continue
 			}
 			seen[line] = true
-			lines = append(lines, line)
+			rows = append(rows, namedLine{line, meta.items[leafKey(it[:len(it)-1], string(it[len(it)-1]))]})
 		}
 	}
-	return joinLines(lines)
+	return formatNamed(rows)
 }

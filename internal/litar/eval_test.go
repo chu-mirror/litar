@@ -149,32 +149,33 @@ func TestListings(t *testing.T) {
 		"file\n" +
 		"@\n"
 	blocks := mustArch(t, src)
-	if got := Modules(blocks, nil); got != "a\na@/b\n" {
+	meta := newMeta()
+	if got := Modules(blocks, nil, meta); got != "a\na@/b\n" {
 		t.Fatalf("modules / %q", got)
 	}
 	parent, _ := ParseModulePath("a")
-	if got := Modules(blocks, parent); got != "a@/b\n" {
+	if got := Modules(blocks, parent, meta); got != "a@/b\n" {
 		t.Fatalf("modules a %q", got)
 	}
-	if got := Chunks(blocks, nil); got != "z\nhello.c\n" {
+	if got := Chunks(blocks, nil, meta); got != "z\nhello.c\n" {
 		t.Fatalf("chunks / %q", got)
 	}
 	ab, _ := ParseModulePath("a@/b")
-	if got := Chunks(blocks, ab); got != "c\n" {
+	if got := Chunks(blocks, ab, meta); got != "c\n" {
 		t.Fatalf("chunks a/b %q", got)
 	}
-	if got := Subdomains(blocks, nil); got != "C\nonly\n" {
+	if got := Subdomains(blocks, nil, meta); got != "C\nonly\n" {
 		t.Fatalf("sub / %q", got)
 	}
 	dom, _ := ParseModulePath("C")
-	if got := Subdomains(blocks, dom); got != "C@/variables\nC@/functions\n" {
+	if got := Subdomains(blocks, dom, meta); got != "C@/variables\nC@/functions\n" {
 		t.Fatalf("sub C %q", got)
 	}
-	if got := Items(blocks, nil); got != "only\n" {
+	if got := Items(blocks, nil, meta); got != "only\n" {
 		t.Fatalf("items / %q", got)
 	}
 	cv, _ := ParseModulePath("C@/variables")
-	if got := Items(blocks, cv); got != "C@/variables@/times\n" {
+	if got := Items(blocks, cv, meta); got != "C@/variables@/times\n" {
 		t.Fatalf("items %q", got)
 	}
 	if got := Refer(blocks, mustItem(t, "C@/functions@/main")); !strings.Contains(got, "@<z@=") {
@@ -183,7 +184,7 @@ func TestListings(t *testing.T) {
 	if got := Refer(blocks, mustItem(t, "missing")); got != "" {
 		t.Fatalf("refer missing %q", got)
 	}
-	if got := Modules(blocks, mustMod(t, "nope")); got != "" {
+	if got := Modules(blocks, mustMod(t, "nope"), meta); got != "" {
 		t.Fatalf("missing module %q", got)
 	}
 }

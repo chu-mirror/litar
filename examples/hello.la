@@ -1,8 +1,5 @@
-@<summary@=
 A classic example at the beginning of learning programming.
-
 `hello.c` is the source file.
-@
 
 @[hello.c@=
 @<hello@:executable@:C Structure@/module@>

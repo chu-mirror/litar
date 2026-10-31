@@ -3,6 +3,7 @@ package litar
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -519,7 +520,15 @@ func (a *agent) render(uri string) (text, mime string, blob []byte, err error) {
 		if err != nil {
 			return "", "", nil, err
 		}
-		raw, err := json.Marshal(chunkTree(chain))
+		maps, err := a.world.Mappings(name)
+		if err != nil {
+			return "", "", nil, err
+		}
+		tree, err := chunkTree(chain, maps)
+		if err != nil {
+			return "", "", nil, err
+		}
+		raw, err := json.Marshal(tree)
 		if err != nil {
 			return "", "", nil, err
 		}
@@ -533,7 +542,15 @@ func (a *agent) render(uri string) (text, mime string, blob []byte, err error) {
 		if err != nil {
 			return "", "", nil, err
 		}
-		raw, err := json.Marshal(itemTree(chain))
+		maps, err := a.world.Mappings(name)
+		if err != nil {
+			return "", "", nil, err
+		}
+		tree, err := itemTree(chain, maps)
+		if err != nil {
+			return "", "", nil, err
+		}
+		raw, err := json.Marshal(tree)
 		if err != nil {
 			return "", "", nil, err
 		}
@@ -714,20 +731,139 @@ func (n *nest) addSub(name string) *nest {
 }
 
 func (n *nest) tree(name, desc string) treeJSON {
+	return n.treeWith(name, desc, nil, nil, nil)
+}
+
+func (n *nest) treeWith(name, desc string, path []Name, nodeDesc func([]Name) string, leafDesc func([]Name, string) string) treeJSON {
 	t := treeJSON{Name: name, Description: desc, SubTrees: emptySub()}
 	for _, e := range n.order {
 		if e.module {
-			t.SubTrees = append(t.SubTrees, n.subs[e.name].tree(e.name, ""))
+			sub := append(append([]Name(nil), path...), Name(e.name))
+			d := ""
+			if nodeDesc != nil {
+				d = nodeDesc(sub)
+			}
+			t.SubTrees = append(t.SubTrees, n.subs[e.name].treeWith(e.name, d, sub, nodeDesc, leafDesc))
 		} else {
-			t.SubTrees = append(t.SubTrees, treeJSON{Name: e.name, Description: "", SubTrees: emptySub()})
+			d := ""
+			if leafDesc != nil {
+				d = leafDesc(path, e.name)
+			}
+			t.SubTrees = append(t.SubTrees, treeJSON{Name: e.name, Description: d, SubTrees: emptySub()})
 		}
 	}
 	return t
 }
 
-func chunkTree(blocks []Block) treeJSON {
+// A reserved chunk lives in the Module, Chunk, Domain, or Index namespace.
+// Its module path starts with that name. The remaining components, then the
+// chunk name, are the module, chunk, domain, or item the chunk describes.
+func reservedNamespace(mod ModulePath) (Name, bool) {
+	if len(mod) == 0 {
+		return "", false
+	}
+	switch mod[0] {
+	case "Module", "Chunk", "Domain", "Index":
+		return mod[0], true
+	default:
+		return "", false
+	}
+}
+
+type metaInfo struct {
+	modules map[string]string
+	chunks  map[string]string
+	domains map[string]string
+	items   map[string]string
+}
+
+func newMeta() metaInfo {
+	return metaInfo{
+		modules: map[string]string{},
+		chunks:  map[string]string{},
+		domains: map[string]string{},
+		items:   map[string]string{},
+	}
+}
+
+func pathKey(path []Name) string {
+	return formatModule(path)
+}
+
+func leafKey(path []Name, name string) string {
+	return pathKey(path) + "\x00" + name
+}
+
+func metaDescription(text string) (string, error) {
+	dec := json.NewDecoder(strings.NewReader(text))
+	var doc struct {
+		Description string `json:"description"`
+	}
+	if err := dec.Decode(&doc); err != nil {
+		return "", err
+	}
+	if dec.More() {
+		return "", fmt.Errorf("trailing data")
+	}
+	return doc.Description, nil
+}
+
+func describe(blocks []Block, maps []Mapping) (metaInfo, error) {
+	meta := newMeta()
+	ev := NewEvaluator(blocks, maps, nil)
+	seen := map[string]bool{}
+	for _, b := range blocks {
+		ns, ok := reservedNamespace(b.Ref.Module)
+		if !ok || b.Ref.Chunk == "" || len(b.Ref.Labels) != 0 {
+			continue
+		}
+		ref := ChunkRef{Module: copyModule(b.Ref.Module), Chunk: b.Ref.Chunk}
+		if seen[ref.key()] {
+			continue
+		}
+		seen[ref.key()] = true
+		text, err := ev.Eval(ref, nil)
+		if err != nil {
+			return metaInfo{}, err
+		}
+		desc, err := metaDescription(text)
+		if err != nil {
+			return metaInfo{}, fmt.Errorf("meta chunk '%s': %w", ref.String(), err)
+		}
+		target := append(append([]Name{}, b.Ref.Module[1:]...), b.Ref.Chunk)
+		switch ns {
+		case "Module":
+			meta.modules[pathKey(target)] = desc
+		case "Domain":
+			meta.domains[pathKey(target)] = desc
+		case "Chunk":
+			mod, name := splitTail(target)
+			meta.chunks[leafKey(mod, string(name))] = desc
+		case "Index":
+			mod, name := splitTail(target)
+			meta.items[leafKey(mod, string(name))] = desc
+		}
+	}
+	return meta, nil
+}
+
+func splitTail(path []Name) ([]Name, Name) {
+	if len(path) == 0 {
+		return nil, ""
+	}
+	return path[:len(path)-1], path[len(path)-1]
+}
+
+func chunkTree(blocks []Block, maps []Mapping) (treeJSON, error) {
+	meta, err := describe(blocks, maps)
+	if err != nil {
+		return treeJSON{}, err
+	}
 	root := newNest()
 	for _, b := range blocks {
+		if _, reserved := reservedNamespace(b.Ref.Module); reserved {
+			continue
+		}
 		cur := root
 		for _, part := range b.Ref.Module {
 			cur = cur.addSub(string(part))
@@ -736,7 +872,11 @@ func chunkTree(blocks []Block) treeJSON {
 			cur.addLeaf(string(b.Ref.Chunk))
 		}
 	}
-	return root.tree("/", "")
+	tree := root.treeWith("/", meta.modules[pathKey(nil)], nil,
+		func(path []Name) string { return meta.modules[pathKey(path)] },
+		func(path []Name, name string) string { return meta.chunks[leafKey(path, name)] },
+	)
+	return tree, nil
 }
 
 func fileTree(blocks []Block, mappings []Mapping) treeJSON {
@@ -756,7 +896,11 @@ func fileTree(blocks []Block, mappings []Mapping) treeJSON {
 	return root.tree("/", "")
 }
 
-func itemTree(blocks []Block) treeJSON {
+func itemTree(blocks []Block, maps []Mapping) (treeJSON, error) {
+	meta, err := describe(blocks, maps)
+	if err != nil {
+		return treeJSON{}, err
+	}
 	root := newNest()
 	for _, b := range blocks {
 		for _, it := range b.Items {
@@ -770,7 +914,11 @@ func itemTree(blocks []Block) treeJSON {
 			}
 		}
 	}
-	return root.tree("/", "")
+	tree := root.treeWith("/", meta.domains[pathKey(nil)], nil,
+		func(path []Name) string { return meta.domains[pathKey(path)] },
+		func(path []Name, name string) string { return meta.items[leafKey(path, name)] },
+	)
+	return tree, nil
 }
 
 func nodeTree(w *World) treeJSON {

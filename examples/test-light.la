@@ -1,8 +1,7 @@
-@<summary@=
 Test cases for light.
 
 `test-light.c`: the source file for executable test.
-@
+
 @<test-light.c@=
 @<test light@:light-single@:executable@:C Structure@/module@>
 @

@@ -329,25 +329,41 @@ func dispatch(world *World, node, mode, operand string, stderr io.Writer) (strin
 		if err != nil {
 			return "", err
 		}
-		return Modules(chain, mod), nil
+		meta, err := nodeMeta(world, node, chain)
+		if err != nil {
+			return "", err
+		}
+		return Modules(chain, mod, meta), nil
 	case "chunks":
 		mod, err := ParseModulePath(operand)
 		if err != nil {
 			return "", err
 		}
-		return Chunks(chain, mod), nil
+		meta, err := nodeMeta(world, node, chain)
+		if err != nil {
+			return "", err
+		}
+		return Chunks(chain, mod, meta), nil
 	case "subdomains":
 		dom, err := ParseModulePath(operand)
 		if err != nil {
 			return "", err
 		}
-		return Subdomains(chain, dom), nil
+		meta, err := nodeMeta(world, node, chain)
+		if err != nil {
+			return "", err
+		}
+		return Subdomains(chain, dom, meta), nil
 	case "items":
 		dom, err := ParseModulePath(operand)
 		if err != nil {
 			return "", err
 		}
-		return Items(chain, dom), nil
+		meta, err := nodeMeta(world, node, chain)
+		if err != nil {
+			return "", err
+		}
+		return Items(chain, dom, meta), nil
 	case "reference":
 		item, err := ParseItem(operand)
 		if err != nil {

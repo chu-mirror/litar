@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "litar": {
+      "command": "./litar",
+      "args": ["-a"],
+      "env": {
+        "LITAR_LIBRARY": "./grounds"
+      }
+    }
+  }
+}

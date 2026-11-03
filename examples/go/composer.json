@@ -1,0 +1,16 @@
+{
+    "description": "Example Go programs.",
+    "ground": "go-programming",
+    "nodes": [
+        {
+            "name": "Program Hello",
+            "archive": "hello.la",
+            "description": "A classic example at the beginning of learning programming, written in Go.",
+            "mappings": [],
+            "base": [
+                "Basic",
+                "Go Structure"
+            ]
+        }
+    ]
+}

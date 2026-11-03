@@ -41,3 +41,13 @@ chomp @pres;
 print "@pres";
 @
 
+Strip every newline at the end of the input, so the text joins the line after its reference.
+Carriage returns of CRLF endings are stripped too; other trailing whitespace is kept.
+
+@<Text Processing@/remove ending newlines@=
+@<.@/basic perl settings@>
+local $/;
+my $text = <STDIN> // '';
+$text =~ s/[\r\n]+\z//;
+print $text;
+@

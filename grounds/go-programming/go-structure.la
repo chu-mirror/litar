@@ -2,11 +2,9 @@
 {"description": "Common structures in Go programming"}
 @
 
-A Go source file is one tree.
-Build constraints come first,
+A Go source file is one tree.  Build constraints come first,
 because the go command reads them only before the package clause.
-The package clause is next,
-then the import declaration,
+The package clause is next, then the import declaration,
 then constants, variables, types, methods, and functions.
 Methods follow types, and free functions follow methods,
 so a reader can list either sequence on its own.
@@ -42,13 +40,11 @@ Further entries belong in module properties.
 )
 @
 
-@<Go Structure@/module properties@+
-@
-
 go doc attaches the comment that ends immediately above the package clause.
 Leave no blank line between that comment and the clause.
 @<Go Structure@/package clause@=
-@<.@/package comment@>package @<.@/package name@>
+@<.@/package comment@|Text Processing@/remove ending newlines@>
+package @<.@/package name@>
 @
 
 @<Go Structure@/package name@=
@@ -59,12 +55,6 @@ die "package name '$name' is not a Go identifier\n"
     if $name !~ /^[A-Za-z_][A-Za-z0-9_]*$/;
 print $name;
 @|Basic@/evaluate@
-
-@<Go Structure@/package comment@+
-@
-
-@<Go Structure@/build constraints@+
-@
 
 No import declaration is emitted when the path list is empty
 or contains only whitespace.
@@ -79,27 +69,6 @@ $paths =~ s/\A\s+//;
 $paths =~ s/\s+\z//;
 print "import (\n$paths\n)\n" if $paths ne '';
 @|Basic@/evaluate@
-
-@<Go Structure@/import paths@+
-@
-
-@<Go Structure@/constants@+
-@
-
-@<Go Structure@/variables@+
-@
-
-@<Go Structure@/types@+
-@
-
-@<Go Structure@/methods@+
-@
-
-@<Go Structure@/functions@+
-@
-
-@<Go Structure@/main body@+
-@
 
 gofmt reads a Go source file on stdin and writes the formatted file on stdout.
 The Go toolchain fixes the format, so this filter has no style file.
@@ -350,7 +319,9 @@ That replacement does not rename the command.
 
 @<command@:Go Structure@/functions@+
 func main() {
-@<.@/Flag@/parse command line arguments@>@<.@/main body@>}
+    @<.@/Flag@/parse command line arguments@>
+    @<.@/main body@>
+}
 @
 
 @<Chunk@/Go Structure@/file@=

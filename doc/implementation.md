@@ -611,7 +611,11 @@ The libraries under `grounds/` and the examples under `examples/`
 are archives in this language.
 `grounds/common` is Basic, and that archive also holds Text Processing.
 `grounds/c-programming` grounds `common` and adds C Structure and Light.
-`examples/composer.json` grounds `c-programming`
+`grounds/go-programming` grounds `common` and adds Go Structure,
+then Go Project on Go Structure.
+`examples/c/composer.json` grounds `c-programming`
 and adds Program Hello and Test Light.
+`examples/go/composer.json` grounds `go-programming`
+and adds Program Hello on Go Structure and Project Hello on Go Project.
 Select a node with `-n` and the names from the root.
 Put `grounds` on `$LITAR_LIBRARY` when evaluating the examples.

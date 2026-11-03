@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFilterIO(t *testing.T) {
@@ -140,6 +141,43 @@ func TestFUSEView(t *testing.T) {
 	_, err = ev.Eval(ref, filters)
 	if err == nil || !strings.Contains(err.Error(), "invalid file path '../x'") {
 		t.Fatal(err)
+	}
+}
+
+func TestFUSEViewOutlivedByBackgroundProcess(t *testing.T) {
+	if _, err := os.Stat("/dev/fuse"); err != nil {
+		t.Skip("no /dev/fuse")
+	}
+	src := "" +
+		"@<leave@=\n" +
+		"#!/bin/sh\n" +
+		"(sleep 3 </dev/null >/dev/null 2>&1 &)\n" +
+		"echo hi\n" +
+		"@\n" +
+		"@<msg@=\n" +
+		"@|leave@\n"
+	blocks := mustArch(t, src)
+	ev := NewEvaluator(blocks, nil, nil)
+	type result struct {
+		text string
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		text, err := ev.Eval(mustRef(t, "msg"), nil)
+		done <- result{text, err}
+	}()
+	select {
+	case r := <-done:
+		if r.err != nil || r.text != "hi\n" {
+			t.Fatalf("%v %q", r.err, r.text)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("evaluation waits for the background process")
+	}
+	mounts, err := os.ReadFile("/proc/self/mounts")
+	if err == nil && strings.Contains(string(mounts), "fuse.litar") {
+		t.Fatalf("a filter view is still mounted:\n%s", mounts)
 	}
 }
 

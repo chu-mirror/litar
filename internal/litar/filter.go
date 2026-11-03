@@ -248,8 +248,10 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 	if hasArg {
 		args = []string{interp, arg, scriptPath}
 	}
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Dir = mnt.dir
+	// The child must not enter the mount before exec. Until exec it shares
+	// memory with this process, whose FUSE server answers the chdir;
+	// a stop-the-world in between waits for the forking thread forever.
+	cmd := exec.Command("/bin/sh", append([]string{"-c", `cd "$0" && exec "$@"`, mnt.dir}, args...)...)
 	cmd.Stderr = ev.stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

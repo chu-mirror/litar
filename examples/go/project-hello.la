@@ -1,0 +1,81 @@
+A hello command split into a library package, its test, and a command, as one Go module.
+
+- `go.mod`: the module example.com/hello;
+- `greet/greet.go`: the package greet, which builds a greeting;
+- `greet/greet_test.go`: the test of the package greet;
+- `cmd/hello/main.go`: the command hello, which prints the greeting.
+
+@[go.mod@`go module@=
+@<Go Project@/go.mod@>@
+
+@<Go Project@/project properties@+
+module => 'example.com/hello',
+@
+
+The package greet lives in the directory greet.
+lib is the label of its source file, test the label of its test file.
+@[greet/greet.go@`go module@=
+@<lib@:greet@:Go Structure@/file@>@
+
+@[greet/greet_test.go@`go module@=
+@<test@:greet@:Go Structure@/file@>@
+
+@<greet@:Go Structure@/module properties@+
+name => 'greet',
+@
+
+@<greet@:Go Project@/package directory@=greet@
+
+@<lib@:greet@:Go Structure@/package comment@=
+// Package greet builds greetings.
+@
+
+@<lib@:greet@:Go Structure@/functions@+
+// Greeting returns the greeting for name.
+func Greeting(name string) string {
+	return "Hello, " + name + "!"
+}
+@
+
+@<test@:greet@:Go Structure@/import paths@+
+    "testing"
+@
+
+@<test@:greet@:Go Structure@/functions@+
+func TestGreeting(t *testing.T) {
+	if got, want := Greeting("World"), "Hello, World!"; got != want {
+		t.Errorf("Greeting(%q) = %q, want %q", "World", got, want)
+	}
+}
+@
+
+The command hello takes the name to greet from the flag -name.
+@[cmd/hello/main.go@`go module@=
+@<hello@:command@:Go Structure@/file@>@
+
+@<hello@:command@:Go Structure@/Flag@/invocation syntax@=
+{
+    name => 'hello',
+    flags => [
+        {
+            name => 'name',
+            type => 'string',
+            default => 'World',
+            usage => 'who to greet',
+        },
+    ],
+    arguments => [],
+}
+@
+
+@<hello@:command@:Go Structure@/package comment@=
+// Command hello prints a greeting.
+@
+
+@<hello@:command@:Go Structure@/import paths@+
+    "@<greet@:Go Project@/import path@>"
+@
+
+@<hello@:command@:Go Structure@/main body@=
+fmt.Println(greet.Greeting(command.flags.name))
+@~ output @

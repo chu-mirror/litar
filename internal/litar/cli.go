@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 const usageBody = `--help: print the usage
@@ -23,6 +25,13 @@ const usageBody = `--help: print the usage
 
 // Main runs litar. args[0] is the program name.
 func Main(args []string) int {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		sig := <-sigs
+		DetachMounts()
+		os.Exit(128 + int(sig.(syscall.Signal)))
+	}()
 	return run(args, os.Stdout, os.Stderr)
 }
 

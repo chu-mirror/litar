@@ -1,6 +1,7 @@
 package litar
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -419,20 +420,43 @@ func (a *agent) deleteFile(ctx context.Context, _ *mcp.CallToolRequest, in delet
 }
 
 func (a *agent) evaluate(ctx context.Context, _ *mcp.CallToolRequest, in evalIn) (*mcp.CallToolResult, any, error) {
-	if _, _, err := ParsePrint(in.Expression); err != nil {
-		return toolErr(err)
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	w, n, err := a.worldNode(in.Composition, in.Node)
+	ref, filters, err := ParsePrint(in.Expression)
 	if err != nil {
 		return toolErr(err)
 	}
-	text, err := dispatch(w, formatNodePath(nodePath(*n)), "print", in.Expression, nil)
+	a.mu.Lock()
+	w, err := a.compositionByID(in.Composition)
+	if err != nil {
+		a.mu.Unlock()
+		return toolErr(err)
+	}
+	chain, maps, err := a.nodeChain(w, in.Node)
+	a.mu.Unlock()
+	if err != nil {
+		return toolErr(err)
+	}
+	text, err := evalReporting(chain, maps, ref, filters)
 	if err != nil {
 		return toolErr(err)
 	}
 	return toolText(text)
+}
+
+// evalReporting runs without a.mu, since a filter may run for long;
+// chain and maps are copies taken under it.
+// A failed evaluation carries the stderr of its filters,
+// which is the only report a client sees.
+func evalReporting(chain []Block, maps []Mapping, ref ChunkRef, filters []Filter) (string, error) {
+	var stderr bytes.Buffer
+	ev := NewEvaluator(chain, maps, &stderr)
+	text, err := ev.Eval(ref, filters)
+	if err != nil {
+		if msg := strings.TrimRight(stderr.String(), "\n"); msg != "" {
+			return "", fmt.Errorf("%w\n%s", err, msg)
+		}
+		return "", err
+	}
+	return text, nil
 }
 
 func (a *agent) applyBlock(ctx context.Context, _ *mcp.CallToolRequest, in applyIn) (*mcp.CallToolResult, any, error) {
@@ -803,6 +827,7 @@ func (a *agent) renderBlocks(uri, mime string) (string, string, []byte, error) {
 	return text, mime, nil, nil
 }
 
+// renderFile is called with a.mu held, and releases it while the file is evaluated.
 func (a *agent) renderFile(uri, mime string) (string, string, []byte, error) {
 	w, ids, err := a.idParts(strings.TrimPrefix(uri, "file://"), 3)
 	if err != nil {
@@ -831,8 +856,9 @@ func (a *agent) renderFile(uri, mime string) (string, string, []byte, error) {
 			return "", "", nil, err
 		}
 	} else {
-		ev := NewEvaluator(chain, maps, nil)
-		text, err := ev.Eval(ChunkRef{Chunk: Name(path)}, nil)
+		a.mu.Unlock()
+		text, err := evalReporting(chain, maps, ChunkRef{Chunk: Name(path)}, nil)
+		a.mu.Lock()
 		if err != nil {
 			return "", "", nil, err
 		}

@@ -3,8 +3,10 @@ package litar
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"sync"
 	"syscall"
 	"time"
 
@@ -116,22 +118,57 @@ func splitSlash(p string) []string {
 type mount struct {
 	dir    string
 	server *fuse.Server
+	direct bool
 	extra  []string
 }
+
+var (
+	liveMu     sync.Mutex
+	liveMounts = map[*mount]struct{}{}
+)
 
 func (m *mount) close() {
 	if m == nil {
 		return
 	}
+	liveMu.Lock()
+	delete(liveMounts, m)
+	liveMu.Unlock()
 	if m.server != nil {
-		_ = m.server.Unmount()
-		m.server.Wait()
+		// Unmount gives up while a process the filter left behind
+		// still uses the mount, and Wait would then block forever.
+		// A lazy unmount removes the mount now; the server stops
+		// when the kernel drops the last use.
+		if err := m.server.Unmount(); err != nil {
+			detach(m.dir, m.direct)
+		}
 	}
 	if m.dir != "" {
 		_ = os.RemoveAll(m.dir)
 	}
 	for _, p := range m.extra {
 		_ = os.RemoveAll(p)
+	}
+}
+
+func detach(dir string, direct bool) {
+	if direct && syscall.Unmount(dir, syscall.MNT_DETACH) == nil {
+		return
+	}
+	for _, prog := range []string{"fusermount3", "fusermount"} {
+		if exec.Command(prog, "-u", "-z", dir).Run() == nil {
+			return
+		}
+	}
+}
+
+// DetachMounts lazily unmounts every filter view that is still mounted.
+// A process that exits without it leaves a dead mount in the temporary directory.
+func DetachMounts() {
+	liveMu.Lock()
+	defer liveMu.Unlock()
+	for m := range liveMounts {
+		detach(m.dir, m.direct)
 	}
 }
 
@@ -160,6 +197,7 @@ func mountView(files []viewFile) (*mount, error) {
 	opts.Name = "litar"
 	opts.DirectMount = true
 	server, err := fs.Mount(dir, root, opts)
+	direct := err == nil
 	if err != nil {
 		os.RemoveAll(dir)
 		dir, err = os.MkdirTemp("", "litar-mnt-*")
@@ -176,7 +214,11 @@ func mountView(files []viewFile) (*mount, error) {
 		os.RemoveAll(overlay)
 		return nil, fmtMount(err)
 	}
-	return &mount{dir: dir, server: server, extra: []string{overlay}}, nil
+	m := &mount{dir: dir, server: server, direct: direct, extra: []string{overlay}}
+	liveMu.Lock()
+	liveMounts[m] = struct{}{}
+	liveMu.Unlock()
+	return m, nil
 }
 
 func fmtMount(err error) error {

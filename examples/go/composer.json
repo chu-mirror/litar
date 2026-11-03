@@ -11,6 +11,17 @@
                 "Basic",
                 "Go Structure"
             ]
+        },
+        {
+            "name": "Project Hello",
+            "archive": "project-hello.la",
+            "description": "A hello command split into a library package, its test, and a command, as one Go module.",
+            "mappings": [],
+            "base": [
+                "Basic",
+                "Go Structure",
+                "Go Project"
+            ]
         }
     ]
 }

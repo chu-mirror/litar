@@ -7,7 +7,19 @@
             "archive": "go-structure.la",
             "description": "Gather common structures found in Go programming.",
             "mappings": [],
-            "base": ["Basic"]
+            "base": [
+                "Basic"
+            ]
+        },
+        {
+            "name": "Go Project",
+            "archive": "go-project.la",
+            "description": "Gather the structures of a whole Go module: go.mod, packages, commands, tests, and project checks.",
+            "mappings": [],
+            "base": [
+                "Basic",
+                "Go Structure"
+            ]
         }
     ]
 }

@@ -7,15 +7,11 @@ usage: litar [options]
 
 --help: print the usage
 -a, --agent: open an MCP server to handle the requests from agents
--t, --target COMPOSER_DIRECTORY: read in the composer file in COMPOSER_DIRECTORY
--n, --node NODE: specify the NODE
--m, --modules MODULE: list all modules under MODULE
--c, --chunks MODULE: list all chunk names under MODULE
+-t, --target COMPOSITION: specify the composition as COMPOSITION
+-n, --node NODE...: specify the node pointed to by path NODE...
 -l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
 -e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
 -d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
--s, --subdomains DOMAIN: list all subdomains under DOMAIN
--i, --items DOMAIN: list all items under DOMAIN
 -r, --reference ITEM: list all blocks that refer to ITEM
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
 ```
@@ -23,10 +19,8 @@ usage: litar [options]
 The formats:
 
 - NODE: the names defined in the composer file;
-- MODULE: `module@/submodule@/subsubmodule`, the root module is `/`;
-- EXPRESSION: `label1@:label2@:module name@/chunk name@|filter1@|filter2`;
 - CHUNK_REFERENCE: `label1@:label2@:module name@/chunk name`;
-- DOMAIN: `domain@/subdomain`, the root domain is `/`;
+- EXPRESSION: `label1@:label2@:module name@/chunk name@|filter1@|filter2`;
 - ITEM: `domain@/subdomain@/item`.
 
 # Explanation
@@ -94,43 +88,54 @@ The MCP server supports protocol version
 [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28).
 
 The implementation of the MCP server opened through option `-a` provides context
-to deal with composed archives and tools to inspect and modify nodes.
+to deal with compositions and tools to inspect and modify nodes.
 
 Resources:
 
-- composer path, `path://composer`, the path to the composer directory;
-- nodes, `tree://node`, the node tree.
+- compositions, `list://composition`, a list of editable compositions;
 
 Resource templates:
 
-- archive file path, `path://node/{node}`, the path to the node's archive;
-- chunks, `tree://chunk/{node}`, the chunk tree organized by modules under the node;
-- items, `tree://item/{node}`, the item tree under the node;
-- files, `tree://file/{node}`, the file tree under the node;
-- node blocks, `blocks://node/{node}`, the blocks in the node;
-- applied blocks, `blocks://apply/{node}/{chunk reference}`, the blocks applied to the chunk reference;
-- effective blocks, `blocks://effective/{node}/{chunk reference}`, the effective blocks of the chunk reference;
-- dependent blocks, `blocks://depend/{node}/{chunk reference}`, the blocks depending on a chunk reference;
-- related blocks, `blocks://refer/{node}/{item}`, the blocks referring to the item;
-- file, `file://{node}/{path}`, the file of the path.
+- nodes, `tree://node/{composition}`, the node tree under the composition.
+- chunks, `tree://chunk/{composition}/{node}`, the chunk tree organized by modules under the node;
+- items, `tree://item/{composition}/{node}`, the item tree under the node;
+- files, `tree://file/{composition}/{node}`, the file tree under the node;
+- node blocks, `blocks://node/{composition}/{node}`, the blocks in the node;
+- specializations, `tree://specialization/{composition}/{node}/{chunk}`, the specializations on the chunk;
+- applied blocks, `blocks://apply/{composition}/{node}/{chunk}/{specialization}`,
+  the blocks applied to the chunk reference;
+- effective blocks, `blocks://effective/{composition}/{node}/{chunk}/{specialization}`,
+  the effective blocks of the chunk reference;
+- dependent blocks, `blocks://depend/{composition}/{node}/{chunk}/{specialization}`,
+  the blocks depending on a chunk reference;
+- related blocks, `blocks://refer/{composition}/{node}/{item}`, the blocks referring to the item;
+- file, `file://{composition}/{node}/{path}`, the file of the path.
 
 Tools:
 
-- create a new composed archive, and use that composed archive;
-- specify the composed archive;
-- create a new node, create a new archive file if it does not exist;
+- import an existing composition;
+- create a new composition, and import it;
+- create a new node, the corresponding archive file must be newly created;
 - delete a node, all nodes based on that node will be deleted too, all related archive files will be deleted;
 - delete a chunk, all applied blocks will be deleted;
 - delete a file, all applied blocks will be deleted;
 - evaluate the content of an expression;
-- apply a block to a node, cannot apply a block to a node in the ground archive;
-- dump the archives.
+- apply a block to a node, cannot apply a block to a node in the ground archive.
 
-Both resources and tools support changing notification.
-Clients cannot use any tool other than creating or specifying the composed archive and cannot see any resource,
-until a composer file is specified.
+`list://` returns a list of json objects:
 
-`path://` returns a file path.
+```
+[
+    {
+        "name": "<the name of the object>",
+        "description": "<a short description of the object>",
+        "id": <automatically generated unique id>
+    },
+    <other objects>
+]
+```
+
+The name for a composition is its absolute path.
 
 `tree://` returns a tree-like json object:
 
@@ -138,17 +143,22 @@ until a composer file is specified.
 {
     "name": "<the name of the object>",
     "description": "<a short description of the object>",
+    "id": <automatically generated unique id>,
     "sub-trees": [
         <sub-trees>
     ]
 }
 ```
 
+The generated id is a number counting from 0,
+and must be consistent among requests if the returned list and tree do not change.
+The arguments passed to tools and resource templates are these ids.
+
 `blocks://` returns a list of blocks just as the output of option `-l`.
 
 A particular block is removed by overriding through `@=`.
 For example, an `@+` block is deleted by creating a single overriding `@=` and a new list of `@+`.
-Remove a block in dumping when it is no longer an effective block of the same chunk reference in that same node.
+Remove a block when it is no longer an effective block of the same chunk reference in that same node.
 
 An example for deleting:
 
@@ -180,7 +190,7 @@ Now we want to remove `#include <stdlib.h>`, the proper way:
 
 # Environment
 
-litar searches the ground composed archive in this order:
+litar searches the ground compositions in this order:
 
 1. current directory;
 2. directories in $LITAR_LIBRARY, in the same format as $PATH;

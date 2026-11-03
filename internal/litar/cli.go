@@ -12,15 +12,11 @@ import (
 
 const usageBody = `--help: print the usage
 -a, --agent: open an MCP server to handle the requests from agents
--t, --target COMPOSER_DIRECTORY: read in the composer file in COMPOSER_DIRECTORY
--n, --node NODE: specify the NODE
--m, --modules MODULE: list all modules under MODULE
--c, --chunks MODULE: list all chunk names under MODULE
+-t, --target COMPOSITION: specify the composition as COMPOSITION
+-n, --node NODE...: specify the node pointed by path NODE...
 -l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
 -e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
 -d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
--s, --subdomains DOMAIN: list all subdomains under DOMAIN
--i, --items DOMAIN: list all items under DOMAIN
 -r, --reference ITEM: list all blocks that refer to ITEM
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
 `
@@ -37,11 +33,10 @@ func usage(prog string) string {
 	return "usage: " + prog + " [options]\n\n" + usageBody
 }
 
-const missingAction = "missing -p, --print, -l, --literal, -e, --effective, -d, --depend, -m, --modules, -c, --chunks, -s, --subdomains, -i, --items, -r, --reference, or -a, --agent"
+const missingAction = "missing -p, --print, -l, --literal, -e, --effective, -d, --depend, -r, --reference, or -a, --agent"
 
 var modeOrder = []string{
-	"print", "literal", "effective", "depend", "modules", "chunks",
-	"subdomains", "items", "reference", "agent",
+	"print", "literal", "effective", "depend", "reference", "agent",
 }
 
 func modeIndex(name string) int {
@@ -73,7 +68,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var (
 		mode      string
 		dir       string
-		node      string
+		nodes     []string
 		operand   string
 		sawTarget bool
 		sawNode   bool
@@ -147,7 +142,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			if sawTarget {
 				return fail("duplicate target option")
 			}
-			dir, code = takes("a composer directory")
+			dir, code = takes("a composition")
 			if code != 0 {
 				return code
 			}
@@ -156,9 +151,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 			if sawNode {
 				return fail("duplicate node option")
 			}
-			node, code = takes("a node")
+			var first string
+			first, code = takes("a node")
 			if code != 0 {
 				return code
+			}
+			nodes = append(nodes, first)
+			for i+1 < len(rest) && !strings.HasPrefix(rest[i+1], "-") {
+				i++
+				nodes = append(nodes, rest[i])
 			}
 			sawNode = true
 		case "-p", "--print":
@@ -181,26 +182,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 				return code
 			}
 			operand, code = takes("a chunk reference")
-		case "-m", "--modules":
-			if code = setMode("modules"); code != 0 {
-				return code
-			}
-			operand, code = takes("a module")
-		case "-c", "--chunks":
-			if code = setMode("chunks"); code != 0 {
-				return code
-			}
-			operand, code = takes("a module")
-		case "-s", "--subdomains":
-			if code = setMode("subdomains"); code != 0 {
-				return code
-			}
-			operand, code = takes("a domain")
-		case "-i", "--items":
-			if code = setMode("items"); code != 0 {
-				return code
-			}
-			operand, code = takes("a domain")
 		case "-r", "--reference":
 			if code = setMode("reference"); code != 0 {
 				return code
@@ -230,7 +211,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if sawTarget {
 		st, err := os.Stat(dir)
 		if err != nil {
-			return fail("could not read composer directory '%s': %v", dir, err)
+			return fail("could not read composition '%s': %v", dir, err)
 		}
 		if !st.IsDir() {
 			return fail("target '%s' is not a directory", dir)
@@ -239,6 +220,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			return fail("%s", err.Error())
 		}
+	}
+	node := ""
+	if sawNode {
+		node = formatNodePath(nodes)
 	}
 	if node != "" && world != nil {
 		if _, err := world.lookup(node); err != nil {
@@ -249,8 +234,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if mode == "agent" {
 		ag := newAgent()
 		if world != nil {
-			ag.world = world
-			ag.ensureTools()
+			ag.addWorld(world)
 			ag.refresh()
 		}
 		err := ag.serve(context.Background())
@@ -274,8 +258,7 @@ func optionTakesValue(opt string) bool {
 	switch opt {
 	case "-t", "--target", "-n", "--node", "-p", "--print",
 		"-l", "--literal", "-e", "--effective", "-d", "--depend",
-		"-m", "--modules", "-c", "--chunks", "-s", "--subdomains",
-		"-i", "--items", "-r", "--reference":
+		"-r", "--reference":
 		return true
 	default:
 		return false
@@ -324,46 +307,6 @@ func dispatch(world *World, node, mode, operand string, stderr io.Writer) (strin
 			return "", err
 		}
 		return Depend(chain, ref), nil
-	case "modules":
-		mod, err := ParseModulePath(operand)
-		if err != nil {
-			return "", err
-		}
-		meta, err := nodeMeta(world, node, chain)
-		if err != nil {
-			return "", err
-		}
-		return Modules(chain, mod, meta), nil
-	case "chunks":
-		mod, err := ParseModulePath(operand)
-		if err != nil {
-			return "", err
-		}
-		meta, err := nodeMeta(world, node, chain)
-		if err != nil {
-			return "", err
-		}
-		return Chunks(chain, mod, meta), nil
-	case "subdomains":
-		dom, err := ParseModulePath(operand)
-		if err != nil {
-			return "", err
-		}
-		meta, err := nodeMeta(world, node, chain)
-		if err != nil {
-			return "", err
-		}
-		return Subdomains(chain, dom, meta), nil
-	case "items":
-		dom, err := ParseModulePath(operand)
-		if err != nil {
-			return "", err
-		}
-		meta, err := nodeMeta(world, node, chain)
-		if err != nil {
-			return "", err
-		}
-		return Items(chain, dom, meta), nil
 	case "reference":
 		item, err := ParseItem(operand)
 		if err != nil {

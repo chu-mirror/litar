@@ -1,0 +1,13 @@
+{
+    "description": "Go programming libraries.",
+    "ground": "common",
+    "nodes": [
+        {
+            "name": "Go Structure",
+            "archive": "go-structure.la",
+            "description": "Gather common structures found in Go programming.",
+            "mappings": [],
+            "base": ["Basic"]
+        }
+    ]
+}

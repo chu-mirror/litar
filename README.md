@@ -12,7 +12,7 @@ including the MCP server it opens for agents.
 - doc: references for the language and the implementation plan;
 - cmd: the `litar` command;
 - internal/litar: the Go implementation;
-- grounds: composed libraries searched through `$LITAR_LIBRARY`;
+- grounds: compositions searched through `$LITAR_LIBRARY`;
 - examples: example programs, composed by `examples/composer.json`;
 - tests: acceptance tests.
 
@@ -30,10 +30,10 @@ Procedures:
 - `make test` runs `go test ./...`, then the cases under `tests/`.
 - `make clean` removes the binary.
 
-`grounds/` is a library of composed archives.
+`grounds/` is a library of compositions.
 Each subdirectory holds `composer.json`.
 `$LITAR_LIBRARY` is a `$PATH`-style list of directories that contain those subdirectories.
 
 ```
-LITAR_LIBRARY=grounds ./litar -t examples -n "Program Hello" -p hello.c
+LITAR_LIBRARY=grounds ./litar -t examples -n Basic "C Structure" "Program Hello" -p hello.c
 ```

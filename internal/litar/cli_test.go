@@ -55,7 +55,7 @@ func TestCLIPrint(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "a.la"), "@<msg@=\nHello\n@\n")
 	writeFile(t, filepath.Join(dir, "composer.json"), composerDoc(`[
-    {"name":"root","archive":"./a.la","description":"","mappings":[],"base":null}
+    {"name":"root","archive":"./a.la","description":"","mappings":[],"base":[]}
 ]`))
 	old, err := os.Getwd()
 	if err != nil {
@@ -82,7 +82,7 @@ func TestCLIPrint(t *testing.T) {
 		t.Fatalf("depend %d %q %q", code, out, errText)
 	}
 	code, out, errText = runOut(t, "litar", "-t", ".", "-m", "/")
-	if code != 0 || out != "" || errText != "" {
+	if code == 0 || out != "" || !strings.Contains(errText, "unknown option '-m'") {
 		t.Fatalf("modules %d %q %q", code, out, errText)
 	}
 	code, out, errText = runOut(t, "litar", "-t", "composer.json", "-p", "msg")

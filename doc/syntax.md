@@ -325,8 +325,8 @@ By default an invocation sees no file exported from the archive.
 
 # Reserved namespaces
 
-Four module names hold meta chunks:
-`Module`, `Chunk`, `Domain`, and `Index`.
+Five module names hold meta chunks:
+`Module`, `Chunk`, `Specialization`, `Domain`, and `Index`.
 The rest of the module path, followed by the chunk name,
 is the path of the object the chunk describes.
 
@@ -334,6 +334,7 @@ is the path of the object the chunk describes.
 Module@/Basic
 Module@/Text Processing@/Internals
 Chunk@/Basic@/evaluate
+Specialization@/label1@/label2
 Domain@/C@/variables
 Index@/C@/variables@/times
 ```
@@ -341,21 +342,20 @@ Index@/C@/variables@/times
 `Module@/Basic` describes the module `Basic`.
 `Chunk@/Basic@/evaluate` describes the chunk `evaluate` in that module.
 `Chunk@/name` describes a chunk in the root module.
+`Specialization@/label1@/label2` describes the specialization `label2@:label1`.
+The label path in the module is reversed.
 `Domain@/C@/variables` describes the domain `C@/variables`.
 `Index@/C@/variables@/times` describes the item `times` in that domain.
 
 The block evaluates to a JSON object:
 
 ```
-{"description": "<description of that module, chunk, domain, or item>"}
+{"description": "<description of that module, chunk, specialization, domain, or item>"}
 ```
 
-The chunk tree, `-m`, and `-c` do not list these chunks.
-The description is shown on the module, chunk, domain, or item.
-`-m`, `-c`, `-s`, and `-i` print the name.
-When the description is not empty, the line is `Name:`,
-then tabs, then the description.
-The tabs put every description in that list at the same column.
+The chunk tree omits these chunks.
+The description is the description of the module, chunk,
+domain, item, or specialization that the chunk names.
 
 # Composer file
 
@@ -364,13 +364,15 @@ not a single archive.
 The `-t`/`--target` option names that directory.
 litar reads `composer.json` inside it.
 [design/litar.md](../design/litar.md) defines its format:
-a JSON object with `ground` and `nodes`.
-`ground` is the name of a composed archive this one is based on,
+a JSON object with `description`, `ground`, and `nodes`.
+`description` is a string.
+`ground` is the name of a composition this one is based on,
 or `null`.
 Each node has a `name`, an `archive`, a `description`,
 `mappings`, and a `base`.
-`base` is the name of another node, or `null` for the root node.
-A composed archive is a directory that contains `composer.json`.
+`base` is the path from the root down to the direct parent.
+The root's base is `[]`.
+A composition is a directory that contains `composer.json`.
 litar searches the ground in this order:
 
 1. the current directory;
@@ -383,13 +385,17 @@ litar searches the ground in this order:
 The first directory `NAME/composer.json` that is a regular file wins.
 Every node in the ground precedes the nodes in this file.
 The combined nodes have one root.
-Node names are unique.
+Node names under one parent are unique.
+A node name cannot contain `/`.
+The path of a node is those names joined by `/`.
 Two nodes cannot share one archive.
 An archive name is relative to the composer file that names it.
 
-A node's blocks are its base node's blocks
+A node's blocks are the blocks along its base path
 followed by the blocks of its archive.
 The `-n`/`--node` option selects the node that the command line evaluates at.
+The arguments are the node names from the root through that node.
+If `-n` is omitted, the command uses the root.
 
 The `mappings` field maps files outside the archives
 into the filesystem used by an invocation.
@@ -420,32 +426,6 @@ There is no option that matches a chunk in every module.
 `-d` lists blocks that depend on the chunk reference:
 a block whose content contains, or is filtered by,
 that reference or a reference specialized from it.
-
-`-m`/`--modules` and `-c`/`--chunks` take a module path,
-not a chunk reference:
-
-```
-module@/submodule@/subsubmodule
-```
-
-The root module is `/`.
-`-m` lists all modules under that module.
-`-c` lists all chunk names under that module.
-The output of `-m` uses `@/` between components,
-so it can be passed back to an option that takes a module path.
-The output of `-c` is one chunk name per line.
-
-`-s` takes a domain and lists all subdomains under that domain.
-`-i` takes a domain and lists all items under that domain.
-A domain is a prefix of an item:
-
-```
-domain@/subdomain
-domain@/subdomain@/item
-```
-
-The root domain is `/`.
-The output of `-s` and `-i` uses `@/` between names.
 
 `-r` takes an item, not a chunk reference.
 The item is one or more names separated by `@/`,

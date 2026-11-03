@@ -6,14 +6,14 @@
             "archive": "./base.la",
             "description": "base",
             "mappings": [],
-            "base": null
+            "base": []
         },
         {
             "name": "child",
             "archive": "./child.la",
             "description": "child",
             "mappings": [],
-            "base": "base"
+            "base": ["base"]
         }
     ]
 }

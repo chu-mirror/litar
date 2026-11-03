@@ -71,7 +71,7 @@ Despite the simple linear structure of blocks,
 the objects introduced, chunks, modules, items, and files, are highly structured.
 Users must deal with the structure carefully to not mess up.
 
-We call a further development based on composed archives a task,
+We call a further development based on a composition a task,
 and the lifecycle of a task consists of several stages:
 
 1. write down a brief description of what is going to be done,

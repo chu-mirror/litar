@@ -32,24 +32,24 @@ func TestComposerChain(t *testing.T) {
         "mappings": [
             {"path": "data.txt", "fileset": ["data"], "origin": "./origin.txt"}
         ],
-        "base": null
+        "base": []
     },
     {
         "name": "child",
         "archive": "./child.la",
         "description": "the child",
         "mappings": [],
-        "base": "root"
+        "base": ["root"]
     }
 ]`))
 	w, err := LoadComposer(comp)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w.Nodes[1].Base != "root" || w.Nodes[0].Description != "the root" {
+	if !samePath(w.Nodes[1].Base, []string{"root"}) || w.Nodes[0].Description != "the root" {
 		t.Fatalf("%+v", w.Nodes)
 	}
-	blocks, err := w.Chain("child")
+	blocks, err := w.Chain("root/child")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestComposerChain(t *testing.T) {
 	if got != "basechild" {
 		t.Fatalf("%q", got)
 	}
-	maps, err := w.Mappings("child")
+	maps, err := w.Mappings("root/child")
 	if err != nil || len(maps) != 1 || maps[0].Path != "data.txt" {
 		t.Fatalf("%v %+v", err, maps)
 	}
@@ -70,6 +70,66 @@ func TestComposerChain(t *testing.T) {
 	}
 	if _, err := w.Chain("missing"); err == nil || !strings.Contains(err.Error(), "unknown node 'missing'") {
 		t.Fatal(err)
+	}
+}
+
+func TestSameNameDifferentParents(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"root.la":  "@<x@=\n@\n",
+		"left.la":  "@<x@=\n@\n",
+		"right.la": "@<x@=\n@\n",
+		"leafL.la": "@<msg@=L@\n",
+		"leafR.la": "@<msg@=R@\n",
+		"again.la": "@<msg@=again@\n",
+	} {
+		writeFile(t, filepath.Join(dir, name), body)
+	}
+	comp := filepath.Join(dir, "composer.json")
+	writeFile(t, comp, composerDoc(`[
+    {"name":"root","archive":"./root.la","description":"","mappings":[],"base":[]},
+    {"name":"left","archive":"./left.la","description":"","mappings":[],"base":["root"]},
+    {"name":"right","archive":"./right.la","description":"","mappings":[],"base":["root"]},
+    {"name":"leaf","archive":"./leafL.la","description":"","mappings":[],"base":["root","left"]},
+    {"name":"leaf","archive":"./leafR.la","description":"","mappings":[],"base":["root","right"]},
+    {"name":"root","archive":"./again.la","description":"","mappings":[],"base":["root"]}
+]`))
+	w, err := LoadComposer(comp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Chain("leaf"); err == nil || !strings.Contains(err.Error(), "unknown node 'leaf'") {
+		t.Fatal(err)
+	}
+	left, err := w.Chain("root/left/leaf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewEvaluator(left, nil, nil).Eval(mustRef(t, "msg"), nil)
+	if err != nil || got != "L" {
+		t.Fatalf("%v %q", err, got)
+	}
+	right, err := w.Chain("root/right/leaf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = NewEvaluator(right, nil, nil).Eval(mustRef(t, "msg"), nil)
+	if err != nil || got != "R" {
+		t.Fatalf("%v %q", err, got)
+	}
+	if _, err := w.Chain("left"); err == nil || !strings.Contains(err.Error(), "unknown node 'left'") {
+		t.Fatal(err)
+	}
+	if _, err := w.Chain("root/left"); err != nil {
+		t.Fatal(err)
+	}
+	root, err := w.lookup("root")
+	if err != nil || formatNodePath(nodePath(*root)) != "root" {
+		t.Fatalf("%v %+v", err, root)
+	}
+	again, err := w.lookup("root/root")
+	if err != nil || again.ArchiveSpec != "./again.la" {
+		t.Fatalf("%v %+v", err, again)
 	}
 }
 
@@ -83,27 +143,31 @@ func TestComposerErrors(t *testing.T) {
 	}{
 		{"empty", composerDoc(`[]`), "composer has no root"},
 		{"two", `[
-            {"name":"a","archive":"./a.la","description":"","mappings":[],"base":null},
-            {"name":"b","archive":"./a.la","description":"","mappings":[],"base":null}
+            {"name":"a","archive":"./a.la","description":"","mappings":[],"base":[]},
+            {"name":"b","archive":"./a.la","description":"","mappings":[],"base":[]}
         ]`, "more than one root"},
 		{"dup", `[
-            {"name":"a","archive":"./a.la","description":"","mappings":[],"base":null},
-            {"name":"a","archive":"./b.la","description":"","mappings":[],"base":"a"}
+            {"name":"root","archive":"./a.la","description":"","mappings":[],"base":[]},
+            {"name":"a","archive":"./a.la","description":"","mappings":[],"base":["root"]},
+            {"name":"a","archive":"./b.la","description":"","mappings":[],"base":["root"]}
         ]`, "duplicate node 'a'"},
 		{"base", `[
-            {"name":"a","archive":"./a.la","description":"","mappings":[],"base":"nope"}
+            {"name":"a","archive":"./a.la","description":"","mappings":[],"base":["nope"]}
         ]`, "base 'nope' of node 'a' is not defined"},
 		{"cycle", `[
-            {"name":"root","archive":"./a.la","description":"","mappings":[],"base":null},
-            {"name":"a","archive":"./a.la","description":"","mappings":[],"base":"b"},
-            {"name":"b","archive":"./a.la","description":"","mappings":[],"base":"a"}
-        ]`, "cycle in node bases: a -> b -> a"},
+            {"name":"root","archive":"./a.la","description":"","mappings":[],"base":[]},
+            {"name":"a","archive":"./a.la","description":"","mappings":[],"base":["b"]},
+            {"name":"b","archive":"./a.la","description":"","mappings":[],"base":["a"]}
+        ]`, "base 'b' of node 'a' is not defined"},
+		{"nullbase", `[
+            {"name":"a","archive":"./a.la","description":"","mappings":[],"base":null}
+        ]`, "base must be an array"},
 		{"missing", `[
-            {"name":"root","archive":"no-such.la","description":"","mappings":[],"base":null}
+            {"name":"root","archive":"no-such.la","description":"","mappings":[],"base":[]}
         ]`, "could not find archive 'no-such.la'"},
 		{"share", `[
-            {"name":"root","archive":"./a.la","description":"","mappings":[],"base":null},
-            {"name":"child","archive":"./a.la","description":"","mappings":[],"base":"root"}
+            {"name":"root","archive":"./a.la","description":"","mappings":[],"base":[]},
+            {"name":"child","archive":"./a.la","description":"","mappings":[],"base":["root"]}
         ]`, "share archive"},
 	}
 	for _, tc := range cases {
@@ -131,7 +195,7 @@ func TestGroundPrecedes(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(common, "base.la"), "@<msg@=base@")
 	writeFile(t, filepath.Join(common, "composer.json"), composerDoc(`[
-        {"name":"root","archive":"base.la","description":"ground","mappings":[],"base":null}
+        {"name":"root","archive":"base.la","description":"ground","mappings":[],"base":[]}
     ]`))
 	sub := filepath.Join(dir, "sub")
 	if err := os.Mkdir(sub, 0o755); err != nil {
@@ -142,7 +206,7 @@ func TestGroundPrecedes(t *testing.T) {
 	writeFile(t, comp, `{
     "ground": "common",
     "nodes": [
-        {"name":"child","archive":"extra.la","description":"local","mappings":[],"base":"root"}
+        {"name":"child","archive":"extra.la","description":"local","mappings":[],"base":["root"]}
     ]
 }
 `)
@@ -159,7 +223,7 @@ func TestGroundPrecedes(t *testing.T) {
 	if w.localAt != 1 || w.Nodes[0].Name != "root" || w.Nodes[1].Name != "child" {
 		t.Fatalf("%d %+v", w.localAt, w.Nodes)
 	}
-	blocks, err := w.Chain("child")
+	blocks, err := w.Chain("root/child")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,12 +268,12 @@ func TestGroundErrors(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(lib, "a", "composer.json"), `{
     "ground": "b",
-    "nodes": [{"name":"A","archive":"n.la","description":"","mappings":[],"base":null}]
+    "nodes": [{"name":"A","archive":"n.la","description":"","mappings":[],"base":[]}]
 }
 `)
 	writeFile(t, filepath.Join(lib, "b", "composer.json"), `{
     "ground": "a",
-    "nodes": [{"name":"B","archive":"n.la","description":"","mappings":[],"base":"A"}]
+    "nodes": [{"name":"B","archive":"n.la","description":"","mappings":[],"base":["A"]}]
 }
 `)
 	t.Setenv("LITAR_LIBRARY", lib)
@@ -230,7 +294,7 @@ func TestDumpAndDelete(t *testing.T) {
 	arch := filepath.Join(dir, "a.la")
 	writeFile(t, arch, "@<chunk@=A@\n@<chunk@=B@\n@<spec@:chunk@=C@\n")
 	comp := filepath.Join(dir, "c.json")
-	writeFile(t, comp, composerDoc(`[{"name":"root","archive":"./a.la","description":"d","mappings":[],"base":null}]`))
+	writeFile(t, comp, composerDoc(`[{"name":"root","archive":"./a.la","description":"d","mappings":[],"base":[]}]`))
 	w, err := LoadComposer(comp)
 	if err != nil {
 		t.Fatal(err)
@@ -284,19 +348,19 @@ func TestDeleteNodeRemovesArchives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := w.CreateNode("root", "./root.la", "root", ""); err != nil {
+	if err := w.CreateNode("root", "./root.la", "root", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.CreateNode("child", "./child.la", "child", "root"); err != nil {
+	if err := w.CreateNode("child", "./child.la", "child", []string{"root"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.CreateNode("grand", "./grand.la", "grand", "child"); err != nil {
+	if err := w.CreateNode("grand", "./grand.la", "grand", []string{"root", "child"}); err != nil {
 		t.Fatal(err)
 	}
 	rootArch := filepath.Join(dir, "root.la")
 	childArch := filepath.Join(dir, "child.la")
 	grandArch := filepath.Join(dir, "grand.la")
-	if err := w.DeleteNode("child"); err != nil {
+	if err := w.DeleteNode("root/child"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(rootArch); err != nil {
@@ -335,7 +399,7 @@ func TestCreateMissingArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := w.CreateNode("root", "./fresh.la", "new", ""); err != nil {
+	if err := w.CreateNode("root", "./fresh.la", "new", nil); err != nil {
 		t.Fatal(err)
 	}
 	fresh := filepath.Join(dir, "fresh.la")
@@ -363,7 +427,7 @@ func TestCreateMissingArchive(t *testing.T) {
 
 	old := filepath.Join(dir, "old.la")
 	writeFile(t, old, "@<m@=keep@\n")
-	if err := w.CreateNode("child", "./old.la", "old", "root"); err != nil {
+	if err := w.CreateNode("child", "./old.la", "old", []string{"root"}); err == nil || !strings.Contains(err.Error(), "archive './old.la' already exists") {
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(old)
@@ -374,11 +438,11 @@ func TestCreateMissingArchive(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "dir.la"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err = w.CreateNode("bad", "./dir.la", "", "root")
-	if err == nil || !strings.Contains(err.Error(), "could not find archive './dir.la'") {
+	err = w.CreateNode("bad", "./dir.la", "", []string{"root"})
+	if err == nil || !strings.Contains(err.Error(), "archive './dir.la' already exists") {
 		t.Fatal(err)
 	}
-	err = w.CreateNode("nested", "./no/such.la", "", "root")
+	err = w.CreateNode("nested", "./no/such.la", "", []string{"root"})
 	if err == nil || !strings.Contains(err.Error(), "could not write") {
 		t.Fatal(err)
 	}
@@ -391,13 +455,13 @@ func TestCreateMissingArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(elsewhere)
-	if err := w.CreateNode("bare", "bare.la", "bare", "root"); err != nil {
+	if err := w.CreateNode("bare", "bare.la", "bare", []string{"root"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "bare.la")); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.ApplyBlock("bare", "@<msg@=bare@\n"); err != nil {
+	if err := w.ApplyBlock("root/bare", "@<msg@=bare@\n"); err != nil {
 		t.Fatal(err)
 	}
 	data, err = os.ReadFile(filepath.Join(dir, "bare.la"))
@@ -424,7 +488,7 @@ func TestCreateMissingArchive(t *testing.T) {
 	if err := os.Remove(fresh); err != nil {
 		t.Fatal(err)
 	}
-	err = w.CreateNode("dup", "./fresh.la", "", "root")
+	err = w.CreateNode("dup", "./fresh.la", "", []string{"root"})
 	if err == nil || !strings.Contains(err.Error(), "share archive") {
 		t.Fatal(err)
 	}
@@ -442,7 +506,7 @@ func TestCreateComposedArchiveGround(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(common, "base.la"), "@<msg@=from-ground@")
 	writeFile(t, filepath.Join(common, "composer.json"), composerDoc(`[
-        {"name":"root","archive":"base.la","description":"ground","mappings":[],"base":null}
+        {"name":"root","archive":"base.la","description":"ground","mappings":[],"base":[]}
     ]`))
 	blank := filepath.Join(lib, "blank-ground")
 	if err := os.MkdirAll(blank, 0o755); err != nil {
@@ -495,7 +559,7 @@ func TestCreateComposedArchiveGround(t *testing.T) {
 	if !strings.Contains(string(raw), `"ground": "sample-ground"`) || strings.Contains(string(raw), `"name"`) {
 		t.Fatalf("saved %s", raw)
 	}
-	if err := w.CreateNode("child", "./child.la", "local", "root"); err != nil {
+	if err := w.CreateNode("child", "./child.la", "local", []string{"root"}); err != nil {
 		t.Fatal(err)
 	}
 	raw, err = os.ReadFile(filepath.Join(named, "composer.json"))

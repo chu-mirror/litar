@@ -1,4 +1,5 @@
 {
+    "description": "C programming libraries.",
     "ground": "common",
     "nodes": [
         {
@@ -12,14 +13,14 @@
                     "origin": ".clang-format"
                 }
             ],
-            "base": "Basic"
+            "base": ["Basic"]
         },
         {
             "name": "Light",
             "archive": "light.la",
             "description": "Light is a framework mainly for C programming.",
             "mappings": [],
-            "base": "C Structure"
+            "base": ["Basic", "C Structure"]
         }
     ]
 }

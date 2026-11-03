@@ -87,16 +87,20 @@ type Node struct {
 	ArchiveSpec string
 	Description string
 	Mappings    []Mapping
-	Base        string // empty for the root
-	Own         []Block
-	Trailing    string
+	// Base is the path from the root down to the direct parent.
+	// It is empty for the root.
+	Base     []string
+	Own      []Block
+	Trailing string
 }
 
 type World struct {
-	Composer string
-	Ground   *string // nil when this composer file has no ground
-	Nodes    []Node  // ground nodes, then nodes declared in Composer
-	localAt  int     // index of the first node declared in Composer
+	Composer    string
+	Dir         string // absolute path of the composition directory
+	Description string
+	Ground      *string // nil when this composer file has no ground
+	Nodes       []Node  // ground nodes, then nodes declared in Composer
+	localAt     int     // index of the first node declared in Composer
 }
 
 type Archive struct {
@@ -289,4 +293,49 @@ func joinLines(lines []string) string {
 		return ""
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// nodePath is the path from the root through this node.
+func nodePath(n Node) []string {
+	p := make([]string, len(n.Base)+1)
+	copy(p, n.Base)
+	p[len(n.Base)] = n.Name
+	return p
+}
+
+// formatNodePath joins a node path with slashes.
+// A node name does not contain a slash, so the join is reversible.
+func formatNodePath(p []string) string {
+	return strings.Join(p, "/")
+}
+
+func samePath(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func hasPathPrefix(path, prefix []string) bool {
+	if len(path) < len(prefix) {
+		return false
+	}
+	for i := range prefix {
+		if path[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func copyPath(p []string) []string {
+	if len(p) == 0 {
+		return []string{}
+	}
+	return append([]string{}, p...)
 }

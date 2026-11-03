@@ -2,3 +2,6 @@
 command = "./litar"
 args = ["-a"]
 enabled = true
+env = {
+  LITAR_LIBRARY: "grounds"
+}

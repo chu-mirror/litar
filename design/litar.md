@@ -442,17 +442,18 @@ so the composing of an archive is just concatenating the smaller ones one by one
 Composing archives follows the same pattern as building up of an archive:
 blocks are added in order.
 
-litar uses a composer file to express this structure.
-The structure for a composed archive is like,
+The composed archives are called a composition.
+litar uses a composer file to express the structure;
+the files in a composition are like,
 
 ```
-composer name/ (a directory)
-   composer.json (the composer file)
-   archive1
-   archive2
-   sub-directory/
-       archive3
-       archive4
+composition/ (a directory)
+    composer.json (the composer file)
+    archive1
+    archive2
+    sub-directory/
+        archive3
+        archive4
 ```
 
 Here is an example:
@@ -461,8 +462,9 @@ Here is an example:
 examples/
     composer.json
     c-structure.la
-    hello.la
-    AplusB.la
+    programs/
+        hello.la
+        AplusB.la
 ```
 
 'c-structure.la', a library of common C structures:
@@ -477,7 +479,7 @@ int main(int argc, char **argv) {
 @
 ```
 
-'hello.la', an archive of a C program:
+'programs/hello.la', an archive of a C program:
 
 ```
 @<hello.c@=
@@ -493,7 +495,7 @@ printf("Hello\n");
 @
 ```
 
-'AplusB.la', another C program:
+'programs/AplusB.la', another C program:
 
 ```
 @<AplusB.c@=
@@ -517,48 +519,50 @@ A composer file is in json format:
 
 ```
 {
-    "ground": "common",
+    "description": "An example of composition",
+    "ground": null,
     "nodes": [
         {
             "name": "Basic C Structure",
             "archive": "c-structure.la",
             "description": "Build common patterns that appear in C programs.",
             "mappings": [],
-            "base": null
+            "base": []
         },
         {
             "name": "Program Hello",
-            "archive": "hello.la",
+            "archive": "programs/hello.la",
             "description": "Write the classic example in the first lesson of programming.",
             "mappings": [],
-            "base": "Basic C Structure"
+            "base": ["Basic C Structure"]
         },
         {
             "name": "Program A+B",
-            "archive": "AplusB.la",
+            "archive": "programs/AplusB.la",
             "description": "Develop a program that reads two numbers then show the result of adding them.",
             "mappings": [],
-            "base": "Basic C Structure"
+            "base": ["Basic C Structure"]
         }
     ]
 }
 ```
 
-The `ground` means a composed archive which this composed archive is based on;
+The `ground` means a composition which this composition is based on;
 all nodes in `ground` precede the nodes in `examples`. The `ground` is nullable.
 
-Each record in this array is called a node.
-A node has a base node; the root node's base is `null`.
+Each record in the array is called a node.
+A node has a base node, the base node is expressed as a path from root node down to direct parent node;
+the root node's base is an empty list.
 A node's blocks consist of its base node's blocks
 followed by the blocks in the archive of the node, the ordering matters.
 
-litar reads this composer file first to build a tree of nodes.
+litar reads this composer file first to build trees of nodes.
 Users can move to a specific node, then evaluate expressions according to that node's blocks.
 
 Some limitations:
 
-- there's only one root node in a composer file;
-- node names must be unique;
+- the final expanded node list must contain only one root node;
+- node names under a common parent must be unique;
 - the archive name is relative to the composer file;
 - two nodes cannot share one archive.
 
@@ -567,7 +571,8 @@ to the FUSE filesystem created when an invocation happens.
 
 ```
 {
-    "ground": "common",
+    "description": "An example for mappings",
+    "ground": null,
     "nodes": [
         {
             "name": "Analysis",
@@ -580,7 +585,7 @@ to the FUSE filesystem created when an invocation happens.
                     "origin": "./samples.txt"
                 }
             ],
-            "base": null
+            "base": []
         }
     ]
 }
@@ -597,6 +602,7 @@ litar reserves some namespaces for saving meta information:
 
 - `Module@/{module path}`,
 - `Chunk@/{module path@/chunk}`,
+- `Specialization@/{labels}`,
 - `Domain@/{domain path}`,
 - `Index@/{domain path@/item}`.
 
@@ -617,6 +623,17 @@ They are all chunks of a json object.
     "description": "<description for the chunk>"
 }
 ```
+
+`Specialization@/{labels}`:
+
+```
+{
+    "description": "<description for the specialization>"
+}
+```
+
+The path `{labels}` is organized reversed, for example,
+the path for specialization `label2@:label1` is `Specialization@/label1@/label2`.
 
 `Domain@/{domain path}`:
 

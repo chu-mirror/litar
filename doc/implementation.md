@@ -117,7 +117,7 @@ type Node struct {
     ArchiveSpec string // as written in the composer
     Description string
     Mappings    []Mapping
-    Base        string // empty for the root
+    Base        []string // path of the parent; empty for the root
     Own         []Block // this node's archive only, in order
 }
 
@@ -197,11 +197,13 @@ Parse errors name the file, the line, and the unexpected control.
 
 `-t` names a directory.
 litar reads `composer.json` in that directory:
-a JSON object with `ground` and `nodes`.
-`ground` is the name of another composed archive, or `null`.
+a JSON object with `description`, `ground`, and `nodes`.
+`description` is a string.
+`ground` is the name of another composition, or `null`.
 Each node has `name`, `archive`, `description`, `mappings`, and `base`.
-`base` is another node name, or `null` for the root.
-A composed archive is a directory whose `composer.json` is the composer file.
+`base` is the path from the root down to the direct parent.
+The root's base is `[]`.
+A composition is a directory whose `composer.json` is the composer file.
 Search that directory for `ground` in this order:
 
 1. the process current directory
@@ -214,15 +216,23 @@ Search that directory for `ground` in this order:
 The first regular file `NAME/composer.json` wins.
 Load that composer first.
 Its nodes, including its own ground, precede this file's nodes.
-The combined list has exactly one root, unique names,
-an acyclic base graph,
-every node reachable from the root,
-and distinct archive paths.
+The combined list has exactly one root.
+Node names under one parent are unique.
+A node name cannot contain `/`.
+The node's path is those names joined by `/`.
+`-n` takes those names as separate arguments,
+from the root through the node.
+The MCP `node` argument is that node's id.
+Two nodes cannot share one archive path.
+A base names a parent that is already in the list.
+A missing parent is `base '…' of node '…' is not defined`.
 A cycle among grounds names the ground names.
 
 An archive name is relative to the composer file that declares it.
 Loading a composer fails when an archive is missing.
-`create a node` writes an empty archive beside that composer file.
+`create_node` creates a new empty archive beside that composer file.
+An archive that already exists is left untouched
+and the call returns `archive '…' already exists`.
 
 A mapping's `origin` is relative to the composer file.
 `path` is the path in the filter mount.
@@ -286,31 +296,30 @@ the query or a reference specialized from the query.
 A use of `label@:chunk` depends on `chunk` and on `label@:chunk`.
 `-r` lists blocks that carry that exact item.
 
-`-m MODULE` lists modules under that module:
-full paths that extend `MODULE`,
-joined by `@/`, in first-introduction order.
-`-m /` lists every module except the root.
-The root is written `/`.
-`-c MODULE` lists chunk names whose module equals `MODULE`,
-one name per line, first-introduction order.
-A chunk in a descendant module is not included.
-`-m` and `-c` omit the reserved namespaces
-`Module`, `Chunk`, `Domain`, and `Index`.
+The command line does not list modules, chunks, domains, or items.
+Those listings are the MCP trees.
+`Modules`, `Chunks`, `Subdomains`, and `Items` remain for tests.
+They omit the reserved namespaces
+`Module`, `Chunk`, `Specialization`, `Domain`, and `Index`.
 
-Each `@~` path is one item.
-The root domain is `/`, the empty prefix.
-`-s DOMAIN` lists the name that follows `DOMAIN`
+`Modules` lists full module paths under the query,
+joined by `@/`, in first-introduction order.
+The root query lists every module except the root.
+`Chunks` lists chunk names whose module equals the query,
+one name per line, in first-introduction order.
+A chunk in a descendant module is not included.
+`Subdomains` lists the name that follows the domain
 in any item path, once each, in first-seen order.
 The line is that domain plus the name, joined by `@/`.
-`-s /` lists the first name of each item path.
-`-i DOMAIN` lists every item path
-whose prefix before the last name is `DOMAIN`,
+The root domain is `/`, the empty prefix,
+and that query lists the first name of each item path.
+`Items` lists every item path
+whose prefix before the last name is the domain,
 joined by `@/`.
-`-i /` lists item paths of one name.
+The root domain lists item paths of one name.
 `-r` matches an item path exactly.
 
-On `-m`, `-c`, `-s`, and `-i`,
-a non-empty description is printed as `Name:` and the description.
+A non-empty description is printed as `Name:` and the description.
 Tabs after the colon put every description in that list
 at the same column.
 Tab stops are eight columns apart,
@@ -370,14 +379,17 @@ The usage line writes `argv[0]` where that file writes `litar`.
 `--help` is long only.
 Short and long options, and `--name=value`, are all accepted.
 One action per invocation.
-Combining two of `-p -l -e -d -m -c -s -i -r -a` is an error.
+Combining two of `-p -l -e -d -r -a` is an error.
 The message names the earlier mode in the order above.
 
 `-t` is required for every action except `--help` and `-a`.
-`-a` may take `-t`; if it does not,
-the MCP tool that creates or specifies the composed archive supplies it.
+`-a` may take `-t`; if it does not, the server starts with no composition imported.
 The argument is a directory.
 A path that is not a directory is an error.
+`-n` is one or more node names,
+the path from the root through the node.
+A single name addresses only a node whose path is that one name.
+If `-n` is omitted, use the root.
 
 PROGRAM in the usage line is `argv[0]`.
 
@@ -386,100 +398,134 @@ PROGRAM in the usage line is `argv[0]`.
 `-a` serves protocol
 [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28)
 on stdio.
-The composer path is process state, not a protocol session.
-Until a composed archive is created or specified,
-the only tools are those two,
-and the resource list and the resource-template list are empty.
-`create a new composed archive` creates `path/composer.json`
-with the given ground and an empty node list when that file is absent,
-then uses it.
-A null or empty ground is stored as `null`.
-A named ground is resolved before the file is written.
-If that ground cannot be loaded, the new file is removed.
-`specify the composed archive` loads an existing composer file.
-A directory argument uses `composer.json` inside that directory.
-It does not create a missing file.
-
-Once a composer is specified,
-the resource list is `path://composer` and `tree://node`.
-The resource-template list is the ten templates in [design/ui.md](../design/ui.md),
-including `tree://file/{node}`.
-Neither list grows when a node, chunk, or file is added.
+Every tool is registered at startup.
+The resource list is `list://composition`.
+The resource-template list is the templates in [design/ui.md](../design/ui.md).
+Neither list grows when a composition, node, chunk, or file is added.
 A read of a concrete URI uses the template it matches.
-Tools are those in [design/ui.md](../design/ui.md).
+Several compositions can be imported in one server.
+A ground composition is listed only when it is imported itself.
+A ground node inside an imported composition can be evaluated and used as a base.
+It cannot be edited.
 
-Percent-encode `@`, space, and slash in each template variable.
-The design writes `{chunk reference}`.
-The template variable is `{chunk_reference}`,
-because an RFC 6570 name cannot contain a space.
+Each template variable is a decimal id from the list or tree it names.
+The id is a number counting from 0.
+Composition ids are the index in import order.
+Node, chunk, item, file, and specialization ids
+are a preorder walk of that tree.
+The same list or tree yields the same ids.
+`list://` returns a JSON array of objects with `name`, `description`, and `id`.
+The name of a composition is its absolute path.
+`id` is a JSON number.
+`tree://` returns a JSON object with `name`, `description`, `id`, and `sub-trees`.
+The node tree's root object is the root node.
+Its name is that node's name.
+Chunk, item, file, and specialization trees use `"/"` as the wrapper.
+Paths under those trees omit that name.
+A chunk, item, or file id addresses a leaf.
+A module or directory branch is not a leaf.
 
-`path://composer` returns the composer directory.
-`path://node/{node}` returns a host path as text.
-`file://{node}/{path}` returns the evaluated bytes of that file.
-`tree://` returns the JSON object with `name`, `description`, and `sub-trees`.
 Node descriptions come from the composer.
-A chunk whose module path starts with `Module`, `Chunk`, `Domain`, or `Index`
+A chunk whose module path starts with
+`Module`, `Chunk`, `Specialization`, `Domain`, or `Index`
 is a reserved meta chunk.
 The rest of that path, then the chunk name,
-names the module, chunk, domain, or item.
+names the module, chunk, specialization, domain, or item.
+A specialization path is stored reversed:
+`label2@:label1` is `Specialization@/label1@/label2`.
 The chunk evaluates to a JSON object,
 and its `description` is the description of that object.
 `tree://chunk` omits those chunks.
 Module and chunk descriptions appear on `tree://chunk`.
 Domain and item descriptions appear on `tree://item`.
+`tree://specialization/{composition}/{node}/{chunk}`
+is the specializations of that chunk.
+The root is named `"/"` and is the unspecialized form.
+Its id is 0.
+Each child is one label, from the general label toward the specific label.
+The path `label1/label2` is the specialization `label2@:label1`.
+Every node in that tree, including the root, is a specialization id.
+A label path is included when a block applies to that chunk under those labels,
+or when a reference names that chunk under those labels.
+A reference with no labels keeps the labels of the block that contains it.
+A relative module is resolved against that block's module.
+Descriptions come from the `Specialization` meta chunks.
 
 `blocks://` returns text in the `-l` form.
-`blocks://node/{node}` is every block in that node's own archive.
+`blocks://node/{composition}/{node}` is every block in that node's own archive.
 `blocks://apply`, `blocks://effective`, and `blocks://depend`
 are the `-l` form of `-l`, `-e`, and `-d` on that node.
+The specialization id selects the labels.
 `blocks://refer` is the `-l` form of `-r`.
+The item id selects the item.
+`file://{composition}/{node}/{path}` returns the evaluated bytes of that file.
+The path id selects a file leaf.
 
-Tool arguments:
+Tool names and arguments:
 
-- create a new composed archive: `path`, the directory;
-  `ground`, a composed archive name, or null
+- `import_composition`: `path`,
+  the composer file or the directory that contains it.
+  It loads an existing composition and does not create a missing file.
+  The result is the composition id.
+- `create_composition`: `path`, the directory;
+  `ground`, a composition name, or null
   (`ground` empty or null stores `null`; the property is required;
-  a named ground must already be on the library search path)
-- specify the composed archive: `path`,
-  the composer file or the directory that contains it
-- create a node: `name`, `archive`, `description`, `base`
-  (`base` empty or null creates the root; the property is required;
-  the composer must have no root yet;
-  a missing archive file is created empty beside the composer file)
-- delete a node: `name`
-- delete a chunk: `node`, `chunk reference`
-- delete a file: `node`, `path`
-- evaluate an expression: `node`, `expression`
-- apply a block: `node`, `text`
-- dump the archives: no arguments
+  a named ground must already be on the library search path);
+  `description`, optional.
+  It creates `path/composer.json` with an empty node list when that file is absent,
+  then imports it.
+  If the named ground cannot be loaded, the new file is removed.
+  The result is the composition id.
+- `create_node`: `composition`, `name`, `archive`, `description`, `base`.
+  `composition` is a composition id.
+  `base` is the id of the parent node, or null to create the root.
+  The property is required.
+  Null creates the root, and only when the composition has none.
+  The result is the new node's id.
+  The archive file is created empty and must not already exist.
+- `delete_node`: `composition`, `node`
+- `delete_chunk`: `composition`, `node`, `chunk`.
+  `chunk` is a chunk-tree leaf.
+  Every own block of that module and chunk is deleted, whatever its labels.
+- `delete_file`: `composition`, `node`, `path`.
+  `path` is a file-tree leaf.
+- `evaluate_expression`: `composition`, `node`, `expression`
+- `apply_block`: `composition`, `node`, `text`
 
-Edits apply to nodes declared in the composer that was specified.
+`node` is a node id.
+An unknown id is `unknown composition N`, `unknown node N`,
+`unknown chunk N`, `unknown file N`, `unknown item N`,
+or `unknown specialization N`.
+Edits apply to nodes declared in that composition.
 A node that arrived through `ground` can be evaluated and used as a base.
-Deleting, dumping, or editing it returns
+Deleting or editing it returns
 `node '…' is defined in the ground`.
-`apply a block` appends `text` to the node's own archive.
-`delete a chunk` and `delete a file` remove matching blocks
-from that node's own archive, not from the base.
-`delete a node` removes the node and every node based on it
+`apply_block` appends `text` to the node's own archive,
+then removes a block that is no longer an effective block
+of the same chunk reference in that node.
+A read does not compact.
+`delete_chunk` and `delete_file` remove matching blocks
+from that node's own archive, not from the base,
+and compact in the same way.
+`delete_node` removes the node and every node based on it
 in this composer file, then deletes each removed node's archive file.
 A file that is already gone is not an error.
 If a file cannot be removed, the composer stays updated
 and the error names that file.
-`dump` rewrites each local node's own archive:
+Saving the composer writes `description`, `ground`, and the local nodes only.
+
+Dump is not a tool.
+`DumpArchives` still rewrites each local node's own archive:
 drop a block that is not an effective block
 of its own chunk reference in that same node;
 keep the comment and `Raw` of the blocks that remain.
-Saving the composer writes `ground` and the local nodes only.
 
 Digest, from [design/style.md](../design/style.md), is not a tool.
 It is apply on the base, override or delete on the child, dump,
 then delete the child node.
 
-Publishing those resources and templates sends
-`notifications/resources/list_changed`.
-A later mutation leaves both lists unchanged.
-It sends `notifications/resources/updated`
-for `path://composer`, `tree://node`,
+A mutation sends `notifications/resources/updated`
+for `list://composition`
 and every concrete template URI present before or after the mutation.
 
 # Tests
@@ -518,10 +564,12 @@ Reject nested top-level controls and unterminated blocks.
 
 ## 3. Composer and node chain
 
-JSON object with `ground` and `nodes`, ground search path,
+JSON object with `description`, `ground`, and `nodes`,
+ground search path,
 archive paths relative to the composer file, mappings inheritance,
-concatenate blocks along `base`.
-Errors for two roots, a cycle, a missing archive, a missing ground,
+concatenate blocks along the base path.
+Errors for two roots, a missing parent, a missing archive, a missing ground,
+a duplicate name under one parent,
 and two nodes sharing an archive.
 
 ## 4. Evaluate without filters
@@ -533,7 +581,7 @@ A pipeline is the error `filters are not implemented`.
 
 ## 5. Listings
 
-`-l -e -d -m -c -s -i -r`,
+`-l -e -d -r`,
 literal form, CLI combination errors, `--help`.
 `run.sh` takes `argv` with `-t`.
 
@@ -555,9 +603,9 @@ Tests that need a mount skip when `/dev/fuse` is missing.
 
 ## 8. MCP
 
-Stdio server, the tool arguments above,
-the two resources, the resource templates,
-apply, delete, dump, notifications.
+Stdio server, numeric ids, the tool arguments above,
+`list://composition`, the resource templates,
+the specialization tree, apply, delete, notifications.
 
 The libraries under `grounds/` and the examples under `examples/`
 are archives in this language.
@@ -565,5 +613,5 @@ are archives in this language.
 `grounds/c-programming` grounds `common` and adds C Structure and Light.
 `examples/composer.json` grounds `c-programming`
 and adds Program Hello and Test Light.
-Select a node with `-n`.
+Select a node with `-n` and the names from the root.
 Put `grounds` on `$LITAR_LIBRARY` when evaluating the examples.

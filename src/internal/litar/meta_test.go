@@ -222,7 +222,7 @@ func TestLibraryModuleDescriptions(t *testing.T) {
 	if !ok {
 		t.Fatal("caller")
 	}
-	root := filepath.Join(filepath.Dir(file), "..", "..")
+	root := filepath.Join(filepath.Dir(file), "..", "..", "..")
 	t.Setenv("LITAR_LIBRARY", filepath.Join(root, "grounds"))
 	w, err := LoadComposer(filepath.Join(root, "examples", "c", "composer.json"))
 	if err != nil {
@@ -287,7 +287,7 @@ func TestProgramHelloModuleSpecializations(t *testing.T) {
 	if !ok {
 		t.Fatal("caller")
 	}
-	root := filepath.Join(filepath.Dir(file), "..", "..")
+	root := filepath.Join(filepath.Dir(file), "..", "..", "..")
 	t.Setenv("LITAR_LIBRARY", filepath.Join(root, "grounds"))
 	w, err := LoadComposer(filepath.Join(root, "examples", "c", "composer.json"))
 	if err != nil {

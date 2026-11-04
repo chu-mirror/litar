@@ -89,5 +89,9 @@ install-grounds:
 		cp -R "$(GROUNDS)/$$g/." "$(DESTDIR)$(GROUNDDIR)/$$g/" || exit 1; \
 	done
 
+mcp:
+	npx @modelcontextprotocol/inspector
+
 clean:
 	rm -rf $(BUILD) $(dir $(BOOT)) $(LISTING) litar
+

@@ -1,11 +1,12 @@
 # Build litar from the composition in compos, sync src from it, and install.
-#   make                  evaluate the go module files into $(BUILD), then compile ./litar
+#   make                  evaluate the go module files into $(BUILD), then compile ./litar and ./litar-web
 #   make sync             write every file of the composition into $(SRC)
 #   make boot             compile $(BOOT) from the Go sources in $(SRC)
-#   make install          install ./litar and the grounds under $(PREFIX)
-#   make install-bin      install ./litar as $(BINDIR)/litar
+#   make web              browse $(ARCHIVE) with ./litar-web on $(WEB_ADDR)
+#   make install          install ./litar, ./litar-web, and the grounds under $(PREFIX)
+#   make install-bin      install ./litar and ./litar-web into $(BINDIR)
 #   make install-grounds  copy each ground composition into $(GROUNDDIR)
-#   make clean            remove $(BUILD), $(BOOT), and ./litar
+#   make clean            remove $(BUILD), $(BOOT), ./litar, and ./litar-web
 #
 # LITAR is the binary that evaluates the composition: ./litar from an earlier build,
 # else $(BOOT), which is compiled from $(SRC) first. So a fresh checkout needs only go,
@@ -28,6 +29,8 @@ GROUNDS := grounds
 SRC ?= src
 BUILD ?= tmp/build
 BOOT ?= tmp/boot/litar
+WEB_ADDR ?= 127.0.0.1:8080
+COMMANDS := litar litar-web
 LISTING := tmp/litar-files
 
 LITAR ?= $(or $(wildcard $(CURDIR)/litar),$(abspath $(BOOT)))
@@ -55,7 +58,7 @@ while read -r kind f; do \
 done < $(LISTING)
 endef
 
-.PHONY: all litar tangle sync boot install install-bin install-grounds clean
+.PHONY: all litar tangle sync boot web install install-bin install-grounds mcp clean
 
 all: litar
 
@@ -70,17 +73,21 @@ tangle: $(EVALUATOR)
 	$(call write-files,Build@/go module files,$(BUILD))
 
 litar: tangle
-	cd $(BUILD) && GOWORK=off go build -o $(CURDIR)/litar ./cmd/litar
+	cd $(BUILD) && for c in $(COMMANDS); do GOWORK=off go build -o $(CURDIR)/$$c ./cmd/$$c || exit 1; done
 
 sync: $(EVALUATOR)
 	$(call write-files,Build@/project files,$(SRC))
 
+web:
+	@test -x litar-web || { echo "./litar-web is missing; run make first" >&2; exit 1; }
+	LITAR_LIBRARY=$(abspath $(GROUNDS)) ./litar-web -addr $(WEB_ADDR) -litar $(CURDIR)/litar -file $(ARCHIVE)
+
 install: install-bin install-grounds
 
 install-bin:
-	@test -x litar || { echo "./litar is missing; run make first" >&2; exit 1; }
+	@for c in $(COMMANDS); do test -x $$c || { echo "./$$c is missing; run make first" >&2; exit 1; }; done
 	install -d "$(DESTDIR)$(BINDIR)"
-	install -m 755 litar "$(DESTDIR)$(BINDIR)/litar"
+	install -m 755 $(COMMANDS) "$(DESTDIR)$(BINDIR)/"
 
 install-grounds:
 	for g in $(GROUND_NAMES); do \
@@ -93,5 +100,5 @@ mcp:
 	npx @modelcontextprotocol/inspector
 
 clean:
-	rm -rf $(BUILD) $(dir $(BOOT)) $(LISTING) litar
+	rm -rf $(BUILD) $(dir $(BOOT)) $(LISTING) $(COMMANDS)
 

@@ -13,6 +13,7 @@ including the MCP server it opens for agents.
 - compos: the composition of litar itself, the source of everything in `src`;
 - src: the Go module of `litar`, synced from `compos`:
   - src/cmd/litar: the `litar` command;
+  - src/cmd/litar-web: the `litar-web` command, a browser interface for compositions;
   - src/internal/litar: the Go implementation;
   - src/tests: acceptance tests;
 - grounds: library compositions that other compositions ground on;
@@ -30,15 +31,31 @@ Prerequisites:
 
 The `Makefile` at the root builds litar from `compos`:
 
-- `make` evaluates the Go files of `compos` into `tmp/build` and compiles `./litar`.
+- `make` evaluates the Go files of `compos` into `tmp/build` and compiles `./litar` and `./litar-web`.
   With no `./litar` yet, it first compiles `tmp/boot/litar` from `src` to do the evaluation.
 - `make sync` writes every file of `compos` into `src`.
-- `make install` installs `./litar` as `$(PREFIX)/bin/litar`
+- `make web` opens `compos` in `./litar-web` at <http://127.0.0.1:8080/> (`WEB_ADDR` changes it).
+- `make install` installs `./litar` and `./litar-web` into `$(PREFIX)/bin`
   and the grounds under `$(PREFIX)/share/litar`; `PREFIX` defaults to `/usr/local`.
   It does not build, so run `make && sudo make install`.
-- `make clean` removes `tmp/build`, `tmp/boot`, and `./litar`.
+- `make clean` removes `tmp/build`, `tmp/boot`, `./litar`, and `./litar-web`.
 
 Edit `compos`, not `src`; `make sync` overwrites the files it lists.
+
+# Browse
+
+`litar-web` runs `litar -a` and serves a read-only page over its MCP resources:
+the node tree, the chunks, files, and items of a node, its own blocks,
+and for a chunk its specializations, effective, applied, and dependent blocks, and its result.
+References, filters, items, and file headers in blocks are links.
+
+```
+LITAR_LIBRARY=grounds ./litar-web -litar ./litar -file examples/go/project-hello.la
+```
+
+It listens on `127.0.0.1:8080` by default (`-addr`).
+The page may import compositions and evaluate expressions, which runs their filters,
+but it cannot change an archive.
 
 # Test
 

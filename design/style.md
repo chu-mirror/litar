@@ -207,3 +207,45 @@ finally use chunk references to insert the transformed specification into proper
 
 The rule: **use filters to generate different forms of a single piece of information**.
 
+# Build up cross-reference when possible
+
+A chunk of code always refers to other concepts, like, calling functions, modifying variables.
+Figure out whether the items is local; that is, whether the context of the item is limited to
+current block. If not, build reference to that item using `@~`.
+
+There are some cases we want to avoid cross-reference:
+
+- the items are from common sense, like standard library, well-known third-party libraries;
+- the items are quoted in the name of the chunk name, if a chunk's name is `add 'a' to 'b'`,
+  then even though 'a' and 'b' is not limited to current block, the name implies the reference
+  implicitly, so do not use cross-reference.
+
+# Do not assign every tree with a chunk, use cross-referencing when appropriate
+
+Some trees are well defined units under the context, for example, a function in programming.
+That means, do not write:
+
+```
+@<functions@+
+@<print hello@>
+@
+
+@<print hello@=
+void hello()
+{
+    printf("Hello\n");
+}
+@
+```
+
+write:
+
+```
+@<functions@=
+void hello()
+{
+    printf("Hello\n");
+}
+@~ function@/hello @
+```
+

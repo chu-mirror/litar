@@ -9,8 +9,7 @@ exp=$(mktemp)
     cat <<'EOF'
 --help: print the usage
 -a, --agent: open an MCP server to handle the requests from agents
--t, --target COMPOSITION: specify the composition as COMPOSITION
--n, --node NODE...: specify the node pointed by path NODE...
+-f, --file ARCHIVE: specify the archive file, find the composition and the node corresponding
 -l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
 -e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
 -d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE

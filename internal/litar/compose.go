@@ -376,6 +376,45 @@ func identityPath(path string) (string, error) {
 	return abs, nil
 }
 
+// FindArchive loads the composition that declares archive and returns the
+// path of the declaring node. It looks for composer.json from the archive's
+// directory upward; the nearest composer that declares the archive as one of
+// its own nodes wins.
+func FindArchive(archive string) (*World, string, error) {
+	ident, err := identityPath(archive)
+	if err != nil || !isRegular(ident) {
+		return nil, "", fmt.Errorf("could not find archive '%s'", archive)
+	}
+	var loadErr error
+	dir := filepath.Dir(ident)
+	for {
+		comp := filepath.Join(dir, "composer.json")
+		if isRegular(comp) {
+			w, err := LoadComposer(comp)
+			if err != nil {
+				if loadErr == nil {
+					loadErr = err
+				}
+			} else {
+				for i := w.localAt; i < len(w.Nodes); i++ {
+					if w.Nodes[i].Archive == ident {
+						return w, formatNodePath(nodePath(w.Nodes[i])), nil
+					}
+				}
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	if loadErr != nil {
+		return nil, "", loadErr
+	}
+	return nil, "", fmt.Errorf("no composition declares archive '%s'", archive)
+}
+
 // requireLocal returns a node declared in this composer file.
 // A node that arrived through ground is visible, and it is not edited here.
 func (w *World) requireLocal(ref string) (*Node, error) {

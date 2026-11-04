@@ -59,7 +59,10 @@ The format and the ground search order are in [syntax.md](syntax.md).
 - Each archive is parsed once into `Own`. A missing archive fails the load.
 - File-set membership is the `Sets` on file blocks in the chain plus the mappings
   inherited along it; `@+name` adds every file and mapping that lists `name`.
-- `-n` selects the node; without it, the root.
+- `-f` finds the node: from the archive's directory upward, the first `composer.json`
+  that declares the archive as one of its own nodes wins.
+  If none does, the error is the first composer that failed to load,
+  or `no composition declares archive '…'`.
 
 # Evaluation
 
@@ -129,8 +132,7 @@ usage: litar [options]
 
 --help: print the usage
 -a, --agent: open an MCP server to handle the requests from agents
--t, --target COMPOSITION: specify the composition as COMPOSITION
--n, --node NODE...: specify the node pointed to by path NODE...
+-f, --file ARCHIVE: specify the archive file, find the composition and the node corresponding
 -l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
 -e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
 -d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
@@ -139,14 +141,13 @@ usage: litar [options]
 ```
 
 The help text is printed as above, with `argv[0]` for `litar`.
-COMPOSITION is a directory containing `composer.json`;
-NODE is the node names from the root;
+ARCHIVE is the path of an archive file;
 CHUNK_REFERENCE, EXPRESSION, and ITEM are the command-line names of [syntax.md](syntax.md).
 `--help` is long only; short options, long options, and `--name=value` are accepted.
 One action per invocation: combining two of `-p -l -e -d -r -a` is an error
 naming the earlier one in that order.
-`-t` is required except for `--help` and `-a`, and must be a directory.
-`-a` without `-t` starts the server with nothing imported.
+`-f` is required except for `--help` and `-a`.
+`-a -f` imports the archive's composition; `-a` alone starts the server with nothing imported.
 
 # MCP
 
@@ -232,7 +233,7 @@ and every concrete URI present before or after it.
 `internal/litar` has table tests for parsing, matching, label inheritance, `.` / `..`,
 effective blocks, listings, filters, FUSE views, composer edits, and MCP.
 `tests/` holds CLI cases run by `run.sh`; a case is a directory with `driver.sh` or `argv`
-(one argument per line, including `-t`).
+(one argument per line, including `-f`).
 
 # Grounds and examples
 

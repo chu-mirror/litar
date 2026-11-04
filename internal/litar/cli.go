@@ -7,15 +7,13 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 )
 
 const usageBody = `--help: print the usage
 -a, --agent: open an MCP server to handle the requests from agents
--t, --target COMPOSITION: specify the composition as COMPOSITION
--n, --node NODE...: specify the node pointed by path NODE...
+-f, --file ARCHIVE: specify the archive file, find the composition and the node corresponding
 -l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
 -e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
 -d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
@@ -75,12 +73,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	var (
-		mode      string
-		dir       string
-		nodes     []string
-		operand   string
-		sawTarget bool
-		sawNode   bool
+		mode    string
+		archive string
+		operand string
+		sawFile bool
 	)
 	fail := func(format string, a ...any) int {
 		fmt.Fprintf(stderr, "Error: "+format+"\n", a...)
@@ -147,30 +143,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 		var code int
 		switch opt {
-		case "-t", "--target":
-			if sawTarget {
-				return fail("duplicate target option")
+		case "-f", "--file":
+			if sawFile {
+				return fail("duplicate file option")
 			}
-			dir, code = takes("a composition")
+			archive, code = takes("an archive")
 			if code != 0 {
 				return code
 			}
-			sawTarget = true
-		case "-n", "--node":
-			if sawNode {
-				return fail("duplicate node option")
-			}
-			var first string
-			first, code = takes("a node")
-			if code != 0 {
-				return code
-			}
-			nodes = append(nodes, first)
-			for i+1 < len(rest) && !strings.HasPrefix(rest[i+1], "-") {
-				i++
-				nodes = append(nodes, rest[i])
-			}
-			sawNode = true
+			sawFile = true
 		case "-p", "--print":
 			if code = setMode("print"); code != 0 {
 				return code
@@ -212,30 +193,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if mode == "" {
 		return fail("%s", missingAction)
 	}
-	if mode != "agent" && !sawTarget {
-		return fail("missing -t, --target")
+	if mode != "agent" && !sawFile {
+		return fail("missing -f, --file")
 	}
 
-	var world *World
-	if sawTarget {
-		st, err := os.Stat(dir)
+	var (
+		world *World
+		node  string
+	)
+	if sawFile {
+		var err error
+		world, node, err = FindArchive(archive)
 		if err != nil {
-			return fail("could not read composition '%s': %v", dir, err)
-		}
-		if !st.IsDir() {
-			return fail("target '%s' is not a directory", dir)
-		}
-		world, err = LoadComposer(filepath.Join(dir, "composer.json"))
-		if err != nil {
-			return fail("%s", err.Error())
-		}
-	}
-	node := ""
-	if sawNode {
-		node = formatNodePath(nodes)
-	}
-	if node != "" && world != nil {
-		if _, err := world.lookup(node); err != nil {
 			return fail("%s", err.Error())
 		}
 	}
@@ -265,7 +234,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 func optionTakesValue(opt string) bool {
 	switch opt {
-	case "-t", "--target", "-n", "--node", "-p", "--print",
+	case "-f", "--file", "-p", "--print",
 		"-l", "--literal", "-e", "--effective", "-d", "--depend",
 		"-r", "--reference":
 		return true

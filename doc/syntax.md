@@ -367,10 +367,7 @@ domain, item, or specialization that the chunk names.
 
 # Composer file
 
-The command line reads the composer file in a directory,
-not a single archive.
-The `-t`/`--target` option names that directory.
-litar reads `composer.json` inside it,
+A composition is described by its composer file, `composer.json`,
 a JSON object with `description`, `ground`, and `nodes`:
 
 ```
@@ -430,9 +427,8 @@ An archive name is relative to the composer file that names it.
 
 A node's blocks are the blocks along its base path
 followed by the blocks of its archive.
-The `-n`/`--node` option selects the node that the command line evaluates at.
-The arguments are the node names from the root through that node.
-If `-n` is omitted, the command uses the root.
+The `-f`/`--file` option names an archive;
+the command line evaluates at the node whose archive it is.
 
 The `mappings` field maps files outside the archives
 into the filesystem used by an invocation.

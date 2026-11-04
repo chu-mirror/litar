@@ -8,9 +8,9 @@ if [ ! -e /dev/fuse ]; then
 fi
 cd "$(dirname "$0")"
 . "$ROOT/tests/assert.sh"
-assert_text cat 'hello world' "$LITAR" -t . -p msg
-assert_text exe $'yes\n' "$LITAR" -t . -p ask
-assert_text overlay overlay "$LITAR" -t . -p made
-assert_fail readonly "exited with status" "$LITAR" -t . -p row
-assert_fail missing "file 'missing' is not defined" "$LITAR" -t . -p '@|show@,missing'
-assert_fail badpath "invalid file path '../x'" "$LITAR" -t . -p '@|show@,../x'
+assert_text cat 'hello world' "$LITAR" -f archive.la -p msg
+assert_text exe $'yes\n' "$LITAR" -f archive.la -p ask
+assert_text overlay overlay "$LITAR" -f archive.la -p made
+assert_fail readonly "exited with status" "$LITAR" -f archive.la -p row
+assert_fail missing "file 'missing' is not defined" "$LITAR" -f archive.la -p '@|show@,missing'
+assert_fail badpath "invalid file path '../x'" "$LITAR" -f archive.la -p '@|show@,../x'

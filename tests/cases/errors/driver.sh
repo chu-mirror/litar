@@ -8,9 +8,9 @@ assert_fail none "missing -p, --print, -l, --literal, -e, --effective, -d, --dep
 assert_fail combine "cannot combine print and literal" "$LITAR" -p a -l a
 assert_fail combine-rev "cannot combine print and literal" "$LITAR" -l a -p b
 assert_fail dup "duplicate print option" "$LITAR" -p a -p b
-assert_fail nofile "missing -t, --target" "$LITAR" -p msg
+assert_fail nofile "missing -f, --file" "$LITAR" -p msg
 assert_fail cluster "unknown option '-al'" "$LITAR" -al
 assert_fail positional "unexpected argument 'archive.la'" "$LITAR" archive.la
-assert_fail missing "chunk 'missing' is not defined" "$LITAR" -t . -p missing
-assert_text depend-empty '' "$LITAR" -t . -d nope
-assert_fail effective "chunk 'missing' is not defined" "$LITAR" -t . -e missing
+assert_fail missing "chunk 'missing' is not defined" "$LITAR" -f archive.la -p missing
+assert_text depend-empty '' "$LITAR" -f archive.la -d nope
+assert_fail effective "chunk 'missing' is not defined" "$LITAR" -f archive.la -e missing

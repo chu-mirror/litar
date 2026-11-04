@@ -35,5 +35,5 @@ Each subdirectory holds `composer.json`.
 `$LITAR_LIBRARY` is a `$PATH`-style list of directories that contain those subdirectories.
 
 ```
-LITAR_LIBRARY=grounds ./litar -t examples -n Basic "C Structure" "Program Hello" -p hello.c
+LITAR_LIBRARY=grounds ./litar -f examples/c/hello.la -p hello.c
 ```

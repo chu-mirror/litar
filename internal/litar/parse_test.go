@@ -41,7 +41,7 @@ func TestParseRoundTrip(t *testing.T) {
 		t.Fatalf("trailing %q", arch.Trailing)
 	}
 	part := arch.Blocks[0].Parts
-	if len(part) != 2 || part[0].Ref == nil || part[0].Ref.Chunk != "substructure 1" || part[1].Text != "\n" {
+	if len(part) != 1 || part[0].Ref == nil || part[0].Ref.Chunk != "substructure 1" || !arch.Blocks[0].EndsLine {
 		t.Fatalf("parts %+v", part)
 	}
 }
@@ -60,15 +60,22 @@ func textOf(t *testing.T, b Block) string {
 
 func TestLayoutNewline(t *testing.T) {
 	cases := []struct {
-		src  string
-		body string
+		src      string
+		body     string
+		endsLine bool
 	}{
-		{"@<msg@=\nHello\n@", "Hello\n"},
-		{"@<msg@=Hello@", "Hello"},
-		{"@<msg@=\r\nHello@", "Hello"},
-		{"@<msg@=\rHello@", "Hello"},
-		{"@<msg@=\n\rHello@", "\rHello"},
-		{"@<msg@=@@<kept@@>@", "@<kept@>"},
+		{"@<msg@=\nHello\n@", "Hello", true},
+		{"@<msg@=\nHello\r\n@", "Hello", true},
+		{"@<msg@=\nHello\n\n@", "Hello\n", true},
+		{"@<msg@=\nHello\r@", "Hello\r", false},
+		{"@<msg@=\nHello\n@|f@", "Hello", true},
+		{"@<msg@=\nHello\n@~ a @", "Hello", true},
+		{"@<msg@=Hello@", "Hello", false},
+		{"@<msg@=\r\nHello@", "Hello", false},
+		{"@<msg@=\rHello@", "Hello", false},
+		{"@<msg@=\n\rHello@", "\rHello", false},
+		{"@<msg@=@@<kept@@>@", "@<kept@>", false},
+		{"@<msg@=\n\n@", "", true},
 	}
 	for _, tc := range cases {
 		arch, err := ParseArchive([]byte(tc.src), "a.la")
@@ -80,6 +87,9 @@ func TestLayoutNewline(t *testing.T) {
 		}
 		if got := textOf(t, arch.Blocks[0]); got != tc.body {
 			t.Fatalf("%q body %q want %q", tc.src, got, tc.body)
+		}
+		if arch.Blocks[0].EndsLine != tc.endsLine {
+			t.Fatalf("%q ends line %v", tc.src, arch.Blocks[0].EndsLine)
 		}
 	}
 }
@@ -199,7 +209,7 @@ func TestFileItemsPipeline(t *testing.T) {
 	if body.Parts[0].Ref.Chunk != "" || len(body.Parts[0].Ref.Filters) != 1 {
 		t.Fatalf("invocation %+v", body.Parts[0].Ref)
 	}
-	if body.Parts[1].Text != "\n@~\n" {
+	if body.Parts[1].Text != "\n@~" {
 		t.Fatalf("escaped %q", body.Parts[1].Text)
 	}
 }

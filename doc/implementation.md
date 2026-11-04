@@ -97,6 +97,7 @@ type Block struct {
     Parts    []Part
     Filters  []Filter
     Items    []Item
+    EndsLine bool   // a line break ended the content
     Comment  string // bytes after the previous expression
     Raw      string // the expression as written, for -l
     Source   string // archive path this block was parsed from
@@ -168,6 +169,8 @@ Any other top-level control is an error.
 A block header is a qualified name, then `@=` or `@+`.
 `@|` in the header is an error.
 The first CR, LF, or CR LF after the operator is layout.
+One LF or CR LF that ends the content, before `@`, `@|`, or `@~`, is layout,
+and `EndsLine` on the block records it.
 The body is text, `@@`, and references `@<` … `@>`.
 `@|` at body depth 0 starts the filter pipeline.
 `@~` at body depth 0 starts items, after the pipeline if there is one.
@@ -256,7 +259,9 @@ are `spec1@:module@/chunk` and `module@/chunk`.
 
 Apply matching blocks in node order.
 `@=` replaces the text accumulated so far.
-`@+` appends.
+`@+` appends;
+an `@+` block with `EndsLine` is joined by a line feed
+when the text accumulated so far is not empty.
 The blocks that still contribute are the effective blocks
 of that chunk reference.
 
@@ -507,6 +512,19 @@ A read does not compact.
 `delete_chunk` and `delete_file` remove matching blocks
 from that node's own archive, not from the base,
 and compact in the same way.
+Compaction then orders the blocks that remain:
+a block comes after the blocks whose content includes its chunk.
+Inclusion is a chunk reference in a block's content,
+resolved like the body of a block and matched by module and chunk,
+whatever the labels;
+a filter chunk is not included, and a block that includes its own chunk is skipped.
+Blocks of one module and chunk keep their order,
+since that order decides the content;
+when inclusion is circular, the order of the archive decides.
+Any other block keeps its place relative to the others,
+a comment moves with its block,
+and a block that ended the archive at its `@` gets a line break
+when it moves before other text.
 `delete_node` removes the node and every node based on it
 in this composer file, then deletes each removed node's archive file.
 A file that is already gone is not an error.
@@ -518,7 +536,8 @@ Dump is not a tool.
 `DumpArchives` still rewrites each local node's own archive:
 drop a block that is not an effective block
 of its own chunk reference in that same node;
-keep the comment and `Raw` of the blocks that remain.
+keep the comment and `Raw` of the blocks that remain,
+in the order compaction gives.
 
 Digest, from [design/style.md](../design/style.md), is not a tool.
 It is apply on the base, override or delete on the child, dump,

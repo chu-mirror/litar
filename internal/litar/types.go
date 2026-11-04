@@ -57,11 +57,15 @@ type Ref struct {
 }
 
 type Block struct {
-	Ref       ChunkRef
-	Op        Op
-	Parts     []Part
-	Filters   []Filter
-	Items     []Item
+	Ref     ChunkRef
+	Op      Op
+	Parts   []Part
+	Filters []Filter
+	Items   []Item
+	// EndsLine is set when a line break ended the content.
+	// That line break is not content; an @+ block that has it
+	// is joined to the text before it with a line break.
+	EndsLine  bool
 	Comment   string // bytes after the previous expression
 	Raw       string // the expression as written, including the end control
 	Source    string

@@ -67,6 +67,34 @@ func TestSuffixAndEffective(t *testing.T) {
 	}
 }
 
+func TestExtendJoin(t *testing.T) {
+	src := "" +
+		"@<seq@+\n" +
+		"a\n" +
+		"@\n" +
+		"@<seq@+\n" +
+		"b\n" +
+		"@\n" +
+		"@<seq@+, c@\n" +
+		"@<seq@+\r\n" +
+		"d\r\n" +
+		"@\n" +
+		"@<empty@=@\n" +
+		"@<empty@+\n" +
+		"e\n" +
+		"@\n" +
+		"@<blank@=\n" +
+		"x\n" +
+		"\n" +
+		"@\n" +
+		"@<blank@+\n" +
+		"y\n" +
+		"@\n"
+	mustEval(t, src, "seq", "a\nb, c\nd")
+	mustEval(t, src, "empty", "e")
+	mustEval(t, src, "blank", "x\n\ny")
+}
+
 func TestLabelInheritanceAndDot(t *testing.T) {
 	src := "" +
 		"@<base@+\n" +
@@ -81,8 +109,8 @@ func TestLabelInheritanceAndDot(t *testing.T) {
 		"@<spec@:inner@=\n" +
 		"special\n" +
 		"@\n"
-	mustEval(t, src, "spec@:base", "special\n\n!\n")
-	mustEval(t, src, "base", "plain\n\n")
+	mustEval(t, src, "spec@:base", "special\n!")
+	mustEval(t, src, "base", "plain")
 
 	src = "" +
 		"@<mod@/chunk@=@<.@/other@>@<..@/rootchunk@>@<sub@/x@>@\n" +

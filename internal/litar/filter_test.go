@@ -35,7 +35,7 @@ func TestFilterIO(t *testing.T) {
 	blocks := mustArch(t, src)
 	ev := NewEvaluator(blocks, nil, nil)
 	got, err := ev.Eval(mustRef(t, "msg"), nil)
-	if err != nil || got != "HELLO\n" {
+	if err != nil || got != "HELLO" {
 		t.Fatalf("%v %q", err, got)
 	}
 	// A chunk body is not a filter until a pipeline names it.
@@ -59,7 +59,7 @@ func TestFilterIO(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err = ev.Eval(mustRef(t, "use3"), nil)
-	if err != nil || got != "hi\n" {
+	if err != nil || got != "hi" {
 		t.Fatalf("copy %v %q", err, got)
 	}
 	_, err = ev.Eval(mustRef(t, "missing"), nil)
@@ -113,11 +113,11 @@ func TestFUSEView(t *testing.T) {
 	blocks := mustArch(t, src)
 	ev := NewEvaluator(blocks, nil, nil)
 	got, err := ev.Eval(mustRef(t, "msg"), nil)
-	if err != nil || got != "hello world\n" {
+	if err != nil || got != "hello world" {
 		t.Fatalf("view %v %q", err, got)
 	}
 	got, err = ev.Eval(mustRef(t, "sized"), nil)
-	if err != nil || strings.TrimSpace(got) != "12" {
+	if err != nil || strings.TrimSpace(got) != "11" {
 		t.Fatalf("size %v %q", err, got)
 	}
 	got, err = ev.Eval(mustRef(t, "ask"), nil)
@@ -243,7 +243,7 @@ func TestArchiveFileStatStable(t *testing.T) {
 	if hello[0] == note[0] || hello[0] == "0" {
 		t.Fatalf("inode %q", got)
 	}
-	if hello[1] != "12" || note[1] != "5" {
+	if hello[1] != "11" || note[1] != "4" {
 		t.Fatalf("size %q", got)
 	}
 	if hello[3] != "1" || note[3] != "1" {

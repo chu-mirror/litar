@@ -314,19 +314,45 @@ func (p *parser) parseInnerRef() (*Ref, error) {
 	return &Ref{ChunkRef: ref, Filters: filters}, nil
 }
 
-func (p *parser) parseBody() ([]Part, []Filter, []Item, error) {
-	var parts []Part
+type body struct {
+	parts    []Part
+	filters  []Filter
+	items    []Item
+	endsLine bool
+}
+
+// parseBody reads the content and what follows it up to the end control.
+// One line break that ends the content is layout, not content;
+// endsLine records it.
+func (p *parser) parseBody() (body, error) {
+	var b body
 	var text strings.Builder
 	flush := func() {
 		if text.Len() == 0 {
 			return
 		}
-		parts = append(parts, Part{Text: text.String()})
+		b.parts = append(b.parts, Part{Text: text.String()})
 		text.Reset()
+	}
+	endContent := func() {
+		s := text.String()
+		switch {
+		case strings.HasSuffix(s, "\r\n"):
+			s = s[:len(s)-2]
+		case strings.HasSuffix(s, "\n"):
+			s = s[:len(s)-1]
+		default:
+			flush()
+			return
+		}
+		b.endsLine = true
+		text.Reset()
+		text.WriteString(s)
+		flush()
 	}
 	for {
 		if p.i >= len(p.src) {
-			return nil, nil, nil, p.fail("unterminated block")
+			return body{}, p.fail("unterminated block")
 		}
 		kind, n, ok := p.atControl()
 		if !ok {
@@ -340,9 +366,9 @@ func (p *parser) parseBody() ([]Part, []Filter, []Item, error) {
 			continue
 		}
 		if isEndControl(kind, n) {
-			flush()
+			endContent()
 			p.i += n
-			return parts, nil, nil, nil
+			return b, nil
 		}
 		switch kind {
 		case '<':
@@ -350,39 +376,42 @@ func (p *parser) parseBody() ([]Part, []Filter, []Item, error) {
 			p.i += n
 			ref, err := p.parseInnerRef()
 			if err != nil {
-				return nil, nil, nil, err
+				return body{}, err
 			}
-			parts = append(parts, Part{Ref: ref})
+			b.parts = append(b.parts, Part{Ref: ref})
 		case '|':
-			flush()
+			endContent()
 			p.i += n
 			filters, k2, n2, err := p.parseFilterList(false)
 			if err != nil {
-				return nil, nil, nil, err
+				return body{}, err
 			}
+			b.filters = filters
 			if k2 == '~' && n2 == 2 {
 				p.i += n2
 				items, err := p.parseItems()
 				if err != nil {
-					return nil, nil, nil, err
+					return body{}, err
 				}
-				return parts, filters, items, nil
+				b.items = items
+				return b, nil
 			}
 			if isEndControl(k2, n2) {
 				p.i += n2
-				return parts, filters, nil, nil
+				return b, nil
 			}
-			return nil, nil, nil, p.unexpected(k2, n2)
+			return body{}, p.unexpected(k2, n2)
 		case '~':
-			flush()
+			endContent()
 			p.i += n
 			items, err := p.parseItems()
 			if err != nil {
-				return nil, nil, nil, err
+				return body{}, err
 			}
-			return parts, nil, items, nil
+			b.items = items
+			return b, nil
 		default:
-			return nil, nil, nil, p.unexpected(kind, n)
+			return body{}, p.unexpected(kind, n)
 		}
 	}
 }
@@ -456,16 +485,17 @@ func (p *parser) parseBlock() (Block, error) {
 	op := Op(kind)
 	p.i += n
 	p.consumeLayout()
-	parts, filters, items, err := p.parseBody()
+	b, err := p.parseBody()
 	if err != nil {
 		return Block{}, err
 	}
 	return Block{
 		Ref:       ref,
 		Op:        op,
-		Parts:     parts,
-		Filters:   filters,
-		Items:     items,
+		Parts:     b.parts,
+		Filters:   b.filters,
+		Items:     b.items,
+		EndsLine:  b.endsLine,
 		StartLine: startLine,
 		EndLine:   p.line(),
 	}, nil
@@ -512,16 +542,17 @@ func (p *parser) parseFile(executable bool) (Block, error) {
 	op := Op(kind)
 	p.i += n
 	p.consumeLayout()
-	parts, filters, items, err := p.parseBody()
+	b, err := p.parseBody()
 	if err != nil {
 		return Block{}, err
 	}
 	return Block{
 		Ref:        ChunkRef{Chunk: path},
 		Op:         op,
-		Parts:      parts,
-		Filters:    filters,
-		Items:      items,
+		Parts:      b.parts,
+		Filters:    b.filters,
+		Items:      b.items,
+		EndsLine:   b.endsLine,
 		StartLine:  startLine,
 		EndLine:    p.line(),
 		IsFile:     true,

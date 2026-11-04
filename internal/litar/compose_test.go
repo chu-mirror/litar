@@ -613,3 +613,93 @@ func TestCreateComposedArchiveGround(t *testing.T) {
 		t.Fatal(statErr)
 	}
 }
+
+func orderedRaw(t *testing.T, src string) string {
+	t.Helper()
+	var b strings.Builder
+	for _, bl := range orderOwn(mustArch(t, src)) {
+		b.WriteString(bl.Comment)
+		b.WriteString(bl.Raw)
+	}
+	return b.String()
+}
+
+func TestOrderOwn(t *testing.T) {
+	cases := []struct {
+		name, src, want string
+	}{
+		{
+			"included after includer",
+			"@<sub@=x@\n@<top@=\n@<sub@>\n@\n",
+			"@<top@=\n@<sub@>\n@\n@<sub@=x@\n",
+		},
+		{
+			"others keep their order",
+			"@<a@=1@\n@<sub@=x@\n@<b@=2@\n@<top@=@<sub@>@\n@<c@=3@\n",
+			"@<a@=1@\n@<b@=2@\n@<top@=@<sub@>@\n@<sub@=x@\n@<c@=3@\n",
+		},
+		{
+			"labels and relative modules",
+			"@<l@:m@/sub@=x@\n@<m@/top@=@<k@:.@/sub@>@\n",
+			"@<m@/top@=@<k@:.@/sub@>@\n@<l@:m@/sub@=x@\n",
+		},
+		{
+			"one chunk keeps its order",
+			"@<c@=one@\n@<top@=@<c@>@\n@<c@+, two@\n",
+			"@<top@=@<c@>@\n@<c@=one@\n@<c@+, two@\n",
+		},
+		{
+			"circular inclusion keeps the order",
+			"@<x@=@<y@>@\n@<y@=@<x@>@\n",
+			"@<x@=@<y@>@\n@<y@=@<x@>@\n",
+		},
+		{
+			"self inclusion",
+			"@<x@=a@\n@<x@+@<l@:x@>@\n",
+			"@<x@=a@\n@<x@+@<l@:x@>@\n",
+		},
+		{
+			"comments move with blocks",
+			"About sub.\n@<sub@=x@\n\nAbout top.\n@<top@=@<sub@>@\n",
+			"\nAbout top.\n@<top@=@<sub@>@\nAbout sub.\n@<sub@=x@\n",
+		},
+	}
+	for _, tc := range cases {
+		if got := orderedRaw(t, tc.src); got != tc.want {
+			t.Fatalf("%s:\n%q\nwant\n%q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestApplyBlockOrders(t *testing.T) {
+	dir := t.TempDir()
+	arch := filepath.Join(dir, "a.la")
+	writeFile(t, arch, "@<sub@=x@\n@<c@=one@\n")
+	comp := filepath.Join(dir, "composer.json")
+	writeFile(t, comp, composerDoc(`[
+    {"name":"root","archive":"./a.la","description":"","mappings":[],"base":[]}
+]`))
+	w, err := LoadComposer(comp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.ApplyBlock("root", "@<top@=@<sub@>@<c@>@"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(arch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "@<top@=@<sub@>@<c@>@\n@<sub@=x@\n@<c@=one@\n"
+	if string(data) != want {
+		t.Fatalf("%q\nwant\n%q", data, want)
+	}
+	chain, err := w.Chain("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewEvaluator(chain, nil, nil).Eval(mustRef(t, "top"), nil)
+	if err != nil || got != "xone" {
+		t.Fatalf("%v %q", err, got)
+	}
+}

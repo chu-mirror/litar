@@ -114,9 +114,12 @@ func (e *Evaluator) expandLocked(ref ChunkRef, missingErr bool) (string, error) 
 		if err != nil {
 			return "", err
 		}
-		if b.Op == OpSet {
+		switch {
+		case b.Op == OpSet:
 			acc = text
-		} else {
+		case b.EndsLine && acc != "":
+			acc += "\n" + text
+		default:
 			acc += text
 		}
 	}

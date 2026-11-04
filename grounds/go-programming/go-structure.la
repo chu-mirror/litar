@@ -2,6 +2,112 @@
 {"description": "Common structures in Go programming"}
 @
 
+gofmt reads a Go source file on stdin and writes the formatted file on stdout.
+The Go toolchain fixes the format, so this filter has no style file.
+@<Go Structure@/Filters@/format Go code@=#!/bin/sh
+gofmt
+@
+
+@<Module@/Go Structure@/Filters@=
+{"description": "Format a Go source file."}
+@
+
+@<Module@/Go Structure@/Flag@=
+{"description": "Flags and positional arguments of a command."}
+@
+
+@<Chunk@/Go Structure@/file@=
+{"description": "One Go source file."}
+@
+
+@<Chunk@/Go Structure@/module meta information@=
+{"description": "Package name and other properties, as a Perl hash."}
+@
+
+@<Chunk@/Go Structure@/module properties@=
+{"description": "Extra Perl hash entries for the module meta information."}
+@
+
+@<Chunk@/Go Structure@/package clause@=
+{"description": "Package comment followed by the package clause."}
+@
+
+@<Chunk@/Go Structure@/package name@=
+{"description": "Package identifier from the module meta information."}
+@
+
+@<Chunk@/Go Structure@/package comment@=
+{"description": "Comment lines immediately above the package clause."}
+@
+
+@<Chunk@/Go Structure@/build constraints@=
+{"description": "go:build lines before the package clause."}
+@
+
+@<Chunk@/Go Structure@/imports@=
+{"description": "Import declaration, omitted when there are no paths."}
+@
+
+@<Chunk@/Go Structure@/import paths@=
+{"description": "Lines of the import declaration."}
+@
+
+@<Chunk@/Go Structure@/constants@=
+{"description": "Constant declarations."}
+@
+
+@<Chunk@/Go Structure@/variables@=
+{"description": "Variable declarations."}
+@
+
+@<Chunk@/Go Structure@/types@=
+{"description": "Type declarations."}
+@
+
+@<Chunk@/Go Structure@/methods@=
+{"description": "Method declarations."}
+@
+
+@<Chunk@/Go Structure@/functions@=
+{"description": "Function declarations."}
+@
+
+@<Chunk@/Go Structure@/main body@=
+{"description": "Statements of func main in a command."}
+@
+
+@<Chunk@/Go Structure@/Filters@/format Go code@=
+{"description": "Format stdin as Go and write it to stdout."}
+@
+
+@<Chunk@/Go Structure@/Flag@/invocation syntax@=
+{"description": "Flags and positional arguments of a command."}
+@
+
+@<Chunk@/Go Structure@/Flag@/flag syntax helpers@=
+{"description": "Perl subroutines shared by the flag generators."}
+@
+
+@<Chunk@/Go Structure@/Flag@/command variables@=
+{"description": "Variable command, when the command has flags or arguments."}
+@
+
+@<Chunk@/Go Structure@/Flag@/register flags@=
+{"description": "flag.Var calls for the invocation syntax."}
+@
+
+@<Chunk@/Go Structure@/Flag@/usage literal@=
+{"description": "Go string literal of the usage line."}
+@
+
+@<Chunk@/Go Structure@/Flag@/store arguments@=
+{"description": "Statements that check and store positional arguments."}
+@
+
+@<Chunk@/Go Structure@/Flag@/parse command line arguments@=
+{"description": "Register flags, parse the command line, and store arguments."}
+@
+
 A Go source file is one tree.  Build constraints come first,
 because the go command reads them only before the package clause.
 The package clause is next, then the import declaration,
@@ -15,9 +121,8 @@ A block with no label is part of every file.
 Put a shared label to the right of a more specific one:
 blocks labeled lib are part of a reference impl@@:lib.
 A block that belongs to one file carries that file's whole label list.
-A file block that should keep these bytes
-closes on the same line as its reference,
-because a newline after the reference is part of the file.
+The line break before the closing control of a block is not content,
+so a file block may close on the line after its reference.
 @<Go Structure@/file@=
 @<.@/build constraints@>
 @<.@/package clause@>
@@ -28,17 +133,6 @@ because a newline after the reference is part of the file.
 @<.@/methods@>
 @<.@/functions@>
 @|Go Structure@/Filters@/format Go code@
-
-The name entry is the package identifier.
-pkg stands in until a file sets its own name.
-A command does not read this name; its package clause says main.
-Further entries belong in module properties.
-@<Go Structure@/module meta information@=
-(
-    name => 'pkg',
-    @<.@/module properties@>
-)
-@
 
 go doc attaches the comment that ends immediately above the package clause.
 Leave no blank line between that comment and the clause.
@@ -56,6 +150,17 @@ die "package name '$name' is not a Go identifier\n"
 print $name;
 @|Basic@/evaluate@
 
+The name entry is the package identifier.
+pkg stands in until a file sets its own name.
+A command does not read this name; its package clause says main.
+Further entries belong in module properties.
+@<Go Structure@/module meta information@=
+(
+    name => 'pkg',
+    @<.@/module properties@>
+)
+@
+
 No import declaration is emitted when the path list is empty
 or contains only whitespace.
 A blank line between paths starts another group,
@@ -70,19 +175,130 @@ $paths =~ s/\s+\z//;
 print "import (\n$paths\n)\n" if $paths ne '';
 @|Basic@/evaluate@
 
-gofmt reads a Go source file on stdin and writes the formatted file on stdout.
-The Go toolchain fixes the format, so this filter has no style file.
-@<Go Structure@/Filters@/format Go code@=#!/bin/sh
-gofmt
+command is the rightmost label of a package main program.
+These blocks set the package name to main,
+add the flag, fmt, and os imports,
+add the command variable when the invocation syntax needs one,
+and add func main.
+func main parses the command line and then runs the main body.
+Parsing always calls flag.Parse, flag.Usage, and os.Exit,
+so those three imports stay used when the command has no flags.
+Replace module meta information to name the other files in the node.
+That replacement does not rename the command.
+@<command@:Go Structure@/package name@=main@
+
+@<command@:Go Structure@/import paths@+
+    "flag"
+    "fmt"
+    "os"
 @
 
-@<Module@/Go Structure@/Filters@=
-{"description": "Format a Go source file."}
+@<command@:Go Structure@/variables@+
+@<.@/Flag@/command variables@>
 @
 
-@<Module@/Go Structure@/Flag@=
-{"description": "Flags and positional arguments of a command."}
+@<Go Structure@/Flag@/command variables@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<.@/invocation syntax@>;
+@<.@/flag syntax helpers@>
+my @@flags = flag_list($syntax);
+my @@arguments = argument_list($syntax);
+exit 0 if !@@flags && !@@arguments;
+my %seen_flag;
+my %seen_arg;
+print "var command struct {\n";
+if (@@flags) {
+    print "flags struct {\n";
+    for my $flag (@@flags) {
+        my $field = take_field($flag->{name});
+        die "name '$flag->{name}' repeats field $field\n" if $seen_flag{$field}++;
+        die "unsupported flag type: $flag->{type}\n" if !flag_func($flag->{type});
+        print "$field $flag->{type}\n";
+    }
+    print "}\n";
+}
+if (@@arguments) {
+    print "arguments struct {\n";
+    for my $arg (@@arguments) {
+        my $field = take_field($arg);
+        die "name '$arg' repeats field $field\n" if $seen_arg{$field}++;
+        print "$field string\n";
+    }
+    print "}\n";
+}
+print "}\n";
+@|Basic@/evaluate@
+
+@<command@:Go Structure@/functions@+
+func main() {
+    @<.@/Flag@/parse command line arguments@>
+    @<.@/main body@>
+}
 @
+
+@<Go Structure@/Flag@/parse command line arguments@=
+@<.@/register flags@>flag.Usage = func() {
+fmt.Fprint(flag.CommandLine.Output(), @<.@/usage literal@>)
+flag.PrintDefaults()
+}
+flag.Parse()
+@<.@/store arguments@>@
+
+@<Go Structure@/Flag@/register flags@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<.@/invocation syntax@>;
+@<.@/flag syntax helpers@>
+for my $flag (flag_list($syntax)) {
+    my $field = take_field($flag->{name});
+    my $func = flag_func($flag->{type});
+    die "unsupported flag type: $flag->{type}\n" if !$func;
+    my $lit = go_literal($flag->{type}, $flag->{default});
+    my $usage = go_string($flag->{usage} // '');
+    my $name = go_string($flag->{name});
+    print "flag.$func(&command.flags.$field, $name, $lit, $usage)\n";
+}
+@|Basic@/evaluate@
+
+@<Go Structure@/Flag@/usage literal@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<.@/invocation syntax@>;
+@<.@/flag syntax helpers@>
+my $name = $syntax->{name} // 'command';
+my @@parts = ($name);
+for my $flag (flag_list($syntax)) {
+    my $opt = '-' . $flag->{name};
+    if (($flag->{type} // '') ne 'bool') {
+        my $meta = uc($flag->{name} // '');
+        $meta =~ tr/- /_/;
+        $opt .= " $meta";
+    }
+    push @@parts, "[$opt]";
+}
+for my $arg (argument_list($syntax)) {
+    my $shown = uc $arg;
+    $shown =~ tr/- /_/;
+    push @@parts, $shown;
+}
+print go_string('Usage: ' . join(' ', @@parts) . "\n");
+@|Basic@/evaluate@
+
+@<Go Structure@/Flag@/store arguments@=
+@<Text Processing@/basic perl settings@>
+my $syntax = @<.@/invocation syntax@>;
+@<.@/flag syntax helpers@>
+my @@arguments = argument_list($syntax);
+my $n = @@arguments;
+print "if len(flag.Args()) != $n {\n";
+print "flag.Usage()\n";
+print "os.Exit(1)\n";
+print "}\n";
+my $i = 0;
+for my $arg (@@arguments) {
+    my $field = take_field($arg);
+    print "command.arguments.$field = flag.Args()[$i]\n";
+    $i++;
+}
+@|Basic@/evaluate@
 
 A command line is one Perl hash.
 The filters below turn that hash into Go,
@@ -197,221 +413,4 @@ sub flag_func {
     );
     return $func{$type};
 }
-@
-
-@<Go Structure@/Flag@/command variables@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-@<.@/flag syntax helpers@>
-my @@flags = flag_list($syntax);
-my @@arguments = argument_list($syntax);
-exit 0 if !@@flags && !@@arguments;
-my %seen_flag;
-my %seen_arg;
-print "var command struct {\n";
-if (@@flags) {
-    print "flags struct {\n";
-    for my $flag (@@flags) {
-        my $field = take_field($flag->{name});
-        die "name '$flag->{name}' repeats field $field\n" if $seen_flag{$field}++;
-        die "unsupported flag type: $flag->{type}\n" if !flag_func($flag->{type});
-        print "$field $flag->{type}\n";
-    }
-    print "}\n";
-}
-if (@@arguments) {
-    print "arguments struct {\n";
-    for my $arg (@@arguments) {
-        my $field = take_field($arg);
-        die "name '$arg' repeats field $field\n" if $seen_arg{$field}++;
-        print "$field string\n";
-    }
-    print "}\n";
-}
-print "}\n";
-@|Basic@/evaluate@
-
-@<Go Structure@/Flag@/register flags@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-@<.@/flag syntax helpers@>
-for my $flag (flag_list($syntax)) {
-    my $field = take_field($flag->{name});
-    my $func = flag_func($flag->{type});
-    die "unsupported flag type: $flag->{type}\n" if !$func;
-    my $lit = go_literal($flag->{type}, $flag->{default});
-    my $usage = go_string($flag->{usage} // '');
-    my $name = go_string($flag->{name});
-    print "flag.$func(&command.flags.$field, $name, $lit, $usage)\n";
-}
-@|Basic@/evaluate@
-
-@<Go Structure@/Flag@/usage literal@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-@<.@/flag syntax helpers@>
-my $name = $syntax->{name} // 'command';
-my @@parts = ($name);
-for my $flag (flag_list($syntax)) {
-    my $opt = '-' . $flag->{name};
-    if (($flag->{type} // '') ne 'bool') {
-        my $meta = uc($flag->{name} // '');
-        $meta =~ tr/- /_/;
-        $opt .= " $meta";
-    }
-    push @@parts, "[$opt]";
-}
-for my $arg (argument_list($syntax)) {
-    my $shown = uc $arg;
-    $shown =~ tr/- /_/;
-    push @@parts, $shown;
-}
-print go_string('Usage: ' . join(' ', @@parts) . "\n");
-@|Basic@/evaluate@
-
-@<Go Structure@/Flag@/store arguments@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-@<.@/flag syntax helpers@>
-my @@arguments = argument_list($syntax);
-my $n = @@arguments;
-print "if len(flag.Args()) != $n {\n";
-print "flag.Usage()\n";
-print "os.Exit(1)\n";
-print "}\n";
-my $i = 0;
-for my $arg (@@arguments) {
-    my $field = take_field($arg);
-    print "command.arguments.$field = flag.Args()[$i]\n";
-    $i++;
-}
-@|Basic@/evaluate@
-
-@<Go Structure@/Flag@/parse command line arguments@=
-@<.@/register flags@>flag.Usage = func() {
-fmt.Fprint(flag.CommandLine.Output(), @<.@/usage literal@>)
-flag.PrintDefaults()
-}
-flag.Parse()
-@<.@/store arguments@>@
-
-command is the rightmost label of a package main program.
-These blocks set the package name to main,
-add the flag, fmt, and os imports,
-add the command variable when the invocation syntax needs one,
-and add func main.
-func main parses the command line and then runs the main body.
-Parsing always calls flag.Parse, flag.Usage, and os.Exit,
-so those three imports stay used when the command has no flags.
-Replace module meta information to name the other files in the node.
-That replacement does not rename the command.
-@<command@:Go Structure@/package name@=main@
-
-@<command@:Go Structure@/import paths@+
-    "flag"
-    "fmt"
-    "os"
-@
-
-@<command@:Go Structure@/variables@+
-@<.@/Flag@/command variables@>
-@
-
-@<command@:Go Structure@/functions@+
-func main() {
-    @<.@/Flag@/parse command line arguments@>
-    @<.@/main body@>
-}
-@
-
-@<Chunk@/Go Structure@/file@=
-{"description": "One Go source file."}
-@
-
-@<Chunk@/Go Structure@/module meta information@=
-{"description": "Package name and other properties, as a Perl hash."}
-@
-
-@<Chunk@/Go Structure@/module properties@=
-{"description": "Extra Perl hash entries for the module meta information."}
-@
-
-@<Chunk@/Go Structure@/package clause@=
-{"description": "Package comment followed by the package clause."}
-@
-
-@<Chunk@/Go Structure@/package name@=
-{"description": "Package identifier from the module meta information."}
-@
-
-@<Chunk@/Go Structure@/package comment@=
-{"description": "Comment lines immediately above the package clause."}
-@
-
-@<Chunk@/Go Structure@/build constraints@=
-{"description": "go:build lines before the package clause."}
-@
-
-@<Chunk@/Go Structure@/imports@=
-{"description": "Import declaration, omitted when there are no paths."}
-@
-
-@<Chunk@/Go Structure@/import paths@=
-{"description": "Lines of the import declaration."}
-@
-
-@<Chunk@/Go Structure@/constants@=
-{"description": "Constant declarations."}
-@
-
-@<Chunk@/Go Structure@/variables@=
-{"description": "Variable declarations."}
-@
-
-@<Chunk@/Go Structure@/types@=
-{"description": "Type declarations."}
-@
-
-@<Chunk@/Go Structure@/methods@=
-{"description": "Method declarations."}
-@
-
-@<Chunk@/Go Structure@/functions@=
-{"description": "Function declarations."}
-@
-
-@<Chunk@/Go Structure@/main body@=
-{"description": "Statements of func main in a command."}
-@
-
-@<Chunk@/Go Structure@/Filters@/format Go code@=
-{"description": "Format stdin as Go and write it to stdout."}
-@
-
-@<Chunk@/Go Structure@/Flag@/invocation syntax@=
-{"description": "Flags and positional arguments of a command."}
-@
-
-@<Chunk@/Go Structure@/Flag@/flag syntax helpers@=
-{"description": "Perl subroutines shared by the flag generators."}
-@
-
-@<Chunk@/Go Structure@/Flag@/command variables@=
-{"description": "Variable command, when the command has flags or arguments."}
-@
-
-@<Chunk@/Go Structure@/Flag@/register flags@=
-{"description": "flag.Var calls for the invocation syntax."}
-@
-
-@<Chunk@/Go Structure@/Flag@/usage literal@=
-{"description": "Go string literal of the usage line."}
-@
-
-@<Chunk@/Go Structure@/Flag@/store arguments@=
-{"description": "Statements that check and store positional arguments."}
-@
-
-@<Chunk@/Go Structure@/Flag@/parse command line arguments@=
-{"description": "Register flags, parse the command line, and store arguments."}
 @

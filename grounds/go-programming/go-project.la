@@ -2,6 +2,49 @@
 {"description": "Structures of a whole Go module"}
 @
 
+A requirement is one line of the require block: a module path and a version.
+No require block is emitted when the list is empty or contains only whitespace.
+A project with requirements also declares go.sum in the file set go module,
+because the checks never rewrite go.mod or go.sum.
+@<Go Project@/go.mod@=
+@<Text Processing@/basic perl settings@>
+my %meta = @<.@/project meta information@>;
+die "go version '$meta{go}' is not valid\n"
+    if $meta{go} !~ /^1\.\d+(\.\d+)?$/;
+my $requirements = <<'LITAR_END_REQUIREMENTS';
+@<.@/requirements@>
+LITAR_END_REQUIREMENTS
+$requirements =~ s/\A\s+//;
+$requirements =~ s/\s+\z//;
+print "module @<.@/module path@>\n\ngo $meta{go}\n";
+print "\nrequire (\n$requirements\n)\n" if $requirements ne '';
+@|Basic@/evaluate@
+
+The import path of a package is the module path joined with its directory.
+Reference it with the package label, inside quotes in import paths.
+A command needs no directory here, because no package imports a command.
+@<Go Project@/import path@=
+@<Text Processing@/basic perl settings@>
+my $dir = <<'LITAR_END_DIRECTORY';
+@<.@/package directory@>
+LITAR_END_DIRECTORY
+$dir =~ s/\A\s+//;
+$dir =~ s/\s+\z//;
+die "package directory '$dir' is not valid\n"
+    if $dir =~ m{^/|/$|//|\s}
+    || grep { $_ eq '.' || $_ eq '..' } split m{/}, $dir;
+my $module = '@<.@/module path@>';
+print $dir eq '' ? $module : "$module/$dir";
+@|Basic@/evaluate@
+
+@<Go Project@/module path@=
+@<Text Processing@/basic perl settings@>
+my %meta = @<.@/project meta information@>;
+die "module path '$meta{module}' is not valid\n"
+    if $meta{module} !~ m{^[^\s/]\S*$};
+print $meta{module};
+@|Basic@/evaluate@
+
 A Go project is one Go module: a go.mod file at the root of the module,
 and packages in directories below it.
 One node holds one project, so the blocks of this module carry no label,
@@ -27,65 +70,10 @@ so a project sets its entries in project properties.
 )
 @
 
-@<Go Project@/module path@=
-@<Text Processing@/basic perl settings@>
-my %meta = @<.@/project meta information@>;
-die "module path '$meta{module}' is not valid\n"
-    if $meta{module} !~ m{^[^\s/]\S*$};
-print $meta{module};
-@|Basic@/evaluate@
-
-A requirement is one line of the require block: a module path and a version.
-No require block is emitted when the list is empty or contains only whitespace.
-A project with requirements also declares go.sum in the file set go module,
-because the checks never rewrite go.mod or go.sum.
-@<Go Project@/go.mod@=
-@<Text Processing@/basic perl settings@>
-my %meta = @<.@/project meta information@>;
-die "go version '$meta{go}' is not valid\n"
-    if $meta{go} !~ /^1\.\d+(\.\d+)?$/;
-my $requirements = <<'LITAR_END_REQUIREMENTS';
-@<.@/requirements@>
-LITAR_END_REQUIREMENTS
-$requirements =~ s/\A\s+//;
-$requirements =~ s/\s+\z//;
-print "module @<.@/module path@>\n\ngo $meta{go}\n";
-print "\nrequire (\n$requirements\n)\n" if $requirements ne '';
-@|Basic@/evaluate@
-
 The package directory is the path of a package below the module root, without a leading slash.
 A package sets it under the package label.
 The package at the module root keeps the empty directory.
 @<Go Project@/package directory@=@
-
-The import path of a package is the module path joined with its directory.
-Reference it with the package label, inside quotes in import paths.
-A command needs no directory here, because no package imports a command.
-@<Go Project@/import path@=
-@<Text Processing@/basic perl settings@>
-my $dir = <<'LITAR_END_DIRECTORY';
-@<.@/package directory@>
-LITAR_END_DIRECTORY
-$dir =~ s/\A\s+//;
-$dir =~ s/\s+\z//;
-die "package directory '$dir' is not valid\n"
-    if $dir =~ m{^/|/$|//|\s}
-    || grep { $_ eq '.' || $_ eq '..' } split m{/}, $dir;
-my $module = '@<.@/module path@>';
-print $dir eq '' ? $module : "$module/$dir";
-@|Basic@/evaluate@
-
-Each check runs the go command in a view of the file set go module,
-so the module root is the working directory.
-GOTOOLCHAIN=local keeps the go command from downloading another toolchain,
-and GOWORK=off ignores a workspace file outside the view.
-The build cache and the module cache stay at their host locations.
-A failed check fails the evaluation, and the go command reports on stderr.
-@<Go Project@/Filters@/go command settings@=
-set -e
-export GOTOOLCHAIN=local
-export GOWORK=off
-@
 
 @<Go Project@/Filters@/build packages@=#!/bin/sh
 @<.@/go command settings@>
@@ -104,11 +92,16 @@ echo 'go vet ./...: ok'
 go test ./...
 @
 
-The check report runs every check in turn and stops at the first failure.
-@<Go Project@/check report@=
-@<@|Go Project@/Filters@/build packages@+go module@>
-@<@|Go Project@/Filters@/vet packages@+go module@>
-@<@|Go Project@/Filters@/test packages@+go module@>
+Each check runs the go command in a view of the file set go module,
+so the module root is the working directory.
+GOTOOLCHAIN=local keeps the go command from downloading another toolchain,
+and GOWORK=off ignores a workspace file outside the view.
+The build cache and the module cache stay at their host locations.
+A failed check fails the evaluation, and the go command reports on stderr.
+@<Go Project@/Filters@/go command settings@=
+set -e
+export GOTOOLCHAIN=local
+export GOWORK=off
 @
 
 @<Module@/Go Project@/Filters@=
@@ -161,4 +154,13 @@ The check report runs every check in turn and stops at the first failure.
 
 @<Chunk@/Go Project@/Filters@/test packages@=
 {"description": "Test every package of the project."}
+@
+
+The check report runs every check in turn and stops at the first failure.
+The output of a check ends with a line break; it is removed,
+so the line break after each reference separates the checks.
+@<Go Project@/check report@=
+@<@|Go Project@/Filters@/build packages@+go module@|Text Processing@/remove ending newlines@>
+@<@|Go Project@/Filters@/vet packages@+go module@|Text Processing@/remove ending newlines@>
+@<@|Go Project@/Filters@/test packages@+go module@|Text Processing@/remove ending newlines@>
 @

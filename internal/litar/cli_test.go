@@ -66,7 +66,7 @@ func TestCLIPrint(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(old) })
 	code, out, errText := runOut(t, "litar", "-t", ".", "-p", "msg")
-	if code != 0 || errText != "" || out != "Hello\n" {
+	if code != 0 || errText != "" || out != "Hello" {
 		t.Fatalf("%d %q %q", code, out, errText)
 	}
 	code, out, errText = runOut(t, "litar", "-t.", "-l", "msg")

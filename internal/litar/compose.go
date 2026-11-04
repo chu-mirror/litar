@@ -789,10 +789,10 @@ func (w *World) ApplyBlock(nodeName, text string) error {
 }
 
 // compactOwn drops blocks that are not effective for their own
-// chunk reference among this node's own blocks.
+// chunk reference among this node's own blocks, then orders the rest.
 func compactOwn(n *Node) ([]byte, *Archive, error) {
 	cache := map[string]map[int]bool{}
-	var b strings.Builder
+	var kept []Block
 	for bi, bl := range n.Own {
 		k := bl.Ref.key()
 		set, ok := cache[k]
@@ -801,8 +801,19 @@ func compactOwn(n *Node) ([]byte, *Archive, error) {
 			cache[k] = set
 		}
 		if set[bi] {
-			b.WriteString(bl.Comment)
-			b.WriteString(bl.Raw)
+			kept = append(kept, bl)
+		}
+	}
+	kept = orderOwn(kept)
+	var b strings.Builder
+	for i, bl := range kept {
+		b.WriteString(bl.Comment)
+		b.WriteString(bl.Raw)
+		// A block that closed at the end of the archive has no
+		// whitespace after its "@"; the next text would join it.
+		last := i == len(kept)-1 && n.Trailing == ""
+		if !last && !endsWithSpace(bl.Raw) {
+			b.WriteByte('\n')
 		}
 	}
 	b.WriteString(n.Trailing)
@@ -815,6 +826,95 @@ func compactOwn(n *Node) ([]byte, *Archive, error) {
 		return nil, nil, fmt.Errorf("could not write '%s'", n.Archive)
 	}
 	return data, arch, nil
+}
+
+func endsWithSpace(s string) bool {
+	if s == "" {
+		return false
+	}
+	switch s[len(s)-1] {
+	case ' ', '\t', '\r', '\n':
+		return true
+	}
+	return false
+}
+
+// chunkKey identifies a module and chunk, whatever the labels.
+func chunkKey(ref ChunkRef) string {
+	return ChunkRef{Module: ref.Module, Chunk: ref.Chunk}.key()
+}
+
+// orderOwn places a block after the blocks whose content includes its chunk.
+// Blocks of one module and chunk keep their order, because that order
+// decides the content and the effective blocks; when inclusion is circular,
+// the rule gives way to that order. Otherwise blocks keep their order.
+func orderOwn(blocks []Block) []Block {
+	n := len(blocks)
+	keys := make([]string, n)
+	byChunk := map[string][]int{}
+	for i, b := range blocks {
+		keys[i] = chunkKey(b.Ref)
+		byChunk[keys[i]] = append(byChunk[keys[i]], i)
+	}
+	// chainPrev[i] is the earlier block of the same chunk, or -1.
+	chainPrev := make([]int, n)
+	for _, idx := range byChunk {
+		chainPrev[idx[0]] = -1
+		for j := 1; j < len(idx); j++ {
+			chainPrev[idx[j]] = idx[j-1]
+		}
+	}
+	includers := make([]map[int]bool, n)
+	for a, b := range blocks {
+		for _, part := range b.Parts {
+			if part.Ref == nil || part.Ref.Chunk == "" {
+				continue
+			}
+			inner := resolveBody(part.Ref.ChunkRef, nil, b.Ref.Module)
+			k := chunkKey(inner)
+			if k == keys[a] {
+				continue
+			}
+			for _, c := range byChunk[k] {
+				if includers[c] == nil {
+					includers[c] = map[int]bool{}
+				}
+				includers[c][a] = true
+			}
+		}
+	}
+	placed := make([]bool, n)
+	ready := func(i int, strict bool) bool {
+		if placed[i] || (chainPrev[i] >= 0 && !placed[chainPrev[i]]) {
+			return false
+		}
+		if !strict {
+			return true
+		}
+		for a := range includers[i] {
+			if !placed[a] {
+				return false
+			}
+		}
+		return true
+	}
+	out := make([]Block, 0, n)
+	for len(out) < n {
+		next := -1
+		for i := 0; i < n && next < 0; i++ {
+			if ready(i, true) {
+				next = i
+			}
+		}
+		for i := 0; i < n && next < 0; i++ {
+			if ready(i, false) {
+				next = i
+			}
+		}
+		placed[next] = true
+		out = append(out, blocks[next])
+	}
+	return out
 }
 
 func (w *World) storeCompact(n *Node) error {
@@ -906,7 +1006,8 @@ func effectiveIndexSet(blocks []Block, query ChunkRef) map[int]bool {
 }
 
 // DumpArchives rewrites each node's own archive, dropping a block that
-// is not an effective block of its own chunk reference in that node.
+// is not an effective block of its own chunk reference in that node
+// and ordering the rest as orderOwn does.
 func (w *World) DumpArchives() error {
 	type pending struct {
 		n    *Node

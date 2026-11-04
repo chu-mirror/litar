@@ -1068,15 +1068,6 @@ typedef Deque Queue;
 @<light@:executable@:C Structure@/include flags@+
 @<Light@/light options@>
 @
-@<Light@/light options@+
-#ifndef light_option_context_main_size
-#define light_option_context_main_size (1 << 20)  /* 1 MB */
-#endif
-
-#ifndef light_option_logging_level
-/* #define light_option_logging_level ERROR */
-#endif
-@
 @<light@:executable@:C Structure@/global variables@+
 static uint8_t context_main_memory[light_option_context_main_size];
 struct context context_main = {
@@ -1089,15 +1080,17 @@ struct context context_main = {
 @<light@:executable@:C Structure@/includes@+
 #include "light.h"
 @
-@<light@:executable@:C Structure@/main body@=
-do {
-    enter_context(&context_main);
-    @<Light@/main body@>
-    exit_context(&context_main);
-} while (0);
-@
 @<light-single@:executable@:C Structure@/include flags@+
 @<Light@/light options@>
+@
+@<Light@/light options@+
+#ifndef light_option_context_main_size
+#define light_option_context_main_size (1 << 20)  /* 1 MB */
+#endif
+
+#ifndef light_option_logging_level
+/* #define light_option_logging_level ERROR */
+#endif
 @
 @<light-single@:executable@:C Structure@/includes@+
 @<lightlib@:C Structure@/includes@>
@@ -1131,10 +1124,17 @@ struct context context_main = {
 @<light-single@:executable@:C Structure@/functions@+
 @<lightlib@:C Structure@/functions@>
 @
+@<light@:executable@:C Structure@/main body@=
+do {
+    enter_context(&context_main);
+    @<Light@/main body@>
+    exit_context();
+} while (0);
+@
 @<light-single@:executable@:C Structure@/main body@=
 do {
     enter_context(&context_main);
     @<Light@/main body@>
-    exit_context(&context_main);
+    exit_context();
 } while (0);
 @

@@ -22,18 +22,6 @@ rm $temp_file
 }
 @
 
-@<Text Processing@/Internals@/path to perl interpreter@=
-#!/bin/sh
-which perl
-@|Basic@/evaluate@
-
-@<Text Processing@/basic perl settings@=
-#!@<.@/Internals@/path to perl interpreter@>
-use v5.14;
-use warnings FATAL => 'all';
-use strict;
-@
-
 @<Text Processing@/remove newlines@=
 @<.@/basic perl settings@>
 my @pres = <STDIN>;
@@ -51,3 +39,15 @@ my $text = <STDIN> // '';
 $text =~ s/[\r\n]+\z//;
 print $text;
 @
+
+@<Text Processing@/basic perl settings@=
+#!@<.@/Internals@/path to perl interpreter@>
+use v5.14;
+use warnings FATAL => 'all';
+use strict;
+@
+
+@<Text Processing@/Internals@/path to perl interpreter@=
+#!/bin/sh
+which perl
+@|Basic@/evaluate@

@@ -136,6 +136,10 @@ Matching blocks are applied in the order they appear in the node:
 the base node's blocks, then the blocks of this node's archive.
 `@=` replaces the text accumulated so far.
 `@+` appends.
+When a line break ended the content of an `@+` block
+and the text accumulated so far is not empty,
+a line feed joins them.
+Otherwise the content is appended as it is.
 The blocks that still contribute after this
 are the effective blocks of the chunk reference.
 
@@ -174,9 +178,14 @@ A carriage return, a line feed, or a carriage return and a line feed
 immediately after `@=` or `@+` is layout, not content.
 At most one carriage return and one line feed are removed,
 and the carriage return is removed only when it comes first.
+A line feed, or a carriage return and a line feed,
+that ends the content is layout too.
+At most one is removed,
+whether `@`, `@|`, or `@~` ends the content.
 `@<msg@=` followed by a line feed, `Hello`, a line feed, and `@`
-stores `Hello` and the second line feed.
-The line break before the closing end control is content.
+stores `Hello`.
+A content that should end with a line break
+ends with an empty line before the closing end control.
 A one-line body stores no added line break:
 
 ```

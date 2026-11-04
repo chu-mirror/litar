@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>litar</title>
+<style>
+:root {
+  --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --bg: #ffffff; --panel: #f6f8fa;
+  --accent: #0969da; --ref: #8250df; --item: #1a7f37; --header: #cf222e; --pipe: #953800;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg);
+  display: grid; grid-template-rows: auto 1fr; grid-template-columns: 260px 1fr; height: 100vh; }
+header { grid-column: 1 / 3; display: flex; gap: 8px; align-items: center; padding: 8px 12px;
+  border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 16px; margin: 0 8px 0 0; }
+header input, header select, header button { font: inherit; padding: 3px 6px; }
+header .grow { flex: 1; min-width: 120px; }
+#sidebar { overflow: auto; border-right: 1px solid var(--line); padding: 8px; }
+#main { display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
+#tabs, .subtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); padding: 0 8px; }
+#tabs a, .subtabs a { padding: 6px 12px; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; }
+#tabs a.on, .subtabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
+#body { display: grid; grid-template-columns: 340px 1fr; overflow: hidden; }
+#list { overflow: auto; border-right: 1px solid var(--line); padding: 8px; }
+#detail { overflow: auto; padding: 12px 16px; }
+#body.wide { grid-template-columns: 1fr; }
+#body.wide #list { display: none; }
+ul.tree { list-style: none; margin: 0; padding-left: 14px; }
+ul.tree.top { padding-left: 0; }
+ul.tree li { margin: 1px 0; }
+.desc { color: var(--muted); font-size: 12px; margin-left: 6px; }
+a { color: var(--accent); }
+a.sel { font-weight: 600; }
+.mod { font-weight: 600; }
+.filter { width: 100%; margin-bottom: 8px; padding: 3px 6px; font: inherit; }
+h2 { font-size: 16px; margin: 0 0 8px; word-break: break-all; }
+.block { border: 1px solid var(--line); border-radius: 6px; margin: 0 0 12px; overflow: hidden; }
+.block .comment { padding: 6px 10px; background: var(--panel); white-space: pre-wrap; color: var(--muted); }
+pre { margin: 0; padding: 8px 10px; font: 13px/1.45 ui-monospace, monospace; overflow: auto; }
+pre a { text-decoration: none; }
+.h { color: var(--header); font-weight: 600; } .h a { color: inherit; }
+.r { color: var(--ref); } .r a { color: inherit; }
+.p { color: var(--pipe); } .p a { color: inherit; }
+.i { color: var(--item); } .i a { color: inherit; }
+.ctl { color: var(--muted); }
+pre.lines { counter-reset: line; padding-left: 0; }
+pre.lines span { display: block; padding-left: 4.5em; text-indent: -4.5em; }
+pre.lines span::before { counter-increment: line; content: counter(line);
+  display: inline-block; width: 3.5em; margin-right: 1em; text-align: right; color: var(--muted); }
+.error { color: var(--header); white-space: pre-wrap; }
+.note { color: var(--muted); }
+select.spec { font: inherit; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>litar</h1>
+  <select id="composition" title="composition"></select>
+  <input id="import-path" placeholder="composition directory to import">
+  <button id="import">Import</button>
+  <input id="expression" class="grow" placeholder="expression to evaluate in this node, e.g. hello.c">
+  <button id="evaluate">Evaluate</button>
+</header>
+<nav id="sidebar"></nav>
+<section id="main">
+  <nav id="tabs"></nav>
+  <div id="body"><div id="list"></div><div id="detail"></div></div>
+</section>
+<script>
+'use strict';
+
+// Resource access: the server forwards these to the MCP server of litar.
+async function answer(response) {
+  const text = await response.text();
+  if (!response.ok) throw new Error(text.trim().replace(/^calling "[^"]*": /, ''));
+  return text;
+}
+async function resource(uri) {
+  return answer(await fetch('/api/resource?uri=' + encodeURIComponent(uri)));
+}
+async function tool(name, args) {
+  return answer(await fetch('/api/tool', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, arguments: args}),
+  }));
+}
+// Ids stay valid while nothing changes the composition, so trees are cached per node.
+const cache = new Map();
+async function tree(kind, c, n, extra) {
+  const uri = 'tree://' + kind + '/' + [c, n, extra].filter(x => x !== undefined).join('/');
+  if (!cache.has(uri)) cache.set(uri, resource(uri).then(JSON.parse));
+  return cache.get(uri);
+}
+
+// Trees: every tree has a root; the leaves are the chunks, files, or items.
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const subs = t => t['sub-trees'];
+function walk(t, fn, path = []) {
+  for (const s of subs(t)) {
+    const p = path.concat(s.name);
+    fn(s, p);
+    walk(s, fn, p);
+  }
+}
+function leafIndex(t) {
+  const byPath = new Map(), byId = new Map();
+  walk(t, (s, p) => {
+    if (subs(s).length === 0) { byPath.set(JSON.stringify(p), s.id); byId.set(s.id, p); }
+  });
+  return {byPath, byId};
+}
+// A subtree is shown when the filter matches its path or one of its leaves.
+function treeHTML(t, href, selected, filter, path = []) {
+  const items = [];
+  for (const s of subs(t)) {
+    const p = path.concat(s.name);
+    const desc = s.description ? '<span class="desc">' + esc(s.description) + '</span>' : '';
+    if (subs(s).length === 0) {
+      if (filter && !p.join('/').toLowerCase().includes(filter)) continue;
+      items.push('<li><a href="' + href(s, p) + '"' + (s.id === selected ? ' class="sel"' : '') + '>'
+        + esc(s.name) + '</a>' + desc + '</li>');
+    } else {
+      const inner = treeHTML(s, href, selected, filter, p);
+      if (inner) items.push('<li><span class="mod">' + esc(s.name) + '</span>' + desc + inner + '</li>');
+    }
+  }
+  return items.length ? '<ul class="tree">' + items.join('') + '</ul>' : '';
+}
+function showTree(t, href, selected, placeholder) {
+  const list = $('list');
+  list.innerHTML = '<input class="filter" placeholder="' + esc(placeholder) + '">'
+    + '<div class="items"></div>';
+  const input = list.querySelector('input'), items = list.querySelector('.items');
+  const draw = () => {
+    items.innerHTML = treeHTML(t, href, selected, input.value.trim().toLowerCase())
+      || '<p class="note">Nothing here.</p>';
+  };
+  input.addEventListener('input', draw);
+  draw();
+}
+
+// Names: '@@' is a literal '@', so a separator is a control not preceded by another '@'.
+function splitControl(raw, c) {
+  const parts = [];
+  let cur = '';
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] === '@' && raw[i + 1] === '@') { cur += '@@'; i++; }
+    else if (raw[i] === '@' && raw[i + 1] === c) { parts.push(cur); cur = ''; i++; }
+    else cur += raw[i];
+  }
+  parts.push(cur);
+  return parts;
+}
+const decode = s => s.replace(/@@/g, '@').trim();
+const encode = s => s.replace(/@/g, '@@');
+// A reference without labels takes the labels of scope, the reference that applies its block,
+// and a module path starting with . or .. is relative to the module of scope, its block's header.
+function parseRef(raw, scope) {
+  const parts = splitControl(raw, ':');
+  const path = splitControl(parts.pop(), '/').map(decode);
+  const chunk = path.pop();
+  let labels = parts.map(decode);
+  let mods = path;
+  if (scope && scope.mods && (mods[0] === '.' || mods[0] === '..')) {
+    mods = scope.mods.slice();
+    for (const m of path) {
+      if (m === '..') mods.pop(); else if (m !== '.') mods.push(m);
+    }
+  }
+  if (scope && labels.length === 0) labels = scope.labels;
+  return {labels, mods, chunk};
+}
+function refText(ref) {
+  return ref.labels.map(l => encode(l) + '@:').join('') + ref.mods.map(m => encode(m) + '@/').join('')
+    + encode(ref.chunk);
+}
+
+// Meta chunks live in reserved modules that the chunk tree leaves out.
+// Index and Chunk blocks link to what they describe; the others stay plain.
+const reserved = ['Module', 'Chunk', 'Specialization', 'Domain', 'Index'];
+function metaLink(ref, raw, link) {
+  if (ref.labels.length || !reserved.includes(ref.mods[0])) return link('ref', ref, raw);
+  const path = ref.mods.slice(1).concat(ref.chunk);
+  if (ref.mods[0] === 'Index') return link('item', path, raw);
+  if (ref.mods[0] === 'Chunk') return link('ref', {labels: [], mods: path.slice(0, -1), chunk: path[path.length - 1]}, raw);
+  return esc(raw);
+}
+
+// Block rendering: a small scanner of the archive syntax that links names to their pages.
+// Blocks apply with labels, the labels of the reference being viewed, or else with the labels of their headers.
+const isLetter = c => /[A-Za-z]/.test(c) || c > '\x7f';
+const isSpace = c => c === undefined || c === ' ' || c === '\t' || c === '\r' || c === '\n';
+function renderBlocks(text, base, labels) {
+  let i = 0, html = '', comment = '';
+  const link = (kind, target, label) =>
+    '<a href="' + base + '/' + kind + '/' + encodeURIComponent(JSON.stringify(target)) + '">' + esc(label) + '</a>';
+  // Read a name up to a control in stops; '@@', '@:' and '@/' belong to names.
+  const name = stops => {
+    const start = i;
+    while (i < text.length) {
+      if (text[i] === '@') {
+        const c = text[i + 1];
+        if (c === '@' || c === ':' || c === '/') { i += 2; continue; }
+        if (stops.includes(c) || (stops.includes(' ') && isSpace(c))) break;
+      }
+      i++;
+    }
+    return text.slice(start, i);
+  };
+  const ctl = s => '<span class="ctl">' + esc(s) + '</span>';
+  const blocks = [];
+  while (i < text.length) {
+    const open = text[i] === '@' ? text[i + 1] : null;
+    if (open !== '<' && open !== '[' && open !== '(') { comment += text[i++]; continue; }
+    i += 2;
+    let head = '', header = null;
+    if (open === '<') {
+      const raw = name('=+');
+      header = parseRef(raw, null);
+      head = '<span class="h">' + ctl('@<') + metaLink(header, raw, link) + ctl(text.slice(i, i + 2)) + '</span>';
+    } else {
+      const raw = name('`=');
+      header = {labels: [], mods: [], chunk: decode(raw)};
+      head = '<span class="h">' + ctl('@' + open) + link('file', decode(raw), raw);
+      while (text[i] === '@' && text[i + 1] === '`') { i += 2; head += ctl('@`') + esc(name('`=')); }
+      head += ctl(text.slice(i, i + 2)) + '</span>';
+    }
+    const scope = {labels: labels || header.labels, mods: header.mods};
+    i += 2;
+    let body = '';
+    while (i < text.length) {
+      if (text[i] !== '@') { body += esc(text[i++]); continue; }
+      const c = text[i + 1];
+      if (c === '@') { body += '@@'; i += 2; }
+      else if (c === '<') {
+        i += 2;
+        const raw = name('>');
+        i += 2;
+        const pipes = splitControl(raw, '|');
+        const target = pipes.shift();
+        // Filters of a reference take the labels of the reference.
+        const ref = parseRef(splitControl(target, '+')[0], scope);
+        let inner = target ? link('ref', ref, target) : '';
+        for (const p of pipes) inner += ctl('@|') + link('ref', parseRef(p.split(/@[-+,!]/)[0], {labels: ref.labels}), p);
+        body += '<span class="r">' + ctl('@<') + inner + ctl('@>') + '</span>';
+      } else if (c === '|') {
+        i += 2;
+        const raw = name('|~ ');
+        body += '<span class="p">' + ctl('@|') + link('ref', parseRef(raw, {labels: scope.labels}), raw) + '</span>';
+      } else if (c === '~') {
+        i += 2;
+        const raw = name('~ ');
+        const path = splitControl(raw, '/').map(decode);
+        body += '<span class="i">' + ctl('@~') + link('item', path, raw) + '</span>';
+      } else if (isSpace(c)) { body += ctl('@'); i++; break; }
+      else { body += esc('@' + c); i += 2; }
+    }
+    blocks.push('<div class="block">' + (comment.trim() ? '<div class="comment">' + esc(comment.trim()) + '</div>' : '')
+      + '<pre>' + head + body + '</pre></div>');
+    comment = '';
+  }
+  return blocks.join('') || '<p class="note">No blocks.</p>';
+}
+function linesHTML(text) {
+  if (text.endsWith('\n')) text = text.slice(0, -1);
+  return '<pre class="lines">' + text.split('\n').map(l => '<span>' + esc(l) + '</span>').join('') + '</pre>';
+}
+
+// Views: the sidebar shows the nodes, the list shows a tree of the node, the detail one entry.
+const state = {c: null, n: null};
+async function showCompositions() {
+  const list = JSON.parse(await resource('list://composition'));
+  $('composition').innerHTML = list.map(w =>
+    '<option value="' + w.id + '"' + (w.id === state.c ? ' selected' : '') + '>' + esc(w.name) + '</option>').join('');
+  return list;
+}
+async function showNodes() {
+  const root = JSON.parse(await resource('tree://node/' + state.c));
+  const item = t => '<li><a href="#/' + state.c + '/' + t.id + '/chunks"' + (t.id === state.n ? ' class="sel"' : '')
+    + ' title="' + esc(t.description) + '">' + esc(t.name) + '</a>'
+    + (subs(t).length ? '<ul class="tree">' + subs(t).map(item).join('') + '</ul>' : '') + '</li>';
+  $('sidebar').innerHTML = '<ul class="tree top">' + item(root) + '</ul>';
+  return root;
+}
+function showTabs(tab) {
+  const base = '#/' + state.c + '/' + state.n;
+  $('tabs').innerHTML = ['chunks', 'files', 'items', 'blocks'].map(t =>
+    '<a href="' + base + '/' + t + '"' + (t === tab ? ' class="on"' : '') + '>' + t[0].toUpperCase() + t.slice(1) + '</a>').join('');
+}
+const detail = html => { $('detail').innerHTML = html; };
+const nodeBase = () => '#/' + state.c + '/' + state.n;
+// A reference may carry more labels than the specialization whose blocks apply to it;
+// they follow the specialization in the location, and its blocks pass them on to their references.
+const labelsPart = (labels, spec) => labels.length > spec.length ? '/' + encodeURIComponent(JSON.stringify(labels)) : '';
+const isSuffix = (spec, labels) => spec.every((l, k) => l === labels[labels.length - spec.length + k]);
+
+async function chunkView(chunkId, specId, view, refLabels) {
+  const chunks = await tree('chunk', state.c, state.n);
+  const index = leafIndex(chunks);
+  showTree(chunks, s => nodeBase() + '/chunks/' + s.id + '/0/effective', chunkId, 'filter chunks');
+  if (chunkId === undefined) return detail('<p class="note">Choose a chunk.</p>');
+  const path = index.byId.get(chunkId);
+  const specs = await tree('specialization', state.c, state.n, chunkId);
+  const options = [{id: specs.id, labels: []}];
+  walk(specs, (s, p) => options.push({id: s.id, labels: p.slice().reverse()}));
+  const spec = options.find(o => o.id === specId) || options[0];
+  const labels = refLabels && isSuffix(spec.labels, refLabels) ? refLabels : spec.labels;
+  const ref = {labels, mods: path.slice(0, -1), chunk: path[path.length - 1]};
+  const here = nodeBase() + '/chunks/' + chunkId;
+  let html = '<h2>' + esc(refText(ref)) + '</h2>';
+  if (options.length > 1) {
+    html += '<select class="spec">' + options.map(o => '<option value="' + o.id + '"' + (o === spec ? ' selected' : '') + '>'
+      + esc(o.labels.length ? o.labels.join('@:') : '(no label)') + '</option>').join('') + '</select>';
+  }
+  if (labels.length > spec.labels.length) {
+    html += '<p class="note">Blocks of ' + esc(spec.labels.length ? spec.labels.join('@:') : 'no label')
+      + ' apply; their references take the labels ' + esc(labels.join('@:')) + '.</p>';
+  }
+  const views = {effective: 'Effective', apply: 'Applied', depend: 'Dependents', result: 'Result'};
+  html += '<nav class="subtabs">' + Object.keys(views).map(v => '<a href="' + here + '/' + spec.id + '/' + v
+    + labelsPart(labels, spec.labels) + '"' + (v === view ? ' class="on"' : '') + '>' + views[v] + '</a>').join('')
+    + '</nav><div id="view"><p class="note">Loading…</p></div>';
+  detail(html);
+  const select = $('detail').querySelector('select.spec');
+  if (select) select.addEventListener('change', () => { location.hash = here + '/' + select.value + '/' + view; });
+  let out;
+  try {
+    out = view === 'result'
+      ? linesHTML(await tool('evaluate_expression', {composition: state.c, node: state.n, expression: refText(ref)}))
+      : renderBlocks(await resource('blocks://' + view + '/' + state.c + '/' + state.n + '/' + chunkId + '/' + spec.id),
+        nodeBase(), view === 'depend' ? undefined : labels);
+  } catch (e) {
+    out = '<p class="error">' + esc(e.message) + '</p>'
+      + (options.length > 1 ? '<p class="note">This chunk has labelled blocks; choose a specialization above.</p>' : '');
+  }
+  $('view').innerHTML = out;
+}
+async function fileView(fileId) {
+  const files = await tree('file', state.c, state.n);
+  showTree(files, s => nodeBase() + '/files/' + s.id, fileId, 'filter files');
+  if (fileId === undefined) return detail('<p class="note">Choose a file.</p>');
+  const path = leafIndex(files).byId.get(fileId) || [];
+  detail('<h2>' + esc(path.join('/')) + '</h2><div id="view"><p class="note">Loading…</p></div>');
+  const response = await fetch('/api/resource?uri=' + encodeURIComponent('file://' + state.c + '/' + state.n + '/' + fileId));
+  const type = response.headers.get('Content-Type') || '';
+  if (!response.ok) $('view').innerHTML = '<p class="error">' + esc((await response.text()).trim()) + '</p>';
+  else if (/^text\/|json/.test(type)) $('view').innerHTML = linesHTML(await response.text());
+  else $('view').innerHTML = '<p class="note">Binary file, ' + (await response.blob()).size + ' bytes.</p>';
+}
+async function itemView(itemId) {
+  const items = await tree('item', state.c, state.n);
+  showTree(items, s => nodeBase() + '/items/' + s.id, itemId, 'filter items');
+  if (itemId === undefined) return detail('<p class="note">Choose an item.</p>');
+  const path = leafIndex(items).byId.get(itemId) || [];
+  detail('<h2>' + esc(path.map(encode).join('@/')) + '</h2><div id="view"><p class="note">Loading…</p></div>');
+  $('view').innerHTML = renderBlocks(await resource('blocks://refer/' + state.c + '/' + state.n + '/' + itemId), nodeBase());
+}
+async function blocksView() {
+  detail('<h2>Own blocks</h2><div id="view"><p class="note">Loading…</p></div>');
+  $('view').innerHTML = renderBlocks(await resource('blocks://node/' + state.c + '/' + state.n), nodeBase());
+}
+async function evalView(expression) {
+  $('expression').value = expression;
+  detail('<h2>' + esc(expression) + '</h2><div id="view"><p class="note">Evaluating…</p></div>');
+  try {
+    $('view').innerHTML = linesHTML(await tool('evaluate_expression', {composition: state.c, node: state.n, expression}));
+  } catch (e) { $('view').innerHTML = '<p class="error">' + esc(e.message) + '</p>'; }
+}
+// Links in blocks name their target; find its id, then replace the location with its page.
+// A chunk opens at its deepest specialization whose labels end the target's labels.
+async function resolveLink(kind, target) {
+  if (kind === 'ref') {
+    const chunks = await tree('chunk', state.c, state.n);
+    const id = leafIndex(chunks).byPath.get(JSON.stringify(target.mods.concat(target.chunk)));
+    if (id === undefined) {
+      return detail('<p class="error">No block of this node defines ' + esc(refText(target)) + '.</p>'
+        + '<p class="note">A node based on this one may define it.</p>');
+    }
+    const specs = await tree('specialization', state.c, state.n, id);
+    const want = target.labels.slice().reverse();
+    let best = specs.id, depth = 0;
+    walk(specs, (s, p) => {
+      if (p.length > depth && p.every((l, k) => l === want[k])) { best = s.id; depth = p.length; }
+    });
+    location.replace(nodeBase() + '/chunks/' + id + '/' + best + '/effective' + labelsPart(target.labels, want.slice(0, depth)));
+  } else {
+    const kindTree = kind === 'file' ? 'file' : 'item';
+    const path = kind === 'file' ? target.split('/') : target;
+    const id = leafIndex(await tree(kindTree, state.c, state.n)).byPath.get(JSON.stringify(path));
+    if (id === undefined) return detail('<p class="error">No ' + kind + ' ' + esc(path.join('/')) + ' in this node.</p>');
+    location.replace(nodeBase() + '/' + kindTree + 's/' + id);
+  }
+}
+
+// Routing: #/composition/node/tab/..., so every page has a link and history works.
+async function route() {
+  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(p => p !== '').map(decodeURIComponent);
+  try {
+    const compositions = await showCompositions();
+    if (compositions.length === 0) {
+      $('sidebar').innerHTML = $('tabs').innerHTML = $('list').innerHTML = '';
+      return detail('<p class="note">No composition is imported. Import a composition directory above.</p>');
+    }
+    state.c = parts.length ? Number(parts[0]) : compositions[0].id;
+    $('composition').value = state.c;
+    const root = await showNodes();
+    if (parts.length < 2) {
+      let last = root;
+      walk(root, s => { last = s; });
+      return location.replace('#/' + state.c + '/' + last.id + '/chunks');
+    }
+    state.n = Number(parts[1]);
+    await showNodes();
+    const [tab = 'chunks', a, b, c, d] = parts.slice(2);
+    const num = x => x === undefined ? undefined : Number(x);
+    showTabs(tab === 'ref' ? 'chunks' : tab === 'file' || tab === 'item' ? tab + 's' : tab);
+    $('body').classList.toggle('wide', tab === 'blocks' || tab === 'eval');
+    if (tab === 'chunks') await chunkView(num(a), num(b), c || 'effective', d && JSON.parse(d));
+    else if (tab === 'files') await fileView(num(a));
+    else if (tab === 'items') await itemView(num(a));
+    else if (tab === 'blocks') await blocksView();
+    else if (tab === 'eval') await evalView(a || '');
+    else if (tab === 'ref' || tab === 'file' || tab === 'item') await resolveLink(tab, JSON.parse(a));
+  } catch (e) {
+    detail('<p class="error">' + esc(e.message) + '</p>');
+  }
+}
+
+$('composition').addEventListener('change', e => { location.hash = '#/' + e.target.value; });
+$('import').addEventListener('click', async () => {
+  const path = $('import-path').value.trim();
+  if (!path) return;
+  try {
+    const id = (await tool('import_composition', {path})).trim();
+    cache.clear();
+    $('import-path').value = '';
+    location.hash = '#/' + id;
+  } catch (e) { detail('<p class="error">' + esc(e.message) + '</p>'); }
+});
+const evaluate = () => {
+  const expression = $('expression').value.trim();
+  if (expression && state.n !== null) location.hash = nodeBase() + '/eval/' + encodeURIComponent(expression);
+};
+$('evaluate').addEventListener('click', evaluate);
+$('expression').addEventListener('keydown', e => { if (e.key === 'Enter') evaluate(); });
+window.addEventListener('hashchange', route);
+route();
+</script>
+</body>
+</html>

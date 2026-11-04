@@ -10486,7 +10486,6 @@ function showTree(t, href, selected, placeholder) {
   draw();
 }
 @
-
 @<Litar Web@/names@=
 // Names: '@@@@' is a literal '@@', so a separator is a control not preceded by another '@@'.
 function splitControl(raw, c) {
@@ -10502,21 +10501,21 @@ function splitControl(raw, c) {
 }
 const decode = s => s.replace(/@@@@/g, '@@').trim();
 const encode = s => s.replace(/@@/g, '@@@@');
-// A reference without labels takes the labels of its block's header,
-// and a module path starting with . or .. is relative to the header's module.
-function parseRef(raw, header) {
+// A reference without labels takes the labels of scope, the reference that applies its block,
+// and a module path starting with . or .. is relative to the module of scope, its block's header.
+function parseRef(raw, scope) {
   const parts = splitControl(raw, ':');
   const path = splitControl(parts.pop(), '/').map(decode);
   const chunk = path.pop();
   let labels = parts.map(decode);
   let mods = path;
-  if (header && (mods[0] === '.' || mods[0] === '..')) {
-    mods = header.mods.slice();
+  if (scope && scope.mods && (mods[0] === '.' || mods[0] === '..')) {
+    mods = scope.mods.slice();
     for (const m of path) {
       if (m === '..') mods.pop(); else if (m !== '.') mods.push(m);
     }
   }
-  if (header && labels.length === 0) labels = header.labels;
+  if (scope && labels.length === 0) labels = scope.labels;
   return {labels, mods, chunk};
 }
 function refText(ref) {
@@ -10535,11 +10534,13 @@ function metaLink(ref, raw, link) {
   return esc(raw);
 }
 @
+
 @<Litar Web@/block rendering@=
 // Block rendering: a small scanner of the archive syntax that links names to their pages.
+// Blocks apply with labels, the labels of the reference being viewed, or else with the labels of their headers.
 const isLetter = c => /[A-Za-z]/.test(c) || c > '\x7f';
 const isSpace = c => c === undefined || c === ' ' || c === '\t' || c === '\r' || c === '\n';
-function renderBlocks(text, base) {
+function renderBlocks(text, base, labels) {
   let i = 0, html = '', comment = '';
   const link = (kind, target, label) =>
     '<a href="' + base + '/' + kind + '/' + encodeURIComponent(JSON.stringify(target)) + '">' + esc(label) + '</a>';
@@ -10574,6 +10575,7 @@ function renderBlocks(text, base) {
       while (text[i] === '@@' && text[i + 1] === '`') { i += 2; head += ctl('@@`') + esc(name('`=')); }
       head += ctl(text.slice(i, i + 2)) + '</span>';
     }
+    const scope = {labels: labels || header.labels, mods: header.mods};
     i += 2;
     let body = '';
     while (i < text.length) {
@@ -10586,13 +10588,15 @@ function renderBlocks(text, base) {
         i += 2;
         const pipes = splitControl(raw, '|');
         const target = pipes.shift();
-        let inner = target ? link('ref', parseRef(splitControl(target, '+')[0], header), target) : '';
-        for (const p of pipes) inner += ctl('@@|') + link('ref', parseRef(p.split(/@@[-+,!]/)[0], null), p);
+        // Filters of a reference take the labels of the reference.
+        const ref = parseRef(splitControl(target, '+')[0], scope);
+        let inner = target ? link('ref', ref, target) : '';
+        for (const p of pipes) inner += ctl('@@|') + link('ref', parseRef(p.split(/@@[-+,!]/)[0], {labels: ref.labels}), p);
         body += '<span class="r">' + ctl('@@<') + inner + ctl('@@>') + '</span>';
       } else if (c === '|') {
         i += 2;
         const raw = name('|~ ');
-        body += '<span class="p">' + ctl('@@|') + link('ref', parseRef(raw, null), raw) + '</span>';
+        body += '<span class="p">' + ctl('@@|') + link('ref', parseRef(raw, {labels: scope.labels}), raw) + '</span>';
       } else if (c === '~') {
         i += 2;
         const raw = name('~ ');
@@ -10612,6 +10616,7 @@ function linesHTML(text) {
   return '<pre class="lines">' + text.split('\n').map(l => '<span>' + esc(l) + '</span>').join('') + '</pre>';
 }
 @
+
 @<Litar Web@/views@=
 // Views: the sidebar shows the nodes, the list shows a tree of the node, the detail one entry.
 const state = {c: null, n: null};
@@ -10636,8 +10641,12 @@ function showTabs(tab) {
 }
 const detail = html => { $('detail').innerHTML = html; };
 const nodeBase = () => '#/' + state.c + '/' + state.n;
+// A reference may carry more labels than the specialization whose blocks apply to it;
+// they follow the specialization in the location, and its blocks pass them on to their references.
+const labelsPart = (labels, spec) => labels.length > spec.length ? '/' + encodeURIComponent(JSON.stringify(labels)) : '';
+const isSuffix = (spec, labels) => spec.every((l, k) => l === labels[labels.length - spec.length + k]);
 
-async function chunkView(chunkId, specId, view) {
+async function chunkView(chunkId, specId, view, refLabels) {
   const chunks = await tree('chunk', state.c, state.n);
   const index = leafIndex(chunks);
   showTree(chunks, s => nodeBase() + '/chunks/' + s.id + '/0/effective', chunkId, 'filter chunks');
@@ -10647,16 +10656,22 @@ async function chunkView(chunkId, specId, view) {
   const options = [{id: specs.id, labels: []}];
   walk(specs, (s, p) => options.push({id: s.id, labels: p.slice().reverse()}));
   const spec = options.find(o => o.id === specId) || options[0];
-  const ref = {labels: spec.labels, mods: path.slice(0, -1), chunk: path[path.length - 1]};
+  const labels = refLabels && isSuffix(spec.labels, refLabels) ? refLabels : spec.labels;
+  const ref = {labels, mods: path.slice(0, -1), chunk: path[path.length - 1]};
   const here = nodeBase() + '/chunks/' + chunkId;
   let html = '<h2>' + esc(refText(ref)) + '</h2>';
   if (options.length > 1) {
     html += '<select class="spec">' + options.map(o => '<option value="' + o.id + '"' + (o === spec ? ' selected' : '') + '>'
       + esc(o.labels.length ? o.labels.join('@@:') : '(no label)') + '</option>').join('') + '</select>';
   }
+  if (labels.length > spec.labels.length) {
+    html += '<p class="note">Blocks of ' + esc(spec.labels.length ? spec.labels.join('@@:') : 'no label')
+      + ' apply; their references take the labels ' + esc(labels.join('@@:')) + '.</p>';
+  }
   const views = {effective: 'Effective', apply: 'Applied', depend: 'Dependents', result: 'Result'};
-  html += '<nav class="subtabs">' + Object.keys(views).map(v => '<a href="' + here + '/' + spec.id + '/' + v + '"'
-    + (v === view ? ' class="on"' : '') + '>' + views[v] + '</a>').join('') + '</nav><div id="view"><p class="note">Loading…</p></div>';
+  html += '<nav class="subtabs">' + Object.keys(views).map(v => '<a href="' + here + '/' + spec.id + '/' + v
+    + labelsPart(labels, spec.labels) + '"' + (v === view ? ' class="on"' : '') + '>' + views[v] + '</a>').join('')
+    + '</nav><div id="view"><p class="note">Loading…</p></div>';
   detail(html);
   const select = $('detail').querySelector('select.spec');
   if (select) select.addEventListener('change', () => { location.hash = here + '/' + select.value + '/' + view; });
@@ -10664,7 +10679,8 @@ async function chunkView(chunkId, specId, view) {
   try {
     out = view === 'result'
       ? linesHTML(await tool('evaluate_expression', {composition: state.c, node: state.n, expression: refText(ref)}))
-      : renderBlocks(await resource('blocks://' + view + '/' + state.c + '/' + state.n + '/' + chunkId + '/' + spec.id), nodeBase());
+      : renderBlocks(await resource('blocks://' + view + '/' + state.c + '/' + state.n + '/' + chunkId + '/' + spec.id),
+        nodeBase(), view === 'depend' ? undefined : labels);
   } catch (e) {
     out = '<p class="error">' + esc(e.message) + '</p>'
       + (options.length > 1 ? '<p class="note">This chunk has labelled blocks; choose a specialization above.</p>' : '');
@@ -10703,6 +10719,7 @@ async function evalView(expression) {
   } catch (e) { $('view').innerHTML = '<p class="error">' + esc(e.message) + '</p>'; }
 }
 // Links in blocks name their target; find its id, then replace the location with its page.
+// A chunk opens at its deepest specialization whose labels end the target's labels.
 async function resolveLink(kind, target) {
   if (kind === 'ref') {
     const chunks = await tree('chunk', state.c, state.n);
@@ -10717,7 +10734,7 @@ async function resolveLink(kind, target) {
     walk(specs, (s, p) => {
       if (p.length > depth && p.every((l, k) => l === want[k])) { best = s.id; depth = p.length; }
     });
-    location.replace(nodeBase() + '/chunks/' + id + '/' + best + '/effective');
+    location.replace(nodeBase() + '/chunks/' + id + '/' + best + '/effective' + labelsPart(target.labels, want.slice(0, depth)));
   } else {
     const kindTree = kind === 'file' ? 'file' : 'item';
     const path = kind === 'file' ? target.split('/') : target;
@@ -10727,6 +10744,7 @@ async function resolveLink(kind, target) {
   }
 }
 @
+
 @<Litar Web@/routing@=
 // Routing: #/composition/node/tab/..., so every page has a link and history works.
 async function route() {
@@ -10747,11 +10765,11 @@ async function route() {
     }
     state.n = Number(parts[1]);
     await showNodes();
-    const [tab = 'chunks', a, b, c] = parts.slice(2);
+    const [tab = 'chunks', a, b, c, d] = parts.slice(2);
     const num = x => x === undefined ? undefined : Number(x);
     showTabs(tab === 'ref' ? 'chunks' : tab === 'file' || tab === 'item' ? tab + 's' : tab);
     $('body').classList.toggle('wide', tab === 'blocks' || tab === 'eval');
-    if (tab === 'chunks') await chunkView(num(a), num(b), c || 'effective');
+    if (tab === 'chunks') await chunkView(num(a), num(b), c || 'effective', d && JSON.parse(d));
     else if (tab === 'files') await fileView(num(a));
     else if (tab === 'items') await itemView(num(a));
     else if (tab === 'blocks') await blocksView();

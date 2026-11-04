@@ -38,6 +38,10 @@ The `Makefile` at the root builds litar from `compos`:
 - `make install` installs `./litar` and `./litar-web` into `$(PREFIX)/bin`
   and the grounds under `$(PREFIX)/share/litar`; `PREFIX` defaults to `/usr/local`.
   It does not build, so run `make && sudo make install`.
+- `make install-cursor` then sets up Cursor for every workspace, as the user and with the same `PREFIX`:
+  it adds the `litar` MCP server, running the installed binary and grounds, to `~/.cursor/mcp.json`,
+  keeping the other servers, and copies the skills of `agent/skills` into `~/.cursor/skills`.
+  `install-mcp` and `install-skills` do each part; `CURSOR_DIR` changes `~/.cursor`.
 - `make clean` removes `tmp/build`, `tmp/boot`, `./litar`, and `./litar-web`.
 
 Edit `compos`, not `src`; `make sync` overwrites the files it lists.

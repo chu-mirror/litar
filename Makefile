@@ -6,6 +6,9 @@
 #   make install          install ./litar, ./litar-web, and the grounds under $(PREFIX)
 #   make install-bin      install ./litar and ./litar-web into $(BINDIR)
 #   make install-grounds  copy each ground composition into $(GROUNDDIR)
+#   make install-cursor   install the MCP server and the agent skills for Cursor under $(CURSOR_DIR)
+#   make install-mcp      add the litar server, run as $(BINDIR)/litar, to $(MCP_CONFIG)
+#   make install-skills   copy each directory of $(SKILLS) into $(CURSOR_DIR)/skills
 #   make clean            remove $(BUILD), $(BOOT), ./litar, and ./litar-web
 #
 # LITAR is the binary that evaluates the composition: ./litar from an earlier build,
@@ -19,6 +22,11 @@
 # litar finds grounds in /usr/local/share/litar, /usr/share/litar, and ~/.local/share/litar;
 # for any other PREFIX, add $(GROUNDDIR) to LITAR_LIBRARY.
 # install does not build, so `make && sudo make install` compiles as the user.
+#
+# install-cursor writes to the home directory, so run it as the user, after install, with the same PREFIX.
+# The server entry names the installed binary and grounds, so it works in any workspace.
+# install-mcp replaces only the litar entry of $(MCP_CONFIG) and keeps the other servers.
+# The skills link to each other and to references by relative paths, so they are copied side by side.
 
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
@@ -32,10 +40,14 @@ BOOT ?= tmp/boot/litar
 WEB_ADDR ?= 127.0.0.1:8080
 COMMANDS := litar litar-web
 LISTING := tmp/litar-files
+CURSOR_DIR ?= $(HOME)/.cursor
+MCP_CONFIG ?= $(CURSOR_DIR)/mcp.json
+SKILLS := agent/skills
 
 LITAR ?= $(or $(wildcard $(CURDIR)/litar),$(abspath $(BOOT)))
 
 GROUND_NAMES := $(notdir $(patsubst %/composer.json,%,$(wildcard $(GROUNDS)/*/composer.json)))
+SKILL_NAMES := $(notdir $(wildcard $(SKILLS)/*))
 BOOT_SOURCES := $(SRC)/go.mod $(SRC)/go.sum $(shell find $(SRC)/cmd $(SRC)/internal -name '*.go' 2>/dev/null)
 EVAL = LITAR_LIBRARY=$(abspath $(GROUNDS)) $(LITAR) -f $(ARCHIVE)
 # Build the bootstrap binary only when it is the one evaluating.
@@ -58,7 +70,28 @@ while read -r kind f; do \
 done < $(LISTING)
 endef
 
-.PHONY: all litar tangle sync boot web install install-bin install-grounds mcp clean
+# Set the litar entry of the MCP configuration in argv[1] to run argv[2] with the grounds in argv[3].
+define MCP_MERGE
+import json, os, sys
+path, litar, grounds = sys.argv[1:]
+try:
+    with open(path) as f:
+        text = f.read()
+except FileNotFoundError:
+    text = ''
+config = json.loads(text) if text.strip() else {}
+config.setdefault('mcpServers', {})['litar'] = {
+    'command': litar, 'args': ['-a'], 'env': {'LITAR_LIBRARY': grounds}}
+os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+with open(path + '.litar-new', 'w') as f:
+    json.dump(config, f, indent=2)
+    f.write('\n')
+os.replace(path + '.litar-new', path)
+endef
+export MCP_MERGE
+
+.PHONY: all litar tangle sync boot web install install-bin install-grounds
+.PHONY: install-cursor install-mcp install-skills mcp clean
 
 all: litar
 
@@ -94,6 +127,19 @@ install-grounds:
 		rm -rf "$(DESTDIR)$(GROUNDDIR)/$$g" && \
 		install -d "$(DESTDIR)$(GROUNDDIR)/$$g" && \
 		cp -R "$(GROUNDS)/$$g/." "$(DESTDIR)$(GROUNDDIR)/$$g/" || exit 1; \
+	done
+
+install-cursor: install-mcp install-skills
+
+install-mcp:
+	@test -x "$(abspath $(BINDIR))/litar" || { echo "$(abspath $(BINDIR))/litar is missing; run make install first" >&2; exit 1; }
+	python3 -c "$$MCP_MERGE" "$(MCP_CONFIG)" "$(abspath $(BINDIR))/litar" "$(abspath $(GROUNDDIR))"
+
+install-skills:
+	for s in $(SKILL_NAMES); do \
+		rm -rf "$(CURSOR_DIR)/skills/$$s" && \
+		install -d "$(CURSOR_DIR)/skills/$$s" && \
+		cp -R "$(SKILLS)/$$s/." "$(CURSOR_DIR)/skills/$$s/" || exit 1; \
 	done
 
 mcp:

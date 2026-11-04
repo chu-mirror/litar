@@ -1,129 +1,184 @@
 # Implementation
 
-This describes the Go program `litar`:
-its structure, the evaluation rules, the command line, and the MCP server.
-[syntax.md](syntax.md) defines the archive language and the composer file.
+This document describes the Go implementation of `litar`: its package layout, data model,
+parser, composer loader, evaluator, filter execution, command-line interface, and MCP server.
+See [syntax.md](syntax.md) for the archive language and `composer.json` specification.
 
 # Layout
 
-Module `litar`, Go 1.25, `gofmt` on every file.
-`cmd/litar/main.go` only calls `litar.Main`;
-everything else is the single package `internal/litar`, split by concern:
-`types.go`, `parse.go`, `compose.go`, `eval.go`, `list.go`,
-`filter.go`, `fuse.go`, `cli.go`, `mcp.go`.
+The Go module `litar` (Go 1.25, formatted with `gofmt`) lives under `src/` and is generated
+from the litar composition in `compos/`:
 
-Dependencies: the standard library,
-`github.com/hanwen/go-fuse/v2` for views,
-and `github.com/modelcontextprotocol/go-sdk` for the server.
+- `cmd/litar/main.go`: entry point that passes `os.Args` to `litar.Main`.
+- `cmd/litar-web/main.go`: read-only web UI that spawns `litar -a` and serves its MCP
+  resources over HTTP.
+- `internal/litar/`: single package containing the implementation, split by concern:
+  - `types.go`: core data structures and path/reference helpers
+  - `parse.go`: archive and command-line expression parser
+  - `compose.go`: `composer.json` loader, node graph, and archive compaction
+  - `eval.go`: chunk reference evaluation and cycle detection
+  - `list.go`: block and tree listings (`-l`, `-e`, `-d`, `-r`, modules, chunks, items)
+  - `filter.go`: file catalog, view evaluation, tangling, and filter execution
+  - `fuse.go`: FUSE filesystem for filter views
+  - `cli.go`: command-line flag parsing and dispatch
+  - `mcp.go`: MCP stdio server, resources, tools, and metadata evaluation
 
-`make` builds `./litar`; `make test` runs `go test ./...` and then `tests/run.sh`.
-A user error goes to stderr, exits 1, and leaves stdout empty.
+External dependencies are limited to `github.com/hanwen/go-fuse/v2` (for filter view mounts)
+and `github.com/modelcontextprotocol/go-sdk` (for the MCP server).
+
+At the repository root, `make` evaluates `compos/litar.la` into `tmp/build` and compiles
+`./litar` and `./litar-web`, while `make sync` writes all generated files into `src/`.
+Inside `src/`, `make` builds `./litar` and `make test` runs `go test ./...` followed by
+`tests/run.sh`.
+On any user error, `litar` prints the error to `stderr`, leaves `stdout` empty, and exits
+with status 1.
 
 # Data
 
-See `types.go`. The points that the rest of the program relies on:
+The core types in `types.go` are designed around lossless source round-tripping and node
+inheritance:
 
-- a `Block` keeps `Comment` (the bytes after the previous expression) and `Raw`
-  (the expression as written, with its end control),
-  so `-l` and archive rewrites reproduce the source byte for byte;
-  `Trailing` on a node or archive holds the bytes after the last block;
-- `EndsLine` records that a line break ended the content;
-- a file is a `Block` with `IsFile`; its chunk is its path in the root module;
-- a node's `Own` is its archive's blocks; its chain is the base node's chain followed by `Own`.
-  Evaluation and listings use the chain; edits, dump, and `blocks://node` use `Own`.
+- **`Block`:** Stores `Comment` (the raw comment bytes preceding the expression) and `Raw`
+  (the exact expression bytes as written, including its closing end control). This allows
+  `-l` and archive compaction to reproduce source blocks byte for byte. `Trailing` on `Node`
+  and `Archive` preserves any trailing bytes after the final block.
+- **`EndsLine`:** Boolean on `Block` recording whether the block's content ended with a
+  layout line break (`\n` or `\r\n`), used when joining `@+` blocks.
+- **Files as blocks:** A file expression (`@[` or `@(`) is stored as a `Block` with
+  `IsFile = true`; its `Ref` is a chunk in the root module named after the file's `Path`.
+- **`Own` vs. chain:** A node's `Own` slice holds the blocks parsed from that node's archive
+  file. Its **chain** is the concatenation of all blocks along its `base` ancestry (from the
+  root node down) followed by `Own`. Evaluation and listings use the full chain; edits,
+  compaction, and `blocks://node` operate only on `Own`.
 
 # Parse
 
-Parse with a byte cursor over the controls of [syntax.md](syntax.md), not regular expressions.
+`parse.go` scans bytes directly with a cursor over the controls defined in
+[syntax.md](syntax.md), without regular expressions:
 
-- The first CR, LF, or CR LF after `@=` / `@+` is layout.
-- One LF or CR LF that ends the content, before `@`, `@|`, or `@~`, is layout
-  and sets `EndsLine`.
-- `@<` raises the body depth and `@>` lowers it; `@|` and `@~` start the pipeline
-  and the items only at depth 0. An end control ends the block at any depth.
-- A command-line name uses the same qualified-name parser on the whole argument;
-  `-p` allows a pipeline and views, `-l`, `-e`, and `-d` do not.
-
-Errors name the file, the line, and the unexpected control.
-File errors are `files are paired only with @=`, `files cannot be specialized`,
-and `files cannot be modularized`.
+- **Layout line breaks:** At most one `\r\n`, `\n`, or `\r` immediately after `@=` or `@+`
+  is consumed as layout. At most one `\r\n` or `\n` at the end of the body content—before
+  `@`, `@|`, or `@~`—is stripped as layout and sets `EndsLine = true`.
+- **Body and inner references:** In a block body, `@<` invokes `parseInnerRef`, which reads
+  a qualified name and an optional `@|` filter pipeline up to `@>`. At the top level of the
+  body (outside `@<...@>`), `@|` starts the block's filter pipeline, `@~` starts the item
+  list, and an end control closes the block. Reaching an end control or EOF inside an
+  unclosed `@<...` reference fails with `unterminated block`.
+- **Command-line expressions:** Command-line arguments use the same qualified-name parser
+  over the entire argument string. `-p` allows a filter pipeline and views; `-l`, `-e`, and
+  `-d` reject pipelines.
+- **Error reporting:** Archive parse errors include the file and line number
+  (`<msg> at line <N> in '<file>'`), while command-line parse errors report
+  `<msg> in expression`. Invalid file headers report `files are paired only with @=`,
+  `files cannot be specialized`, or `files cannot be modularized`.
 
 # Composer
 
-The format and the ground search order are in [syntax.md](syntax.md).
+`compose.go` loads compositions and manages their node graphs (see [syntax.md](syntax.md)
+for the `composer.json` schema and ground search path):
 
-- The ground composer loads first; its nodes, including its own ground's, precede this file's.
-  The combined list has exactly one root.
-- A base must name a node already in the list:
-  `base '…' of node '…' is not defined`. A cycle among grounds names the grounds.
-- Each archive is parsed once into `Own`. A missing archive fails the load.
-- File-set membership is the `Sets` on file blocks in the chain plus the mappings
-  inherited along it; `@+name` adds every file and mapping that lists `name`.
-- `-f` finds the node: from the archive's directory upward, the first `composer.json`
-  that declares the archive as one of its own nodes wins.
-  If none does, the error is the first composer that failed to load,
-  or `no composition declares archive '…'`.
+- **Ground loading:** If `ground` is non-null, the ground composition is located on the
+  search path and loaded first (recursively). Its nodes precede the current file's nodes.
+  Cycles across grounds fail with `cycle in grounds: a -> b -> a`.
+- **Graph validation:** The combined node list must have a single root (`base: []`). Every
+  non-root node's `base` must name an ancestor path already present in the list
+  (`base '…' of node '…' is not defined`), sibling names under the same parent must be
+  unique, and no two nodes may share an archive file.
+- **Archive parsing:** Each node's archive is parsed once into `Own`; a missing archive
+  fails the load.
+- **File catalog:** A node's file-set catalog combines the `Sets` declared on file blocks
+  in its chain with the `Mappings` inherited along its `base` chain. In a view expression,
+  `@+name` adds every archive file and mapped file belonging to `name`. Defining the same
+  path as both an archive file and a mapping is reported as an error when that file is used.
+- **Locating an archive (`-f`):** `FindArchive` walks upward from the archive's directory
+  looking for `composer.json`. The nearest `composer.json` that declares the archive as one
+  of its own local nodes wins. If none matches, it returns the first composer load error
+  encountered, or `no composition declares archive '…'`.
 
 # Evaluation
 
-A block matches a chunk reference when module and chunk are equal
-and the block's labels are a suffix of the reference's labels.
-Matching blocks apply in chain order:
+`eval.go` expands chunk references on a node's block chain:
 
-- `@=` replaces the accumulated text;
-- `@+` appends, joined by a line feed when the block has `EndsLine`
-  and the accumulated text is not empty.
-
-The blocks that still contribute are the effective blocks.
-Each applied block expands its parts, runs its pipeline on that text, then sets or appends.
-Filter output is final and is not scanned again.
-
-- An inner reference without labels takes the labels of the reference being expanded.
-- An omitted module is the root. `.` and `..` resolve against the block's header module
-  and are an error in a header or a filter name.
-- A filter name resolves like a body reference, without `.` or `..`.
-- A missing inner reference is empty text; a missing top-level reference is an error.
-- Re-expanding a reference already on the visit stack is a cycle; stderr names the chain.
+- **Matching:** A block matches a chunk reference when their module and chunk name are equal
+  and the block's labels are a suffix of the reference's labels.
+- **Accumulation:** Matching blocks are applied in chain order:
+  - `@=` replaces the accumulated text with the block's expanded text;
+  - `@+` appends the block's expanded text, joined by `\n` when the block has `EndsLine` and
+    the accumulated text is non-empty.
+  The matching blocks that still contribute to the final text (from the last `@=` onward)
+  are the **effective blocks**.
+- **Block expansion:** Each applied block expands its body parts in order (running any
+  reference-level filter pipeline on each inner reference), runs the block's own filter
+  pipeline on the combined text, and then sets or appends. Filter output is final and is
+  not scanned for controls.
+- **Resolution and inheritance:**
+  - An inner reference without labels inherits the labels of the chunk reference currently
+    being expanded.
+  - An omitted module is the root module. In a body reference, `.` and `..` resolve relative
+    to the enclosing block's header module (they are rejected in block headers, filter names,
+    and CLI arguments).
+  - A filter name resolves like a body reference (inheriting labels from the reference or
+    block it is attached to), except that `.` and `..` are not allowed.
+- **Missing references and cycles:**
+  - A missing inner reference (or a missing archive file chunk during tangling) expands to
+    empty text `""`.
+  - A missing top-level reference (`-p`, `-l`, `-e`) or a missing filter chunk fails with
+    `chunk '…' is not defined`.
+  - Re-expanding a chunk reference that is already on the active visit stack fails with
+    `circular reference a -> b -> a`.
 
 # Listing
 
-`-l` prints the comment and `Raw` of each matching block, predecessors included;
-`-e` does the same for the effective blocks.
-`-d` lists blocks whose content contains, or whose pipeline names,
-the query or a reference specialized from it.
-`-r` lists blocks that carry exactly that item.
+`list.go` implements the query flags:
 
-Module, chunk, domain, and item listings exist only behind the MCP trees.
-They skip the reserved namespaces and take descriptions from the meta chunks.
+- **`-l` (literal):** Prints `Comment` + `Raw` for every block matching the chunk reference
+  (including blocks applied to predecessors), in chain order. Fails if no block matches.
+- **`-e` (effective):** Prints `Comment` + `Raw` for the effective blocks of the chunk
+  reference. Fails if no block matches.
+- **`-d` (depend):** Prints `Comment` + `Raw` for every block in the chain whose body
+  references or filter pipelines use the queried chunk reference or a specialization of it.
+- **`-r` (reference):** Prints `Comment` + `Raw` for every block in the chain that carries
+  the exact queried item.
+
+Module, chunk, subdomain, and item trees are exposed through the MCP server (and tested via
+`list.go`). They omit the reserved namespaces (`Module`, `Chunk`, `Specialization`, `Domain`,
+`Index`) and populate descriptions by evaluating those metadata chunks.
 
 # Filters
 
-A filter chunk evaluates to a script whose first line is a shebang.
-The script is written to a host temporary file;
-stdin is the text, stdout replaces it, stderr passes through,
-and a non-zero status fails the evaluation.
+`filter.go` and `fuse.go` run filter pipelines in isolated FUSE views:
 
-Before the process starts, the view is computed from the empty set
-left to right, and every file in it is tangled:
-an archive file is its evaluated chunk, on the same visit stack;
-a mapped file is the contents of `origin`.
-A cycle or an unreadable file fails the invocation before anything runs.
+1. **Shebang and script:** A filter chunk must evaluate to a script whose first line is
+   `#! interpreter [arg]`. The script is written to a temporary file on the host; the input
+   text is piped to `stdin`, `stdout` replaces the text, `stderr` passes through to litar's
+   `stderr`, and a non-zero exit code fails the evaluation.
+2. **View calculation and tangling:** Before the filter process starts, its view operations
+   (`@+`, `@-`, `@,`, `@!`) are applied left to right starting from the empty set, and every
+   resulting file is tangled:
+   - an archive file is evaluated as a root-module chunk on the current visit stack;
+   - a mapped file is read from its host `origin` path.
+   Any circular dependency or unreadable file aborts the invocation before the process starts.
+3. **FUSE mount and overlay:** The tangled files are mounted as a read-only FUSE filesystem
+   (`go-fuse/v2`) whose file stats (mode, size, inode, link count, timestamps) are fixed at
+   tangle time. Any files or directories created by the filter are written to a temporary
+   host overlay directory that is visible through the mount during the invocation and
+   discarded afterwards. The filter runs with the mount as its working directory while
+   absolute host paths remain reachable.
 
-The view is a FUSE mount containing exactly those files, read-only,
-with stats fixed at tangle time.
-Writes go to a host overlay visible through the mount and discarded afterwards.
-The process runs with the mount as its working directory; absolute host paths stay reachable.
+Three implementation constraints govern the FUSE mount:
 
-Constraints the mount imposes:
+- **Entering the mount via `/bin/sh`:** The child process enters the mount via
+  `/bin/sh -c 'cd "$0" && exec "$@"'` instead of setting `cmd.Dir`. If `cmd.Dir` were set to
+  the FUSE mount, Go's `vfork` child would `chdir` into a filesystem served by the parent Go
+  process before `exec`, which can deadlock if the Go runtime initiates a garbage-collection
+  stop-the-world.
+- **Lazy unmount fallback:** If normal unmounting fails after the filter exits (for example,
+  because the filter left a background process running in the mount), the mount is detached
+  lazily (`MNT_DETACH` or `fusermount -u -z`) rather than waiting indefinitely.
+- **Signal handling:** `SIGINT`, `SIGTERM`, and `SIGHUP` caught by `litar` detach all live
+  mounts before terminating.
 
-- the child enters the mount through `/bin/sh -c 'cd "$0" && exec "$@"'`,
-  never through `cmd.Dir`: Go's vfork child would `chdir` into this process's own
-  FUSE mount and deadlock with a garbage-collector stop;
-- if unmounting fails because a background process still uses the mount,
-  it is detached lazily instead of waited for;
-- SIGINT, SIGTERM, and SIGHUP detach every live mount before exiting.
-
-Tests that need a mount skip when `/dev/fuse` is missing.
+Tests that require FUSE skip automatically when `/dev/fuse` is absent.
 
 # Command line
 
@@ -140,106 +195,127 @@ usage: litar [options]
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
 ```
 
-The help text is printed as above, with `argv[0]` for `litar`.
-ARCHIVE is the path of an archive file;
-CHUNK_REFERENCE, EXPRESSION, and ITEM are the command-line names of [syntax.md](syntax.md).
-`--help` is long only; short options, long options, and `--name=value` are accepted.
-One action per invocation: combining two of `-p -l -e -d -r -a` is an error
-naming the earlier one in that order.
-`-f` is required except for `--help` and `-a`.
-`-a -f` imports the archive's composition; `-a` alone starts the server with nothing imported.
+- `--help` prints the usage above (with `argv[0]` in place of `litar`) and is long-only.
+- Short options, long options, attached short values (`-fARCHIVE`), and `--name=value` are
+  all accepted.
+- `ARCHIVE` is a path to a `.la` archive file; `CHUNK_REFERENCE`, `EXPRESSION`, and `ITEM`
+  follow the command-line syntax in [syntax.md](syntax.md).
+- Exactly one action (`-p`, `-l`, `-e`, `-d`, `-r`, or `-a`) may be given per invocation.
+  Combining two actions fails with `cannot combine <first> and <second>`, naming the earlier
+  action in the order `print`, `literal`, `effective`, `depend`, `reference`, `agent`.
+- `-f` is required for every action except `--help` and `-a`.
+- `-a -f ARCHIVE` starts the MCP server with `ARCHIVE`'s composition already imported;
+  `-a` alone starts the server with no compositions imported.
 
 # MCP
 
-`-a` serves MCP protocol
-[2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28) on stdio.
-Every resource, template, and tool is registered at startup.
+`litar -a` serves MCP protocol version
+[2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28) over `stdio`.
+All resources, resource templates, and tools are registered at startup.
 
-| URI | Content |
-| --- | --- |
-| `list://composition` | the imported compositions |
-| `tree://node/{composition}` | the node tree |
-| `tree://chunk/{composition}/{node}` | the chunk tree, by module |
-| `tree://item/{composition}/{node}` | the item tree, by domain |
-| `tree://file/{composition}/{node}` | the file tree, by directory |
-| `tree://specialization/{composition}/{node}/{chunk}` | the specializations of a chunk |
-| `blocks://node/{composition}/{node}` | the node's own blocks |
-| `blocks://apply/{composition}/{node}/{chunk}/{specialization}` | `-l` of that chunk reference |
-| `blocks://effective/{composition}/{node}/{chunk}/{specialization}` | `-e` of that chunk reference |
-| `blocks://depend/{composition}/{node}/{chunk}/{specialization}` | `-d` of that chunk reference |
-| `blocks://refer/{composition}/{node}/{item}` | `-r` of that item |
-| `file://{composition}/{node}/{path}` | the evaluated bytes of that file |
+## Resources and templates
 
-`list://` returns a JSON array of `{"name", "description", "id"}`;
-`tree://` returns `{"name", "description", "id", "sub-trees"}`;
-`blocks://` returns the `-l` form.
-A composition's name is its absolute path; descriptions come from the composer and the meta chunks.
+| URI | MIME type | Content |
+| --- | --- | --- |
+| `list://composition` | `application/json` | imported compositions |
+| `tree://node/{composition}` | `application/json` | node tree of the composition |
+| `tree://chunk/{composition}/{node}` | `application/json` | chunk tree organized by module |
+| `tree://item/{composition}/{node}` | `application/json` | item tree organized by domain |
+| `tree://file/{composition}/{node}` | `application/json` | file tree organized by directory |
+| `tree://specialization/{composition}/{node}/{chunk}` | `application/json` | specialization tree of a chunk |
+| `blocks://node/{composition}/{node}` | `text/plain` | the node's own blocks (`Own`) |
+| `blocks://apply/{composition}/{node}/{chunk}/{specialization}` | `text/plain` | `-l` output for that chunk reference |
+| `blocks://effective/{composition}/{node}/{chunk}/{specialization}` | `text/plain` | `-e` output for that chunk reference |
+| `blocks://depend/{composition}/{node}/{chunk}/{specialization}` | `text/plain` | `-d` output for that chunk reference |
+| `blocks://refer/{composition}/{node}/{item}` | `text/plain` | `-r` output for that item |
+| `file://{composition}/{node}/{path}` | `text/plain` or `application/octet-stream` | evaluated bytes of that file |
 
-Several compositions can be imported into one server.
-A ground composition is listed only when imported itself;
-its nodes inside another composition can be evaluated and used as bases but not edited
-(`node '…' is defined in the ground`).
+- `list://composition` returns a JSON array of `{"name", "description", "id"}` objects,
+  where `name` is the composition directory's absolute path.
+- `tree://` resources return recursive `{"name", "description", "id", "sub-trees"}` JSON
+  objects. Descriptions come from `composer.json` (for nodes) and from the reserved metadata
+  chunks (for modules, chunks, specializations, domains, and items).
+- `blocks://` resources return blocks formatted identically to `-l`.
+- Multiple compositions can be imported into one server. A ground composition appears in
+  `list://composition` only if imported directly; its nodes inside a dependent composition
+  can be inspected, evaluated, and used as bases, but attempting to edit them fails with
+  `node '…' is defined in the ground`.
 
-Ids:
+## IDs and tree structure
 
-- a composition id is its index in import order;
-- node, chunk, item, file, and specialization ids are a preorder walk of their tree;
-- chunk, item, and file ids address leaves, not module or directory branches;
-- an unknown id is `unknown composition N` (or node, chunk, file, item, specialization).
+All `{composition}`, `{node}`, `{chunk}`, `{item}`, `{path}`, and `{specialization}`
+parameters in URIs and tool calls are integer IDs counting from `0`:
 
-Trees:
+- **Composition ID:** Index in import order (`list://composition`).
+- **Tree IDs:** Assigned by a preorder walk of the corresponding tree starting at `0`.
+- **Leaves vs. branches:** In `tree://chunk`, `tree://item`, and `tree://file`, only leaf
+  entries (actual chunks, items, and files—not intermediate module, domain, or directory
+  nodes) are valid IDs for tools and `blocks://` / `file://` reads. In `tree://node` and
+  `tree://specialization`, every node in the tree is addressable.
+- **Root wrappers:** The root of `tree://node` is the root node itself. The other trees
+  (`chunk`, `item`, `file`, `specialization`) use a wrapper root object named `"/"`.
+- **Specialization tree:** In `tree://specialization/{composition}/{node}/{chunk}`, the
+  root `"/"` (ID `0`) represents the unspecialized chunk. Each level below adds one label
+  from general to specific, so the tree path `label1/label2` represents `label2@:label1`.
+  A label path appears in the tree whenever a block is applied to, or a reference resolves
+  to, that chunk with those labels.
+- **Unknown IDs:** Passing an out-of-range or non-leaf ID fails with `unknown composition N`
+  (or `node`, `chunk`, `file`, `item`, `specialization`).
 
-- the node tree's root object is the root node; the other trees use `"/"` as the wrapper;
-- reserved meta chunks are omitted from `tree://chunk`;
-  module and chunk descriptions appear there, domain and item descriptions on `tree://item`;
-- `tree://specialization/{composition}/{node}/{chunk}` has the unspecialized form as root (id 0),
-  then one label per level, general to specific, so `label1/label2` is `label2@:label1`.
-  A label path appears when a block applies to the chunk, or a reference names it,
-  under those labels; a reference without labels keeps its block's labels.
+## Tools
 
-Tools and their arguments:
+| Tool | Arguments | Effect |
+| --- | --- | --- |
+| `import_composition` | `path` | Load an existing `composer.json` (or its directory) and return its composition ID. |
+| `create_composition` | `path`, `ground` (required: name or `null`), `description` (optional) | Create `path/composer.json` if absent, import it, and return its composition ID. Removes the created file if `ground` cannot be loaded. |
+| `create_node` | `composition`, `name`, `archive`, `description`, `base` (required: parent node ID or `null` for root) | Create a new empty archive file (fails with `archive '…' already exists` if present), add the node to `composer.json`, and return the new node ID. |
+| `delete_node` | `composition`, `node` | Delete the node, all descendant nodes based on it, and their archive files. Missing archive files are ignored; unremovable files are reported after saving `composer.json`. |
+| `delete_chunk` | `composition`, `node`, `chunk` | Remove all of the node's own blocks for that module and chunk (across all label specializations) and compact the archive. |
+| `delete_file` | `composition`, `node`, `path` | Remove the node's own file block and root-module blocks for that path and compact the archive. |
+| `evaluate_expression` | `composition`, `node`, `expression` | Evaluate a `-p` expression at that node and return the resulting text. |
+| `apply_block` | `composition`, `node`, `text` | Append `text` to the node's archive, reparse, and compact the archive. |
 
-- `import_composition`: `path`, the composer file or its directory; returns the composition id;
-- `create_composition`: `path`, `ground` (required, name or null), `description`;
-  creates `composer.json` if absent, removes it again if the ground cannot load;
-- `create_node`: `composition`, `name`, `archive`, `description`, `base`
-  (required; null creates the root, only when there is none);
-  the archive is created empty and must not exist (`archive '…' already exists`);
-- `delete_node`: `composition`, `node`; also deletes nodes based on it and their archives;
-  a missing file is not an error, a file that cannot be removed is reported after saving;
-- `delete_chunk`: `composition`, `node`, `chunk`; every own block of that module and chunk,
-  whatever the labels;
-- `delete_file`: `composition`, `node`, `path`;
-- `evaluate_expression`: `composition`, `node`, `expression`;
-- `apply_block`: `composition`, `node`, `text`, appended to the node's archive.
+## Compaction and notifications
 
-After an edit the node's archive is compacted:
+Every archive edit (`apply_block`, `delete_chunk`, `delete_file`) compacts the edited node's
+archive before writing it back:
 
-1. drop a block that is no longer an effective block of its own chunk reference in that node;
-2. order the rest so a block comes after the blocks whose content includes its chunk.
-   Inclusion is a content reference resolved like a body reference,
-   matched by module and chunk whatever the labels; filter chunks and self-inclusion do not count.
-   Blocks of one module and chunk keep their order; circular inclusion keeps archive order;
-   other blocks keep their relative places; comments move with their blocks;
-   a block that ended the archive at its `@` gets a line break when it moves.
+1. **Drop overridden blocks:** Any block in `Own` that is no longer an effective block of
+   its own chunk reference within `Own` (because a later `@=` in the same node replaced it)
+   is removed.
+2. **Order by inclusion:** Remaining blocks are ordered so that a block appears after any
+   block whose body content references its chunk (matched by module and chunk name regardless
+   of labels; filter references and self-references are ignored). Blocks targeting the same
+   module and chunk always keep their relative order; if inclusion forms a cycle, archive
+   order breaks the tie; otherwise blocks keep their relative order. Each block's preceding
+   `Comment` moves with it, and a block that previously ended the archive at a bare `@`
+   receives a trailing `\n` if moved before another block.
 
-Reads never compact. `DumpArchives` applies the same compaction to every local node; it is not a tool.
-Saving the composer writes `description`, `ground`, and the local nodes only.
-A mutation sends `notifications/resources/updated` for `list://composition`
-and every concrete URI present before or after it.
+Read operations never compact archives. (`DumpArchives` runs the same compaction across all
+local nodes in a `World`, though it is not exposed as an MCP tool.)
+Saving `composer.json` writes only `description`, `ground`, and the local nodes declared in
+that composition.
+Every mutation sends `notifications/resources/updated` for `list://composition` and for
+every concrete resource URI that existed before or after the change.
 
 # Tests
 
-`internal/litar` has table tests for parsing, matching, label inheritance, `.` / `..`,
-effective blocks, listings, filters, FUSE views, composer edits, and MCP.
-`tests/` holds CLI cases run by `run.sh`; a case is a directory with `driver.sh` or `argv`
-(one argument per line, including `-f`).
+- **Unit tests (`src/internal/litar/*_test.go`):** Table-driven tests covering scanning and
+  parsing, suffix matching, label inheritance, `.` and `..` module resolution, effective
+  blocks, listings, metadata chunks, filters, FUSE views, composer edits, compaction
+  ordering, and MCP calls.
+- **Acceptance tests (`src/tests/`):** CLI test cases driven by `run.sh`. Each case
+  directory contains either a custom `driver.sh` or an `argv` file (one CLI argument per
+  line, including `-f`) paired with expected `out`, `err`, and `status` files.
 
 # Grounds and examples
 
-`grounds/common` is Basic, which also holds Text Processing.
-`grounds/c-programming` adds C Structure and Light;
-`grounds/go-programming` adds Go Structure, then Go Project on it.
-`examples/c` adds Program Hello and Test Light on `c-programming`;
-`examples/go` adds Program Hello on Go Structure and Project Hello on Go Project.
-Put `grounds` on `$LITAR_LIBRARY` to evaluate them.
+- `grounds/common`: defines `Basic` (including `Text Processing`).
+- `grounds/c-programming`: grounds on `common` and adds `C Structure` and `Light`.
+- `grounds/go-programming`: grounds on `common` and adds `Go Structure` and `Go Project`
+  (based on `Go Structure`).
+- `examples/c`: grounds on `c-programming` and adds `Program Hello` and `Test Light`.
+- `examples/go`: grounds on `go-programming` and adds `Program Hello` (on `Go Structure`)
+  and `Project Hello` (on `Go Project`).
+
+Set `LITAR_LIBRARY=grounds` when evaluating compositions that depend on `grounds/`.

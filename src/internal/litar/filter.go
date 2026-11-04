@@ -24,45 +24,6 @@ type catalog struct {
 	conflicts map[string]bool
 }
 
-func buildCatalog(chain []Block, mappings []Mapping) *catalog {
-	c := &catalog{
-		files:     map[string]*catFile{},
-		conflicts: map[string]bool{},
-	}
-	touch := func(path string) *catFile {
-		f := c.files[path]
-		if f == nil {
-			f = &catFile{sets: map[string]struct{}{}}
-			c.files[path] = f
-			c.order = append(c.order, path)
-		}
-		return f
-	}
-	for _, b := range chain {
-		if !b.IsFile {
-			continue
-		}
-		f := touch(string(b.Path))
-		f.archive = true
-		f.executable = b.Executable
-		for _, set := range b.Sets {
-			f.sets[string(set)] = struct{}{}
-		}
-	}
-	for _, m := range mappings {
-		f := touch(m.Path)
-		if f.archive {
-			c.conflicts[m.Path] = true
-		}
-		f.mapping = true
-		f.origin = m.Origin
-		for _, set := range m.FileSet {
-			f.sets[set] = struct{}{}
-		}
-	}
-	return c
-}
-
 type viewFile struct {
 	path       string
 	executable bool
@@ -72,18 +33,6 @@ type viewFile struct {
 	// ino is assigned once for the mount. A fresh number on each
 	// lookup makes tools treat the file as replaced mid-invocation.
 	ino uint64
-}
-
-func validFilePath(p string) error {
-	if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "\x00") {
-		return fmt.Errorf("invalid file path '%s'", p)
-	}
-	for _, c := range strings.Split(p, "/") {
-		if c == "" || c == "." || c == ".." {
-			return fmt.Errorf("invalid file path '%s'", p)
-		}
-	}
-	return nil
 }
 
 func (c *catalog) apply(ops []ViewOp) ([]viewFile, error) {
@@ -163,6 +112,83 @@ func (c *catalog) apply(ops []ViewOp) ([]viewFile, error) {
 		})
 	}
 	return out, nil
+}
+
+// tangle writes each view file's bytes before the filter process starts.
+// An archive file is the root-module chunk named by its path.
+// A mapped file is the contents of origin.
+func (e *Evaluator) tangle(files []viewFile) error {
+	for i := range files {
+		var (
+			data []byte
+			err  error
+		)
+		if files[i].archive {
+			data, err = e.readChunk(Name(files[i].path))
+		} else {
+			data, err = os.ReadFile(files[i].origin)
+			if err != nil {
+				err = fmt.Errorf("could not read '%s'", files[i].origin)
+				e.noteErr(err)
+			}
+		}
+		if err != nil {
+			return err
+		}
+		files[i].body = data
+	}
+	return nil
+}
+
+func buildCatalog(chain []Block, mappings []Mapping) *catalog {
+	c := &catalog{
+		files:     map[string]*catFile{},
+		conflicts: map[string]bool{},
+	}
+	touch := func(path string) *catFile {
+		f := c.files[path]
+		if f == nil {
+			f = &catFile{sets: map[string]struct{}{}}
+			c.files[path] = f
+			c.order = append(c.order, path)
+		}
+		return f
+	}
+	for _, b := range chain {
+		if !b.IsFile {
+			continue
+		}
+		f := touch(string(b.Path))
+		f.archive = true
+		f.executable = b.Executable
+		for _, set := range b.Sets {
+			f.sets[string(set)] = struct{}{}
+		}
+	}
+	for _, m := range mappings {
+		f := touch(m.Path)
+		if f.archive {
+			c.conflicts[m.Path] = true
+		}
+		f.mapping = true
+		f.origin = m.Origin
+		for _, set := range m.FileSet {
+			f.sets[set] = struct{}{}
+		}
+	}
+	return c
+}
+
+func validFilePath(p string) error {
+	if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "\x00") {
+		return fmt.Errorf("invalid file path '%s'", p)
+	}
+	for _, c := range strings.Split(p, "/") {
+		if c == "" || c == "." || c == ".." {
+			return fmt.Errorf("invalid file path '%s'", p)
+		}
+	}
+	return nil
 }
 
 // parseShebang reads "#! interpreter" or "#! interpreter arg".
@@ -293,30 +319,4 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 		return "", fmt.Errorf("filter '%s' exited with status %d", ref.String(), code)
 	}
 	return out.String(), nil
-}
-
-// tangle writes each view file's bytes before the filter process starts.
-// An archive file is the root-module chunk named by its path.
-// A mapped file is the contents of origin.
-func (e *Evaluator) tangle(files []viewFile) error {
-	for i := range files {
-		var (
-			data []byte
-			err  error
-		)
-		if files[i].archive {
-			data, err = e.readChunk(Name(files[i].path))
-		} else {
-			data, err = os.ReadFile(files[i].origin)
-			if err != nil {
-				err = fmt.Errorf("could not read '%s'", files[i].origin)
-				e.noteErr(err)
-			}
-		}
-		if err != nil {
-			return err
-		}
-		files[i].body = data
-	}
-	return nil
 }

@@ -14,6 +14,32 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
+var (
+	liveMu     sync.Mutex
+	liveMounts = map[*mount]struct{}{}
+)
+
+// fixedStatTime is the timestamp reported for every tangled file.
+// It does not move when the file is stated, opened, or read.
+var fixedStatTime = time.Unix(0, 0)
+
+var (
+	_ fs.NodeLookuper  = (*dirNode)(nil)
+	_ fs.NodeReaddirer = (*dirNode)(nil)
+	_ fs.NodeGetattrer = (*dirNode)(nil)
+	_ fs.NodeSetattrer = (*dirNode)(nil)
+	_ fs.NodeCreater   = (*dirNode)(nil)
+	_ fs.NodeMkdirer   = (*dirNode)(nil)
+	_ fs.NodeUnlinker  = (*dirNode)(nil)
+	_ fs.NodeRmdirer   = (*dirNode)(nil)
+	_ fs.NodeGetattrer = (*fileNode)(nil)
+	_ fs.NodeOpener    = (*fileNode)(nil)
+	_ fs.NodeSetattrer = (*fileNode)(nil)
+	_ fs.FileReader    = (*archiveFH)(nil)
+	_ fs.NodeGetattrer = (*overlayNode)(nil)
+	_ fs.NodeOpener    = (*overlayNode)(nil)
+)
+
 type ventry struct {
 	file *viewFile
 	dir  *vdir
@@ -24,96 +50,7 @@ type vdir struct {
 	ino  uint64
 }
 
-func newVdir() *vdir {
-	return &vdir{kids: map[string]*ventry{}}
-}
-
-func buildVTree(files []viewFile) (*vdir, error) {
-	root := newVdir()
-	for i := range files {
-		f := &files[i]
-		parts := stringsSplit(f.path)
-		dir := root
-		for i, part := range parts {
-			last := i == len(parts)-1
-			cur := dir.kids[part]
-			if last {
-				if cur != nil && cur.dir != nil {
-					return nil, errPath(f.path)
-				}
-				if cur != nil && cur.file != nil {
-					return nil, errPath(f.path)
-				}
-				dir.kids[part] = &ventry{file: f}
-				continue
-			}
-			if cur != nil && cur.file != nil {
-				return nil, errPath(f.path)
-			}
-			if cur == nil {
-				cur = &ventry{dir: newVdir()}
-				dir.kids[part] = cur
-			}
-			dir = cur.dir
-		}
-	}
-	assignInos(root)
-	return root, nil
-}
-
-// assignInos gives every archive path one inode number for this mount.
-// Entry timeouts are zero, so the kernel may look the name up again
-// between stat and open. The same number keeps the stat stable.
-func assignInos(root *vdir) {
-	next := uint64(2)
-	var walk func(*vdir)
-	walk = func(d *vdir) {
-		names := make([]string, 0, len(d.kids))
-		for name := range d.kids {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			ch := d.kids[name]
-			if ch.file != nil {
-				ch.file.ino = next
-				next++
-				continue
-			}
-			ch.dir.ino = next
-			next++
-			walk(ch.dir)
-		}
-	}
-	walk(root)
-}
-
-func errPath(p string) error {
-	return &pathUseError{p}
-}
-
 type pathUseError struct{ path string }
-
-func (e *pathUseError) Error() string {
-	return "invalid file path '" + e.path + "'"
-}
-
-func stringsSplit(p string) []string {
-	return splitSlash(p)
-}
-
-func splitSlash(p string) []string {
-	var out []string
-	start := 0
-	for i := 0; i < len(p); i++ {
-		if p[i] == '/' {
-			out = append(out, p[start:i])
-			start = i + 1
-		}
-	}
-	out = append(out, p[start:])
-	return out
-}
 
 type mount struct {
 	dir    string
@@ -122,10 +59,33 @@ type mount struct {
 	extra  []string
 }
 
-var (
-	liveMu     sync.Mutex
-	liveMounts = map[*mount]struct{}{}
-)
+type mountError struct{ err error }
+
+type dirNode struct {
+	fs.Inode
+	rel     string
+	spec    *vdir
+	overlay string
+}
+
+type fileNode struct {
+	fs.Inode
+	file *viewFile
+}
+
+type overlayNode struct {
+	fs.Inode
+	host string
+	dir  bool
+}
+
+type archiveFH struct {
+	file *viewFile
+}
+
+func (e *pathUseError) Error() string {
+	return "invalid file path '" + e.path + "'"
+}
 
 func (m *mount) close() {
 	if m == nil {
@@ -151,102 +111,8 @@ func (m *mount) close() {
 	}
 }
 
-func detach(dir string, direct bool) {
-	if direct && syscall.Unmount(dir, syscall.MNT_DETACH) == nil {
-		return
-	}
-	for _, prog := range []string{"fusermount3", "fusermount"} {
-		if exec.Command(prog, "-u", "-z", dir).Run() == nil {
-			return
-		}
-	}
-}
-
-// DetachMounts lazily unmounts every filter view that is still mounted.
-// A process that exits without it leaves a dead mount in the temporary directory.
-func DetachMounts() {
-	liveMu.Lock()
-	defer liveMu.Unlock()
-	for m := range liveMounts {
-		detach(m.dir, m.direct)
-	}
-}
-
-func mountView(files []viewFile) (*mount, error) {
-	tree, err := buildVTree(files)
-	if err != nil {
-		return nil, err
-	}
-	dir, err := os.MkdirTemp("", "litar-mnt-*")
-	if err != nil {
-		return nil, fmtMount(err)
-	}
-	overlay, err := os.MkdirTemp("", "litar-ovl-*")
-	if err != nil {
-		os.RemoveAll(dir)
-		return nil, fmtMount(err)
-	}
-	root := &dirNode{rel: "", spec: tree, overlay: overlay}
-	zero := time.Duration(0)
-	opts := &fs.Options{
-		EntryTimeout:    &zero,
-		AttrTimeout:     &zero,
-		NullPermissions: true,
-	}
-	opts.FsName = "litar"
-	opts.Name = "litar"
-	opts.DirectMount = true
-	server, err := fs.Mount(dir, root, opts)
-	direct := err == nil
-	if err != nil {
-		os.RemoveAll(dir)
-		dir, err = os.MkdirTemp("", "litar-mnt-*")
-		if err != nil {
-			os.RemoveAll(overlay)
-			return nil, fmtMount(err)
-		}
-		opts.DirectMount = false
-		root = &dirNode{rel: "", spec: tree, overlay: overlay}
-		server, err = fs.Mount(dir, root, opts)
-	}
-	if err != nil {
-		os.RemoveAll(dir)
-		os.RemoveAll(overlay)
-		return nil, fmtMount(err)
-	}
-	m := &mount{dir: dir, server: server, direct: direct, extra: []string{overlay}}
-	liveMu.Lock()
-	liveMounts[m] = struct{}{}
-	liveMu.Unlock()
-	return m, nil
-}
-
-func fmtMount(err error) error {
-	return &mountError{err}
-}
-
-type mountError struct{ err error }
-
 func (e *mountError) Error() string {
 	return "could not mount the filter view: " + e.err.Error()
-}
-
-type dirNode struct {
-	fs.Inode
-	rel     string
-	spec    *vdir
-	overlay string
-}
-
-type fileNode struct {
-	fs.Inode
-	file *viewFile
-}
-
-type overlayNode struct {
-	fs.Inode
-	host string
-	dir  bool
 }
 
 func (d *dirNode) hostDir() string {
@@ -268,46 +134,6 @@ func (d *dirNode) childRel(name string) string {
 		return name
 	}
 	return d.rel + "/" + name
-}
-
-func modeOf(f *viewFile) uint32 {
-	perm := uint32(0o444)
-	if f != nil && f.executable {
-		perm = 0o555
-	}
-	return syscall.S_IFREG | perm
-}
-
-// fixedStatTime is the timestamp reported for every tangled file.
-// It does not move when the file is stated, opened, or read.
-var fixedStatTime = time.Unix(0, 0)
-
-func setFileAttr(f *viewFile, out *fuse.Attr) {
-	out.Mode = modeOf(f)
-	out.Nlink = 1
-	out.SetTimes(&fixedStatTime, &fixedStatTime, &fixedStatTime)
-	if f != nil {
-		out.Size = uint64(len(f.body))
-	}
-}
-
-func dirNlink(d *vdir) uint32 {
-	n := uint32(2)
-	if d == nil {
-		return n
-	}
-	for _, ch := range d.kids {
-		if ch.dir != nil {
-			n++
-		}
-	}
-	return n
-}
-
-func setDirAttr(d *vdir, out *fuse.Attr) {
-	out.Mode = syscall.S_IFDIR | 0o755
-	out.Nlink = dirNlink(d)
-	out.SetTimes(&fixedStatTime, &fixedStatTime, &fixedStatTime)
 }
 
 func (d *dirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
@@ -480,28 +306,11 @@ func (f *fileNode) Unlink(ctx context.Context, name string) syscall.Errno {
 	return syscall.EROFS
 }
 
-type archiveFH struct {
-	file *viewFile
-}
-
 func (h *archiveFH) Read(ctx context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	if h.file == nil {
 		return nil, syscall.EIO
 	}
 	return fuse.ReadResultData(window(h.file.body, dest, off)), 0
-}
-
-func window(data, dest []byte, off int64) []byte {
-	if off < 0 || off >= int64(len(data)) {
-		return nil
-	}
-	data = data[off:]
-	if len(dest) < len(data) {
-		data = data[:len(dest)]
-	}
-	out := make([]byte, len(data))
-	copy(out, data)
-	return out
 }
 
 func (o *overlayNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
@@ -524,19 +333,210 @@ func (o *overlayNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, ui
 	return fs.NewLoopbackFileFromOS(fh), 0, 0
 }
 
-var (
-	_ fs.NodeLookuper  = (*dirNode)(nil)
-	_ fs.NodeReaddirer = (*dirNode)(nil)
-	_ fs.NodeGetattrer = (*dirNode)(nil)
-	_ fs.NodeSetattrer = (*dirNode)(nil)
-	_ fs.NodeCreater   = (*dirNode)(nil)
-	_ fs.NodeMkdirer   = (*dirNode)(nil)
-	_ fs.NodeUnlinker  = (*dirNode)(nil)
-	_ fs.NodeRmdirer   = (*dirNode)(nil)
-	_ fs.NodeGetattrer = (*fileNode)(nil)
-	_ fs.NodeOpener    = (*fileNode)(nil)
-	_ fs.NodeSetattrer = (*fileNode)(nil)
-	_ fs.FileReader    = (*archiveFH)(nil)
-	_ fs.NodeGetattrer = (*overlayNode)(nil)
-	_ fs.NodeOpener    = (*overlayNode)(nil)
-)
+func newVdir() *vdir {
+	return &vdir{kids: map[string]*ventry{}}
+}
+
+func buildVTree(files []viewFile) (*vdir, error) {
+	root := newVdir()
+	for i := range files {
+		f := &files[i]
+		parts := stringsSplit(f.path)
+		dir := root
+		for i, part := range parts {
+			last := i == len(parts)-1
+			cur := dir.kids[part]
+			if last {
+				if cur != nil && cur.dir != nil {
+					return nil, errPath(f.path)
+				}
+				if cur != nil && cur.file != nil {
+					return nil, errPath(f.path)
+				}
+				dir.kids[part] = &ventry{file: f}
+				continue
+			}
+			if cur != nil && cur.file != nil {
+				return nil, errPath(f.path)
+			}
+			if cur == nil {
+				cur = &ventry{dir: newVdir()}
+				dir.kids[part] = cur
+			}
+			dir = cur.dir
+		}
+	}
+	assignInos(root)
+	return root, nil
+}
+
+// assignInos gives every archive path one inode number for this mount.
+// Entry timeouts are zero, so the kernel may look the name up again
+// between stat and open. The same number keeps the stat stable.
+func assignInos(root *vdir) {
+	next := uint64(2)
+	var walk func(*vdir)
+	walk = func(d *vdir) {
+		names := make([]string, 0, len(d.kids))
+		for name := range d.kids {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			ch := d.kids[name]
+			if ch.file != nil {
+				ch.file.ino = next
+				next++
+				continue
+			}
+			ch.dir.ino = next
+			next++
+			walk(ch.dir)
+		}
+	}
+	walk(root)
+}
+
+func errPath(p string) error {
+	return &pathUseError{p}
+}
+
+func stringsSplit(p string) []string {
+	return splitSlash(p)
+}
+
+func splitSlash(p string) []string {
+	var out []string
+	start := 0
+	for i := 0; i < len(p); i++ {
+		if p[i] == '/' {
+			out = append(out, p[start:i])
+			start = i + 1
+		}
+	}
+	out = append(out, p[start:])
+	return out
+}
+
+func detach(dir string, direct bool) {
+	if direct && syscall.Unmount(dir, syscall.MNT_DETACH) == nil {
+		return
+	}
+	for _, prog := range []string{"fusermount3", "fusermount"} {
+		if exec.Command(prog, "-u", "-z", dir).Run() == nil {
+			return
+		}
+	}
+}
+
+// DetachMounts lazily unmounts every filter view that is still mounted.
+// A process that exits without it leaves a dead mount in the temporary directory.
+func DetachMounts() {
+	liveMu.Lock()
+	defer liveMu.Unlock()
+	for m := range liveMounts {
+		detach(m.dir, m.direct)
+	}
+}
+
+func mountView(files []viewFile) (*mount, error) {
+	tree, err := buildVTree(files)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := os.MkdirTemp("", "litar-mnt-*")
+	if err != nil {
+		return nil, fmtMount(err)
+	}
+	overlay, err := os.MkdirTemp("", "litar-ovl-*")
+	if err != nil {
+		os.RemoveAll(dir)
+		return nil, fmtMount(err)
+	}
+	root := &dirNode{rel: "", spec: tree, overlay: overlay}
+	zero := time.Duration(0)
+	opts := &fs.Options{
+		EntryTimeout:    &zero,
+		AttrTimeout:     &zero,
+		NullPermissions: true,
+	}
+	opts.FsName = "litar"
+	opts.Name = "litar"
+	opts.DirectMount = true
+	server, err := fs.Mount(dir, root, opts)
+	direct := err == nil
+	if err != nil {
+		os.RemoveAll(dir)
+		dir, err = os.MkdirTemp("", "litar-mnt-*")
+		if err != nil {
+			os.RemoveAll(overlay)
+			return nil, fmtMount(err)
+		}
+		opts.DirectMount = false
+		root = &dirNode{rel: "", spec: tree, overlay: overlay}
+		server, err = fs.Mount(dir, root, opts)
+	}
+	if err != nil {
+		os.RemoveAll(dir)
+		os.RemoveAll(overlay)
+		return nil, fmtMount(err)
+	}
+	m := &mount{dir: dir, server: server, direct: direct, extra: []string{overlay}}
+	liveMu.Lock()
+	liveMounts[m] = struct{}{}
+	liveMu.Unlock()
+	return m, nil
+}
+
+func fmtMount(err error) error {
+	return &mountError{err}
+}
+
+func modeOf(f *viewFile) uint32 {
+	perm := uint32(0o444)
+	if f != nil && f.executable {
+		perm = 0o555
+	}
+	return syscall.S_IFREG | perm
+}
+
+func setFileAttr(f *viewFile, out *fuse.Attr) {
+	out.Mode = modeOf(f)
+	out.Nlink = 1
+	out.SetTimes(&fixedStatTime, &fixedStatTime, &fixedStatTime)
+	if f != nil {
+		out.Size = uint64(len(f.body))
+	}
+}
+
+func dirNlink(d *vdir) uint32 {
+	n := uint32(2)
+	if d == nil {
+		return n
+	}
+	for _, ch := range d.kids {
+		if ch.dir != nil {
+			n++
+		}
+	}
+	return n
+}
+
+func setDirAttr(d *vdir, out *fuse.Attr) {
+	out.Mode = syscall.S_IFDIR | 0o755
+	out.Nlink = dirNlink(d)
+	out.SetTimes(&fixedStatTime, &fixedStatTime, &fixedStatTime)
+}
+
+func window(data, dest []byte, off int64) []byte {
+	if off < 0 || off >= int64(len(data)) {
+		return nil
+	}
+	data = data[off:]
+	if len(dest) < len(data) {
+		data = data[:len(dest)]
+	}
+	out := make([]byte, len(data))
+	copy(out, data)
+	return out
+}

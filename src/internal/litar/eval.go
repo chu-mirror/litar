@@ -11,14 +11,6 @@ type cycleError struct {
 	chain []ChunkRef
 }
 
-func (e *cycleError) Error() string {
-	parts := make([]string, len(e.chain))
-	for i, ref := range e.chain {
-		parts[i] = ref.String()
-	}
-	return "circular reference " + strings.Join(parts, " -> ")
-}
-
 type frame struct {
 	key string
 	ref ChunkRef
@@ -36,15 +28,12 @@ type Evaluator struct {
 	stderr  io.Writer
 }
 
-func NewEvaluator(chain []Block, mappings []Mapping, stderr io.Writer) *Evaluator {
-	if stderr == nil {
-		stderr = io.Discard
+func (e *cycleError) Error() string {
+	parts := make([]string, len(e.chain))
+	for i, ref := range e.chain {
+		parts[i] = ref.String()
 	}
-	return &Evaluator{
-		chain:  chain,
-		cat:    buildCatalog(chain, mappings),
-		stderr: stderr,
-	}
+	return "circular reference " + strings.Join(parts, " -> ")
 }
 
 func (e *Evaluator) noteErr(err error) {
@@ -163,32 +152,6 @@ func (e *Evaluator) expandBlock(b Block, applied ChunkRef) (string, error) {
 	return text, nil
 }
 
-func resolveBody(ref ChunkRef, outerLabels []Name, header ModulePath) ChunkRef {
-	labels := ref.Labels
-	if len(labels) == 0 {
-		labels = copyLabels(outerLabels)
-	} else {
-		labels = copyLabels(labels)
-	}
-	var mod ModulePath
-	if hasRel(ref.Module) {
-		mod = resolveModule(header, ref.Module)
-	} else {
-		mod = copyModule(ref.Module)
-	}
-	return ChunkRef{Labels: labels, Module: mod, Chunk: ref.Chunk}
-}
-
-func resolveFilter(ref ChunkRef, outerLabels []Name) ChunkRef {
-	labels := ref.Labels
-	if len(labels) == 0 {
-		labels = copyLabels(outerLabels)
-	} else {
-		labels = copyLabels(labels)
-	}
-	return ChunkRef{Labels: labels, Module: copyModule(ref.Module), Chunk: ref.Chunk}
-}
-
 func (e *Evaluator) runFiltersLocked(text string, filters []Filter, attached ChunkRef) (string, error) {
 	for _, f := range filters {
 		resolved := resolveFilter(f.Ref, attached.Labels)
@@ -224,4 +187,41 @@ func (e *Evaluator) readChunk(chunk Name) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(text), nil
+}
+
+func NewEvaluator(chain []Block, mappings []Mapping, stderr io.Writer) *Evaluator {
+	if stderr == nil {
+		stderr = io.Discard
+	}
+	return &Evaluator{
+		chain:  chain,
+		cat:    buildCatalog(chain, mappings),
+		stderr: stderr,
+	}
+}
+
+func resolveBody(ref ChunkRef, outerLabels []Name, header ModulePath) ChunkRef {
+	labels := ref.Labels
+	if len(labels) == 0 {
+		labels = copyLabels(outerLabels)
+	} else {
+		labels = copyLabels(labels)
+	}
+	var mod ModulePath
+	if hasRel(ref.Module) {
+		mod = resolveModule(header, ref.Module)
+	} else {
+		mod = copyModule(ref.Module)
+	}
+	return ChunkRef{Labels: labels, Module: mod, Chunk: ref.Chunk}
+}
+
+func resolveFilter(ref ChunkRef, outerLabels []Name) ChunkRef {
+	labels := ref.Labels
+	if len(labels) == 0 {
+		labels = copyLabels(outerLabels)
+	} else {
+		labels = copyLabels(labels)
+	}
+	return ChunkRef{Labels: labels, Module: copyModule(ref.Module), Chunk: ref.Chunk}
 }

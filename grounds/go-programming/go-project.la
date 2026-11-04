@@ -2,24 +2,6 @@
 {"description": "Structures of a whole Go module"}
 @
 
-A requirement is one line of the require block: a module path and a version.
-No require block is emitted when the list is empty or contains only whitespace.
-A project with requirements also declares go.sum in the file set go module,
-because the checks never rewrite go.mod or go.sum.
-@<Go Project@/go.mod@=
-@<Text Processing@/basic perl settings@>
-my %meta = @<.@/project meta information@>;
-die "go version '$meta{go}' is not valid\n"
-    if $meta{go} !~ /^1\.\d+(\.\d+)?$/;
-my $requirements = <<'LITAR_END_REQUIREMENTS';
-@<.@/requirements@>
-LITAR_END_REQUIREMENTS
-$requirements =~ s/\A\s+//;
-$requirements =~ s/\s+\z//;
-print "module @<.@/module path@>\n\ngo $meta{go}\n";
-print "\nrequire (\n$requirements\n)\n" if $requirements ne '';
-@|Basic@/evaluate@
-
 The import path of a package is the module path joined with its directory.
 Reference it with the package label, inside quotes in import paths.
 A command needs no directory here, because no package imports a command.
@@ -36,39 +18,6 @@ die "package directory '$dir' is not valid\n"
 my $module = '@<.@/module path@>';
 print $dir eq '' ? $module : "$module/$dir";
 @|Basic@/evaluate@
-
-@<Go Project@/module path@=
-@<Text Processing@/basic perl settings@>
-my %meta = @<.@/project meta information@>;
-die "module path '$meta{module}' is not valid\n"
-    if $meta{module} !~ m{^[^\s/]\S*$};
-print $meta{module};
-@|Basic@/evaluate@
-
-A Go project is one Go module: a go.mod file at the root of the module,
-and packages in directories below it.
-One node holds one project, so the blocks of this module carry no label,
-and every file of the node sees the same module.
-A package is a label, as in Go Structure,
-and each file of a package carries that label with a label of its own.
-A command is a package whose rightmost label is command;
-by convention its files live in cmd, in a directory named after the command.
-A test file is one more file of its package, named after the file it tests with _test,
-and it adds testing to its own import paths.
-Declare go.mod and every Go file in the file set go module,
-so the project checks below see the whole project.
-
-The module entry is the module path, and the go entry is the minimum Go version.
-example.com/project stands in until a project sets its own path.
-A later entry replaces an earlier entry with the same key,
-so a project sets its entries in project properties.
-@<Go Project@/project meta information@=
-(
-    module => 'example.com/project',
-    go => '1.24',
-    @<.@/project properties@>
-)
-@
 
 The package directory is the path of a package below the module root, without a leading slash.
 A package sets it under the package label.
@@ -163,4 +112,56 @@ so the line break after each reference separates the checks.
 @<@|Go Project@/Filters@/build packages@+go module@|Text Processing@/remove ending newlines@>
 @<@|Go Project@/Filters@/vet packages@+go module@|Text Processing@/remove ending newlines@>
 @<@|Go Project@/Filters@/test packages@+go module@|Text Processing@/remove ending newlines@>
+@
+A requirement is one line of the require block: a module path and a version.
+No require block is emitted when the list is empty or contains only whitespace.
+Only blank lines are removed before the first requirement,
+so every requirement keeps its indentation.
+A project with requirements also declares go.sum in the file set go module,
+because the checks never rewrite go.mod or go.sum.
+@<Go Project@/go.mod@=
+@<Text Processing@/basic perl settings@>
+my %meta = @<.@/project meta information@>;
+die "go version '$meta{go}' is not valid\n"
+    if $meta{go} !~ /^1\.\d+(\.\d+)?$/;
+my $requirements = <<'LITAR_END_REQUIREMENTS';
+@<.@/requirements@>
+LITAR_END_REQUIREMENTS
+$requirements =~ s/\A\s*\n//;
+$requirements =~ s/\s+\z//;
+print "module @<.@/module path@>\n\ngo $meta{go}\n";
+print "\nrequire (\n$requirements\n)\n" if $requirements ne '';
+@|Basic@/evaluate@
+
+@<Go Project@/module path@=
+@<Text Processing@/basic perl settings@>
+my %meta = @<.@/project meta information@>;
+die "module path '$meta{module}' is not valid\n"
+    if $meta{module} !~ m{^[^\s/]\S*$};
+print $meta{module};
+@|Basic@/evaluate@
+
+A Go project is one Go module: a go.mod file at the root of the module,
+and packages in directories below it.
+One node holds one project, so the blocks of this module carry no label,
+and every file of the node sees the same module.
+A package is a label, as in Go Structure,
+and each file of a package carries that label with a label of its own.
+A command is a package whose rightmost label is command;
+by convention its files live in cmd, in a directory named after the command.
+A test file is one more file of its package, named after the file it tests with _test,
+and it adds testing to its own import paths.
+Declare go.mod and every Go file in the file set go module,
+so the project checks below see the whole project.
+
+The module entry is the module path, and the go entry is the minimum Go version.
+example.com/project stands in until a project sets its own path.
+A later entry replaces an earlier entry with the same key,
+so a project sets its entries in project properties.
+@<Go Project@/project meta information@=
+(
+    module => 'example.com/project',
+    go => '1.24',
+    @<.@/project properties@>
+)
 @

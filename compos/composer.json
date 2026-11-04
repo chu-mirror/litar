@@ -1,0 +1,17 @@
+{
+    "description": "The litar tool itself: the Go module, its build files, and its acceptance tests.",
+    "ground": "go-programming",
+    "nodes": [
+        {
+            "name": "Litar",
+            "archive": "litar.la",
+            "description": "The litar tool: archive parser, composer, evaluator, filters, CLI, FUSE view, and MCP server, with its tests and build files.",
+            "mappings": [],
+            "base": [
+                "Basic",
+                "Go Structure",
+                "Go Project"
+            ]
+        }
+    ]
+}

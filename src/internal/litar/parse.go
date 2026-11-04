@@ -15,6 +15,25 @@ type ParseError struct {
 	Expr bool
 }
 
+type parser struct {
+	src  []byte
+	i    int
+	file string
+	expr bool
+}
+
+type qOpt struct {
+	dotOK    bool
+	allowEOF bool
+}
+
+type body struct {
+	parts    []Part
+	filters  []Filter
+	items    []Item
+	endsLine bool
+}
+
 func (e *ParseError) Error() string {
 	if e.Expr {
 		return e.Msg + " in expression"
@@ -23,13 +42,6 @@ func (e *ParseError) Error() string {
 		return fmt.Sprintf("%s at line %d in '%s'", e.Msg, e.Line, e.File)
 	}
 	return e.Msg
-}
-
-type parser struct {
-	src  []byte
-	i    int
-	file string
-	expr bool
 }
 
 func (p *parser) line() int {
@@ -53,14 +65,6 @@ func (p *parser) fail(msg string) error {
 	return &ParseError{Msg: msg, File: p.file, Line: p.line()}
 }
 
-func isLetter(b byte) bool {
-	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
-}
-
-func isWS(b byte) bool {
-	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
-}
-
 // atControl reports a control at p.i.
 // n == 1 is a final "@" at end of input.
 // n == 2 is "@" plus the returned kind.
@@ -79,51 +83,8 @@ func (p *parser) atControl() (kind byte, n int, ok bool) {
 	return next, 2, true
 }
 
-func isEndControl(kind byte, n int) bool {
-	if n == 1 {
-		return true
-	}
-	if n != 2 {
-		return false
-	}
-	return kind == ' ' || kind == '\t' || kind == '\n' || kind == '\r'
-}
-
-func ctrlText(kind byte, n int) string {
-	if n == 1 {
-		return "@"
-	}
-	return "@" + string(rune(kind))
-}
-
 func (p *parser) unexpected(kind byte, n int) error {
 	return p.fail(fmt.Sprintf("unexpected control '%s'", ctrlText(kind, n)))
-}
-
-func trimWS(b []byte) []byte {
-	i := 0
-	j := len(b)
-	for i < j && isWS(b[i]) {
-		i++
-	}
-	for j > i && isWS(b[j-1]) {
-		j--
-	}
-	return b[i:j]
-}
-
-// decodeAt replaces "@@" with "@". The caller trims first.
-func decodeAt(b []byte) string {
-	var sb strings.Builder
-	for i := 0; i < len(b); i++ {
-		if b[i] == '@' && i+1 < len(b) && b[i+1] == '@' {
-			sb.WriteByte('@')
-			i++
-			continue
-		}
-		sb.WriteByte(b[i])
-	}
-	return sb.String()
 }
 
 // readName reads bytes up to the next control.
@@ -150,11 +111,6 @@ func (p *parser) readName(allowEOF bool) (Name, byte, int, error) {
 		return "", 0, 0, p.fail("unterminated name")
 	}
 	return Name(decodeAt(trimWS(p.src[start:p.i]))), 0, 0, nil
-}
-
-type qOpt struct {
-	dotOK    bool
-	allowEOF bool
 }
 
 // parseQName reads labels, a module path, and a chunk.
@@ -220,23 +176,6 @@ func (p *parser) parseQName(opt qOpt) (ChunkRef, byte, int, error) {
 		return ChunkRef{}, 0, 0, p.fail("relative module name")
 	}
 	return ChunkRef{Labels: labels, Module: module, Chunk: name}, kind, n, nil
-}
-
-func isViewOp(kind byte, n int) bool {
-	return n == 2 && (kind == '+' || kind == '-' || kind == ',' || kind == '!')
-}
-
-func viewKind(kind byte) ViewOpKind {
-	switch kind {
-	case '+':
-		return AddSet
-	case '-':
-		return SubSet
-	case ',':
-		return AddFile
-	default:
-		return DelFile
-	}
 }
 
 // parseFilterList reads one or more filters. The caller has consumed the
@@ -312,13 +251,6 @@ func (p *parser) parseInnerRef() (*Ref, error) {
 	}
 	p.i += n
 	return &Ref{ChunkRef: ref, Filters: filters}, nil
-}
-
-type body struct {
-	parts    []Part
-	filters  []Filter
-	items    []Item
-	endsLine bool
 }
 
 // parseBody reads the content and what follows it up to the end control.
@@ -579,6 +511,84 @@ func (p *parser) skipToControl() {
 	}
 }
 
+func (a *Archive) Text() string {
+	var b strings.Builder
+	for _, bl := range a.Blocks {
+		b.WriteString(bl.Comment)
+		b.WriteString(bl.Raw)
+	}
+	b.WriteString(a.Trailing)
+	return b.String()
+}
+
+func isLetter(b byte) bool {
+	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
+}
+
+func isWS(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
+}
+
+func isEndControl(kind byte, n int) bool {
+	if n == 1 {
+		return true
+	}
+	if n != 2 {
+		return false
+	}
+	return kind == ' ' || kind == '\t' || kind == '\n' || kind == '\r'
+}
+
+func ctrlText(kind byte, n int) string {
+	if n == 1 {
+		return "@"
+	}
+	return "@" + string(rune(kind))
+}
+
+func trimWS(b []byte) []byte {
+	i := 0
+	j := len(b)
+	for i < j && isWS(b[i]) {
+		i++
+	}
+	for j > i && isWS(b[j-1]) {
+		j--
+	}
+	return b[i:j]
+}
+
+// decodeAt replaces "@@" with "@". The caller trims first.
+func decodeAt(b []byte) string {
+	var sb strings.Builder
+	for i := 0; i < len(b); i++ {
+		if b[i] == '@' && i+1 < len(b) && b[i+1] == '@' {
+			sb.WriteByte('@')
+			i++
+			continue
+		}
+		sb.WriteByte(b[i])
+	}
+	return sb.String()
+}
+
+func isViewOp(kind byte, n int) bool {
+	return n == 2 && (kind == '+' || kind == '-' || kind == ',' || kind == '!')
+}
+
+func viewKind(kind byte) ViewOpKind {
+	switch kind {
+	case '+':
+		return AddSet
+	case '-':
+		return SubSet
+	case ',':
+		return AddFile
+	default:
+		return DelFile
+	}
+}
+
 // ParseArchive parses one archive. Comment+Raw of every block, then
 // Trailing, reconstructs src.
 func ParseArchive(src []byte, file string) (*Archive, error) {
@@ -620,16 +630,6 @@ func ParseArchive(src []byte, file string) (*Archive, error) {
 		b.EndLine = p.line()
 		blocks = append(blocks, b)
 	}
-}
-
-func (a *Archive) Text() string {
-	var b strings.Builder
-	for _, bl := range a.Blocks {
-		b.WriteString(bl.Comment)
-		b.WriteString(bl.Raw)
-	}
-	b.WriteString(a.Trailing)
-	return b.String()
 }
 
 func parseExpr(s string, allowPipeline bool) (ChunkRef, []Filter, error) {

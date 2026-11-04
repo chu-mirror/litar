@@ -21,6 +21,12 @@ const usageBody = `--help: print the usage
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
 `
 
+const missingAction = "missing -p, --print, -l, --literal, -e, --effective, -d, --depend, -r, --reference, or -a, --agent"
+
+var modeOrder = []string{
+	"print", "literal", "effective", "depend", "reference", "agent",
+}
+
 // Main runs litar. args[0] is the program name.
 func Main(args []string) int {
 	sigs := make(chan os.Signal, 1)
@@ -38,12 +44,6 @@ func usage(prog string) string {
 		prog = "litar"
 	}
 	return "usage: " + prog + " [options]\n\n" + usageBody
-}
-
-const missingAction = "missing -p, --print, -l, --literal, -e, --effective, -d, --depend, -r, --reference, or -a, --agent"
-
-var modeOrder = []string{
-	"print", "literal", "effective", "depend", "reference", "agent",
 }
 
 func modeIndex(name string) int {

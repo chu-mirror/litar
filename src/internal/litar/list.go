@@ -6,6 +6,11 @@ import (
 	"unicode/utf8"
 )
 
+type namedLine struct {
+	name string
+	desc string
+}
+
 func matchingBlocks(blocks []Block, ref ChunkRef) []Block {
 	var out []Block
 	for _, b := range blocks {
@@ -175,11 +180,6 @@ func Chunks(blocks []Block, mod ModulePath, meta metaInfo) string {
 		rows = append(rows, namedLine{name, meta.chunks[leafKey(mod, name)]})
 	}
 	return formatNamed(rows)
-}
-
-type namedLine struct {
-	name string
-	desc string
 }
 
 // formatNamed prints one name per line.

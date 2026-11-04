@@ -16,14 +16,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type agent struct {
-	server *mcp.Server
-	mu     sync.Mutex
-	worlds map[string]*World
-	order  []string
-	uris   []string
-}
-
 var fixedResources = []struct {
 	name, desc, uri, mime string
 }{
@@ -46,77 +38,12 @@ var resourceTemplates = []struct {
 	{"file", "the file of the path", "file://{composition}/{node}/{path}", "text/plain"},
 }
 
-func newAgent() *agent {
-	a := &agent{
-		worlds: map[string]*World{},
-		uris:   []string{"list://composition"},
-	}
-	a.server = mcp.NewServer(
-		&mcp.Implementation{Name: "litar", Version: "0.1.0"},
-		&mcp.ServerOptions{
-			SubscribeHandler:   func(context.Context, *mcp.SubscribeRequest) error { return nil },
-			UnsubscribeHandler: func(context.Context, *mcp.UnsubscribeRequest) error { return nil },
-			Capabilities: &mcp.ServerCapabilities{
-				Tools:     &mcp.ToolCapabilities{ListChanged: true},
-				Resources: &mcp.ResourceCapabilities{ListChanged: true, Subscribe: true},
-			},
-		},
-	)
-	mcp.AddTool(a.server, &mcp.Tool{
-		Name:        "import_composition",
-		Description: "Import an existing composition.",
-	}, a.importComposition)
-	mcp.AddTool(a.server, &mcp.Tool{
-		Name:        "create_composition",
-		Description: "Create a new composition, and import it. Specify a ground, or leave the ground as null.",
-		InputSchema: nullableStringSchema[createArchiveIn]("ground"),
-	}, a.createComposition)
-	mcp.AddTool(a.server, &mcp.Tool{
-		Name:        "create_node",
-		Description: "Create a new node. The corresponding archive file is created empty and must not already exist. A null base creates the root.",
-		InputSchema: nullableIntegerSchema[createIn]("base"),
-	}, a.createNode)
-	mcp.AddTool(a.server, &mcp.Tool{
-		Name:        "delete_node",
-		Description: "Delete a node and every node based on it, and delete their archive files.",
-	}, a.deleteNode)
-	mcp.AddTool(a.server, &mcp.Tool{
-		Name:        "delete_chunk",
-		Description: "Delete a chunk. All applied blocks are deleted.",
-	}, a.deleteChunk)
-	mcp.AddTool(a.server, &mcp.Tool{
-		Name:        "delete_file",
-		Description: "Delete a file. All applied blocks are deleted.",
-	}, a.deleteFile)
-	mcp.AddTool(a.server, &mcp.Tool{
-		Name:        "evaluate_expression",
-		Description: "Evaluate the content of an expression.",
-	}, a.evaluate)
-	mcp.AddTool(a.server, &mcp.Tool{
-		Name:        "apply_block",
-		Description: "Apply a block to a node. Cannot apply a block to a node in the ground archive.",
-	}, a.applyBlock)
-	for _, r := range fixedResources {
-		a.server.AddResource(&mcp.Resource{
-			URI:         r.uri,
-			Name:        r.name,
-			Description: r.desc,
-			MIMEType:    r.mime,
-		}, a.handle)
-	}
-	for _, t := range resourceTemplates {
-		a.server.AddResourceTemplate(&mcp.ResourceTemplate{
-			URITemplate: t.uri,
-			Name:        t.name,
-			Description: t.desc,
-			MIMEType:    t.mime,
-		}, a.handle)
-	}
-	return a
-}
-
-func (a *agent) serve(ctx context.Context) error {
-	return a.server.Run(ctx, &mcp.StdioTransport{})
+type agent struct {
+	server *mcp.Server
+	mu     sync.Mutex
+	worlds map[string]*World
+	order  []string
+	uris   []string
 }
 
 type importIn struct {
@@ -170,55 +97,51 @@ type applyIn struct {
 	Text        string `json:"text" jsonschema:"block text to append"`
 }
 
-// nullableStringSchema is the inferred object schema with field rewritten.
-// A *string infers "type": ["null", "string"]. Some clients accept only
-// one type per schema, so null and string are separate anyOf branches.
-func nullableStringSchema[T any](field string) *jsonschema.Schema {
-	s, err := jsonschema.For[T](nil)
-	if err != nil {
-		panic(err)
-	}
-	prop := s.Properties[field]
-	s.Properties[field] = &jsonschema.Schema{
-		Description: prop.Description,
-		AnyOf: []*jsonschema.Schema{
-			{Type: "null"},
-			{Type: "string"},
-		},
-	}
-	return s
+type errString string
+
+type listJSON struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	ID          int    `json:"id"`
 }
 
-// nullableIntegerSchema publishes field as null or an integer.
-// A *int infers "type": ["null", "integer"]. Some clients accept only
-// one type per schema, so null and integer are separate anyOf branches.
-func nullableIntegerSchema[T any](field string) *jsonschema.Schema {
-	s, err := jsonschema.For[T](nil)
-	if err != nil {
-		panic(err)
-	}
-	prop := s.Properties[field]
-	s.Properties[field] = &jsonschema.Schema{
-		Description: prop.Description,
-		AnyOf: []*jsonschema.Schema{
-			{Type: "null"},
-			{Type: "integer"},
-		},
-	}
-	return s
+type treeJSON struct {
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	ID          int        `json:"id"`
+	SubTrees    []treeJSON `json:"sub-trees"`
+	// Leaf is true when this node is a chunk, file, or item.
+	// Module and directory branches are not leaves.
+	// Every node and every specialization is addressable, so those trees set it too.
+	Leaf bool `json:"-"`
 }
 
-func toolErr(err error) (*mcp.CallToolResult, any, error) {
-	return &mcp.CallToolResult{
-		IsError: true,
-		Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
-	}, nil, nil
+type nest struct {
+	order  []nestEntry
+	leaves map[string]bool
+	subs   map[string]*nest
 }
 
-func toolText(text string) (*mcp.CallToolResult, any, error) {
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: text}},
-	}, map[string]any{"text": text}, nil
+type nestEntry struct {
+	name   string
+	module bool
+}
+
+type metaInfo struct {
+	modules map[string]string
+	chunks  map[string]string
+	domains map[string]string
+	items   map[string]string
+	specs   map[string]string
+}
+
+type treePlace struct {
+	names []string
+	leaf  bool
+}
+
+func (a *agent) serve(ctx context.Context) error {
+	return a.server.Run(ctx, &mcp.StdioTransport{})
 }
 
 func (a *agent) addWorldLocked(w *World) {
@@ -305,8 +228,6 @@ func (a *agent) createComposition(ctx context.Context, _ *mcp.CallToolRequest, i
 	}
 	return a.useWorld(w)
 }
-
-type errString string
 
 func (e errString) Error() string { return string(e) }
 
@@ -442,23 +363,6 @@ func (a *agent) evaluate(ctx context.Context, _ *mcp.CallToolRequest, in evalIn)
 	return toolText(text)
 }
 
-// evalReporting runs without a.mu, since a filter may run for long;
-// chain and maps are copies taken under it.
-// A failed evaluation carries the stderr of its filters,
-// which is the only report a client sees.
-func evalReporting(chain []Block, maps []Mapping, ref ChunkRef, filters []Filter) (string, error) {
-	var stderr bytes.Buffer
-	ev := NewEvaluator(chain, maps, &stderr)
-	text, err := ev.Eval(ref, filters)
-	if err != nil {
-		if msg := strings.TrimRight(stderr.String(), "\n"); msg != "" {
-			return "", fmt.Errorf("%w\n%s", err, msg)
-		}
-		return "", err
-	}
-	return text, nil
-}
-
 func (a *agent) applyBlock(ctx context.Context, _ *mcp.CallToolRequest, in applyIn) (*mcp.CallToolResult, any, error) {
 	a.mu.Lock()
 	w, n, err := a.worldNode(in.Composition, in.Node)
@@ -532,13 +436,6 @@ func (a *agent) refresh() {
 			_ = a.server.ResourceUpdated(ctx, &mcp.ResourceUpdatedNotificationParams{URI: u})
 		}
 	}()
-}
-
-func mimeOf(uri string) string {
-	if strings.HasPrefix(uri, "tree:") || strings.HasPrefix(uri, "list:") {
-		return "application/json"
-	}
-	return "text/plain"
 }
 
 // listURIsLocked lists concrete URIs whose contents may have changed.
@@ -707,12 +604,6 @@ func (a *agent) compositionList() []listJSON {
 	return out
 }
 
-type listJSON struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	ID          int    `json:"id"`
-}
-
 // idParts splits a URI tail of n decimal ids and resolves the composition.
 // The caller holds a.mu.
 func (a *agent) idParts(rest string, n int) (*World, []int, error) {
@@ -870,44 +761,6 @@ func (a *agent) renderFile(uri, mime string) (string, string, []byte, error) {
 	return "", "application/octet-stream", data, nil
 }
 
-func readOrigin(path string) ([]byte, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, errString("could not read '" + path + "'")
-	}
-	return data, nil
-}
-
-type treeJSON struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	ID          int        `json:"id"`
-	SubTrees    []treeJSON `json:"sub-trees"`
-	// Leaf is true when this node is a chunk, file, or item.
-	// Module and directory branches are not leaves.
-	// Every node and every specialization is addressable, so those trees set it too.
-	Leaf bool `json:"-"`
-}
-
-func emptySub() []treeJSON {
-	return []treeJSON{}
-}
-
-type nest struct {
-	order  []nestEntry
-	leaves map[string]bool
-	subs   map[string]*nest
-}
-
-type nestEntry struct {
-	name   string
-	module bool
-}
-
-func newNest() *nest {
-	return &nest{leaves: map[string]bool{}, subs: map[string]*nest{}}
-}
-
 func (n *nest) addLeaf(name string) {
 	if n.leaves[name] {
 		return
@@ -956,6 +809,166 @@ func (n *nest) treeWith(name, desc string, path []Name, nodeDesc func([]Name) st
 	return t
 }
 
+func newAgent() *agent {
+	a := &agent{
+		worlds: map[string]*World{},
+		uris:   []string{"list://composition"},
+	}
+	a.server = mcp.NewServer(
+		&mcp.Implementation{Name: "litar", Version: "0.1.0"},
+		&mcp.ServerOptions{
+			SubscribeHandler:   func(context.Context, *mcp.SubscribeRequest) error { return nil },
+			UnsubscribeHandler: func(context.Context, *mcp.UnsubscribeRequest) error { return nil },
+			Capabilities: &mcp.ServerCapabilities{
+				Tools:     &mcp.ToolCapabilities{ListChanged: true},
+				Resources: &mcp.ResourceCapabilities{ListChanged: true, Subscribe: true},
+			},
+		},
+	)
+	mcp.AddTool(a.server, &mcp.Tool{
+		Name:        "import_composition",
+		Description: "Import an existing composition.",
+	}, a.importComposition)
+	mcp.AddTool(a.server, &mcp.Tool{
+		Name:        "create_composition",
+		Description: "Create a new composition, and import it. Specify a ground, or leave the ground as null.",
+		InputSchema: nullableStringSchema[createArchiveIn]("ground"),
+	}, a.createComposition)
+	mcp.AddTool(a.server, &mcp.Tool{
+		Name:        "create_node",
+		Description: "Create a new node. The corresponding archive file is created empty and must not already exist. A null base creates the root.",
+		InputSchema: nullableIntegerSchema[createIn]("base"),
+	}, a.createNode)
+	mcp.AddTool(a.server, &mcp.Tool{
+		Name:        "delete_node",
+		Description: "Delete a node and every node based on it, and delete their archive files.",
+	}, a.deleteNode)
+	mcp.AddTool(a.server, &mcp.Tool{
+		Name:        "delete_chunk",
+		Description: "Delete a chunk. All applied blocks are deleted.",
+	}, a.deleteChunk)
+	mcp.AddTool(a.server, &mcp.Tool{
+		Name:        "delete_file",
+		Description: "Delete a file. All applied blocks are deleted.",
+	}, a.deleteFile)
+	mcp.AddTool(a.server, &mcp.Tool{
+		Name:        "evaluate_expression",
+		Description: "Evaluate the content of an expression.",
+	}, a.evaluate)
+	mcp.AddTool(a.server, &mcp.Tool{
+		Name:        "apply_block",
+		Description: "Apply a block to a node. Cannot apply a block to a node in the ground archive.",
+	}, a.applyBlock)
+	for _, r := range fixedResources {
+		a.server.AddResource(&mcp.Resource{
+			URI:         r.uri,
+			Name:        r.name,
+			Description: r.desc,
+			MIMEType:    r.mime,
+		}, a.handle)
+	}
+	for _, t := range resourceTemplates {
+		a.server.AddResourceTemplate(&mcp.ResourceTemplate{
+			URITemplate: t.uri,
+			Name:        t.name,
+			Description: t.desc,
+			MIMEType:    t.mime,
+		}, a.handle)
+	}
+	return a
+}
+
+// nullableStringSchema is the inferred object schema with field rewritten.
+// A *string infers "type": ["null", "string"]. Some clients accept only
+// one type per schema, so null and string are separate anyOf branches.
+func nullableStringSchema[T any](field string) *jsonschema.Schema {
+	s, err := jsonschema.For[T](nil)
+	if err != nil {
+		panic(err)
+	}
+	prop := s.Properties[field]
+	s.Properties[field] = &jsonschema.Schema{
+		Description: prop.Description,
+		AnyOf: []*jsonschema.Schema{
+			{Type: "null"},
+			{Type: "string"},
+		},
+	}
+	return s
+}
+
+// nullableIntegerSchema publishes field as null or an integer.
+// A *int infers "type": ["null", "integer"]. Some clients accept only
+// one type per schema, so null and integer are separate anyOf branches.
+func nullableIntegerSchema[T any](field string) *jsonschema.Schema {
+	s, err := jsonschema.For[T](nil)
+	if err != nil {
+		panic(err)
+	}
+	prop := s.Properties[field]
+	s.Properties[field] = &jsonschema.Schema{
+		Description: prop.Description,
+		AnyOf: []*jsonschema.Schema{
+			{Type: "null"},
+			{Type: "integer"},
+		},
+	}
+	return s
+}
+
+func toolErr(err error) (*mcp.CallToolResult, any, error) {
+	return &mcp.CallToolResult{
+		IsError: true,
+		Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+	}, nil, nil
+}
+
+func toolText(text string) (*mcp.CallToolResult, any, error) {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: text}},
+	}, map[string]any{"text": text}, nil
+}
+
+// evalReporting runs without a.mu, since a filter may run for long;
+// chain and maps are copies taken under it.
+// A failed evaluation carries the stderr of its filters,
+// which is the only report a client sees.
+func evalReporting(chain []Block, maps []Mapping, ref ChunkRef, filters []Filter) (string, error) {
+	var stderr bytes.Buffer
+	ev := NewEvaluator(chain, maps, &stderr)
+	text, err := ev.Eval(ref, filters)
+	if err != nil {
+		if msg := strings.TrimRight(stderr.String(), "\n"); msg != "" {
+			return "", fmt.Errorf("%w\n%s", err, msg)
+		}
+		return "", err
+	}
+	return text, nil
+}
+
+func mimeOf(uri string) string {
+	if strings.HasPrefix(uri, "tree:") || strings.HasPrefix(uri, "list:") {
+		return "application/json"
+	}
+	return "text/plain"
+}
+
+func readOrigin(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, errString("could not read '" + path + "'")
+	}
+	return data, nil
+}
+
+func emptySub() []treeJSON {
+	return []treeJSON{}
+}
+
+func newNest() *nest {
+	return &nest{leaves: map[string]bool{}, subs: map[string]*nest{}}
+}
+
 // A reserved chunk lives in the Module, Chunk, Specialization, Domain, or Index namespace.
 // Its module path starts with that name. The remaining components, then the
 // chunk name, are the module, chunk, specialization, domain, or item the chunk describes.
@@ -970,14 +983,6 @@ func reservedNamespace(mod ModulePath) (Name, bool) {
 	default:
 		return "", false
 	}
-}
-
-type metaInfo struct {
-	modules map[string]string
-	chunks  map[string]string
-	domains map[string]string
-	items   map[string]string
-	specs   map[string]string
 }
 
 func newMeta() metaInfo {
@@ -1263,11 +1268,6 @@ func assignIDs(t *treeJSON) {
 		}
 	}
 	walk(t)
-}
-
-type treePlace struct {
-	names []string
-	leaf  bool
 }
 
 // indexTree maps each id to its path.

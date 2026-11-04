@@ -5,6 +5,18 @@ import (
 	"strings"
 )
 
+const (
+	AddSet ViewOpKind = iota
+	SubSet
+	AddFile
+	DelFile
+)
+
+const (
+	OpSet Op = '='
+	OpAdd Op = '+'
+)
+
 // A Name is a decoded, trimmed string. Interior whitespace stays.
 type Name string
 
@@ -18,13 +30,6 @@ type ChunkRef struct {
 }
 
 type ViewOpKind int
-
-const (
-	AddSet ViewOpKind = iota
-	SubSet
-	AddFile
-	DelFile
-)
 
 type ViewOp struct {
 	Kind ViewOpKind
@@ -40,11 +45,6 @@ type Filter struct {
 type Item []Name
 
 type Op byte
-
-const (
-	OpSet Op = '='
-	OpAdd Op = '+'
-)
 
 type Part struct {
 	Text string

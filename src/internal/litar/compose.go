@@ -30,6 +30,17 @@ type basePath struct {
 	set   bool
 }
 
+type composerMapping struct {
+	Path    string   `json:"path"`
+	FileSet []string `json:"fileset"`
+	Origin  string   `json:"origin"`
+}
+
+type groundFrame struct {
+	ident string
+	name  string
+}
+
 func (b *basePath) UnmarshalJSON(data []byte) error {
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		return fmt.Errorf("base must be an array")
@@ -54,10 +65,396 @@ func (b basePath) MarshalJSON() ([]byte, error) {
 	return json.Marshal(names)
 }
 
-type composerMapping struct {
-	Path    string   `json:"path"`
-	FileSet []string `json:"fileset"`
-	Origin  string   `json:"origin"`
+// requireLocal returns a node declared in this composer file.
+// A node that arrived through ground is visible, and it is not edited here.
+func (w *World) requireLocal(ref string) (*Node, error) {
+	i, err := w.findIndex(ref)
+	if err != nil {
+		return nil, err
+	}
+	if i < w.localAt {
+		return nil, fmt.Errorf("node '%s' is defined in the ground", w.Nodes[i].Name)
+	}
+	return &w.Nodes[i], nil
+}
+
+// lookup finds a node by its full path, the names from the root joined by "/".
+func (w *World) lookup(ref string) (*Node, error) {
+	i, err := w.findIndex(ref)
+	if err != nil {
+		return nil, err
+	}
+	return &w.Nodes[i], nil
+}
+
+func (w *World) findIndex(ref string) (int, error) {
+	for i := range w.Nodes {
+		if formatNodePath(nodePath(w.Nodes[i])) == ref {
+			return i, nil
+		}
+	}
+	return 0, fmt.Errorf("unknown node '%s'", ref)
+}
+
+func (w *World) root() (*Node, error) {
+	i, err := w.rootIndex()
+	if err != nil {
+		return nil, err
+	}
+	return &w.Nodes[i], nil
+}
+
+func (w *World) rootIndex() (int, error) {
+	found := -1
+	for i := range w.Nodes {
+		if len(w.Nodes[i].Base) == 0 {
+			if found >= 0 {
+				return 0, fmt.Errorf("composer has more than one root")
+			}
+			found = i
+		}
+	}
+	if found < 0 {
+		return 0, fmt.Errorf("composer has no root")
+	}
+	return found, nil
+}
+
+func (w *World) rootName() (string, error) {
+	n, err := w.root()
+	if err != nil {
+		return "", err
+	}
+	return formatNodePath(nodePath(*n)), nil
+}
+
+// ancestry returns the node, then its base, up to the root.
+func (w *World) ancestry(ref string) ([]*Node, error) {
+	var n *Node
+	var err error
+	if ref == "" {
+		n, err = w.root()
+	} else {
+		n, err = w.lookup(ref)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var rev []*Node
+	seen := map[string]bool{}
+	for {
+		key := formatNodePath(nodePath(*n))
+		if seen[key] {
+			return nil, fmt.Errorf("cycle in node bases: %s", key)
+		}
+		seen[key] = true
+		rev = append(rev, n)
+		if len(n.Base) == 0 {
+			return rev, nil
+		}
+		n, err = w.lookup(formatNodePath(n.Base))
+		if err != nil {
+			return nil, err
+		}
+	}
+}
+
+// Chain is the base chain followed by the node's own blocks.
+func (w *World) Chain(name string) ([]Block, error) {
+	rev, err := w.ancestry(name)
+	if err != nil {
+		return nil, err
+	}
+	var blocks []Block
+	for i := len(rev) - 1; i >= 0; i-- {
+		blocks = append(blocks, rev[i].Own...)
+	}
+	return blocks, nil
+}
+
+// Mappings is the base chain's mappings followed by the node's own.
+func (w *World) Mappings(name string) ([]Mapping, error) {
+	rev, err := w.ancestry(name)
+	if err != nil {
+		return nil, err
+	}
+	var maps []Mapping
+	for i := len(rev) - 1; i >= 0; i-- {
+		maps = append(maps, rev[i].Mappings...)
+	}
+	return maps, nil
+}
+
+func (w *World) save() error {
+	local := w.Nodes[w.localAt:]
+	raw := make([]composerNode, len(local))
+	for i, n := range local {
+		maps := make([]composerMapping, len(n.Mappings))
+		for j, m := range n.Mappings {
+			sets := m.FileSet
+			if sets == nil {
+				sets = []string{}
+			}
+			maps[j] = composerMapping{Path: m.Path, FileSet: sets, Origin: m.OriginSpec}
+		}
+		if maps == nil {
+			maps = []composerMapping{}
+		}
+		raw[i] = composerNode{
+			Name:        n.Name,
+			Archive:     n.ArchiveSpec,
+			Description: n.Description,
+			Mappings:    maps,
+			Base:        basePath{names: copyPath(n.Base), set: true},
+		}
+	}
+	data, err := composerFileBytes(w.Description, w.Ground, raw)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(w.Composer, data, 0o644)
+}
+
+// CreateNode parses the archive, then appends the node and rewrites the composer.
+// An empty base creates the root, and only when the composer has none.
+// The archive file is created empty and must not already exist.
+func (w *World) CreateNode(name, archive, description string, base []string) error {
+	if name == "" {
+		return fmt.Errorf("empty name")
+	}
+	if strings.Contains(name, "/") {
+		return fmt.Errorf("invalid node name '%s'", name)
+	}
+	base = copyPath(base)
+	if len(base) == 0 {
+		if _, err := w.root(); err == nil {
+			return fmt.Errorf("composer already has a root")
+		}
+	} else if _, err := w.lookup(formatNodePath(base)); err != nil {
+		return fmt.Errorf("base '%s' of node '%s' is not defined", formatNodePath(base), name)
+	}
+	for _, n := range w.Nodes {
+		if n.Name == name && samePath(n.Base, base) {
+			return fmt.Errorf("duplicate node '%s'", name)
+		}
+	}
+	dir := filepath.Dir(w.Composer)
+	resolved, err := createNewArchive(archive, dir)
+	if err != nil {
+		return err
+	}
+	created := true
+	removeCreated := func() {
+		if created {
+			_ = os.Remove(resolved)
+		}
+	}
+	ident, err := identityPath(resolved)
+	if err != nil {
+		removeCreated()
+		return fmt.Errorf("could not read '%s'", resolved)
+	}
+	for _, n := range w.Nodes {
+		if n.Archive == ident {
+			removeCreated()
+			label := formatNodePath(append(copyPath(base), name))
+			return fmt.Errorf("nodes '%s' and '%s' share archive '%s'", formatNodePath(nodePath(n)), label, ident)
+		}
+	}
+	data, err := os.ReadFile(resolved)
+	if err != nil {
+		removeCreated()
+		return fmt.Errorf("could not read '%s'", resolved)
+	}
+	arch, err := ParseArchive(data, resolved)
+	if err != nil {
+		removeCreated()
+		return err
+	}
+	w.Nodes = append(w.Nodes, Node{
+		Name:        name,
+		Archive:     ident,
+		ArchiveSpec: archive,
+		Description: description,
+		Mappings:    []Mapping{},
+		Base:        base,
+		Own:         arch.Blocks,
+		Trailing:    arch.Trailing,
+	})
+	if err := w.save(); err != nil {
+		w.Nodes = w.Nodes[:len(w.Nodes)-1]
+		removeCreated()
+		return fmt.Errorf("could not write '%s'", w.Composer)
+	}
+	return nil
+}
+
+// DeleteNode removes the node and every node based on it
+// from this composer file, then deletes each removed node's archive file.
+// A node defined in the ground is left in place.
+// A file that is already gone is not an error.
+// If a file cannot be removed, the composer stays updated.
+func (w *World) DeleteNode(name string) error {
+	target, err := w.requireLocal(name)
+	if err != nil {
+		return err
+	}
+	targetPath := nodePath(*target)
+	keep := append([]Node{}, w.Nodes[:w.localAt]...)
+	var archives []string
+	for _, n := range w.Nodes[w.localAt:] {
+		if hasPathPrefix(nodePath(n), targetPath) {
+			archives = append(archives, n.Archive)
+			continue
+		}
+		keep = append(keep, n)
+	}
+	prev := w.Nodes
+	w.Nodes = keep
+	if err := w.save(); err != nil {
+		w.Nodes = prev
+		return fmt.Errorf("could not write '%s'", w.Composer)
+	}
+	var failed []string
+	for _, path := range archives {
+		if path == "" {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			failed = append(failed, path)
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("could not remove '%s'", strings.Join(failed, "', '"))
+	}
+	return nil
+}
+
+// ApplyBlock appends text to the node's own archive, then reparses.
+// A block that is no longer effective in that node is removed.
+// A node defined in the ground is left unchanged.
+// A failed parse leaves the file.
+func (w *World) ApplyBlock(nodeName, text string) error {
+	if text == "" {
+		return fmt.Errorf("empty block text")
+	}
+	n, err := w.requireLocal(nodeName)
+	if err != nil {
+		return err
+	}
+	orig, err := os.ReadFile(n.Archive)
+	if err != nil {
+		return fmt.Errorf("could not read '%s'", n.Archive)
+	}
+	next := append(append([]byte{}, orig...), text...)
+	arch, err := ParseArchive(next, n.Archive)
+	if err != nil {
+		return err
+	}
+	savedOwn, savedTrail := n.Own, n.Trailing
+	n.Own = arch.Blocks
+	n.Trailing = arch.Trailing
+	if err := w.storeCompact(n); err != nil {
+		n.Own, n.Trailing = savedOwn, savedTrail
+		return err
+	}
+	return nil
+}
+
+func (w *World) storeCompact(n *Node) error {
+	data, arch, err := compactOwn(n)
+	if err != nil {
+		return err
+	}
+	if err := writeFileKeepMode(n.Archive, data); err != nil {
+		return fmt.Errorf("could not write '%s'", n.Archive)
+	}
+	n.Own = arch.Blocks
+	n.Trailing = arch.Trailing
+	return nil
+}
+
+func (w *World) rewriteOwn(n *Node, keep func(Block, int) bool) error {
+	var kept []Block
+	for i, bl := range n.Own {
+		if keep(bl, i) {
+			kept = append(kept, bl)
+		}
+	}
+	savedOwn, savedTrail := n.Own, n.Trailing
+	n.Own = kept
+	if err := w.storeCompact(n); err != nil {
+		n.Own, n.Trailing = savedOwn, savedTrail
+		return err
+	}
+	return nil
+}
+
+// DeleteChunk removes own blocks that match ref, the same set -l prints.
+func (w *World) DeleteChunk(nodeName string, ref ChunkRef) error {
+	n, err := w.requireLocal(nodeName)
+	if err != nil {
+		return err
+	}
+	return w.rewriteOwn(n, func(b Block, _ int) bool {
+		return !matchRef(b.Ref, ref)
+	})
+}
+
+// DeleteChunkAll removes every own block of ref's module and chunk,
+// whatever labels it carries.
+func (w *World) DeleteChunkAll(nodeName string, ref ChunkRef) error {
+	n, err := w.requireLocal(nodeName)
+	if err != nil {
+		return err
+	}
+	return w.rewriteOwn(n, func(b Block, _ int) bool {
+		return b.Ref.Chunk != ref.Chunk || !modulesEqual(b.Ref.Module, ref.Module)
+	})
+}
+
+// DeleteFile removes file blocks with that path and blocks applied to
+// the root chunk of that path.
+func (w *World) DeleteFile(nodeName, path string) error {
+	n, err := w.requireLocal(nodeName)
+	if err != nil {
+		return err
+	}
+	ref := ChunkRef{Chunk: Name(path)}
+	return w.rewriteOwn(n, func(b Block, _ int) bool {
+		if b.IsFile && string(b.Path) == path {
+			return false
+		}
+		return !matchRef(b.Ref, ref)
+	})
+}
+
+// DumpArchives rewrites each node's own archive, dropping a block that
+// is not an effective block of its own chunk reference in that node
+// and ordering the rest as orderOwn does.
+func (w *World) DumpArchives() error {
+	type pending struct {
+		n    *Node
+		data []byte
+		arch *Archive
+	}
+	var all []pending
+	for i := w.localAt; i < len(w.Nodes); i++ {
+		n := &w.Nodes[i]
+		data, arch, err := compactOwn(n)
+		if err != nil {
+			return err
+		}
+		all = append(all, pending{n: n, data: data, arch: arch})
+	}
+	for _, p := range all {
+		if err := writeFileKeepMode(p.n.Archive, p.data); err != nil {
+			return fmt.Errorf("could not write '%s'", p.n.Archive)
+		}
+		p.n.Own = p.arch.Blocks
+		p.n.Trailing = p.arch.Trailing
+	}
+	return nil
 }
 
 // LoadComposer reads a composer file.
@@ -69,11 +466,6 @@ func LoadComposer(path string) (*World, error) {
 // LoadComposerAllowEmpty accepts a composer with a null ground and no nodes.
 func LoadComposerAllowEmpty(path string) (*World, error) {
 	return loadComposer(path, true)
-}
-
-type groundFrame struct {
-	ident string
-	name  string
 }
 
 func loadComposer(path string, allowEmpty bool) (*World, error) {
@@ -415,126 +807,6 @@ func FindArchive(archive string) (*World, string, error) {
 	return nil, "", fmt.Errorf("no composition declares archive '%s'", archive)
 }
 
-// requireLocal returns a node declared in this composer file.
-// A node that arrived through ground is visible, and it is not edited here.
-func (w *World) requireLocal(ref string) (*Node, error) {
-	i, err := w.findIndex(ref)
-	if err != nil {
-		return nil, err
-	}
-	if i < w.localAt {
-		return nil, fmt.Errorf("node '%s' is defined in the ground", w.Nodes[i].Name)
-	}
-	return &w.Nodes[i], nil
-}
-
-// lookup finds a node by its full path, the names from the root joined by "/".
-func (w *World) lookup(ref string) (*Node, error) {
-	i, err := w.findIndex(ref)
-	if err != nil {
-		return nil, err
-	}
-	return &w.Nodes[i], nil
-}
-
-func (w *World) findIndex(ref string) (int, error) {
-	for i := range w.Nodes {
-		if formatNodePath(nodePath(w.Nodes[i])) == ref {
-			return i, nil
-		}
-	}
-	return 0, fmt.Errorf("unknown node '%s'", ref)
-}
-
-func (w *World) root() (*Node, error) {
-	i, err := w.rootIndex()
-	if err != nil {
-		return nil, err
-	}
-	return &w.Nodes[i], nil
-}
-
-func (w *World) rootIndex() (int, error) {
-	found := -1
-	for i := range w.Nodes {
-		if len(w.Nodes[i].Base) == 0 {
-			if found >= 0 {
-				return 0, fmt.Errorf("composer has more than one root")
-			}
-			found = i
-		}
-	}
-	if found < 0 {
-		return 0, fmt.Errorf("composer has no root")
-	}
-	return found, nil
-}
-
-func (w *World) rootName() (string, error) {
-	n, err := w.root()
-	if err != nil {
-		return "", err
-	}
-	return formatNodePath(nodePath(*n)), nil
-}
-
-// ancestry returns the node, then its base, up to the root.
-func (w *World) ancestry(ref string) ([]*Node, error) {
-	var n *Node
-	var err error
-	if ref == "" {
-		n, err = w.root()
-	} else {
-		n, err = w.lookup(ref)
-	}
-	if err != nil {
-		return nil, err
-	}
-	var rev []*Node
-	seen := map[string]bool{}
-	for {
-		key := formatNodePath(nodePath(*n))
-		if seen[key] {
-			return nil, fmt.Errorf("cycle in node bases: %s", key)
-		}
-		seen[key] = true
-		rev = append(rev, n)
-		if len(n.Base) == 0 {
-			return rev, nil
-		}
-		n, err = w.lookup(formatNodePath(n.Base))
-		if err != nil {
-			return nil, err
-		}
-	}
-}
-
-// Chain is the base chain followed by the node's own blocks.
-func (w *World) Chain(name string) ([]Block, error) {
-	rev, err := w.ancestry(name)
-	if err != nil {
-		return nil, err
-	}
-	var blocks []Block
-	for i := len(rev) - 1; i >= 0; i-- {
-		blocks = append(blocks, rev[i].Own...)
-	}
-	return blocks, nil
-}
-
-// Mappings is the base chain's mappings followed by the node's own.
-func (w *World) Mappings(name string) ([]Mapping, error) {
-	rev, err := w.ancestry(name)
-	if err != nil {
-		return nil, err
-	}
-	var maps []Mapping
-	for i := len(rev) - 1; i >= 0; i-- {
-		maps = append(maps, rev[i].Mappings...)
-	}
-	return maps, nil
-}
-
 func composerFileBytes(description string, ground *string, nodes []composerNode) ([]byte, error) {
 	if nodes == nil {
 		nodes = []composerNode{}
@@ -556,36 +828,6 @@ func emptyComposerBytes() []byte {
 		panic(err)
 	}
 	return data
-}
-
-func (w *World) save() error {
-	local := w.Nodes[w.localAt:]
-	raw := make([]composerNode, len(local))
-	for i, n := range local {
-		maps := make([]composerMapping, len(n.Mappings))
-		for j, m := range n.Mappings {
-			sets := m.FileSet
-			if sets == nil {
-				sets = []string{}
-			}
-			maps[j] = composerMapping{Path: m.Path, FileSet: sets, Origin: m.OriginSpec}
-		}
-		if maps == nil {
-			maps = []composerMapping{}
-		}
-		raw[i] = composerNode{
-			Name:        n.Name,
-			Archive:     n.ArchiveSpec,
-			Description: n.Description,
-			Mappings:    maps,
-			Base:        basePath{names: copyPath(n.Base), set: true},
-		}
-	}
-	data, err := composerFileBytes(w.Description, w.Ground, raw)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(w.Composer, data, 0o644)
 }
 
 // SpecifyComposer loads an existing composer file.
@@ -673,158 +915,12 @@ func CreateComposedArchive(dir, ground string) (*World, error) {
 	return w, nil
 }
 
-// CreateNode parses the archive, then appends the node and rewrites the composer.
-// An empty base creates the root, and only when the composer has none.
-// The archive file is created empty and must not already exist.
-func (w *World) CreateNode(name, archive, description string, base []string) error {
-	if name == "" {
-		return fmt.Errorf("empty name")
-	}
-	if strings.Contains(name, "/") {
-		return fmt.Errorf("invalid node name '%s'", name)
-	}
-	base = copyPath(base)
-	if len(base) == 0 {
-		if _, err := w.root(); err == nil {
-			return fmt.Errorf("composer already has a root")
-		}
-	} else if _, err := w.lookup(formatNodePath(base)); err != nil {
-		return fmt.Errorf("base '%s' of node '%s' is not defined", formatNodePath(base), name)
-	}
-	for _, n := range w.Nodes {
-		if n.Name == name && samePath(n.Base, base) {
-			return fmt.Errorf("duplicate node '%s'", name)
-		}
-	}
-	dir := filepath.Dir(w.Composer)
-	resolved, err := createNewArchive(archive, dir)
-	if err != nil {
-		return err
-	}
-	created := true
-	removeCreated := func() {
-		if created {
-			_ = os.Remove(resolved)
-		}
-	}
-	ident, err := identityPath(resolved)
-	if err != nil {
-		removeCreated()
-		return fmt.Errorf("could not read '%s'", resolved)
-	}
-	for _, n := range w.Nodes {
-		if n.Archive == ident {
-			removeCreated()
-			label := formatNodePath(append(copyPath(base), name))
-			return fmt.Errorf("nodes '%s' and '%s' share archive '%s'", formatNodePath(nodePath(n)), label, ident)
-		}
-	}
-	data, err := os.ReadFile(resolved)
-	if err != nil {
-		removeCreated()
-		return fmt.Errorf("could not read '%s'", resolved)
-	}
-	arch, err := ParseArchive(data, resolved)
-	if err != nil {
-		removeCreated()
-		return err
-	}
-	w.Nodes = append(w.Nodes, Node{
-		Name:        name,
-		Archive:     ident,
-		ArchiveSpec: archive,
-		Description: description,
-		Mappings:    []Mapping{},
-		Base:        base,
-		Own:         arch.Blocks,
-		Trailing:    arch.Trailing,
-	})
-	if err := w.save(); err != nil {
-		w.Nodes = w.Nodes[:len(w.Nodes)-1]
-		removeCreated()
-		return fmt.Errorf("could not write '%s'", w.Composer)
-	}
-	return nil
-}
-
-// DeleteNode removes the node and every node based on it
-// from this composer file, then deletes each removed node's archive file.
-// A node defined in the ground is left in place.
-// A file that is already gone is not an error.
-// If a file cannot be removed, the composer stays updated.
-func (w *World) DeleteNode(name string) error {
-	target, err := w.requireLocal(name)
-	if err != nil {
-		return err
-	}
-	targetPath := nodePath(*target)
-	keep := append([]Node{}, w.Nodes[:w.localAt]...)
-	var archives []string
-	for _, n := range w.Nodes[w.localAt:] {
-		if hasPathPrefix(nodePath(n), targetPath) {
-			archives = append(archives, n.Archive)
-			continue
-		}
-		keep = append(keep, n)
-	}
-	prev := w.Nodes
-	w.Nodes = keep
-	if err := w.save(); err != nil {
-		w.Nodes = prev
-		return fmt.Errorf("could not write '%s'", w.Composer)
-	}
-	var failed []string
-	for _, path := range archives {
-		if path == "" {
-			continue
-		}
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			failed = append(failed, path)
-		}
-	}
-	if len(failed) > 0 {
-		return fmt.Errorf("could not remove '%s'", strings.Join(failed, "', '"))
-	}
-	return nil
-}
-
 func writeFileKeepMode(path string, data []byte) error {
 	mode := os.FileMode(0o644)
 	if st, err := os.Stat(path); err == nil {
 		mode = st.Mode().Perm()
 	}
 	return os.WriteFile(path, data, mode)
-}
-
-// ApplyBlock appends text to the node's own archive, then reparses.
-// A block that is no longer effective in that node is removed.
-// A node defined in the ground is left unchanged.
-// A failed parse leaves the file.
-func (w *World) ApplyBlock(nodeName, text string) error {
-	if text == "" {
-		return fmt.Errorf("empty block text")
-	}
-	n, err := w.requireLocal(nodeName)
-	if err != nil {
-		return err
-	}
-	orig, err := os.ReadFile(n.Archive)
-	if err != nil {
-		return fmt.Errorf("could not read '%s'", n.Archive)
-	}
-	next := append(append([]byte{}, orig...), text...)
-	arch, err := ParseArchive(next, n.Archive)
-	if err != nil {
-		return err
-	}
-	savedOwn, savedTrail := n.Own, n.Trailing
-	n.Own = arch.Blocks
-	n.Trailing = arch.Trailing
-	if err := w.storeCompact(n); err != nil {
-		n.Own, n.Trailing = savedOwn, savedTrail
-		return err
-	}
-	return nil
 }
 
 // compactOwn drops blocks that are not effective for their own
@@ -956,74 +1052,6 @@ func orderOwn(blocks []Block) []Block {
 	return out
 }
 
-func (w *World) storeCompact(n *Node) error {
-	data, arch, err := compactOwn(n)
-	if err != nil {
-		return err
-	}
-	if err := writeFileKeepMode(n.Archive, data); err != nil {
-		return fmt.Errorf("could not write '%s'", n.Archive)
-	}
-	n.Own = arch.Blocks
-	n.Trailing = arch.Trailing
-	return nil
-}
-
-func (w *World) rewriteOwn(n *Node, keep func(Block, int) bool) error {
-	var kept []Block
-	for i, bl := range n.Own {
-		if keep(bl, i) {
-			kept = append(kept, bl)
-		}
-	}
-	savedOwn, savedTrail := n.Own, n.Trailing
-	n.Own = kept
-	if err := w.storeCompact(n); err != nil {
-		n.Own, n.Trailing = savedOwn, savedTrail
-		return err
-	}
-	return nil
-}
-
-// DeleteChunk removes own blocks that match ref, the same set -l prints.
-func (w *World) DeleteChunk(nodeName string, ref ChunkRef) error {
-	n, err := w.requireLocal(nodeName)
-	if err != nil {
-		return err
-	}
-	return w.rewriteOwn(n, func(b Block, _ int) bool {
-		return !matchRef(b.Ref, ref)
-	})
-}
-
-// DeleteChunkAll removes every own block of ref's module and chunk,
-// whatever labels it carries.
-func (w *World) DeleteChunkAll(nodeName string, ref ChunkRef) error {
-	n, err := w.requireLocal(nodeName)
-	if err != nil {
-		return err
-	}
-	return w.rewriteOwn(n, func(b Block, _ int) bool {
-		return b.Ref.Chunk != ref.Chunk || !modulesEqual(b.Ref.Module, ref.Module)
-	})
-}
-
-// DeleteFile removes file blocks with that path and blocks applied to
-// the root chunk of that path.
-func (w *World) DeleteFile(nodeName, path string) error {
-	n, err := w.requireLocal(nodeName)
-	if err != nil {
-		return err
-	}
-	ref := ChunkRef{Chunk: Name(path)}
-	return w.rewriteOwn(n, func(b Block, _ int) bool {
-		if b.IsFile && string(b.Path) == path {
-			return false
-		}
-		return !matchRef(b.Ref, ref)
-	})
-}
-
 // effectiveIndexSet lists blocks that still contribute to query.
 func effectiveIndexSet(blocks []Block, query ChunkRef) map[int]bool {
 	var idx []int
@@ -1042,32 +1070,4 @@ func effectiveIndexSet(blocks []Block, query ChunkRef) map[int]bool {
 		set[i] = true
 	}
 	return set
-}
-
-// DumpArchives rewrites each node's own archive, dropping a block that
-// is not an effective block of its own chunk reference in that node
-// and ordering the rest as orderOwn does.
-func (w *World) DumpArchives() error {
-	type pending struct {
-		n    *Node
-		data []byte
-		arch *Archive
-	}
-	var all []pending
-	for i := w.localAt; i < len(w.Nodes); i++ {
-		n := &w.Nodes[i]
-		data, arch, err := compactOwn(n)
-		if err != nil {
-			return err
-		}
-		all = append(all, pending{n: n, data: data, arch: arch})
-	}
-	for _, p := range all {
-		if err := writeFileKeepMode(p.n.Archive, p.data); err != nil {
-			return fmt.Errorf("could not write '%s'", p.n.Archive)
-		}
-		p.n.Own = p.arch.Blocks
-		p.n.Trailing = p.arch.Trailing
-	}
-	return nil
 }

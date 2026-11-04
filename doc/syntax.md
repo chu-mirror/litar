@@ -2,9 +2,8 @@
 
 This document defines the syntax of a litar archive.
 It is the scan of the text and the form of every expression.
-[design/litar.md](../design/litar.md) introduces the same language.
 A qualified name on the command line uses the form in the last section.
-[design/ui.md](../design/ui.md) defines the options around that name.
+[implementation.md](implementation.md) defines the options around that name.
 
 An archive is a sequence of bytes.
 The scan reads one byte at a time.
@@ -371,9 +370,38 @@ domain, item, or specialization that the chunk names.
 The command line reads the composer file in a directory,
 not a single archive.
 The `-t`/`--target` option names that directory.
-litar reads `composer.json` inside it.
-[design/litar.md](../design/litar.md) defines its format:
-a JSON object with `description`, `ground`, and `nodes`.
+litar reads `composer.json` inside it,
+a JSON object with `description`, `ground`, and `nodes`:
+
+```
+{
+    "description": "An example of composition",
+    "ground": null,
+    "nodes": [
+        {
+            "name": "Basic C Structure",
+            "archive": "c-structure.la",
+            "description": "Build common patterns that appear in C programs.",
+            "mappings": [],
+            "base": []
+        },
+        {
+            "name": "Program Hello",
+            "archive": "programs/hello.la",
+            "description": "Write the classic example in the first lesson of programming.",
+            "mappings": [
+                {
+                    "path": "data/samples.txt",
+                    "fileset": ["data"],
+                    "origin": "./samples.txt"
+                }
+            ],
+            "base": ["Basic C Structure"]
+        }
+    ]
+}
+```
+
 `description` is a string.
 `ground` is the name of a composition this one is based on,
 or `null`.

@@ -117,7 +117,9 @@ Nevertheless, there is some advice for more concrete situations.
 For imperative expressions, the rules are well established:
 
 - **quote the objects being operated on in the phrase**;
+- **all quoted objects shall be declared first before quoting**;
 - **omit the quotation if there are many chunks that refer to the same objects**;
+- **do not refer to a object declared inside a chunk outside the chunk**;
 - **use concrete verbs, do not use verbs like 'perform', 'do'**.
 
 The quoting here means that if a block of code is meant to add two numbers,

@@ -106,13 +106,13 @@ func resourceHandler(session *mcp.ClientSession) http.HandlerFunc {
 
 func toolHandler(session *mcp.ClientSession) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Content-Type") != "application/json" {
-			http.Error(w, "the request must be application/json", http.StatusUnsupportedMediaType)
-			return
-		}
 		var call struct {
 			Name      string         `json:"name"`
 			Arguments map[string]any `json:"arguments"`
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			http.Error(w, "the request must be application/json", http.StatusUnsupportedMediaType)
+			return
 		}
 		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

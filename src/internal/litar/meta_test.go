@@ -36,7 +36,8 @@ func TestReservedMeta(t *testing.T) {
 		"@\n" +
 		"@<marked@=\n" +
 		"z\n" +
-		"@~C@/variables@/times@\n"
+		"@~C@/variables@/times@\n" +
+		""
 	arch, err := ParseArchive([]byte(src), "a.la")
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +79,6 @@ func TestReservedMeta(t *testing.T) {
 	if !ok || times.Description != "count" {
 		t.Fatalf("item %+v", times)
 	}
-
 	bad, err := ParseArchive([]byte("@<Module@/Basic@=\nnot json\n@\n@<Basic@/x@=\n@\n"), "a.la")
 	if err != nil {
 		t.Fatal(err)
@@ -143,8 +143,6 @@ func TestSpecializationMeta(t *testing.T) {
 	if got := Modules(arch.Blocks, nil, meta); strings.Contains(got, "Specialization") {
 		t.Fatalf("listed %q", got)
 	}
-
-	// A specialization that is only named by a reference is still on the chunk.
 	refOnly, err := ParseArchive([]byte("@<msg@=\nplain\n@\n@<other@=\n@<hello@:executable@:msg@>\n@\n"), "a.la")
 	if err != nil {
 		t.Fatal(err)
@@ -188,7 +186,8 @@ func TestListingDescriptions(t *testing.T) {
 		"@\n" +
 		"@<marked@=\n" +
 		"z\n" +
-		"@~C@/variables@/times@\n"
+		"@~C@/variables@/times@\n" +
+		""
 	arch, err := ParseArchive([]byte(src), "a.la")
 	if err != nil {
 		t.Fatal(err)
@@ -218,36 +217,23 @@ func TestListingDescriptions(t *testing.T) {
 }
 
 func TestLibraryModuleDescriptions(t *testing.T) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("caller")
-	}
-	root := filepath.Join(filepath.Dir(file), "..", "..", "..")
-	t.Setenv("LITAR_LIBRARY", filepath.Join(root, "grounds"))
-	w, err := LoadComposer(filepath.Join(root, "examples", "c", "composer.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	chain, err := w.Chain("Basic/C Structure/Light/Test Light")
-	if err != nil {
-		t.Fatal(err)
-	}
-	maps, err := w.Mappings("Basic/C Structure/Light/Test Light")
-	if err != nil {
-		t.Fatal(err)
-	}
+	chain, maps := exampleChain(t, "Basic/C Structure/Light/Test Light")
 	tree, err := chunkTree(chain, maps)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name, found := findNamed(tree, "Module"); found {
-		t.Fatalf("tree contains %s", name)
+	meta, err := describe(chain, maps)
+	if err != nil {
+		t.Fatal(err)
 	}
 	want := map[string]string{
 		"Basic":           "Some common structures and filters.",
 		"Text Processing": "Text processing based on perl.",
 		"C Structure":     "Common structures in C programming",
 		"Light":           "Light is a framework mainly for C programming",
+	}
+	if name, found := findNamed(tree, "Module"); found {
+		t.Fatalf("tree contains %s", name)
 	}
 	for name, desc := range want {
 		node, ok := findTree(tree, name)
@@ -258,10 +244,6 @@ func TestLibraryModuleDescriptions(t *testing.T) {
 	inner, ok := findTree(tree, "Text Processing", "Internals")
 	if !ok || inner.Description != "" {
 		t.Fatalf("internals %+v", inner)
-	}
-	meta, err := describe(chain, maps)
-	if err != nil {
-		t.Fatal(err)
 	}
 	listed := Modules(chain, nil, meta)
 	if strings.Contains(listed, "\nModule\n") || strings.HasPrefix(listed, "Module\n") || strings.HasPrefix(listed, "Module:") {
@@ -282,7 +264,8 @@ func TestLibraryModuleDescriptions(t *testing.T) {
 	}
 }
 
-func TestProgramHelloModuleSpecializations(t *testing.T) {
+func exampleChain(t *testing.T, np string) ([]Block, []Mapping) {
+	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("caller")
@@ -293,7 +276,6 @@ func TestProgramHelloModuleSpecializations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	np := "Basic/C Structure/Program Hello"
 	chain, err := w.Chain(np)
 	if err != nil {
 		t.Fatal(err)
@@ -302,6 +284,11 @@ func TestProgramHelloModuleSpecializations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return chain, maps
+}
+
+func TestProgramHelloModuleSpecializations(t *testing.T) {
+	chain, maps := exampleChain(t, "Basic/C Structure/Program Hello")
 	chunk := ChunkRef{Module: ModulePath{"C Structure"}, Chunk: "module"}
 	tree, err := specializationTree(chain, maps, chunk)
 	if err != nil {
@@ -315,15 +302,15 @@ func TestProgramHelloModuleSpecializations(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing hello: %s", mustTree(t, tree))
 	}
+	if exec.ID == hello.ID {
+		t.Fatalf("ids %+v", tree)
+	}
 	labels, err := specLabels(chain, maps, chunk, hello.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if labelsText(labels) != "hello@:executable" {
 		t.Fatalf("labels %q id %d", labelsText(labels), hello.ID)
-	}
-	if exec.ID == hello.ID {
-		t.Fatalf("ids %+v", tree)
 	}
 }
 

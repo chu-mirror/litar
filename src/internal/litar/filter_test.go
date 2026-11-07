@@ -83,14 +83,14 @@ func TestFUSEView(t *testing.T) {
 		"#!/bin/sh\n" +
 		"cat hello.txt\n" +
 		"@\n" +
+		"@<msg@=\n" +
+		"@|show@+docs@\n" +
 		"@<size@=\n" +
 		"#!/bin/sh\n" +
 		"stat -c %s hello.txt\n" +
 		"@\n" +
 		"@<sized@=\n" +
 		"@|size@,hello.txt@\n" +
-		"@<msg@=\n" +
-		"@|show@+docs@\n" +
 		"@<exe@=\n" +
 		"#!/bin/sh\n" +
 		"if test -x run.sh; then echo yes; else echo no; fi\n" +
@@ -109,10 +109,15 @@ func TestFUSEView(t *testing.T) {
 		"echo x > hello.txt\n" +
 		"@\n" +
 		"@<row@=\n" +
-		"@|ro@,hello.txt@\n"
+		"@|ro@,hello.txt@\n" +
+		""
 	blocks := mustArch(t, src)
 	ev := NewEvaluator(blocks, nil, nil)
-	got, err := ev.Eval(mustRef(t, "msg"), nil)
+	var (
+		got string
+		err error
+	)
+	got, err = ev.Eval(mustRef(t, "msg"), nil)
 	if err != nil || got != "hello world" {
 		t.Fatalf("view %v %q", err, got)
 	}
@@ -308,8 +313,7 @@ func TestMappedFileAndCycle(t *testing.T) {
 		Path:   "data.txt",
 		Origin: origin,
 	}}, nil)
-	_, err = ev.Eval(mustRef(t, "top"), nil)
-	if err == nil || !strings.Contains(err.Error(), "both an archive file and a mapping") {
+	if _, err := ev.Eval(mustRef(t, "top"), nil); err == nil || !strings.Contains(err.Error(), "both an archive file and a mapping") {
 		t.Fatal(err)
 	}
 }

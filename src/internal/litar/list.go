@@ -188,6 +188,7 @@ func Chunks(blocks []Block, mod ModulePath, meta metaInfo) string {
 // starts at the same column, past the longest `Name:`.
 func formatNamed(rows []namedLine) string {
 	const tabWidth = 8
+	col := 0
 	width := 0
 	for _, row := range rows {
 		if row.desc == "" {
@@ -197,7 +198,6 @@ func formatNamed(rows []namedLine) string {
 			width = n
 		}
 	}
-	col := 0
 	if width > 0 {
 		col = (width/tabWidth + 1) * tabWidth
 	}

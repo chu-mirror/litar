@@ -12,7 +12,10 @@ a **sequence** (a series of same-kind parts: includes, functions) or a
 - A sequence: plural noun phrase (`includes`, `global variables`).
 - An action: verb phrase with concrete verbs (not "perform", "do"), quoting the objects
   operated on: `save the sum of 'number1' and 'number2' to 'number3'`.
+  Declare every quoted object before the reference that quotes it.
   Omit the quotes when many chunks refer to the same objects.
+- Do not use an object declared inside a chunk outside that chunk; declare it in the
+  block whose expansion holds all its uses.
 - Anything else: noun phrase (`main body`, `invocation syntax`).
 
 ## Blocks

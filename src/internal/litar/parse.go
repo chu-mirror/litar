@@ -120,57 +120,31 @@ func (p *parser) parseQName(opt qOpt) (ChunkRef, byte, int, error) {
 	var labels []Name
 	var module ModulePath
 	moduleStarted := false
-
 	name, kind, n, err := p.readName(opt.allowEOF)
 	if err != nil {
 		return ChunkRef{}, 0, 0, err
 	}
-	for {
-		if kind == ':' && n == 2 && !moduleStarted {
-			if name == "" || (!opt.dotOK && isRelName(name)) {
-				if name == "" {
-					return ChunkRef{}, 0, 0, p.fail("empty name")
-				}
-				return ChunkRef{}, 0, 0, p.fail("relative module name")
-			}
-			labels = append(labels, name)
-			p.i += n
-			name, kind, n, err = p.readName(opt.allowEOF)
-			if err != nil {
-				return ChunkRef{}, 0, 0, err
-			}
-			continue
-		}
-		if kind == ':' && n == 2 && moduleStarted {
+	for n == 2 && (kind == ':' || kind == '/') {
+		switch {
+		case kind == ':' && moduleStarted:
 			return ChunkRef{}, 0, 0, p.fail("label after module name")
-		}
-		if kind == '/' && n == 2 {
-			if name == "" {
-				// A leading @/ names the root explicitly.
-				if !moduleStarted && len(module) == 0 {
-					moduleStarted = true
-					p.i += n
-					name, kind, n, err = p.readName(opt.allowEOF)
-					if err != nil {
-						return ChunkRef{}, 0, 0, err
-					}
-					continue
-				}
-				return ChunkRef{}, 0, 0, p.fail("empty name")
-			}
-			if !opt.dotOK && isRelName(name) {
-				return ChunkRef{}, 0, 0, p.fail("relative module name")
-			}
+		case name == "" && kind == '/' && !moduleStarted:
+			moduleStarted = true
+		case name == "":
+			return ChunkRef{}, 0, 0, p.fail("empty name")
+		case !opt.dotOK && isRelName(name):
+			return ChunkRef{}, 0, 0, p.fail("relative module name")
+		case kind == ':':
+			labels = append(labels, name)
+		default:
 			moduleStarted = true
 			module = append(module, name)
-			p.i += n
-			name, kind, n, err = p.readName(opt.allowEOF)
-			if err != nil {
-				return ChunkRef{}, 0, 0, err
-			}
-			continue
 		}
-		break
+		p.i += n
+		name, kind, n, err = p.readName(opt.allowEOF)
+		if err != nil {
+			return ChunkRef{}, 0, 0, err
+		}
 	}
 	if name != "" && !opt.dotOK && isRelName(name) {
 		return ChunkRef{}, 0, 0, p.fail("relative module name")
@@ -259,29 +233,6 @@ func (p *parser) parseInnerRef() (*Ref, error) {
 func (p *parser) parseBody() (body, error) {
 	var b body
 	var text strings.Builder
-	flush := func() {
-		if text.Len() == 0 {
-			return
-		}
-		b.parts = append(b.parts, Part{Text: text.String()})
-		text.Reset()
-	}
-	endContent := func() {
-		s := text.String()
-		switch {
-		case strings.HasSuffix(s, "\r\n"):
-			s = s[:len(s)-2]
-		case strings.HasSuffix(s, "\n"):
-			s = s[:len(s)-1]
-		default:
-			flush()
-			return
-		}
-		b.endsLine = true
-		text.Reset()
-		text.WriteString(s)
-		flush()
-	}
 	for {
 		if p.i >= len(p.src) {
 			return body{}, p.fail("unterminated block")
@@ -298,13 +249,13 @@ func (p *parser) parseBody() (body, error) {
 			continue
 		}
 		if isEndControl(kind, n) {
-			endContent()
+			b.endContent(&text)
 			p.i += n
 			return b, nil
 		}
 		switch kind {
 		case '<':
-			flush()
+			b.flush(&text)
 			p.i += n
 			ref, err := p.parseInnerRef()
 			if err != nil {
@@ -312,7 +263,7 @@ func (p *parser) parseBody() (body, error) {
 			}
 			b.parts = append(b.parts, Part{Ref: ref})
 		case '|':
-			endContent()
+			b.endContent(&text)
 			p.i += n
 			filters, k2, n2, err := p.parseFilterList(false)
 			if err != nil {
@@ -321,11 +272,10 @@ func (p *parser) parseBody() (body, error) {
 			b.filters = filters
 			if k2 == '~' && n2 == 2 {
 				p.i += n2
-				items, err := p.parseItems()
+				b.items, err = p.parseItems()
 				if err != nil {
 					return body{}, err
 				}
-				b.items = items
 				return b, nil
 			}
 			if isEndControl(k2, n2) {
@@ -334,7 +284,7 @@ func (p *parser) parseBody() (body, error) {
 			}
 			return body{}, p.unexpected(k2, n2)
 		case '~':
-			endContent()
+			b.endContent(&text)
 			p.i += n
 			items, err := p.parseItems()
 			if err != nil {
@@ -348,32 +298,57 @@ func (p *parser) parseBody() (body, error) {
 	}
 }
 
+// flush moves the pending content text into a text part.
+func (b *body) flush(text *strings.Builder) {
+	if text.Len() == 0 {
+		return
+	}
+	b.parts = append(b.parts, Part{Text: text.String()})
+	text.Reset()
+}
+
+// endContent flushes the content text without the one line break that
+// ends it, and records that break in endsLine.
+func (b *body) endContent(text *strings.Builder) {
+	s := text.String()
+	switch {
+	case strings.HasSuffix(s, "\r\n"):
+		s = s[:len(s)-2]
+	case strings.HasSuffix(s, "\n"):
+		s = s[:len(s)-1]
+	default:
+		b.flush(text)
+		return
+	}
+	b.endsLine = true
+	text.Reset()
+	text.WriteString(s)
+	b.flush(text)
+}
+
 func (p *parser) parseItems() ([]Item, error) {
 	var items []Item
+	var item Item
 	for {
-		var item Item
-		for {
-			name, kind, n, err := p.readName(false)
-			if err != nil {
-				return nil, err
-			}
-			if name == "" {
-				return nil, p.fail("empty name")
-			}
-			item = append(item, name)
-			if kind == '/' && n == 2 {
-				p.i += n
-				continue
-			}
+		name, kind, n, err := p.readName(false)
+		if err != nil {
+			return nil, err
+		}
+		if name == "" {
+			return nil, p.fail("empty name")
+		}
+		item = append(item, name)
+		switch {
+		case kind == '/' && n == 2:
+			p.i += n
+		case kind == '~' && n == 2:
 			items = append(items, item)
-			if kind == '~' && n == 2 {
-				p.i += n
-				break
-			}
-			if isEndControl(kind, n) {
-				p.i += n
-				return items, nil
-			}
+			item = nil
+			p.i += n
+		case isEndControl(kind, n):
+			p.i += n
+			return append(items, item), nil
+		default:
 			return nil, p.unexpected(kind, n)
 		}
 	}
@@ -405,17 +380,18 @@ func (p *parser) parseBlock() (Block, error) {
 	if ref.Chunk == "" {
 		return Block{}, p.fail("empty name")
 	}
-	if kind == '|' && n == 2 {
-		return Block{}, p.unexpected(kind, n)
-	}
 	if n != 2 || (kind != '=' && kind != '+') {
 		if n == 0 {
 			return Block{}, p.fail("unterminated block")
 		}
 		return Block{}, p.unexpected(kind, n)
 	}
-	op := Op(kind)
-	p.i += n
+	return p.finishBlock(ref, Op(kind), startLine)
+}
+
+// finishBlock reads the rest of a block whose operation control is at p.i.
+func (p *parser) finishBlock(ref ChunkRef, op Op, startLine int) (Block, error) {
+	p.i += 2
 	p.consumeLayout()
 	b, err := p.parseBody()
 	if err != nil {
@@ -471,27 +447,15 @@ func (p *parser) parseFile(executable bool) (Block, error) {
 		}
 		return Block{}, p.unexpected(kind, n)
 	}
-	op := Op(kind)
-	p.i += n
-	p.consumeLayout()
-	b, err := p.parseBody()
+	b, err := p.finishBlock(ChunkRef{Chunk: path}, Op(kind), startLine)
 	if err != nil {
 		return Block{}, err
 	}
-	return Block{
-		Ref:        ChunkRef{Chunk: path},
-		Op:         op,
-		Parts:      b.parts,
-		Filters:    b.filters,
-		Items:      b.items,
-		EndsLine:   b.endsLine,
-		StartLine:  startLine,
-		EndLine:    p.line(),
-		IsFile:     true,
-		Path:       path,
-		Executable: executable,
-		Sets:       sets,
-	}, nil
+	b.IsFile = true
+	b.Path = path
+	b.Executable = executable
+	b.Sets = sets
+	return b, nil
 }
 
 // skipToControl moves to the next control that starts or rejects an
@@ -519,6 +483,35 @@ func (a *Archive) Text() string {
 	}
 	b.WriteString(a.Trailing)
 	return b.String()
+}
+
+// parseNames reads the names of an expression separated by "/".
+// relOK allows the names "." and "..".
+func (p *parser) parseNames(relOK bool) ([]Name, error) {
+	var names []Name
+	for {
+		name, kind, n, err := p.readName(true)
+		if err != nil {
+			return nil, err
+		}
+		if name == "" {
+			return nil, p.fail("empty name")
+		}
+		if !relOK && isRelName(name) {
+			return nil, p.fail("relative module name")
+		}
+		names = append(names, name)
+		if n == 0 {
+			return names, nil
+		}
+		if kind != '/' || n != 2 {
+			return nil, p.unexpected(kind, n)
+		}
+		p.i += n
+		if p.i >= len(p.src) {
+			return nil, p.fail("empty name")
+		}
+	}
 }
 
 func isLetter(b byte) bool {
@@ -649,17 +642,13 @@ func parseExpr(s string, allowPipeline bool) (ChunkRef, []Filter, error) {
 			return ChunkRef{}, nil, err
 		}
 	}
-	if n != 0 || kind != 0 || p.i != len(p.src) {
-		if n == 0 && p.i == len(p.src) {
-			// EOF after the name.
-		} else if isEndControl(kind, n) || n != 0 {
-			return ChunkRef{}, nil, p.unexpected(kind, n)
-		}
+	// Names end only at the end of the expression, where n is zero.
+	if n != 0 {
+		return ChunkRef{}, nil, p.unexpected(kind, n)
 	}
 	if ref.Chunk == "" && len(filters) == 0 {
 		return ChunkRef{}, nil, p.fail("empty name")
 	}
-	// A pipeline may follow only when something terminated cleanly at EOF.
 	if p.i != len(p.src) {
 		return ChunkRef{}, nil, p.unexpected(kind, n)
 	}
@@ -690,30 +679,8 @@ func ParseModulePath(s string) (ModulePath, error) {
 		return nil, nil
 	}
 	p := &parser{src: []byte(s), expr: true}
-	var parts ModulePath
-	for {
-		name, kind, n, err := p.readName(true)
-		if err != nil {
-			return nil, err
-		}
-		if name == "" {
-			return nil, p.fail("empty name")
-		}
-		if isRelName(name) {
-			return nil, p.fail("relative module name")
-		}
-		parts = append(parts, name)
-		if n == 0 {
-			return parts, nil
-		}
-		if kind != '/' || n != 2 {
-			return nil, p.unexpected(kind, n)
-		}
-		p.i += n
-		if p.i >= len(p.src) {
-			return nil, p.fail("empty name")
-		}
-	}
+	names, err := p.parseNames(false)
+	return ModulePath(names), err
 }
 
 // ParseItem parses an -r operand. The root marker "/" is not special.
@@ -722,25 +689,6 @@ func ParseItem(s string) (Item, error) {
 		return nil, &ParseError{Msg: "empty name", Expr: true}
 	}
 	p := &parser{src: []byte(s), expr: true}
-	var item Item
-	for {
-		name, kind, n, err := p.readName(true)
-		if err != nil {
-			return nil, err
-		}
-		if name == "" {
-			return nil, p.fail("empty name")
-		}
-		item = append(item, name)
-		if n == 0 {
-			return item, nil
-		}
-		if kind != '/' || n != 2 {
-			return nil, p.unexpected(kind, n)
-		}
-		p.i += n
-		if p.i >= len(p.src) {
-			return nil, p.fail("empty name")
-		}
-	}
+	names, err := p.parseNames(true)
+	return Item(names), err
 }

@@ -20,10 +20,10 @@ func writeFile(t *testing.T, path, data string) {
 
 func TestComposerChain(t *testing.T) {
 	dir := t.TempDir()
+	comp := filepath.Join(dir, "composer.json")
 	writeFile(t, filepath.Join(dir, "base.la"), "@<msg@=base@\n@<extra@+B@\n")
 	writeFile(t, filepath.Join(dir, "child.la"), "@<msg@+child@\n")
 	writeFile(t, filepath.Join(dir, "origin.txt"), "mapped\n")
-	comp := filepath.Join(dir, "composer.json")
 	writeFile(t, comp, composerDoc(`[
     {
         "name": "root",
@@ -75,6 +75,7 @@ func TestComposerChain(t *testing.T) {
 
 func TestSameNameDifferentParents(t *testing.T) {
 	dir := t.TempDir()
+	comp := filepath.Join(dir, "composer.json")
 	for name, body := range map[string]string{
 		"root.la":  "@<x@=\n@\n",
 		"left.la":  "@<x@=\n@\n",
@@ -85,7 +86,6 @@ func TestSameNameDifferentParents(t *testing.T) {
 	} {
 		writeFile(t, filepath.Join(dir, name), body)
 	}
-	comp := filepath.Join(dir, "composer.json")
 	writeFile(t, comp, composerDoc(`[
     {"name":"root","archive":"./root.la","description":"","mappings":[],"base":[]},
     {"name":"left","archive":"./left.la","description":"","mappings":[],"base":["root"]},
@@ -198,11 +198,11 @@ func TestGroundPrecedes(t *testing.T) {
         {"name":"root","archive":"base.la","description":"ground","mappings":[],"base":[]}
     ]`))
 	sub := filepath.Join(dir, "sub")
+	comp := filepath.Join(sub, "composer.json")
 	if err := os.Mkdir(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(sub, "extra.la"), "@<msg@+child@")
-	comp := filepath.Join(sub, "composer.json")
 	writeFile(t, comp, `{
     "ground": "common",
     "nodes": [
@@ -299,10 +299,11 @@ func TestDumpAndDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var data []byte
 	if err := w.DumpArchives(); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(arch)
+	data, err = os.ReadFile(arch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,6 +359,7 @@ func TestDeleteNodeRemovesArchives(t *testing.T) {
 		t.Fatal(err)
 	}
 	rootArch := filepath.Join(dir, "root.la")
+	var raw []byte
 	childArch := filepath.Join(dir, "child.la")
 	grandArch := filepath.Join(dir, "grand.la")
 	if err := w.DeleteNode("root/child"); err != nil {
@@ -372,7 +374,7 @@ func TestDeleteNodeRemovesArchives(t *testing.T) {
 	if _, err := os.Stat(grandArch); !os.IsNotExist(err) {
 		t.Fatal("grand archive still present", err)
 	}
-	raw, err := os.ReadFile(comp)
+	raw, err = os.ReadFile(comp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,10 +401,11 @@ func TestCreateMissingArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fresh := filepath.Join(dir, "fresh.la")
+	var data []byte
 	if err := w.CreateNode("root", "./fresh.la", "new", nil); err != nil {
 		t.Fatal(err)
 	}
-	fresh := filepath.Join(dir, "fresh.la")
 	st, err := os.Stat(fresh)
 	if err != nil {
 		t.Fatal(err)
@@ -420,7 +423,7 @@ func TestCreateMissingArchive(t *testing.T) {
 	if err := w.ApplyBlock("root", "@<msg@=hi@\n"); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(fresh)
+	data, err = os.ReadFile(fresh)
 	if err != nil || !strings.Contains(string(data), "@<msg@=hi@") {
 		t.Fatalf("%v %s", err, data)
 	}
@@ -442,6 +445,7 @@ func TestCreateMissingArchive(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "archive './dir.la' already exists") {
 		t.Fatal(err)
 	}
+
 	err = w.CreateNode("nested", "./no/such.la", "", []string{"root"})
 	if err == nil || !strings.Contains(err.Error(), "could not write") {
 		t.Fatal(err)
@@ -520,15 +524,20 @@ func TestCreateComposedArchiveGround(t *testing.T) {
 	}
 	t.Chdir(work)
 
+	var (
+		w   *World
+		err error
+		raw []byte
+	)
 	bare := filepath.Join(dir, "bare")
-	w, err := CreateComposedArchive(bare, "")
+	w, err = CreateComposedArchive(bare, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if w.Ground != nil || len(w.Nodes) != 0 {
 		t.Fatalf("ground %v nodes %+v", w.Ground, w.Nodes)
 	}
-	raw, err := os.ReadFile(filepath.Join(bare, "composer.json"))
+	raw, err = os.ReadFile(filepath.Join(bare, "composer.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

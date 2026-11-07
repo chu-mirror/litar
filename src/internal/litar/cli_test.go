@@ -66,7 +66,12 @@ func TestCLIPrint(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(old) })
-	code, out, errText := runOut(t, "litar", "-f", "a.la", "-p", "msg")
+	var (
+		code    int
+		out     string
+		errText string
+	)
+	code, out, errText = runOut(t, "litar", "-f", "a.la", "-p", "msg")
 	if code != 0 || errText != "" || out != "Hello" {
 		t.Fatalf("%d %q %q", code, out, errText)
 	}
@@ -101,8 +106,8 @@ func TestCLIPrint(t *testing.T) {
 
 func TestFindArchive(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "base.la"), "@<msg@=base@\n")
 	sub := filepath.Join(dir, "sub")
+	writeFile(t, filepath.Join(dir, "base.la"), "@<msg@=base@\n")
 	if err := os.MkdirAll(filepath.Join(sub, "deep"), 0o755); err != nil {
 		t.Fatal(err)
 	}

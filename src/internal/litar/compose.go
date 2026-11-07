@@ -249,7 +249,8 @@ func (w *World) CreateNode(name, archive, description string, base []string) err
 			_ = os.Remove(resolved)
 		}
 	}
-	ident, err := identityPath(resolved)
+	var ident string
+	ident, err = identityPath(resolved)
 	if err != nil {
 		removeCreated()
 		return fmt.Errorf("could not read '%s'", resolved)
@@ -492,13 +493,13 @@ func loadAt(path, ident string, allowEmpty bool, stack []groundFrame) (*World, e
 	if err != nil {
 		return nil, fmt.Errorf("could not read composer '%s': %v", path, err)
 	}
+	var file composerFile
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("could not read composer '%s': %v", path, err)
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	var file composerFile
 	if err := dec.Decode(&file); err != nil {
 		return nil, fmt.Errorf("could not read composer '%s': %v", path, err)
 	}
@@ -639,11 +640,15 @@ func nodesFrom(composerPath string, raw []composerNode) ([]Node, error) {
 	nodes := make([]Node, len(raw))
 	for i, n := range raw {
 		base := copyPath(n.Base.names)
+		var (
+			ident string
+			arch  *Archive
+		)
 		resolved, err := resolveArchive(n.Archive, dir)
 		if err != nil {
 			return nil, err
 		}
-		ident, err := identityPath(resolved)
+		ident, err = identityPath(resolved)
 		if err != nil {
 			return nil, fmt.Errorf("could not read '%s'", resolved)
 		}
@@ -651,7 +656,7 @@ func nodesFrom(composerPath string, raw []composerNode) ([]Node, error) {
 		if err != nil {
 			return nil, fmt.Errorf("could not read '%s'", resolved)
 		}
-		arch, err := ParseArchive(data, resolved)
+		arch, err = ParseArchive(data, resolved)
 		if err != nil {
 			return nil, err
 		}
@@ -873,8 +878,9 @@ func CreateComposedArchive(dir, ground string) (*World, error) {
 		name := ground
 		stored = &name
 	}
-	st, err := os.Stat(dir)
 	createdDir := false
+	comp := filepath.Join(dir, "composer.json")
+	st, err := os.Stat(dir)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("could not write '%s': %v", dir, err)
@@ -883,7 +889,6 @@ func CreateComposedArchive(dir, ground string) (*World, error) {
 	} else if !st.IsDir() {
 		return nil, fmt.Errorf("could not write '%s': not a directory", dir)
 	}
-	comp := filepath.Join(dir, "composer.json")
 	if _, err := os.Stat(comp); err == nil {
 		return nil, fmt.Errorf("composition '%s' already exists", dir)
 	} else if err != nil && !os.IsNotExist(err) {
@@ -926,8 +931,8 @@ func writeFileKeepMode(path string, data []byte) error {
 // compactOwn drops blocks that are not effective for their own
 // chunk reference among this node's own blocks, then orders the rest.
 func compactOwn(n *Node) ([]byte, *Archive, error) {
-	cache := map[string]map[int]bool{}
 	var kept []Block
+	cache := map[string]map[int]bool{}
 	for bi, bl := range n.Own {
 		k := bl.Ref.key()
 		set, ok := cache[k]

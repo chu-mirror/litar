@@ -20,7 +20,8 @@ func TestParseRoundTrip(t *testing.T) {
 		"@<label@:module@/chunk1@=\n" +
 		"@<substructure 3@>\n" +
 		"@\n" +
-		"tail\n"
+		"tail\n" +
+		""
 	arch, err := ParseArchive([]byte(src), "a.la")
 	if err != nil {
 		t.Fatal(err)
@@ -110,17 +111,14 @@ func TestNames(t *testing.T) {
 	if arch.Blocks[0].Ref.Chunk != "@" {
 		t.Fatalf("chunk %q", arch.Blocks[0].Ref.Chunk)
 	}
-	_, err = ParseArchive([]byte("@<a@:b@/c@:d@=x@"), "a.la")
-	if err == nil || !strings.Contains(err.Error(), "label after module name") {
-		t.Fatal(err)
-	}
-	_, err = ParseArchive([]byte("@<@=x@"), "a.la")
-	if err == nil || !strings.Contains(err.Error(), "empty name") {
-		t.Fatal(err)
-	}
-	_, err = ParseArchive([]byte("@<.@/a@=x@"), "a.la")
-	if err == nil || !strings.Contains(err.Error(), "relative module name") {
-		t.Fatal(err)
+	for _, tc := range []struct{ src, msg string }{
+		{"@<a@:b@/c@:d@=x@", "label after module name"},
+		{"@<@=x@", "empty name"},
+		{"@<.@/a@=x@", "relative module name"},
+	} {
+		if _, err := ParseArchive([]byte(tc.src), "a.la"); err == nil || !strings.Contains(err.Error(), tc.msg) {
+			t.Fatalf("%q: %v", tc.src, err)
+		}
 	}
 }
 
@@ -155,19 +153,6 @@ func TestParseErrors(t *testing.T) {
 
 func TestFileItemsPipeline(t *testing.T) {
 	src := "" +
-		"@[hello.c@`source files@`executables@=\n" +
-		"int x;\n" +
-		"@|filter@+source files@,hello.c\n" +
-		"@~C@/variables@/times@~C@/functions@/main@\n" +
-		"@(run.sh@=\n" +
-		"echo\n" +
-		"@\n" +
-		"@<@|list files@+source files@>\n" +
-		"@<chunk@=\n" +
-		"@<@|list files@+source files@>\n" +
-		"@\n"
-	// The invocation at top level is not a block. Put the invocation inside.
-	src = "" +
 		"@[hello.c@`source files@=\n" +
 		"int x;\n" +
 		"@|upper@+docs@,hello.c\n" +
@@ -178,7 +163,8 @@ func TestFileItemsPipeline(t *testing.T) {
 		"@<chunk@=\n" +
 		"@<@|list files@+source files@>\n" +
 		"@@~\n" +
-		"@\n"
+		"@\n" +
+		""
 	arch, err := ParseArchive([]byte(src), "a.la")
 	if err != nil {
 		t.Fatal(err)
@@ -235,6 +221,9 @@ func TestCommandNames(t *testing.T) {
 	if _, _, err := ParsePrint(".@/a"); err == nil || !strings.Contains(err.Error(), "relative module name in expression") {
 		t.Fatal(err)
 	}
+}
+
+func TestCommandModulePathsAndItems(t *testing.T) {
 	mod, err := ParseModulePath("/")
 	if err != nil || len(mod) != 0 {
 		t.Fatal(err, mod)

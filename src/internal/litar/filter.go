@@ -38,25 +38,17 @@ type viewFile struct {
 func (c *catalog) apply(ops []ViewOp) ([]viewFile, error) {
 	in := map[string]bool{}
 	var order []string
-	defined := func(path string) (*catFile, error) {
+	add := func(path string) error {
 		if err := validFilePath(path); err != nil {
-			return nil, err
+			return err
 		}
 		f := c.files[path]
 		if f == nil || (!f.archive && !f.mapping) {
-			return nil, fmt.Errorf("file '%s' is not defined", path)
+			return fmt.Errorf("file '%s' is not defined", path)
 		}
 		if f.archive && f.mapping || c.conflicts[path] {
-			return nil, fmt.Errorf("file '%s' is defined as both an archive file and a mapping", path)
+			return fmt.Errorf("file '%s' is defined as both an archive file and a mapping", path)
 		}
-		return f, nil
-	}
-	add := func(path string) error {
-		f, err := defined(path)
-		if err != nil {
-			return err
-		}
-		_ = f
 		if !in[path] {
 			in[path] = true
 			order = append(order, path)
@@ -201,11 +193,7 @@ func parseShebang(script string) (interp, arg string, hasArg, ok bool) {
 	for i < len(script) && (script[i] == ' ' || script[i] == '\t') {
 		i++
 	}
-	start := i
-	for i < len(script) && script[i] != ' ' && script[i] != '\t' && script[i] != '\n' && script[i] != '\r' {
-		i++
-	}
-	interp = stripCR(script[start:i])
+	interp, i = shebangWord(script, i)
 	if interp == "" {
 		return "", "", false, false
 	}
@@ -221,15 +209,21 @@ func parseShebang(script string) (interp, arg string, hasArg, ok bool) {
 	if i >= len(script) || script[i] == '\n' || script[i] == '\r' {
 		return interp, "", false, true
 	}
-	start = i
-	for i < len(script) && script[i] != ' ' && script[i] != '\t' && script[i] != '\n' && script[i] != '\r' {
-		i++
-	}
-	arg = stripCR(script[start:i])
+	arg, _ = shebangWord(script, i)
 	if arg == "" {
 		return "", "", false, false
 	}
 	return interp, arg, true, true
+}
+
+// shebangWord returns the word of script at i, up to a blank or a line end,
+// and the index after it.
+func shebangWord(script string, i int) (string, int) {
+	start := i
+	for i < len(script) && script[i] != ' ' && script[i] != '\t' && script[i] != '\n' && script[i] != '\r' {
+		i++
+	}
+	return stripCR(script[start:i]), i
 }
 
 func stripCR(s string) string {
@@ -251,11 +245,12 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 	if err := ev.tangle(files); err != nil {
 		return "", err
 	}
+	var scriptPath string
 	scriptFile, err := os.CreateTemp("", "litar-script-*")
 	if err != nil {
 		return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
 	}
-	scriptPath := scriptFile.Name()
+	scriptPath = scriptFile.Name()
 	if _, err := scriptFile.WriteString(script); err != nil {
 		scriptFile.Close()
 		os.Remove(scriptPath)
@@ -305,18 +300,24 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 	waitErr := cmd.Wait()
 	<-copyDone
 	if waitErr != nil {
-		code := 1
-		if ee, ok := waitErr.(*exec.ExitError); ok {
-			code = ee.ExitCode()
-			if code < 0 {
-				if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-					code = 128 + int(ws.Signal())
-				} else {
-					code = 1
-				}
-			}
-		}
-		return "", fmt.Errorf("filter '%s' exited with status %d", ref.String(), code)
+		return "", fmt.Errorf("filter '%s' exited with status %d", ref.String(), exitStatus(waitErr))
 	}
 	return out.String(), nil
+}
+
+// exitStatus is the status of a failed wait: the exit code,
+// or 128 plus the signal for a process killed by a signal.
+func exitStatus(err error) int {
+	code := 1
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+		if code < 0 {
+			if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+				code = 128 + int(ws.Signal())
+			} else {
+				code = 1
+			}
+		}
+	}
+	return code
 }

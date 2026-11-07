@@ -283,13 +283,7 @@ func (a *agent) deleteChunk(ctx context.Context, _ *mcp.CallToolRequest, in dele
 		a.mu.Unlock()
 		return toolErr(err)
 	}
-	np := formatNodePath(nodePath(*n))
-	chain, err := w.Chain(np)
-	if err != nil {
-		a.mu.Unlock()
-		return toolErr(err)
-	}
-	maps, err := w.Mappings(np)
+	chain, maps, err := a.nodeChain(w, in.Node)
 	if err != nil {
 		a.mu.Unlock()
 		return toolErr(err)
@@ -299,7 +293,7 @@ func (a *agent) deleteChunk(ctx context.Context, _ *mcp.CallToolRequest, in dele
 		a.mu.Unlock()
 		return toolErr(err)
 	}
-	if err := w.DeleteChunkAll(np, ref); err != nil {
+	if err := w.DeleteChunkAll(formatNodePath(nodePath(*n)), ref); err != nil {
 		a.mu.Unlock()
 		return toolErr(err)
 	}
@@ -315,13 +309,7 @@ func (a *agent) deleteFile(ctx context.Context, _ *mcp.CallToolRequest, in delet
 		a.mu.Unlock()
 		return toolErr(err)
 	}
-	np := formatNodePath(nodePath(*n))
-	chain, err := w.Chain(np)
-	if err != nil {
-		a.mu.Unlock()
-		return toolErr(err)
-	}
-	maps, err := w.Mappings(np)
+	chain, maps, err := a.nodeChain(w, in.Node)
 	if err != nil {
 		a.mu.Unlock()
 		return toolErr(err)
@@ -331,7 +319,7 @@ func (a *agent) deleteFile(ctx context.Context, _ *mcp.CallToolRequest, in delet
 		a.mu.Unlock()
 		return toolErr(err)
 	}
-	if err := w.DeleteFile(np, path); err != nil {
+	if err := w.DeleteFile(formatNodePath(nodePath(*n)), path); err != nil {
 		a.mu.Unlock()
 		return toolErr(err)
 	}
@@ -535,13 +523,9 @@ func (a *agent) render(uri string) (text, mime string, blob []byte, err error) {
 		}
 		return string(raw), mime, nil, nil
 	case strings.HasPrefix(uri, "tree://chunk/"):
-		return a.renderTree(uri, "tree://chunk/", func(chain []Block, maps []Mapping) (treeJSON, error) {
-			return chunkTree(chain, maps)
-		})
+		return a.renderTree(uri, "tree://chunk/", chunkTree)
 	case strings.HasPrefix(uri, "tree://item/"):
-		return a.renderTree(uri, "tree://item/", func(chain []Block, maps []Mapping) (treeJSON, error) {
-			return itemTree(chain, maps)
-		})
+		return a.renderTree(uri, "tree://item/", itemTree)
 	case strings.HasPrefix(uri, "tree://file/"):
 		return a.renderTree(uri, "tree://file/", func(chain []Block, maps []Mapping) (treeJSON, error) {
 			return fileTree(chain, maps), nil
@@ -732,8 +716,7 @@ func (a *agent) renderFile(uri, mime string) (string, string, []byte, error) {
 	if err != nil {
 		return "", "", nil, err
 	}
-	cat := buildCatalog(chain, maps)
-	f := cat.files[path]
+	f := buildCatalog(chain, maps).files[path]
 	if f == nil {
 		return "", "", nil, errString("file '" + path + "' is not defined")
 	}
@@ -1031,11 +1014,12 @@ func describe(blocks []Block, maps []Mapping) (metaInfo, error) {
 			continue
 		}
 		seen[ref.key()] = true
+		var desc string
 		text, err := ev.Eval(ref, nil)
 		if err != nil {
 			return metaInfo{}, err
 		}
-		desc, err := metaDescription(text)
+		desc, err = metaDescription(text)
 		if err != nil {
 			return metaInfo{}, fmt.Errorf("meta chunk '%s': %w", ref.String(), err)
 		}

@@ -96,7 +96,8 @@ func TestExtendJoin(t *testing.T) {
 }
 
 func TestLabelInheritanceAndDot(t *testing.T) {
-	src := "" +
+	var src string
+	src = "" +
 		"@<base@+\n" +
 		"@<inner@>\n" +
 		"@\n" +
@@ -139,6 +140,10 @@ func mustRef(t *testing.T, s string) ChunkRef {
 }
 
 func TestCycleAndMissing(t *testing.T) {
+	var (
+		ev  *Evaluator
+		err error
+	)
 	src := "" +
 		"@<a@=\n" +
 		"@<b@>\n" +
@@ -149,8 +154,8 @@ func TestCycleAndMissing(t *testing.T) {
 		"@<a@=\n" +
 		"ok\n" +
 		"@\n"
-	ev := NewEvaluator(mustArch(t, src), nil, nil)
-	_, err := ev.Eval(mustRef(t, "a"), nil)
+	ev = NewEvaluator(mustArch(t, src), nil, nil)
+	_, err = ev.Eval(mustRef(t, "a"), nil)
 	if err == nil || !strings.Contains(err.Error(), "circular reference a -> b -> a") {
 		t.Fatal(err)
 	}
@@ -185,6 +190,9 @@ func TestListings(t *testing.T) {
 	if got := Modules(blocks, parent, meta); got != "a@/b\n" {
 		t.Fatalf("modules a %q", got)
 	}
+	if got := Modules(blocks, mustMod(t, "nope"), meta); got != "" {
+		t.Fatalf("missing module %q", got)
+	}
 	if got := Chunks(blocks, nil, meta); got != "z\nhello.c\n" {
 		t.Fatalf("chunks / %q", got)
 	}
@@ -211,9 +219,6 @@ func TestListings(t *testing.T) {
 	}
 	if got := Refer(blocks, mustItem(t, "missing")); got != "" {
 		t.Fatalf("refer missing %q", got)
-	}
-	if got := Modules(blocks, mustMod(t, "nope"), meta); got != "" {
-		t.Fatalf("missing module %q", got)
 	}
 }
 

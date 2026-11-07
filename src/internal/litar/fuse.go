@@ -224,10 +224,12 @@ func (d *dirNode) Create(ctx context.Context, name string, flags uint32, mode ui
 		return nil, nil, 0, syscall.EEXIST
 	}
 	host := filepath.Join(d.hostDir(), name)
+	var fh *os.File
 	if err := os.MkdirAll(d.hostDir(), 0o755); err != nil {
 		return nil, nil, 0, syscall.EIO
 	}
-	fh, err := os.OpenFile(host, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0o644)
+	var err error
+	fh, err = os.OpenFile(host, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0o644)
 	if err != nil {
 		if os.IsExist(err) {
 			return nil, nil, 0, syscall.EEXIST
@@ -453,6 +455,10 @@ func mountView(files []viewFile) (*mount, error) {
 		os.RemoveAll(dir)
 		return nil, fmtMount(err)
 	}
+	var (
+		server *fuse.Server
+		direct bool
+	)
 	root := &dirNode{rel: "", spec: tree, overlay: overlay}
 	zero := time.Duration(0)
 	opts := &fs.Options{
@@ -463,8 +469,8 @@ func mountView(files []viewFile) (*mount, error) {
 	opts.FsName = "litar"
 	opts.Name = "litar"
 	opts.DirectMount = true
-	server, err := fs.Mount(dir, root, opts)
-	direct := err == nil
+	server, err = fs.Mount(dir, root, opts)
+	direct = err == nil
 	if err != nil {
 		os.RemoveAll(dir)
 		dir, err = os.MkdirTemp("", "litar-mnt-*")

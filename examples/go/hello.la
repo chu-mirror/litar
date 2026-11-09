@@ -13,10 +13,8 @@ A classic example at the beginning of learning programming, written in Go.
 fmt.Println("Hello, World!")
 @~ output @
 The command takes no flags and no positional arguments.
-@<hello@:command@:Go Structure@/Flag@/invocation syntax@=
+@<hello@:command@:Invocation@/invocation syntax@=
 {
     name: 'hello',
-    flags: [],
-    arguments: [],
 }
 @

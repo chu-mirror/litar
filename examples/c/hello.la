@@ -8,16 +8,9 @@ A classic example at the beginning of learning programming.
 @<hello@:executable@:C Structure@/main body@=
 printf("Hello World!\n");
 @~ output @
-
-@<hello@:executable@:C Structure@/Invoke@/invocation syntax@=
+The command has a single usage without options or arguments.
+@<hello@:executable@:Invocation@/invocation syntax@=
 {
     name: 'hello',
-    usages: [
-        {
-            name: 'run',
-            options: [],
-            arguments: [],
-        },
-    ],
 }
 @

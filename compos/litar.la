@@ -11669,36 +11669,6 @@ and a test file the base name of the file it tests followed by test.
 @<litar@:Go Structure@/module properties@+
 name: 'litar',
 @
-The default address is on the loopback interface,
-because the interface reads archives and runs their filters on this machine.
-litar names the binary that serves the compositions;
-file names an archive whose composition is imported before the first page.
-@<litar-web@:command@:Go Structure@/Flag@/invocation syntax@=
-{
-    name: 'litar-web',
-    flags: [
-        {
-            name: 'addr',
-            type: 'string',
-            default: '127.0.0.1:8080',
-            usage: 'address to listen on',
-        },
-        {
-            name: 'litar',
-            type: 'string',
-            default: 'litar',
-            usage: 'litar binary that serves the compositions',
-        },
-        {
-            name: 'file',
-            type: 'string',
-            default: '',
-            usage: 'archive whose composition is imported at start',
-        },
-    ],
-    arguments: [],
-}
-@
 The earlier block of a chunk is the one before it in specializationOrder.
 @<link each block to the earlier block of its chunk in 'chainPrev'@=
 for _, idx := range byChunk {
@@ -11847,3 +11817,32 @@ func TestParseShebang(t *testing.T) {
 }
 
 @~ Go@/functions@/litar.parseShebang @
+The default address is on the loopback interface,
+because the interface reads archives and runs their filters on this machine.
+litar names the binary that serves the compositions;
+file names an archive whose composition is imported before the first page.
+@<litar-web@:command@:Invocation@/invocation syntax@=
+{
+    name: 'litar-web',
+    options: [
+        {
+            name: 'addr',
+            type: 'string',
+            default: '127.0.0.1:8080',
+            description: 'address to listen on',
+        },
+        {
+            name: 'litar',
+            type: 'string',
+            default: 'litar',
+            description: 'litar binary that serves the compositions',
+        },
+        {
+            name: 'file',
+            type: 'string',
+            default: '',
+            description: 'archive whose composition is imported at start',
+        },
+    ],
+}
+@

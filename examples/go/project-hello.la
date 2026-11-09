@@ -62,17 +62,16 @@ module: 'example.com/hello',
 @<greet@:Go Structure@/module properties@+
 name: 'greet',
 @
-@<hello@:command@:Go Structure@/Flag@/invocation syntax@=
+@<hello@:command@:Invocation@/invocation syntax@=
 {
     name: 'hello',
-    flags: [
+    options: [
         {
             name: 'name',
             type: 'string',
             default: 'World',
-            usage: 'who to greet',
+            description: 'who to greet',
         },
     ],
-    arguments: [],
 }
 @

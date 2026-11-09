@@ -34,6 +34,68 @@ Carriage returns of CRLF endings are stripped too; other trailing whitespace is 
 @<.@/basic python settings@>
 sys.stdout.buffer.write(sys.stdin.buffer.read().rstrip(b'\r\n'))
 @
+@<Module@/Invocation@=
+{
+    "description": "Command line syntax shared by the structures of every language."
+}
+@
+The usage lines list every usage of the command, one per line, after "Usage: ".
+@<Invocation@/command line usage@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+
+
+def usage_line(usage):
+    words = [syntax.name]
+    words += [f'[{option_with_value(opt)}]' for opt in usage.options if not opt.hide]
+    words += map(placeholder, usage.arguments)
+    return ' '.join(words)
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print('Usage: ' + '\n       '.join(map(usage_line, syntax.usages)))
+@|Basic@/evaluate@
+The manpage synopsis shows the usage lines in roff, one paragraph line per usage.
+@<Invocation@/manpage synopsis@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+@<.@/manpage helpers@>
+
+
+def usage_lines(usage):
+    lines = [f'.B {roff(syntax.name)}']
+    lines += [f'[{bold_option(opt)}]' for opt in usage.options if not opt.hide]
+    lines += [italic(placeholder(arg)) for arg in usage.arguments]
+    return lines
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print('\n.br\n'.join('\n'.join(usage_lines(usage)) for usage in syntax.usages))
+@|Basic@/evaluate@
+The manpage options describe every option in a tagged paragraph, hidden ones included.
+@<Invocation@/manpage options@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+@<.@/manpage helpers@>
+
+
+def option_entry(opt):
+    names = [f'-{opt.short}'] if opt.short else []
+    names.append(LONG_PREFIX + opt.name)
+    value = '' if opt.type == 'bool' else ' ' + italic(metavar(opt))
+    tag = ', '.join(rf'\fB{roff(name)}\fR' for name in names) + value
+    return f'.TP\n{tag}\n{roff(opt.description)}\n'
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print(''.join(map(option_entry, all_options(syntax))), end='')
+@|Basic@/evaluate@
 A text processing script is a Python script that declares its dependencies:
 jsonnet evaluates configuration, and pydantic validates it.
 When python3 cannot import them, the script runs itself again through uv,
@@ -84,3 +146,164 @@ def configuration(model, source):
 #!/bin/sh
 which python3
 @|Basic@/evaluate@
+The structures include this chunk in their generators,
+so every generator validates the invocation syntax the same way.
+A short name is one letter or digit.
+@<Invocation@/invocation syntax helpers@=
+class Option(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str = pydantic.Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+    short: str | None = pydantic.Field(None, pattern=r'^[0-9A-Za-z]$')
+    type: Literal['bool', 'string', 'int', 'int64', 'uint', 'uint64', 'float64'] = 'bool'
+    argument: str | None = None
+    default: bool | int | float | str | None = None
+    description: str = ''
+    hide: bool = False
+
+    @pydantic.model_validator(mode='after')
+    def check_default(self):
+        value = self.default
+        if value is None:
+            return self
+        if self.type == 'bool':
+            suits = isinstance(value, bool)
+        elif self.type == 'string':
+            suits = isinstance(value, str)
+        elif self.type == 'float64':
+            suits = isinstance(value, (int, float)) and not isinstance(value, bool)
+        else:
+            suits = (isinstance(value, int) and not isinstance(value, bool)
+                     and (value >= 0 or not self.type.startswith('u')))
+        if not suits:
+            raise ValueError(f'default {value!r} does not suit type {self.type}')
+        return self
+@
+Options and arguments at the top level become one usage named after the command.
+Usage names, option names, and short names are each unique in the whole command,
+because its parser reads the options of every usage.
+@<Invocation@/invocation syntax helpers@+
+class Usage(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str
+    options: list[Option] = []
+    arguments: list[str] = []
+
+
+class InvocationSyntax(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str = 'command'
+    usages: list[Usage] = pydantic.Field(min_length=1)
+
+    @pydantic.model_validator(mode='before')
+    @classmethod
+    def gather_single_usage(cls, data):
+        if isinstance(data, dict) and 'usages' not in data:
+            data = dict(data)
+            usage = {'name': data.get('name', 'command')}
+            for key in ('options', 'arguments'):
+                if key in data:
+                    usage[key] = data.pop(key)
+            data['usages'] = [usage]
+        return data
+
+    @pydantic.model_validator(mode='after')
+    def check_unique_names(self):
+        options = all_options(self)
+        for kind, names in (
+            ('usage', [usage.name for usage in self.usages]),
+            ('option', [opt.name for opt in options]),
+            ('short option', [opt.short for opt in options if opt.short]),
+        ):
+            for name in names:
+                if names.count(name) > 1:
+                    raise ValueError(f'{kind} {name!r} is given twice')
+        return self
+@
+A placeholder stands for a value in a usage line: upper case, with underscores between words.
+@<Invocation@/invocation syntax helpers@+
+def all_options(syntax):
+    return [opt for usage in syntax.usages for opt in usage.options]
+
+
+def placeholder(name):
+    return name.upper().replace('-', '_').replace(' ', '_')
+
+
+def metavar(opt):
+    return placeholder(opt.argument or opt.name)
+@
+The invocation syntax of a command is one Jsonnet object.
+The usage lines and the manpage of the command are generated from it here,
+and a structure turns it into the parser of its language,
+so every form of the command line comes from this one chunk.
+A usage is one way to call the command: its options and its positional arguments.
+A command with one usage may give its options and arguments at the top level instead.
+An option is a switch when its type is bool; any other type takes a value,
+shown by its argument name, or by its own name, in upper case.
+The type is bool, string, int, int64, uint, uint64, or float64,
+and a default must suit it. A hidden option is left out of usage lines.
+A structure rejects the features its language does not support.
+
+{
+    name: COMMAND_NAME,
+    usages: [
+        {
+            name: USAGE_NAME,
+            options: [
+                {
+                    name: LONG_NAME,
+                    short: SHORT_NAME (optional),
+                    type: TYPE (optional, bool by default),
+                    argument: ARGUMENT_NAME (optional),
+                    default: DEFAULT (optional),
+                    description: DESCRIPTION (optional),
+                    hide: HIDDEN_FROM_USAGE (optional),
+                },
+                ...
+            ],
+            arguments: [
+                ARGUMENT,
+                ...
+            ],
+        },
+        ...
+    ],
+}
+
+@<Invocation@/invocation syntax@=
+{}
+@
+An option is shown by its short name if it has one, otherwise by its long name.
+@<Invocation@/invocation syntax helpers@+
+LONG_PREFIX = r'''
+@<.@/long option prefix@>
+'''.strip()
+
+
+def option_name(opt):
+    return f'-{opt.short}' if opt.short else LONG_PREFIX + opt.name
+
+
+def option_with_value(opt):
+    return option_name(opt) + ('' if opt.type == 'bool' else f' {metavar(opt)}')
+@
+A long option starts with this prefix in usage lines and the manpage.
+A structure whose parser reads long options after another prefix overrides it under its own label.
+@<Invocation@/long option prefix@=
+--
+@
+roff escapes a backslash as \e and a hyphen as \-,
+so option names render with minus signs that can be copied into a shell.
+@<Invocation@/manpage helpers@=
+def roff(text):
+    return text.replace('\\', r'\e').replace('-', r'\-')
+
+
+def italic(text):
+    return rf'\fI{roff(text)}\fR'
+
+
+def bold_option(opt):
+    text = rf'\fB{roff(option_name(opt))}\fR'
+    return text if opt.type == 'bool' else text + ' ' + italic(metavar(opt))
+@

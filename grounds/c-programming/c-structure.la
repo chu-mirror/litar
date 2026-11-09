@@ -146,104 +146,79 @@ Jsonnet rejects a field given twice in the module properties.
     @<.@/module properties@>
 }
 @
-@<C Structure@/Invoke@/command line usage@=
-@<Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-
-
-def option_to_str(opt):
-    text = f'-{opt.opt}' if opt.opt else f'--{opt.long_opt}'
-    if opt.argument:
-        text += f' {opt.argument}'.upper()
-    return f'[{text}]'
-
-
-def usage_to_str(usage):
-    options = ' '.join(option_to_str(opt) for opt in usage.options if not opt.hide)
-    return f'{syntax.name} {options} ' + ' '.join(usage.arguments).upper()
-
-
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
-''')
-print(r'Usage:\t' + r'\n\t'.join(map(usage_to_str, syntax.usages)) + r'\n', end='')
-@|Basic@/evaluate@
-@<C Structure@/Invoke@/manpage synopsis@=
-@<Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-
-
-def option_to_str(opt):
-    text = rf'\fB\-{opt.opt}\fR' if opt.opt else rf'\fB\-\-{opt.long_opt}\fR'
-    if opt.argument:
-        text += rf' \fI{opt.argument}\fR'
-    return text
-
-
-def usage_to_str(usage):
-    options = '|'.join(option_to_str(opt) for opt in usage.options if not opt.hide)
-    arguments = ' '.join(rf'\fI{arg}\fR' for arg in usage.arguments)
-    return f'.B {syntax.name}\n[{options}]\n{arguments}\n'
-
-
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
-''')
-print('\n'.join(map(usage_to_str, syntax.usages)), end='')
-@|Basic@/evaluate@
-@<C Structure@/Invoke@/manpage options@=
-@<Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
-''')
-
-text = ''
-for opt in all_options(syntax):
-    text += '.TP\n'
-    if opt.opt:
-        text += rf'.BR \-{opt.opt}, " " '
-    text += rf'\-\-{opt.long_opt}'
-    if opt.argument:
-        text += rf' " " \fI{opt.argument}\fR'
-    text += f'\n{opt.description}\n'
-print(text, end='')
-@|Basic@/evaluate@
 @<C Structure@/Invoke@/usage enumeration@=
 @<Text Processing@/basic python settings@>
 @<.@/invocation syntax helpers@>
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
+syntax = configuration(CSyntax, r'''
+@<Invocation@/invocation syntax@>
 ''')
 print(','.join(map(enum_constant, syntax.usages)), end='')
 @|Basic@/evaluate@
 @<C Structure@/Invoke@/command line options@=
 @<Text Processing@/basic python settings@>
 @<.@/invocation syntax helpers@>
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
+syntax = configuration(CSyntax, r'''
+@<Invocation@/invocation syntax@>
 ''')
-print('\n'.join(('const char *' if opt.argument else 'int ') + option_field(opt) + ';'
+print('\n'.join(('const char *' if opt.type == 'string' else 'int ') + option_field(opt) + ';'
                 for opt in all_options(syntax)), end='')
 @|Basic@/evaluate@
 An argument shared by several usages is declared once, where it first appears.
 @<C Structure@/Invoke@/command line arguments@=
 @<Text Processing@/basic python settings@>
 @<.@/invocation syntax helpers@>
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
+syntax = configuration(CSyntax, r'''
+@<Invocation@/invocation syntax@>
 ''')
 arguments = dict.fromkeys(arg for usage in syntax.usages for arg in usage.arguments)
 print(''.join(f'const char *{argument_field(arg)};' for arg in arguments), end='')
 @|Basic@/evaluate@
+getopt_long finds the end of the options at an entry of zeros.
+@<C Structure@/Invoke@/getopt long options@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+
+
+def option_to_longopt(opt):
+    has_arg = 'required_argument' if opt.type == 'string' else 'no_argument'
+    val = f"'{opt.short}'" if opt.short else '0'
+    return f'{{"{opt.name}",{has_arg},NULL,{val}}},'
+
+
+syntax = configuration(CSyntax, r'''
+@<Invocation@/invocation syntax@>
+''')
+print(''.join(map(option_to_longopt, all_options(syntax))) + '{0,0,0,0},', end='')
+@|Basic@/evaluate@
 @<C Structure@/Invoke@/getopt string@=
 @<Text Processing@/basic python settings@>
 @<.@/invocation syntax helpers@>
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
+syntax = configuration(CSyntax, r'''
+@<Invocation@/invocation syntax@>
 ''')
-print(''.join(opt.opt + (':' if opt.argument else '')
-              for opt in all_options(syntax) if opt.opt), end='')
+print(''.join(opt.short + (':' if opt.type == 'string' else '')
+              for opt in all_options(syntax) if opt.short), end='')
+@|Basic@/evaluate@
+@<C Structure@/Invoke@/handle long option of index "idx"@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+
+
+def long_option_handling(opt):
+    if opt.short:
+        return ''
+    value = 'optarg' if opt.type == 'string' else '1'
+    return f'''
+            if (strcmp(long_options[idx].name, "{opt.name}") == 0) {{
+                command.options.{option_field(opt)} = {value};
+            }}
+        '''
+
+
+syntax = configuration(CSyntax, r'''
+@<Invocation@/invocation syntax@>
+''')
+print(''.join(map(long_option_handling, all_options(syntax))), end='')
 @|Basic@/evaluate@
 @<C Structure@/Invoke@/cases for short options@=
 @<Text Processing@/basic python settings@>
@@ -251,18 +226,18 @@ print(''.join(opt.opt + (':' if opt.argument else '')
 
 
 def short_opt_case(opt):
-    if not opt.opt:
+    if not opt.short:
         return ''
-    value = 'optarg' if opt.argument else '1'
+    value = 'optarg' if opt.type == 'string' else '1'
     return f'''
-            case '{opt.opt}':
+            case '{opt.short}':
                 command.options.{option_field(opt)} = {value};
                 break;
         '''
 
 
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
+syntax = configuration(CSyntax, r'''
+@<Invocation@/invocation syntax@>
 ''')
 print(''.join(map(short_opt_case, all_options(syntax))), end='')
 @|Basic@/evaluate@
@@ -273,14 +248,14 @@ print(''.join(map(short_opt_case, all_options(syntax))), end='')
 
 def look_option_of_usage(opt, usage):
     constant = enum_constant(usage)
-    short_opt = f' -{opt.opt}' if opt.opt else ''
+    short_opt = f' -{opt.short}' if opt.short else ''
     return f'''
         if (command.options.{option_field(opt)}) {{
             if (!found_usage) {{
                 found_usage = 1;
                 command.usage = {constant};
             }} else if (command.usage != {constant}) {{
-                fprintf(stderr, "Conflict option: --{opt.long_opt}{short_opt}\\n");
+                fprintf(stderr, "Conflict option: --{opt.name}{short_opt}\\n");
                 exit(1);
             }}
         }}
@@ -310,8 +285,8 @@ def store_arguments_for_usage(usage):
     '''
 
 
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
+syntax = configuration(CSyntax, r'''
+@<Invocation@/invocation syntax@>
 ''')
 text = 'do { int found_usage = 0;'
 text += ''.join(look_option_of_usage(opt, usage)
@@ -328,114 +303,41 @@ text += '\n'.join(map(store_arguments_for_usage, syntax.usages))
 text += '}} while (0);'
 print(text, end='')
 @|Basic@/evaluate@
-getopt_long finds the end of the options at an entry of zeros.
-@<C Structure@/Invoke@/getopt long options@=
-@<Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-
-
-def option_to_longopt(opt):
-    has_arg = 'required_argument' if opt.argument else 'no_argument'
-    val = f"'{opt.opt}'" if opt.opt else '0'
-    return f'{{"{opt.long_opt}",{has_arg},NULL,{val}}},'
-
-
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
-''')
-print(''.join(map(option_to_longopt, all_options(syntax))) + '{0,0,0,0},', end='')
-@|Basic@/evaluate@
-@<C Structure@/Invoke@/handle long option of index "idx"@=
-@<Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-
-
-def long_option_handling(opt):
-    if opt.opt:
-        return ''
-    value = 'optarg' if opt.argument else '1'
-    return f'''
-            if (strcmp(long_options[idx].name, "{opt.long_opt}") == 0) {{
-                command.options.{option_field(opt)} = {value};
-            }}
-        '''
-
-
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
-''')
-print(''.join(map(long_option_handling, all_options(syntax))), end='')
-@|Basic@/evaluate@
-The generators include this chunk as one fragment.
-Its models validate the invocation syntax before any generator writes C,
-so a misspelled key or a missing name fails the evaluation.
+The generators include this chunk as one fragment, on top of the shared models.
+getopt_long stores an option in a field of its own: an int for a switch and a string for a value,
+so an option is bool or string, and it has no default.
 @<C Structure@/Invoke@/invocation syntax helpers@=
-class Option(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='forbid')
-    long_opt: str
-    opt: str | None = pydantic.Field(None, pattern=r'^[0-9A-Za-z]$')
-    argument: str | None = None
-    description: str = ''
-    hide: bool = False
+@<Invocation@/invocation syntax helpers@>
 
 
-class Usage(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='forbid')
-    name: str
-    options: list[Option] = []
-    arguments: list[str] = []
-
-
-class InvocationSyntax(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='forbid')
-    name: str
-    usages: list[Usage] = pydantic.Field(min_length=1)
+class CSyntax(InvocationSyntax):
+    @pydantic.model_validator(mode='after')
+    def check_c_options(self):
+        for opt in all_options(self):
+            if opt.type not in ('bool', 'string'):
+                raise ValueError(f'option {opt.name!r} has type {opt.type}; C takes bool or string')
+            if opt.default is not None:
+                raise ValueError(f'option {opt.name!r} has a default, which C does not take')
+        return self
 @
 Every generator names a field with these functions, so they agree on each field.
 @<C Structure@/Invoke@/invocation syntax helpers@+
-def all_options(syntax):
-    return [opt for usage in syntax.usages for opt in usage.options]
-
-
 def enum_constant(usage):
-    return 'COMMAND_USAGE_' + usage.name.replace(' ', '_').upper()
+    return 'COMMAND_USAGE_' + usage.name.replace(' ', '_').replace('-', '_').upper()
 
 
 def option_field(opt):
-    return opt.long_opt.replace('-', '_').lower()
+    return opt.name.replace('-', '_').lower()
 
 
 def argument_field(arg):
-    return arg.replace(' ', '_').lower()
+    return arg.replace(' ', '_').replace('-', '_').lower()
 @
-The invocation syntax is a Jsonnet object:
+The command line usage is the shared usage lines escaped as the content of a C string literal.
+@<C Structure@/Invoke@/command line usage@=
+@<Text Processing@/basic python settings@>
 
-{
-    name: COMMAND_NAME,
-    usages: [
-        {
-            name: USAGE_NAME,
-            options: [
-                {
-                    long_opt: LONG_OPTION,
-                    opt: SHORT_OPTION (optional),
-                    argument: OPTION_ARGUMENT (optional),
-                    description: DESCRIPTION,
-                    hide: HIDDEN_FROM_USAGE (optional),
-                },
-                ...
-            ],
-            arguments: [
-                ARGUMENT,
-                ...
-            ],
-        },
-        ...
-    ],
-}
 
-A short option is one letter or digit, and a command has at least one usage.
-
-@<C Structure@/Invoke@/invocation syntax@=
-{}
-@
+usage = r'''@<Invocation@/command line usage@>'''
+print(usage.replace('\\', r'\\').replace('"', r'\"').replace('\n', r'\n'), end='')
+@|Basic@/evaluate@

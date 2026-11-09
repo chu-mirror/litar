@@ -34,7 +34,12 @@ ul.tree li { margin: 1px 0; }
 a { color: var(--accent); }
 a.sel { font-weight: 600; }
 .mod { font-weight: 600; }
+ul.tree li.leaf { padding-left: 14px; }
+summary { cursor: pointer; }
 .filter { width: 100%; margin-bottom: 8px; padding: 3px 6px; font: inherit; }
+.tools { display: flex; gap: 4px; margin-bottom: 8px; }
+.tools .filter { flex: 1; width: auto; margin: 0; }
+.tools button { font: inherit; padding: 0 6px; }
 h2 { font-size: 16px; margin: 0 0 8px; word-break: break-all; }
 .block { border: 1px solid var(--line); border-radius: 6px; margin: 0 0 12px; overflow: hidden; }
 .block .comment { padding: 6px 10px; background: var(--panel); white-space: pre-wrap; color: var(--muted); }
@@ -113,32 +118,54 @@ function leafIndex(t) {
   return {byPath, byId};
 }
 // A subtree is shown when the filter matches its path or one of its leaves.
-function treeHTML(t, href, selected, filter, path = []) {
+const folds = new Map();
+const foldKey = (kind, path) => state.c + '/' + state.n + '/' + kind + '/' + JSON.stringify(path);
+function treeHTML(t, href, selected, filter, kind, path = []) {
   const items = [];
+  let holds = false;
   for (const s of subs(t)) {
     const p = path.concat(s.name);
     const desc = s.description ? '<span class="desc">' + esc(s.description) + '</span>' : '';
     if (subs(s).length === 0) {
       if (filter && !p.join('/').toLowerCase().includes(filter)) continue;
-      items.push('<li><a href="' + href(s, p) + '"' + (s.id === selected ? ' class="sel"' : '') + '>'
+      holds = holds || s.id === selected;
+      items.push('<li class="leaf"><a href="' + href(s, p) + '"' + (s.id === selected ? ' class="sel"' : '') + '>'
         + esc(s.name) + '</a>' + desc + '</li>');
     } else {
-      const inner = treeHTML(s, href, selected, filter, p);
-      if (inner) items.push('<li><span class="mod">' + esc(s.name) + '</span>' + desc + inner + '</li>');
+      const inner = treeHTML(s, href, selected, filter, kind, p);
+      if (!inner.html) continue;
+      holds = holds || inner.holds;
+      const key = foldKey(kind, p);
+      const open = filter || (folds.has(key) ? folds.get(key) : inner.holds);
+      items.push('<li><details data-fold="' + esc(key) + '"' + (open ? ' open' : '') + '><summary><span class="mod">'
+        + esc(s.name) + '</span>' + desc + '</summary>' + inner.html + '</details></li>');
     }
   }
-  return items.length ? '<ul class="tree">' + items.join('') + '</ul>' : '';
+  return {html: items.length ? '<ul class="tree">' + items.join('') + '</ul>' : '', holds};
 }
-function showTree(t, href, selected, placeholder) {
+function showTree(t, href, selected, kind) {
   const list = $('list');
-  list.innerHTML = '<input class="filter" placeholder="' + esc(placeholder) + '">'
+  list.innerHTML = '<div class="tools"><input class="filter" placeholder="filter ' + esc(kind) + '">'
+    + '<button data-open="1" title="unfold every branch">Unfold all</button>'
+    + '<button data-open="" title="fold every branch">Fold all</button></div>'
     + '<div class="items"></div>';
   const input = list.querySelector('input'), items = list.querySelector('.items');
+  const filter = () => input.value.trim().toLowerCase();
   const draw = () => {
-    items.innerHTML = treeHTML(t, href, selected, input.value.trim().toLowerCase())
+    items.innerHTML = treeHTML(t, href, selected, filter(), kind).html
       || '<p class="note">Nothing here.</p>';
   };
   input.addEventListener('input', draw);
+  items.addEventListener('toggle', e => {
+    if (!filter()) folds.set(e.target.dataset.fold, e.target.open);
+  }, true);
+  for (const button of list.querySelectorAll('button')) {
+    button.addEventListener('click', () => {
+      walk(t, (s, p) => { if (subs(s).length) folds.set(foldKey(kind, p), Boolean(button.dataset.open)); });
+      input.value = '';
+      draw();
+    });
+  }
   draw();
 }
 
@@ -306,7 +333,7 @@ const isSuffix = (spec, labels) => spec.every((l, k) => l === labels[labels.leng
 async function chunkView(chunkId, specId, view, refLabels) {
   const chunks = await tree('chunk', state.c, state.n);
   const index = leafIndex(chunks);
-  showTree(chunks, s => nodeBase() + '/chunks/' + s.id + '/0/effective', chunkId, 'filter chunks');
+  showTree(chunks, s => nodeBase() + '/chunks/' + s.id + '/0/effective', chunkId, 'chunks');
   if (chunkId === undefined) return detail('<p class="note">Choose a chunk.</p>');
   const path = index.byId.get(chunkId);
   const specs = await tree('specialization', state.c, state.n, chunkId);
@@ -346,7 +373,7 @@ async function chunkView(chunkId, specId, view, refLabels) {
 }
 async function fileView(fileId) {
   const files = await tree('file', state.c, state.n);
-  showTree(files, s => nodeBase() + '/files/' + s.id, fileId, 'filter files');
+  showTree(files, s => nodeBase() + '/files/' + s.id, fileId, 'files');
   if (fileId === undefined) return detail('<p class="note">Choose a file.</p>');
   const path = leafIndex(files).byId.get(fileId) || [];
   detail('<h2>' + esc(path.join('/')) + '</h2><div id="view"><p class="note">Loading…</p></div>');
@@ -358,7 +385,7 @@ async function fileView(fileId) {
 }
 async function itemView(itemId) {
   const items = await tree('item', state.c, state.n);
-  showTree(items, s => nodeBase() + '/items/' + s.id, itemId, 'filter items');
+  showTree(items, s => nodeBase() + '/items/' + s.id, itemId, 'items');
   if (itemId === undefined) return detail('<p class="note">Choose an item.</p>');
   const path = leafIndex(items).byId.get(itemId) || [];
   detail('<h2>' + esc(path.map(encode).join('@/')) + '</h2><div id="view"><p class="note">Loading…</p></div>');

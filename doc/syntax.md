@@ -325,27 +325,29 @@ The omitted chunk supplies empty input (`""`) to the first filter in the pipelin
 
 # Reserved namespaces
 
-Five top-level module names are reserved for metadata chunks:
-`Module`, `Chunk`, `Specialization`, `Domain`, and `Index`.
+Four top-level module names are reserved for metadata chunks:
+`Chunk`, `Specialization`, `File`, and `Index`.
 The remaining module components and the chunk name identify the object being described:
 
 | Reserved chunk | Object described | Example |
 | --- | --- | --- |
-| `Module@/{module path}` | module `{module path}` | `Module@/Basic`, `Module@/Text Processing@/Internals` |
-| `Chunk@/{module path}@/{chunk}` | chunk `{chunk}` in `{module path}` | `Chunk@/Basic@/evaluate` |
-| `Chunk@/{chunk}` | chunk `{chunk}` in the root module | `Chunk@/main` |
+| `Chunk@/{chunk path}` | the module or chunk at `{chunk path}` | `Chunk@/Basic`, `Chunk@/Basic@/evaluate`, `Chunk@/main` |
 | `Specialization@/{label1}@/...` | specialization `...@:label1` (labels reversed) | `Specialization@/label1@/label2` (for `label2@:label1`) |
-| `Domain@/{domain path}` | item domain `{domain path}` | `Domain@/C@/variables` |
-| `Index@/{domain path}@/{item}` | item `{item}` in `{domain path}` | `Index@/C@/variables@/times` |
+| `File@/{file path}` | the file or directory at `{file path}`, its parts separated by `@/` | `File@/cmd`, `File@/cmd@/main.go` |
+| `Index@/{item path}` | the item or domain at `{item path}` | `Index@/C@/variables`, `Index@/C@/variables@/times` |
+
+A module and a chunk with the same path share one description, and so do a domain and an item.
 
 Each metadata chunk evaluates to a JSON object with a `description` field:
 
 ```json
-{"description": "<description of that module, chunk, specialization, domain, or item>"}
+{"description": "<description of that module, chunk, specialization, file, directory, domain, or item>"}
 ```
 
-These chunks are omitted from the chunk tree; their descriptions populate the module, chunk,
-specialization, domain, and item trees.
+These chunks are omitted from the chunk tree; their descriptions populate the chunk,
+specialization, file, and item trees.
+The chunk tree lists a file's chunk under `File`, one branch for each directory of its path,
+rather than as a root-module chunk named by the path.
 
 # Composer file
 

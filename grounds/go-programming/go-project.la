@@ -1,4 +1,4 @@
-@<Module@/Go Project@=
+@<Chunk@/Go Project@=
 {"description": "Structures of a whole Go module"}
 @
 
@@ -31,7 +31,7 @@ export GOTOOLCHAIN=local
 export GOWORK=off
 @
 
-@<Module@/Go Project@/Filters@=
+@<Chunk@/Go Project@/Filters@=
 {"description": "Run the go command on the files of the project."}
 @
 

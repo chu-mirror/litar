@@ -13,7 +13,7 @@ func TestReservedMeta(t *testing.T) {
 	src := "" +
 		"@<note@=\n" +
 		"basics@\n" +
-		"@<Module@/Basic@=\n" +
+		"@<Chunk@/Basic@=\n" +
 		"{\"description\": \"@<note@>\"}\n" +
 		"@\n" +
 		"@<Chunk@/Basic@/evaluate@=\n" +
@@ -22,13 +22,13 @@ func TestReservedMeta(t *testing.T) {
 		"@<Basic@/evaluate@=\n" +
 		"x\n" +
 		"@\n" +
-		"@<Module@/Text Processing@/Internals@=\n" +
+		"@<Chunk@/Text Processing@/Internals@=\n" +
 		"{\"description\": \"inside\"}\n" +
 		"@\n" +
 		"@<Text Processing@/Internals@/helper@=\n" +
 		"y\n" +
 		"@\n" +
-		"@<Domain@/C@/variables@=\n" +
+		"@<Index@/C@/variables@=\n" +
 		"{\"description\": \"vars\"}\n" +
 		"@\n" +
 		"@<Index@/C@/variables@/times@=\n" +
@@ -46,11 +46,10 @@ func TestReservedMeta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := findTree(chunks, "Module"); ok {
-		t.Fatalf("reserved module listed: %s", mustTree(t, chunks))
-	}
-	if _, ok := findTree(chunks, "Chunk"); ok {
-		t.Fatalf("reserved chunk namespace listed: %s", mustTree(t, chunks))
+	for _, ns := range []string{"Chunk", "Index"} {
+		if _, ok := findTree(chunks, ns); ok {
+			t.Fatalf("reserved namespace %s listed: %s", ns, mustTree(t, chunks))
+		}
 	}
 	basic, ok := findTree(chunks, "Basic")
 	if !ok || basic.Description != "basics" {
@@ -79,11 +78,11 @@ func TestReservedMeta(t *testing.T) {
 	if !ok || times.Description != "count" {
 		t.Fatalf("item %+v", times)
 	}
-	bad, err := ParseArchive([]byte("@<Module@/Basic@=\nnot json\n@\n@<Basic@/x@=\n@\n"), "a.la")
+	bad, err := ParseArchive([]byte("@<Chunk@/Basic@=\nnot json\n@\n@<Basic@/x@=\n@\n"), "a.la")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := chunkTree(bad.Blocks, nil); err == nil || !strings.Contains(err.Error(), "meta chunk 'Module@/Basic'") {
+	if _, err := chunkTree(bad.Blocks, nil); err == nil || !strings.Contains(err.Error(), "meta chunk 'Chunk@/Basic'") {
 		t.Fatalf("bad meta: %v", err)
 	}
 }
@@ -163,7 +162,7 @@ func TestSpecializationMeta(t *testing.T) {
 
 func TestListingDescriptions(t *testing.T) {
 	src := "" +
-		"@<Module@/Basic@=\n" +
+		"@<Chunk@/Basic@=\n" +
 		"{\"description\": \"basics\"}\n" +
 		"@\n" +
 		"@<Chunk@/Basic@/evaluate@=\n" +
@@ -172,13 +171,13 @@ func TestListingDescriptions(t *testing.T) {
 		"@<Basic@/evaluate@=\n" +
 		"x\n" +
 		"@\n" +
-		"@<Module@/Text Processing@/Internals@=\n" +
+		"@<Chunk@/Text Processing@/Internals@=\n" +
 		"{\"description\": \"inside\"}\n" +
 		"@\n" +
 		"@<Text Processing@/Internals@/helper@=\n" +
 		"y\n" +
 		"@\n" +
-		"@<Domain@/C@/variables@=\n" +
+		"@<Index@/C@/variables@=\n" +
 		"{\"description\": \"vars\"}\n" +
 		"@\n" +
 		"@<Index@/C@/variables@/times@=\n" +
@@ -199,7 +198,7 @@ func TestListingDescriptions(t *testing.T) {
 	if got := Modules(arch.Blocks, nil, meta); got != "Basic:\t\t\t\tbasics\nText Processing\nText Processing@/Internals:\tinside\n" {
 		t.Fatalf("modules %q", got)
 	}
-	if got := Chunks(arch.Blocks, mustMod(t, "Module"), meta); got != "" {
+	if got := Chunks(arch.Blocks, mustMod(t, "Chunk"), meta); got != "" {
 		t.Fatalf("reserved chunks %q", got)
 	}
 	if got := Chunks(arch.Blocks, mustMod(t, "Basic"), meta); got != "evaluate:\trun\n" {
@@ -213,6 +212,48 @@ func TestListingDescriptions(t *testing.T) {
 	}
 	if got := Items(arch.Blocks, mustMod(t, "C@/variables"), meta); got != "C@/variables@/times:\tcount\n" {
 		t.Fatalf("items %q", got)
+	}
+}
+
+func TestFileMeta(t *testing.T) {
+	src := "" +
+		"@[cmd/main.go@=\n@<body@>\n@\n" +
+		"@<body@=\nx\n@\n" +
+		"@<File@/cmd@=\n{\"description\": \"commands\"}\n@\n" +
+		"@<File@/cmd@/main.go@=\n{\"description\": \"the entry\"}\n@\n"
+	arch, err := ParseArchive([]byte(src), "a.la")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks, err := chunkTree(arch.Blocks, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignIDs(&chunks)
+	if _, ok := findTree(chunks, "cmd/main.go"); ok {
+		t.Fatalf("file listed by its path: %s", mustTree(t, chunks))
+	}
+	dir, ok := findTree(chunks, "File", "cmd")
+	if !ok || dir.Description != "commands" || dir.Leaf {
+		t.Fatalf("cmd %+v", dir)
+	}
+	file, ok := findTree(chunks, "File", "cmd", "main.go")
+	if !ok || file.Description != "the entry" || !file.Leaf {
+		t.Fatalf("main.go %+v", file)
+	}
+	ref, err := chunkByID(arch.Blocks, nil, file.ID)
+	if err != nil || len(ref.Module) != 0 || ref.Chunk != "cmd/main.go" {
+		t.Fatalf("chunk %+v %v", ref, err)
+	}
+	files, err := fileTree(arch.Blocks, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir, ok := findTree(files, "cmd"); !ok || dir.Description != "commands" {
+		t.Fatalf("cmd %+v", dir)
+	}
+	if file, ok := findTree(files, "cmd", "main.go"); !ok || file.Description != "the entry" {
+		t.Fatalf("main.go %+v", file)
 	}
 }
 
@@ -232,7 +273,7 @@ func TestLibraryModuleDescriptions(t *testing.T) {
 		"C Structure":     "Common structures in C programming",
 		"Light":           "Light is a framework mainly for C programming",
 	}
-	if name, found := findNamed(tree, "Module"); found {
+	if name, found := findNamed(tree, "Chunk"); found {
 		t.Fatalf("tree contains %s", name)
 	}
 	for name, desc := range want {
@@ -246,7 +287,7 @@ func TestLibraryModuleDescriptions(t *testing.T) {
 		t.Fatalf("internals %+v", inner)
 	}
 	listed := Modules(chain, nil, meta)
-	if strings.Contains(listed, "\nModule\n") || strings.HasPrefix(listed, "Module\n") || strings.HasPrefix(listed, "Module:") {
+	if strings.Contains(listed, "\nChunk\n") || strings.HasPrefix(listed, "Chunk\n") || strings.HasPrefix(listed, "Chunk:") {
 		t.Fatalf("reserved module listed %q", listed)
 	}
 	col := -1

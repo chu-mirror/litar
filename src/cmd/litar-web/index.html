@@ -179,14 +179,20 @@ function refText(ref) {
 }
 
 // Meta chunks live in reserved modules that the chunk tree leaves out.
-// Index and Chunk blocks link to what they describe; the others stay plain.
-const reserved = ['Module', 'Chunk', 'Specialization', 'Domain', 'Index'];
+// Chunk, File, and Index blocks link to what they describe; the others stay plain.
+const reserved = ['Chunk', 'Specialization', 'File', 'Index'];
 function metaLink(ref, raw, link) {
   if (ref.labels.length || !reserved.includes(ref.mods[0])) return link('ref', ref, raw);
   const path = ref.mods.slice(1).concat(ref.chunk);
   if (ref.mods[0] === 'Index') return link('item', path, raw);
+  if (ref.mods[0] === 'File') return link('file', path.join('/'), raw);
   if (ref.mods[0] === 'Chunk') return link('ref', {labels: [], mods: path.slice(0, -1), chunk: path[path.length - 1]}, raw);
   return esc(raw);
+}
+// The chunk tree lists a file chunk below File, one name for each part of its path.
+function pathRef(path, labels) {
+  if (path[0] === 'File' && path.length > 1) return {labels, mods: [], chunk: path.slice(1).join('/')};
+  return {labels, mods: path.slice(0, -1), chunk: path[path.length - 1]};
 }
 
 // Block rendering: a small scanner of the archive syntax that links names to their pages.
@@ -308,7 +314,7 @@ async function chunkView(chunkId, specId, view, refLabels) {
   walk(specs, (s, p) => options.push({id: s.id, labels: p.slice().reverse()}));
   const spec = options.find(o => o.id === specId) || options[0];
   const labels = refLabels && isSuffix(spec.labels, refLabels) ? refLabels : spec.labels;
-  const ref = {labels, mods: path.slice(0, -1), chunk: path[path.length - 1]};
+  const ref = pathRef(path, labels);
   const here = nodeBase() + '/chunks/' + chunkId;
   let html = '<h2>' + esc(refText(ref)) + '</h2>';
   if (options.length > 1) {
@@ -374,7 +380,10 @@ async function evalView(expression) {
 async function resolveLink(kind, target) {
   if (kind === 'ref') {
     const chunks = await tree('chunk', state.c, state.n);
-    const id = leafIndex(chunks).byPath.get(JSON.stringify(target.mods.concat(target.chunk)));
+    // A root chunk that is a file is listed below File.
+    const byPath = leafIndex(chunks).byPath;
+    const id = byPath.get(JSON.stringify(target.mods.concat(target.chunk)))
+      ?? (target.mods.length ? undefined : byPath.get(JSON.stringify(['File'].concat(target.chunk.split('/')))));
     if (id === undefined) {
       return detail('<p class="error">No block of this node defines ' + esc(refText(target)) + '.</p>'
         + '<p class="note">A node based on this one may define it.</p>');

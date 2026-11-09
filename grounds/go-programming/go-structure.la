@@ -1,4 +1,4 @@
-@<Module@/Go Structure@=
+@<Chunk@/Go Structure@=
 {"description": "Common structures in Go programming"}
 @
 
@@ -8,11 +8,11 @@ The Go toolchain fixes the format, so this filter has no style file.
 gofmt
 @
 
-@<Module@/Go Structure@/Filters@=
+@<Chunk@/Go Structure@/Filters@=
 {"description": "Format a Go source file."}
 @
 
-@<Module@/Go Structure@/Flag@=
+@<Chunk@/Go Structure@/Flag@=
 {"description": "Flags and positional arguments of a command."}
 @
 

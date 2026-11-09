@@ -96,7 +96,9 @@ Resources:
 Resource templates:
 
 - nodes, `tree://node/{composition}`, the node tree under the composition.
-- chunks, `tree://chunk/{composition}/{node}`, the chunk tree organized by modules under the node;
+- chunks, `tree://chunk/{composition}/{node}`, the chunk tree organized by modules under the node,
+  the file chunks are treated differently, they are displayed under `File@/<file path separated by '@/'>`,
+  the same as reserved internal chunks, rather than literal file paths;
 - items, `tree://item/{composition}/{node}`, the item tree under the node;
 - files, `tree://file/{composition}/{node}`, the file tree under the node;
 - node blocks, `blocks://node/{composition}/{node}`, the blocks in the node;

@@ -4812,7 +4812,7 @@ for _, m := range seen {
 		continue
 	}
 	line := formatModule(m)
-	rows = append(rows, namedLine{line, meta.modules[line]})
+	rows = append(rows, namedLine{line, meta.chunks[line]})
 }
 @~ Go@/functions@/litar.formatModule @~ Go@/functions@/litar.modulesEqual @~ Go@/functions@/litar.reservedNamespace @~ Go@/types@/litar.namedLine @
 
@@ -4834,12 +4834,12 @@ func Chunks(blocks []Block, mod ModulePath, meta metaInfo) string {
 		}
 		seen[b.Ref.Chunk] = true
 		name := string(b.Ref.Chunk)
-		rows = append(rows, namedLine{name, meta.chunks[leafKey(mod, name)]})
+		rows = append(rows, namedLine{name, meta.chunks[pathKey(joinPath(mod, name))]})
 	}
 	return formatNamed(rows)
 }
 
-@~ Go@/functions@/litar.Chunks @~ Go@/functions@/litar.formatNamed @~ Go@/functions@/litar.leafKey @~ Go@/functions@/litar.modulesEqual @~ Go@/functions@/litar.reservedNamespace @~ Go@/types@/litar.Block @~ Go@/types@/litar.ModulePath @~ Go@/types@/litar.Name @~ Go@/types@/litar.metaInfo @~ Go@/types@/litar.namedLine @
+@~ Go@/functions@/litar.Chunks @~ Go@/functions@/litar.formatNamed @~ Go@/functions@/litar.joinPath @~ Go@/functions@/litar.modulesEqual @~ Go@/functions@/litar.pathKey @~ Go@/functions@/litar.reservedNamespace @~ Go@/types@/litar.Block @~ Go@/types@/litar.ModulePath @~ Go@/types@/litar.Name @~ Go@/types@/litar.metaInfo @~ Go@/types@/litar.namedLine @
 
 @<list@:litar@:Go Structure@/types@+
 type namedLine struct {
@@ -4929,7 +4929,7 @@ func Subdomains(blocks []Block, domain []Name, meta metaInfo) string {
 				continue
 			}
 			seen[line] = true
-			rows = append(rows, namedLine{line, meta.domains[line]})
+			rows = append(rows, namedLine{line, meta.items[line]})
 		}
 	}
 	return formatNamed(rows)
@@ -4952,13 +4952,13 @@ func Items(blocks []Block, domain []Name, meta metaInfo) string {
 				continue
 			}
 			seen[line] = true
-			rows = append(rows, namedLine{line, meta.items[leafKey(it[:len(it)-1], string(it[len(it)-1]))]})
+			rows = append(rows, namedLine{line, meta.items[pathKey(it)]})
 		}
 	}
 	return formatNamed(rows)
 }
 
-@~ Go@/functions@/litar.Items @~ Go@/functions@/litar.formatItem @~ Go@/functions@/litar.formatNamed @~ Go@/functions@/litar.leafKey @~ Go@/functions@/litar.namePrefix @~ Go@/types@/litar.Block @~ Go@/types@/litar.Name @~ Go@/types@/litar.metaInfo @~ Go@/types@/litar.namedLine @
+@~ Go@/functions@/litar.Items @~ Go@/functions@/litar.formatItem @~ Go@/functions@/litar.formatNamed @~ Go@/functions@/litar.namePrefix @~ Go@/functions@/litar.pathKey @~ Go@/types@/litar.Block @~ Go@/types@/litar.Name @~ Go@/types@/litar.metaInfo @~ Go@/types@/litar.namedLine @
 
 The MCP server: its tools, resources, and the trees it renders.
 @[internal/litar/mcp.go@`go module@=
@@ -5719,11 +5719,13 @@ if err == nil {
 		}
 	}
 }
-files := fileTree(chain, maps)
-assignIDs(&files)
-for fid, fp := range indexTree(files, false) {
-	if fp.leaf {
-		add("file://" + cs + "/" + ns + "/" + strconv.Itoa(fid))
+files, err := fileTree(chain, maps)
+if err == nil {
+	assignIDs(&files)
+	for fid, fp := range indexTree(files, false) {
+		if fp.leaf {
+			add("file://" + cs + "/" + ns + "/" + strconv.Itoa(fid))
+		}
 	}
 }
 @~ Go@/functions@/litar.assignIDs @~ Go@/functions@/litar.fileTree @~ Go@/functions@/litar.indexTree @~ Go@/functions@/litar.itemTree @
@@ -5769,10 +5771,8 @@ case strings.HasPrefix(uri, "tree://chunk/"):
 case strings.HasPrefix(uri, "tree://item/"):
 	return a.renderTree(uri, "tree://item/", itemTree)
 case strings.HasPrefix(uri, "tree://file/"):
-	return a.renderTree(uri, "tree://file/", func(chain []Block, maps []Mapping) (treeJSON, error) {
-		return fileTree(chain, maps), nil
-	})
-@~ Go@/functions@/litar.chunkTree @~ Go@/functions@/litar.fileTree @~ Go@/functions@/litar.itemTree @~ Go@/methods@/litar.agent.renderTree @~ Go@/types@/litar.Block @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.treeJSON @
+	return a.renderTree(uri, "tree://file/", fileTree)
+@~ Go@/functions@/litar.chunkTree @~ Go@/functions@/litar.fileTree @~ Go@/functions@/litar.itemTree @~ Go@/methods@/litar.agent.renderTree @
 
 @<cases of 'uri' in 'agent.render'@+
 case strings.HasPrefix(uri, "tree://specialization/"):
@@ -6169,16 +6169,17 @@ t.SubTrees = append(t.SubTrees, treeJSON{
 @~ Go@/functions@/litar.emptySub @~ Go@/types@/litar.treeJSON @
 
 @<mcp@:litar@:Go Structure@/functions@+
-// A reserved chunk lives in the Module, Chunk, Specialization, Domain, or Index namespace.
+// A reserved chunk lives in the Chunk, Specialization, File, or Index namespace.
 // Its module path starts with that name. The remaining components, then the
-// chunk name, are the module, chunk, specialization, domain, or item the chunk describes.
+// chunk name, are the module or chunk, the specialization, the file or directory,
+// or the domain or item the chunk describes.
 // A specialization path is stored reversed: label2@@:label1 is Specialization@@/label1@@/label2.
 func reservedNamespace(mod ModulePath) (Name, bool) {
 	if len(mod) == 0 {
 		return "", false
 	}
 	switch mod[0] {
-	case "Module", "Chunk", "Specialization", "Domain", "Index":
+	case "Chunk", "Specialization", "File", "Index":
 		return mod[0], true
 	default:
 		return "", false
@@ -6187,13 +6188,14 @@ func reservedNamespace(mod ModulePath) (Name, bool) {
 
 @~ Go@/functions@/litar.reservedNamespace @~ Go@/types@/litar.ModulePath @~ Go@/types@/litar.Name @
 
+Descriptions are keyed by the path below their namespace, so a module and a chunk
+of the same path share one, and so do a domain and an item.
 @<mcp@:litar@:Go Structure@/types@+
 type metaInfo struct {
-	modules map[string]string
-	chunks  map[string]string
-	domains map[string]string
-	items   map[string]string
-	specs   map[string]string
+	chunks map[string]string
+	specs  map[string]string
+	files  map[string]string
+	items  map[string]string
 }
 
 @~ Go@/types@/litar.metaInfo @
@@ -6201,11 +6203,10 @@ type metaInfo struct {
 @<mcp@:litar@:Go Structure@/functions@+
 func newMeta() metaInfo {
 	return metaInfo{
-		modules: map[string]string{},
-		chunks:  map[string]string{},
-		domains: map[string]string{},
-		items:   map[string]string{},
-		specs:   map[string]string{},
+		chunks: map[string]string{},
+		specs:  map[string]string{},
+		files:  map[string]string{},
+		items:  map[string]string{},
 	}
 }
 
@@ -6219,11 +6220,11 @@ func pathKey(path []Name) string {
 @~ Go@/functions@/litar.formatModule @~ Go@/functions@/litar.pathKey @~ Go@/types@/litar.Name @
 
 @<mcp@:litar@:Go Structure@/functions@+
-func leafKey(path []Name, name string) string {
-	return pathKey(path) + "\x00" + name
+func joinPath(path []Name, name string) []Name {
+	return append(append([]Name{}, path...), Name(name))
 }
 
-@~ Go@/functions@/litar.leafKey @~ Go@/functions@/litar.pathKey @~ Go@/types@/litar.Name @
+@~ Go@/functions@/litar.joinPath @~ Go@/types@/litar.Name @
 
 @<mcp@:litar@:Go Structure@/functions@+
 func metaDescription(text string) (string, error) {
@@ -6282,20 +6283,16 @@ if err != nil {
 
 @<record 'desc' in 'meta' for the 'target' of the namespace 'ns'@=
 switch ns {
-case "Module":
-	meta.modules[pathKey(target)] = desc
-case "Domain":
-	meta.domains[pathKey(target)] = desc
 case "Chunk":
-	mod, name := splitTail(target)
-	meta.chunks[leafKey(mod, string(name))] = desc
-case "Index":
-	mod, name := splitTail(target)
-	meta.items[leafKey(mod, string(name))] = desc
+	meta.chunks[pathKey(target)] = desc
 case "Specialization":
 	meta.specs[specName(target)] = desc
+case "File":
+	meta.files[pathKey(target)] = desc
+case "Index":
+	meta.items[pathKey(target)] = desc
 }
-@~ Go@/functions@/litar.leafKey @~ Go@/functions@/litar.pathKey @~ Go@/functions@/litar.specName @~ Go@/functions@/litar.splitTail @
+@~ Go@/functions@/litar.pathKey @~ Go@/functions@/litar.specName @
 
 @<mcp@:litar@:Go Structure@/functions@+
 func specName(reversed []Name) string {
@@ -6320,16 +6317,6 @@ func labelsText(ls []Name) string {
 @~ Go@/functions@/litar.labelsText @~ Go@/types@/litar.Name @
 
 @<mcp@:litar@:Go Structure@/functions@+
-func splitTail(path []Name) ([]Name, Name) {
-	if len(path) == 0 {
-		return nil, ""
-	}
-	return path[:len(path)-1], path[len(path)-1]
-}
-
-@~ Go@/functions@/litar.splitTail @~ Go@/types@/litar.Name @
-
-@<mcp@:litar@:Go Structure@/functions@+
 func chunkTree(blocks []Block, maps []Mapping) (treeJSON, error) {
 meta, err := describe(blocks, maps)
 if err != nil {
@@ -6337,18 +6324,38 @@ if err != nil {
 }
 root := newNest()
 @<add the modules and chunks of 'blocks' outside the reserved namespaces to 'root'@>
-return root.treeWith("/", meta.modules[pathKey(nil)], nil,
-	func(path []Name) string { return meta.modules[pathKey(path)] },
-	func(path []Name, name string) string { return meta.chunks[leafKey(path, name)] },
+return root.treeWith("/", meta.chunkDescription(nil), nil,
+	meta.chunkDescription,
+	func(path []Name, name string) string { return meta.chunkDescription(joinPath(path, name)) },
 ), nil
 }
 
-@~ Go@/functions@/litar.chunkTree @~ Go@/functions@/litar.describe @~ Go@/functions@/litar.leafKey @~ Go@/functions@/litar.newNest @~ Go@/functions@/litar.pathKey @~ Go@/methods@/litar.nest.treeWith @~ Go@/types@/litar.Block @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.Name @~ Go@/types@/litar.treeJSON @
+@~ Go@/functions@/litar.chunkTree @~ Go@/functions@/litar.describe @~ Go@/functions@/litar.joinPath @~ Go@/functions@/litar.newNest @~ Go@/methods@/litar.metaInfo.chunkDescription @~ Go@/methods@/litar.nest.treeWith @~ Go@/types@/litar.Block @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.Name @~ Go@/types@/litar.treeJSON @
 
-A file block's chunk is its path in the root module, so files appear as root chunks.
+@<mcp@:litar@:Go Structure@/methods@+
+// chunkDescription describes the module or chunk at path in the chunk tree.
+// Below File, the path names a file or directory.
+func (m metaInfo) chunkDescription(path []Name) string {
+	if len(path) > 0 && path[0] == "File" {
+		return m.files[pathKey(path[1:])]
+	}
+	return m.chunks[pathKey(path)]
+}
+
+@~ Go@/functions@/litar.pathKey @~ Go@/methods@/litar.metaInfo.chunkDescription @~ Go@/types@/litar.Name @~ Go@/types@/litar.metaInfo @
+
+A file block's chunk is its path in the root module. The chunk tree lists such a chunk
+below File, one branch for each directory, as the File meta chunks name it,
+so a file never looks like a chunk of the root module.
 @<add the modules and chunks of 'blocks' outside the reserved namespaces to 'root'@=
+files := map[Name]bool{}
+@<collect in 'files' the paths of the file blocks of 'blocks'@>
 for _, b := range blocks {
 	if _, reserved := reservedNamespace(b.Ref.Module); reserved {
+		continue
+	}
+	if len(b.Ref.Module) == 0 && files[b.Ref.Chunk] {
+		@<add the file chunk of 'b' to 'root' below File@>
 		continue
 	}
 	cur := root
@@ -6359,27 +6366,55 @@ for _, b := range blocks {
 		cur.addLeaf(string(b.Ref.Chunk))
 	}
 }
-@~ Go@/functions@/litar.reservedNamespace @~ Go@/methods@/litar.nest.addLeaf @~ Go@/methods@/litar.nest.addSub @
+@~ Go@/functions@/litar.reservedNamespace @~ Go@/methods@/litar.nest.addLeaf @~ Go@/methods@/litar.nest.addSub @~ Go@/types@/litar.Name @
+
+@<collect in 'files' the paths of the file blocks of 'blocks'@=
+for _, b := range blocks {
+	if b.IsFile {
+		files[b.Path] = true
+	}
+}
+@
+
+@<add the file chunk of 'b' to 'root' below File@=
+cur := root.addSub("File")
+parts := strings.Split(string(b.Ref.Chunk), "/")
+for _, part := range parts[:len(parts)-1] {
+	cur = cur.addSub(part)
+}
+cur.addLeaf(parts[len(parts)-1])
+@~ Go@/methods@/litar.nest.addLeaf @~ Go@/methods@/litar.nest.addSub @
 
 @<mcp@:litar@:Go Structure@/functions@+
-func fileTree(blocks []Block, mappings []Mapping) treeJSON {
-	cat := buildCatalog(blocks, mappings)
-	root := newNest()
-	for _, path := range cat.order {
-		parts := strings.Split(path, "/")
-		cur := root
-		for i, part := range parts {
-			if i == len(parts)-1 {
-				cur.addLeaf(part)
-				break
-			}
-			cur = cur.addSub(part)
-		}
-	}
-	return root.treeWith("/", "", nil, nil, nil)
+func fileTree(blocks []Block, mappings []Mapping) (treeJSON, error) {
+meta, err := describe(blocks, mappings)
+if err != nil {
+	return treeJSON{}, err
+}
+cat := buildCatalog(blocks, mappings)
+root := newNest()
+@<add each file of 'cat' to 'root', its directories as branches@>
+return root.treeWith("/", meta.files[pathKey(nil)], nil,
+	func(path []Name) string { return meta.files[pathKey(path)] },
+	func(path []Name, name string) string { return meta.files[pathKey(joinPath(path, name))] },
+), nil
 }
 
-@~ Go@/functions@/litar.buildCatalog @~ Go@/functions@/litar.fileTree @~ Go@/functions@/litar.newNest @~ Go@/methods@/litar.nest.addLeaf @~ Go@/methods@/litar.nest.addSub @~ Go@/methods@/litar.nest.treeWith @~ Go@/types@/litar.Block @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.treeJSON @
+@~ Go@/functions@/litar.buildCatalog @~ Go@/functions@/litar.describe @~ Go@/functions@/litar.fileTree @~ Go@/functions@/litar.joinPath @~ Go@/functions@/litar.newNest @~ Go@/functions@/litar.pathKey @~ Go@/methods@/litar.nest.treeWith @~ Go@/types@/litar.Block @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.Name @~ Go@/types@/litar.treeJSON @
+
+@<add each file of 'cat' to 'root', its directories as branches@=
+for _, path := range cat.order {
+	parts := strings.Split(path, "/")
+	cur := root
+	for i, part := range parts {
+		if i == len(parts)-1 {
+			cur.addLeaf(part)
+			break
+		}
+		cur = cur.addSub(part)
+	}
+}
+@~ Go@/methods@/litar.nest.addLeaf @~ Go@/methods@/litar.nest.addSub @
 
 @<mcp@:litar@:Go Structure@/functions@+
 func itemTree(blocks []Block, maps []Mapping) (treeJSON, error) {
@@ -6389,13 +6424,13 @@ if err != nil {
 }
 root := newNest()
 @<add each item of 'blocks' to 'root', its domains as branches@>
-return root.treeWith("/", meta.domains[pathKey(nil)], nil,
-	func(path []Name) string { return meta.domains[pathKey(path)] },
-	func(path []Name, name string) string { return meta.items[leafKey(path, name)] },
+return root.treeWith("/", meta.items[pathKey(nil)], nil,
+	func(path []Name) string { return meta.items[pathKey(path)] },
+	func(path []Name, name string) string { return meta.items[pathKey(joinPath(path, name))] },
 ), nil
 }
 
-@~ Go@/functions@/litar.describe @~ Go@/functions@/litar.itemTree @~ Go@/functions@/litar.leafKey @~ Go@/functions@/litar.newNest @~ Go@/functions@/litar.pathKey @~ Go@/methods@/litar.nest.treeWith @~ Go@/types@/litar.Block @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.Name @~ Go@/types@/litar.treeJSON @
+@~ Go@/functions@/litar.describe @~ Go@/functions@/litar.itemTree @~ Go@/functions@/litar.joinPath @~ Go@/functions@/litar.newNest @~ Go@/functions@/litar.pathKey @~ Go@/methods@/litar.nest.treeWith @~ Go@/types@/litar.Block @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.Name @~ Go@/types@/litar.treeJSON @
 
 @<add each item of 'blocks' to 'root', its domains as branches@=
 for _, b := range blocks {
@@ -6641,9 +6676,13 @@ func nodeID(w *World, path string) (int, error) {
 @~ Go@/functions@/litar.assignIDs @~ Go@/functions@/litar.formatNodePath @~ Go@/functions@/litar.indexTree @~ Go@/functions@/litar.nodeID @~ Go@/functions@/litar.nodeTree @~ Go@/types@/litar.World @
 
 @<mcp@:litar@:Go Structure@/functions@+
+// A leaf below File is the file chunk of the path under File.
 func chunkRefOf(p treePlace) ChunkRef {
 	if len(p.names) == 0 {
 		return ChunkRef{}
+	}
+	if len(p.names) > 1 && p.names[0] == "File" {
+		return ChunkRef{Chunk: Name(strings.Join(p.names[1:], "/"))}
 	}
 	mod := make(ModulePath, len(p.names)-1)
 	for i, name := range p.names[:len(p.names)-1] {
@@ -6672,7 +6711,10 @@ func chunkByID(blocks []Block, maps []Mapping, id int) (ChunkRef, error) {
 
 @<mcp@:litar@:Go Structure@/functions@+
 func fileByID(blocks []Block, maps []Mapping, id int) (string, error) {
-	tree := fileTree(blocks, maps)
+	tree, err := fileTree(blocks, maps)
+	if err != nil {
+		return "", err
+	}
 	assignIDs(&tree)
 	place, ok := indexTree(tree, false)[id]
 	if !ok || !place.leaf {
@@ -7317,7 +7359,7 @@ func TestReservedMeta(t *testing.T) {
 src := "" +
 "@@<note@@=\n" +
 "basics@@\n" +
-"@@<Module@@/Basic@@=\n" +
+"@@<Chunk@@/Basic@@=\n" +
 "{\"description\": \"@@<note@@>\"}\n" +
 "@@\n" +
 @<archive text of the meta chunks below Basic, Text Processing and C@>
@@ -7338,11 +7380,10 @@ chunks, err := chunkTree(arch.Blocks, nil)
 if err != nil {
 t.Fatal(err)
 }
-if _, ok := findTree(chunks, "Module"); ok {
-t.Fatalf("reserved module listed: %s", mustTree(t, chunks))
+for _, ns := range []string{"Chunk", "Index"} {
+if _, ok := findTree(chunks, ns); ok {
+t.Fatalf("reserved namespace %s listed: %s", ns, mustTree(t, chunks))
 }
-if _, ok := findTree(chunks, "Chunk"); ok {
-t.Fatalf("reserved chunk namespace listed: %s", mustTree(t, chunks))
 }
 basic, ok := findTree(chunks, "Basic")
 if !ok || basic.Description != "basics" {
@@ -7377,11 +7418,11 @@ t.Fatalf("item %+v", times)
 @~ Go@/functions@/litar.findTree @~ Go@/functions@/litar.itemTree @
 
 @<check that a module meta chunk that is not JSON fails the chunk tree@=
-bad, err := ParseArchive([]byte("@@<Module@@/Basic@@=\nnot json\n@@\n@@<Basic@@/x@@=\n@@\n"), "a.la")
+bad, err := ParseArchive([]byte("@@<Chunk@@/Basic@@=\nnot json\n@@\n@@<Basic@@/x@@=\n@@\n"), "a.la")
 if err != nil {
 t.Fatal(err)
 }
-if _, err := chunkTree(bad.Blocks, nil); err == nil || !strings.Contains(err.Error(), "meta chunk 'Module@@/Basic'") {
+if _, err := chunkTree(bad.Blocks, nil); err == nil || !strings.Contains(err.Error(), "meta chunk 'Chunk@@/Basic'") {
 t.Fatalf("bad meta: %v", err)
 }
 @~ Go@/functions@/litar.ParseArchive @~ Go@/functions@/litar.chunkTree @
@@ -7478,7 +7519,7 @@ t.Fatalf("hello %+v", refTree)
 @<meta test@:litar@:Go Structure@/functions@+
 func TestListingDescriptions(t *testing.T) {
 src := "" +
-"@@<Module@@/Basic@@=\n" +
+"@@<Chunk@@/Basic@@=\n" +
 "{\"description\": \"basics\"}\n" +
 "@@\n" +
 @<archive text of the meta chunks below Basic, Text Processing and C@>
@@ -7504,13 +7545,13 @@ Each test puts its own meta chunk of the module Basic before this text.
 "@@<Basic@@/evaluate@@=\n" +
 "x\n" +
 "@@\n" +
-"@@<Module@@/Text Processing@@/Internals@@=\n" +
+"@@<Chunk@@/Text Processing@@/Internals@@=\n" +
 "{\"description\": \"inside\"}\n" +
 "@@\n" +
 "@@<Text Processing@@/Internals@@/helper@@=\n" +
 "y\n" +
 "@@\n" +
-"@@<Domain@@/C@@/variables@@=\n" +
+"@@<Index@@/C@@/variables@@=\n" +
 "{\"description\": \"vars\"}\n" +
 "@@\n" +
 "@@<Index@@/C@@/variables@@/times@@=\n" +
@@ -7526,7 +7567,7 @@ Each test puts its own meta chunk of the module Basic before this text.
 if got := Modules(arch.Blocks, nil, meta); got != "Basic:\t\t\t\tbasics\nText Processing\nText Processing@@/Internals:\tinside\n" {
 t.Fatalf("modules %q", got)
 }
-if got := Chunks(arch.Blocks, mustMod(t, "Module"), meta); got != "" {
+if got := Chunks(arch.Blocks, mustMod(t, "Chunk"), meta); got != "" {
 t.Fatalf("reserved chunks %q", got)
 }
 if got := Chunks(arch.Blocks, mustMod(t, "Basic"), meta); got != "evaluate:\trun\n" {
@@ -7542,6 +7583,60 @@ if got := Items(arch.Blocks, mustMod(t, "C@@/variables"), meta); got != "C@@/var
 t.Fatalf("items %q", got)
 }
 @~ Go@/functions@/litar.Chunks @~ Go@/functions@/litar.Items @~ Go@/functions@/litar.Modules @~ Go@/functions@/litar.Subdomains @~ Go@/functions@/litar.mustMod @
+
+A file is listed in the chunk tree below File, and File meta chunks describe it in both trees.
+@<meta test@:litar@:Go Structure@/functions@+
+func TestFileMeta(t *testing.T) {
+src := "" +
+"@@[cmd/main.go@@=\n@@<body@@>\n@@\n" +
+"@@<body@@=\nx\n@@\n" +
+"@@<File@@/cmd@@=\n{\"description\": \"commands\"}\n@@\n" +
+"@@<File@@/cmd@@/main.go@@=\n{\"description\": \"the entry\"}\n@@\n"
+arch, err := ParseArchive([]byte(src), "a.la")
+if err != nil {
+t.Fatal(err)
+}
+@<check that the chunk tree of 'arch' lists cmd/main.go below File, described@>
+@<check the descriptions in the file tree of 'arch'@>
+}
+
+@~ Go@/functions@/litar.ParseArchive @
+
+@<check that the chunk tree of 'arch' lists cmd/main.go below File, described@=
+chunks, err := chunkTree(arch.Blocks, nil)
+if err != nil {
+t.Fatal(err)
+}
+assignIDs(&chunks)
+if _, ok := findTree(chunks, "cmd/main.go"); ok {
+t.Fatalf("file listed by its path: %s", mustTree(t, chunks))
+}
+dir, ok := findTree(chunks, "File", "cmd")
+if !ok || dir.Description != "commands" || dir.Leaf {
+t.Fatalf("cmd %+v", dir)
+}
+file, ok := findTree(chunks, "File", "cmd", "main.go")
+if !ok || file.Description != "the entry" || !file.Leaf {
+t.Fatalf("main.go %+v", file)
+}
+ref, err := chunkByID(arch.Blocks, nil, file.ID)
+if err != nil || len(ref.Module) != 0 || ref.Chunk != "cmd/main.go" {
+t.Fatalf("chunk %+v %v", ref, err)
+}
+@~ Go@/functions@/litar.assignIDs @~ Go@/functions@/litar.chunkByID @~ Go@/functions@/litar.chunkTree @~ Go@/functions@/litar.findTree @~ Go@/functions@/litar.mustTree @
+
+@<check the descriptions in the file tree of 'arch'@=
+files, err := fileTree(arch.Blocks, nil)
+if err != nil {
+t.Fatal(err)
+}
+if dir, ok := findTree(files, "cmd"); !ok || dir.Description != "commands" {
+t.Fatalf("cmd %+v", dir)
+}
+if file, ok := findTree(files, "cmd", "main.go"); !ok || file.Description != "the entry" {
+t.Fatalf("main.go %+v", file)
+}
+@~ Go@/functions@/litar.fileTree @~ Go@/functions@/litar.findTree @
 
 @<meta test@:litar@:Go Structure@/functions@+
 func TestLibraryModuleDescriptions(t *testing.T) {
@@ -7560,15 +7655,15 @@ want := map[string]string{
 "C Structure":     "Common structures in C programming",
 "Light":           "Light is a framework mainly for C programming",
 }
-@<check that the chunk tree 'tree' hides Module and describes the modules of 'want'@>
+@<check that the chunk tree 'tree' hides Chunk and describes the modules of 'want'@>
 @<check that the module listing of 'chain' with 'meta' describes the modules of 'want' in one column@>
 }
 
 @~ Go@/functions@/litar.chunkTree @~ Go@/functions@/litar.describe @~ Go@/functions@/litar.exampleChain @
 
 Internals has no meta chunk of its own, so its description stays empty.
-@<check that the chunk tree 'tree' hides Module and describes the modules of 'want'@=
-if name, found := findNamed(tree, "Module"); found {
+@<check that the chunk tree 'tree' hides Chunk and describes the modules of 'want'@=
+if name, found := findNamed(tree, "Chunk"); found {
 t.Fatalf("tree contains %s", name)
 }
 for name, desc := range want {
@@ -7585,7 +7680,7 @@ t.Fatalf("internals %+v", inner)
 
 @<check that the module listing of 'chain' with 'meta' describes the modules of 'want' in one column@=
 listed := Modules(chain, nil, meta)
-if strings.Contains(listed, "\nModule\n") || strings.HasPrefix(listed, "Module\n") || strings.HasPrefix(listed, "Module:") {
+if strings.Contains(listed, "\nChunk\n") || strings.HasPrefix(listed, "Chunk\n") || strings.HasPrefix(listed, "Chunk:") {
 t.Fatalf("reserved module listed %q", listed)
 }
 col := -1
@@ -10164,34 +10259,34 @@ The status, out and err files are optional.
             case_bad=1
         fi
 @
-@<Domain@/Go@=
+@<Index@/Go@=
 {"description": "Go declarations of the module litar, qualified by package."}
 @
 
-@<Domain@/Go@/functions@=
+@<Index@/Go@/functions@=
 {"description": "Package-level functions."}
 @
 
-@<Domain@/Go@/methods@=
+@<Index@/Go@/methods@=
 {"description": "Methods, named package.Type.Method."}
 @
 
-@<Domain@/Go@/types@=
+@<Index@/Go@/types@=
 {"description": "Type declarations."}
 @
 
-@<Domain@/Go@/variables@=
+@<Index@/Go@/variables@=
 {"description": "Package-level variables."}
 @
 
-@<Domain@/Go@/constants@=
+@<Index@/Go@/constants@=
 {"description": "Package-level constants."}
 @
 @<Index@/Go@/types@/litar.World@=
 {"description": "A loaded composition: its composer file, directory, ground, and nodes, ground nodes first."}
 @
 
-@<Module@/Build@=
+@<Chunk@/Build@=
 {"description": "What a build outside litar reads from the composition."}
 @
 A build outside litar evaluates each file of the file set go module.
@@ -10381,7 +10476,7 @@ if err := http.ListenAndServe(command.flags.addr, nil); err != nil {
 	os.Exit(1)
 }
 @~ Go@/functions@/litar-web.connect @~ Go@/functions@/litar-web.serveIndex @~ Go@/functions@/litar-web.resourceHandler @~ Go@/functions@/litar-web.toolHandler @
-@<Module@/Litar Web@=
+@<Chunk@/Litar Web@=
 {"description": "The page that litar-web serves: markup, style, and script."}
 @
 
@@ -10632,14 +10727,20 @@ function refText(ref) {
 
 @<Litar Web@/names@+
 // Meta chunks live in reserved modules that the chunk tree leaves out.
-// Index and Chunk blocks link to what they describe; the others stay plain.
-const reserved = ['Module', 'Chunk', 'Specialization', 'Domain', 'Index'];
+// Chunk, File, and Index blocks link to what they describe; the others stay plain.
+const reserved = ['Chunk', 'Specialization', 'File', 'Index'];
 function metaLink(ref, raw, link) {
   if (ref.labels.length || !reserved.includes(ref.mods[0])) return link('ref', ref, raw);
   const path = ref.mods.slice(1).concat(ref.chunk);
   if (ref.mods[0] === 'Index') return link('item', path, raw);
+  if (ref.mods[0] === 'File') return link('file', path.join('/'), raw);
   if (ref.mods[0] === 'Chunk') return link('ref', {labels: [], mods: path.slice(0, -1), chunk: path[path.length - 1]}, raw);
   return esc(raw);
+}
+// The chunk tree lists a file chunk below File, one name for each part of its path.
+function pathRef(path, labels) {
+  if (path[0] === 'File' && path.length > 1) return {labels, mods: [], chunk: path.slice(1).join('/')};
+  return {labels, mods: path.slice(0, -1), chunk: path[path.length - 1]};
 }
 @
 
@@ -10796,7 +10897,7 @@ async function chunkView(chunkId, specId, view, refLabels) {
   walk(specs, (s, p) => options.push({id: s.id, labels: p.slice().reverse()}));
   const spec = options.find(o => o.id === specId) || options[0];
   const labels = refLabels && isSuffix(spec.labels, refLabels) ? refLabels : spec.labels;
-  const ref = {labels, mods: path.slice(0, -1), chunk: path[path.length - 1]};
+  const ref = pathRef(path, labels);
   const here = nodeBase() + '/chunks/' + chunkId;
 @<.@/show in the detail 'ref', the specializations 'options', and the subtabs of 'view' at 'here'@>
 @<.@/show the 'view' of 'ref' through the specialization 'spec' with 'labels'@>
@@ -10901,7 +11002,10 @@ async function resolveLink(kind, target) {
 The labels of a specialization path run from the innermost, so the target's labels are reversed to match.
 @<Litar Web@/go to the chunk of the reference 'target', at its deepest matching specialization@=
     const chunks = await tree('chunk', state.c, state.n);
-    const id = leafIndex(chunks).byPath.get(JSON.stringify(target.mods.concat(target.chunk)));
+    // A root chunk that is a file is listed below File.
+    const byPath = leafIndex(chunks).byPath;
+    const id = byPath.get(JSON.stringify(target.mods.concat(target.chunk)))
+      ?? (target.mods.length ? undefined : byPath.get(JSON.stringify(['File'].concat(target.chunk.split('/')))));
     if (id === undefined) {
       return detail('<p class="error">No block of this node defines ' + esc(refText(target)) + '.</p>'
         + '<p class="note">A node based on this one may define it.</p>');

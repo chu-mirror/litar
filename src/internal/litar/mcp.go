@@ -128,11 +128,10 @@ type nestEntry struct {
 }
 
 type metaInfo struct {
-	modules map[string]string
-	chunks  map[string]string
-	domains map[string]string
-	items   map[string]string
-	specs   map[string]string
+	chunks map[string]string
+	specs  map[string]string
+	files  map[string]string
+	items  map[string]string
 }
 
 type treePlace struct {
@@ -489,11 +488,13 @@ func (a *agent) listURIsLocked() []string {
 					}
 				}
 			}
-			files := fileTree(chain, maps)
-			assignIDs(&files)
-			for fid, fp := range indexTree(files, false) {
-				if fp.leaf {
-					add("file://" + cs + "/" + ns + "/" + strconv.Itoa(fid))
+			files, err := fileTree(chain, maps)
+			if err == nil {
+				assignIDs(&files)
+				for fid, fp := range indexTree(files, false) {
+					if fp.leaf {
+						add("file://" + cs + "/" + ns + "/" + strconv.Itoa(fid))
+					}
 				}
 			}
 		}
@@ -527,9 +528,7 @@ func (a *agent) render(uri string) (text, mime string, blob []byte, err error) {
 	case strings.HasPrefix(uri, "tree://item/"):
 		return a.renderTree(uri, "tree://item/", itemTree)
 	case strings.HasPrefix(uri, "tree://file/"):
-		return a.renderTree(uri, "tree://file/", func(chain []Block, maps []Mapping) (treeJSON, error) {
-			return fileTree(chain, maps), nil
-		})
+		return a.renderTree(uri, "tree://file/", fileTree)
 	case strings.HasPrefix(uri, "tree://specialization/"):
 		w, ids, err := a.idParts(strings.TrimPrefix(uri, "tree://specialization/"), 3)
 		if err != nil {
@@ -792,6 +791,15 @@ func (n *nest) treeWith(name, desc string, path []Name, nodeDesc func([]Name) st
 	return t
 }
 
+// chunkDescription describes the module or chunk at path in the chunk tree.
+// Below File, the path names a file or directory.
+func (m metaInfo) chunkDescription(path []Name) string {
+	if len(path) > 0 && path[0] == "File" {
+		return m.files[pathKey(path[1:])]
+	}
+	return m.chunks[pathKey(path)]
+}
+
 func newAgent() *agent {
 	a := &agent{
 		worlds: map[string]*World{},
@@ -952,16 +960,17 @@ func newNest() *nest {
 	return &nest{leaves: map[string]bool{}, subs: map[string]*nest{}}
 }
 
-// A reserved chunk lives in the Module, Chunk, Specialization, Domain, or Index namespace.
+// A reserved chunk lives in the Chunk, Specialization, File, or Index namespace.
 // Its module path starts with that name. The remaining components, then the
-// chunk name, are the module, chunk, specialization, domain, or item the chunk describes.
+// chunk name, are the module or chunk, the specialization, the file or directory,
+// or the domain or item the chunk describes.
 // A specialization path is stored reversed: label2@:label1 is Specialization@/label1@/label2.
 func reservedNamespace(mod ModulePath) (Name, bool) {
 	if len(mod) == 0 {
 		return "", false
 	}
 	switch mod[0] {
-	case "Module", "Chunk", "Specialization", "Domain", "Index":
+	case "Chunk", "Specialization", "File", "Index":
 		return mod[0], true
 	default:
 		return "", false
@@ -970,11 +979,10 @@ func reservedNamespace(mod ModulePath) (Name, bool) {
 
 func newMeta() metaInfo {
 	return metaInfo{
-		modules: map[string]string{},
-		chunks:  map[string]string{},
-		domains: map[string]string{},
-		items:   map[string]string{},
-		specs:   map[string]string{},
+		chunks: map[string]string{},
+		specs:  map[string]string{},
+		files:  map[string]string{},
+		items:  map[string]string{},
 	}
 }
 
@@ -982,8 +990,8 @@ func pathKey(path []Name) string {
 	return formatModule(path)
 }
 
-func leafKey(path []Name, name string) string {
-	return pathKey(path) + "\x00" + name
+func joinPath(path []Name, name string) []Name {
+	return append(append([]Name{}, path...), Name(name))
 }
 
 func metaDescription(text string) (string, error) {
@@ -1025,18 +1033,14 @@ func describe(blocks []Block, maps []Mapping) (metaInfo, error) {
 		}
 		target := append(append([]Name{}, b.Ref.Module[1:]...), b.Ref.Chunk)
 		switch ns {
-		case "Module":
-			meta.modules[pathKey(target)] = desc
-		case "Domain":
-			meta.domains[pathKey(target)] = desc
 		case "Chunk":
-			mod, name := splitTail(target)
-			meta.chunks[leafKey(mod, string(name))] = desc
-		case "Index":
-			mod, name := splitTail(target)
-			meta.items[leafKey(mod, string(name))] = desc
+			meta.chunks[pathKey(target)] = desc
 		case "Specialization":
 			meta.specs[specName(target)] = desc
+		case "File":
+			meta.files[pathKey(target)] = desc
+		case "Index":
+			meta.items[pathKey(target)] = desc
 		}
 	}
 	return meta, nil
@@ -1058,21 +1062,29 @@ func labelsText(ls []Name) string {
 	return strings.Join(parts, "@:")
 }
 
-func splitTail(path []Name) ([]Name, Name) {
-	if len(path) == 0 {
-		return nil, ""
-	}
-	return path[:len(path)-1], path[len(path)-1]
-}
-
 func chunkTree(blocks []Block, maps []Mapping) (treeJSON, error) {
 	meta, err := describe(blocks, maps)
 	if err != nil {
 		return treeJSON{}, err
 	}
 	root := newNest()
+	files := map[Name]bool{}
+	for _, b := range blocks {
+		if b.IsFile {
+			files[b.Path] = true
+		}
+	}
 	for _, b := range blocks {
 		if _, reserved := reservedNamespace(b.Ref.Module); reserved {
+			continue
+		}
+		if len(b.Ref.Module) == 0 && files[b.Ref.Chunk] {
+			cur := root.addSub("File")
+			parts := strings.Split(string(b.Ref.Chunk), "/")
+			for _, part := range parts[:len(parts)-1] {
+				cur = cur.addSub(part)
+			}
+			cur.addLeaf(parts[len(parts)-1])
 			continue
 		}
 		cur := root
@@ -1083,13 +1095,17 @@ func chunkTree(blocks []Block, maps []Mapping) (treeJSON, error) {
 			cur.addLeaf(string(b.Ref.Chunk))
 		}
 	}
-	return root.treeWith("/", meta.modules[pathKey(nil)], nil,
-		func(path []Name) string { return meta.modules[pathKey(path)] },
-		func(path []Name, name string) string { return meta.chunks[leafKey(path, name)] },
+	return root.treeWith("/", meta.chunkDescription(nil), nil,
+		meta.chunkDescription,
+		func(path []Name, name string) string { return meta.chunkDescription(joinPath(path, name)) },
 	), nil
 }
 
-func fileTree(blocks []Block, mappings []Mapping) treeJSON {
+func fileTree(blocks []Block, mappings []Mapping) (treeJSON, error) {
+	meta, err := describe(blocks, mappings)
+	if err != nil {
+		return treeJSON{}, err
+	}
 	cat := buildCatalog(blocks, mappings)
 	root := newNest()
 	for _, path := range cat.order {
@@ -1103,7 +1119,10 @@ func fileTree(blocks []Block, mappings []Mapping) treeJSON {
 			cur = cur.addSub(part)
 		}
 	}
-	return root.treeWith("/", "", nil, nil, nil)
+	return root.treeWith("/", meta.files[pathKey(nil)], nil,
+		func(path []Name) string { return meta.files[pathKey(path)] },
+		func(path []Name, name string) string { return meta.files[pathKey(joinPath(path, name))] },
+	), nil
 }
 
 func itemTree(blocks []Block, maps []Mapping) (treeJSON, error) {
@@ -1124,9 +1143,9 @@ func itemTree(blocks []Block, maps []Mapping) (treeJSON, error) {
 			}
 		}
 	}
-	return root.treeWith("/", meta.domains[pathKey(nil)], nil,
-		func(path []Name) string { return meta.domains[pathKey(path)] },
-		func(path []Name, name string) string { return meta.items[leafKey(path, name)] },
+	return root.treeWith("/", meta.items[pathKey(nil)], nil,
+		func(path []Name) string { return meta.items[pathKey(path)] },
+		func(path []Name, name string) string { return meta.items[pathKey(joinPath(path, name))] },
 	), nil
 }
 
@@ -1302,9 +1321,13 @@ func nodeID(w *World, path string) (int, error) {
 	return 0, fmt.Errorf("unknown node '%s'", path)
 }
 
+// A leaf below File is the file chunk of the path under File.
 func chunkRefOf(p treePlace) ChunkRef {
 	if len(p.names) == 0 {
 		return ChunkRef{}
+	}
+	if len(p.names) > 1 && p.names[0] == "File" {
+		return ChunkRef{Chunk: Name(strings.Join(p.names[1:], "/"))}
 	}
 	mod := make(ModulePath, len(p.names)-1)
 	for i, name := range p.names[:len(p.names)-1] {
@@ -1327,7 +1350,10 @@ func chunkByID(blocks []Block, maps []Mapping, id int) (ChunkRef, error) {
 }
 
 func fileByID(blocks []Block, maps []Mapping, id int) (string, error) {
-	tree := fileTree(blocks, maps)
+	tree, err := fileTree(blocks, maps)
+	if err != nil {
+		return "", err
+	}
 	assignIDs(&tree)
 	place, ok := indexTree(tree, false)[id]
 	if !ok || !place.leaf {

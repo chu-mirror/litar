@@ -17,7 +17,7 @@ with `LITAR_LIBRARY` listing the ground libraries.
 | --- | --- |
 | `list://composition` | imported compositions |
 | `tree://node/{c}` | node tree |
-| `tree://chunk/{c}/{n}` | chunks by module, with descriptions |
+| `tree://chunk/{c}/{n}` | chunks by module, file chunks under `File`, with descriptions |
 | `tree://item/{c}/{n}` | items by domain, with descriptions |
 | `tree://file/{c}/{n}` | files by directory |
 | `tree://specialization/{c}/{n}/{chunk}` | label paths used for that chunk |

@@ -1,4 +1,4 @@
-@<Module@/Basic@=
+@<Chunk@/Basic@=
 {
     "description": "Some common structures and filters."
 }
@@ -15,7 +15,7 @@ chmod +x $temp_file
 $temp_file
 rm $temp_file
 @
-@<Module@/Text Processing@=
+@<Chunk@/Text Processing@=
 {
     "description": "Text processing based on python."
 }
@@ -34,7 +34,7 @@ Carriage returns of CRLF endings are stripped too; other trailing whitespace is 
 @<.@/basic python settings@>
 sys.stdout.buffer.write(sys.stdin.buffer.read().rstrip(b'\r\n'))
 @
-@<Module@/Invocation@=
+@<Chunk@/Invocation@=
 {
     "description": "Command line syntax shared by the structures of every language."
 }

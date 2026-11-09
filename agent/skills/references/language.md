@@ -55,6 +55,7 @@ a suffix of the reference's labels. Matching blocks apply in node order
 
 - `@[path@=` regular file, `@(path@=` executable; `@+` is not allowed on files.
   A file's chunk is its path in the root module; it has no labels or module.
+  `tree://chunk` lists it under `File`, one branch per directory (`File` → `cmd` → `main.go`).
 - `` @`set `` adds the file to a file set (repeatable).
 - A filter sees no archive files unless given a view after its name:
   `@+set` add a set, `@-set` remove a set, `@,path` add a file, `@!path` remove a file.
@@ -85,11 +86,10 @@ Reserved modules hold JSON `{"description": "…"}` for descriptions shown in th
 
 | Chunk | Describes |
 | --- | --- |
-| `Module@/{module path}` | a module |
-| `Chunk@/{module path}@/{chunk}` | a chunk |
+| `Chunk@/{chunk path}` | a module or chunk |
 | `Specialization@/{label1}@/{label2}` | `label2@:label1` (labels reversed) |
-| `Domain@/{domain path}` | an item domain |
-| `Index@/{domain path}@/{item}` | an item |
+| `File@/{dir}@/{file}` | a file or directory (path parts separated by `@/`) |
+| `Index@/{item path}` | an item domain or item |
 
 ## Compositions
 

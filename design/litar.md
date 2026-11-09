@@ -600,27 +600,18 @@ A child keeps its base's mappings and can add more.
 
 litar reserves some namespaces for saving meta information:
 
-- `Module@/{module path}`,
-- `Chunk@/{module path@/chunk}`,
+- `Chunk@/{chunk path}`,
 - `Specialization@/{labels}`,
-- `Domain@/{domain path}`,
-- `Index@/{domain path@/item}`.
+- `File@/{file path}`,
+- `Index@/{item path}`.
 
 They are all chunks of a json object.
 
-`Module@/{module path}`:
+`Chunk@/{chunk path}`:
 
 ```
 {
-    "description": "<description for the module>"
-}
-```
-
-`Chunk@/{module path@/chunk}`:
-
-```
-{
-    "description": "<description for the chunk>"
+    "description": "<description for the chunk or module>"
 }
 ```
 
@@ -635,19 +626,19 @@ They are all chunks of a json object.
 The path `{labels}` is organized reversed, for example,
 the path for specialization `label2@:label1` is `Specialization@/label1@/label2`.
 
-`Domain@/{domain path}`:
+`File@/{file path}`:
 
 ```
 {
-    "description": "<description for the domain>"
+    "description": "<description for the file or directory>"
 }
 ```
 
-`Index@/{domain path@/item}`:
+`Index@/{item path}`:
 
 ```
 {
-    "description": "<description for the item>"
+    "description": "<description for the item or domain>"
 }
 ```
 

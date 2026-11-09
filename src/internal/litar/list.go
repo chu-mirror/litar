@@ -155,7 +155,7 @@ func Modules(blocks []Block, parent ModulePath, meta metaInfo) string {
 			continue
 		}
 		line := formatModule(m)
-		rows = append(rows, namedLine{line, meta.modules[line]})
+		rows = append(rows, namedLine{line, meta.chunks[line]})
 	}
 	return formatNamed(rows)
 }
@@ -177,7 +177,7 @@ func Chunks(blocks []Block, mod ModulePath, meta metaInfo) string {
 		}
 		seen[b.Ref.Chunk] = true
 		name := string(b.Ref.Chunk)
-		rows = append(rows, namedLine{name, meta.chunks[leafKey(mod, name)]})
+		rows = append(rows, namedLine{name, meta.chunks[pathKey(joinPath(mod, name))]})
 	}
 	return formatNamed(rows)
 }
@@ -243,7 +243,7 @@ func Subdomains(blocks []Block, domain []Name, meta metaInfo) string {
 				continue
 			}
 			seen[line] = true
-			rows = append(rows, namedLine{line, meta.domains[line]})
+			rows = append(rows, namedLine{line, meta.items[line]})
 		}
 	}
 	return formatNamed(rows)
@@ -263,7 +263,7 @@ func Items(blocks []Block, domain []Name, meta metaInfo) string {
 				continue
 			}
 			seen[line] = true
-			rows = append(rows, namedLine{line, meta.items[leafKey(it[:len(it)-1], string(it[len(it)-1]))]})
+			rows = append(rows, namedLine{line, meta.items[pathKey(it)]})
 		}
 	}
 	return formatNamed(rows)

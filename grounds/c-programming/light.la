@@ -9,7 +9,7 @@ It also supports some common data structures.
 - `light@@:executable@@:C Structure@@/module`: an executable using the framework;
 - `light-single@@:executable@@:C Structure@@/module`: a single-file executable using the framework.
 
-@<Module@/Light@=
+@<Chunk@/Light@=
 {
     "description": "Light is a framework mainly for C programming"
 }

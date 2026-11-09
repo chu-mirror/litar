@@ -32,7 +32,7 @@ A C source file hence shows itself in a litar archive typically as follows:
 @<functions@>
 @
 
-@<functions@=
+@<functions@+
 int main(int argc, char **argv)
 {
     int ret = 0;
@@ -243,7 +243,7 @@ void hello()
 write:
 
 ```
-@<functions@=
+@<functions@+
 void hello()
 {
     printf("Hello\n");

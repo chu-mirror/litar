@@ -46,11 +46,11 @@ Reuse the domains already in `tree://item`; never add a synonym for an existing 
 Append the `@~` list after the content and any pipeline, changing nothing else.
 Rewriting an existing `@+` block follows "Change or remove one `@+` block" in litar-editing.
 
-**6. Describe.** Add a `Domain@/…` block for each new domain, and an `Index@/…` block
+**6. Describe.** Add an `Index@/…` block for each new domain, and one
 for items whose meaning is not obvious from the name:
 
 ```
-@<Domain@/C@/functions@=
+@<Index@/C@/functions@=
 {"description": "Functions defined in this project."}
 @
 @<Index@/C@/variables@/context_main@=

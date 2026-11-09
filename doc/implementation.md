@@ -141,8 +141,8 @@ for the `composer.json` schema and ground search path):
   the exact queried item.
 
 Module, chunk, subdomain, and item trees are exposed through the MCP server (and tested via
-`list.go`). They omit the reserved namespaces (`Module`, `Chunk`, `Specialization`, `Domain`,
-`Index`) and populate descriptions by evaluating those metadata chunks.
+`list.go`). They omit the reserved namespaces (`Chunk`, `Specialization`, `File`, `Index`)
+and populate descriptions by evaluating those metadata chunks.
 
 # Filters
 
@@ -229,7 +229,7 @@ All resources, resource templates, and tools are registered at startup.
 | --- | --- | --- |
 | `list://composition` | `application/json` | imported compositions |
 | `tree://node/{composition}` | `application/json` | node tree of the composition |
-| `tree://chunk/{composition}/{node}` | `application/json` | chunk tree organized by module |
+| `tree://chunk/{composition}/{node}` | `application/json` | chunk tree organized by module, file chunks under `File` |
 | `tree://item/{composition}/{node}` | `application/json` | item tree organized by domain |
 | `tree://file/{composition}/{node}` | `application/json` | file tree organized by directory |
 | `tree://specialization/{composition}/{node}/{chunk}` | `application/json` | specialization tree of a chunk |
@@ -244,7 +244,10 @@ All resources, resource templates, and tools are registered at startup.
   where `name` is the composition directory's absolute path.
 - `tree://` resources return recursive `{"name", "description", "id", "sub-trees"}` JSON
   objects. Descriptions come from `composer.json` (for nodes) and from the reserved metadata
-  chunks (for modules, chunks, specializations, domains, and items).
+  chunks (for modules, chunks, specializations, files, directories, domains, and items).
+- `tree://chunk` lists the chunk of a file block under `File`, one branch for each directory
+  of its path (`File` → `cmd` → `main.go` for `cmd/main.go`). A `{chunk}` id of such a leaf
+  names the file's root-module chunk, so `blocks://` reads and `delete_chunk` act on the file's blocks.
 - `blocks://` resources return blocks formatted identically to `-l`.
 - Multiple compositions can be imported into one server. A ground composition appears in
   `list://composition` only if imported directly; its nodes inside a dependent composition

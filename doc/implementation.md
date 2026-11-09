@@ -185,9 +185,9 @@ Tests that require FUSE skip automatically when `/dev/fuse` is absent.
 # Command line
 
 ```
-usage: litar [options]
+Usage: litar [-a] [-f ARCHIVE] [-l CHUNK_REFERENCE] [-e CHUNK_REFERENCE] [-d CHUNK_REFERENCE] [-r ITEM] [-p EXPRESSION]
 
---help: print the usage
+-h, --help: print the usage
 -a, --agent: open an MCP server to handle the requests from agents
 -f, --file ARCHIVE: specify the archive file, find the composition and the node corresponding
 -l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
@@ -197,15 +197,23 @@ usage: litar [options]
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
 ```
 
-- `--help` prints the usage above (with `argv[0]` in place of `litar`) and is long-only.
-- Short options, long options, attached short values (`-fARCHIVE`), and `--name=value` are
-  all accepted.
+- The command is a command of the Go ground: Go's `flag` package parses the invocation
+  syntax, and the usage above is generated from it.
+- Each option has a short and a long name, registered as two flags of one variable.
+  Either name may follow one or two hyphens, and the value may be the next argument or
+  follow `=` (`-f ARCHIVE`, `--file=ARCHIVE`). Attached short values (`-fARCHIVE`) and
+  clusters (`-al`) are unknown flags.
+- `-h`, `-help`, or `--help` prints the usage on stdout and exits 0, unless it is the value
+  of another option. An unknown flag prints the error and the usage on stderr and exits 2;
+  a positional argument prints the usage on stderr and exits 1.
+- A repeated option keeps its last value.
 - `ARCHIVE` is a path to a `.la` archive file; `CHUNK_REFERENCE`, `EXPRESSION`, and `ITEM`
   follow the command-line syntax in [syntax.md](syntax.md).
-- Exactly one action (`-p`, `-l`, `-e`, `-d`, `-r`, or `-a`) may be given per invocation.
+- An action is given by a non-empty operand. Exactly one action (`-p`, `-l`, `-e`, `-d`, `-r`,
+  or `-a`) may be given per invocation.
   Combining two actions fails with `cannot combine <first> and <second>`, naming the earlier
   action in the order `print`, `literal`, `effective`, `depend`, `reference`, `agent`.
-- `-f` is required for every action except `--help` and `-a`.
+- `-f` is required for every action except `-a`.
 - `-a -f ARCHIVE` starts the MCP server with `ARCHIVE`'s composition already imported;
   `-a` alone starts the server with no compositions imported.
 

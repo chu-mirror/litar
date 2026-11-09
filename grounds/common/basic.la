@@ -84,10 +84,8 @@ The manpage options describe every option in a tagged paragraph, hidden ones inc
 
 
 def option_entry(opt):
-    names = [f'-{opt.short}'] if opt.short else []
-    names.append(LONG_PREFIX + opt.name)
     value = '' if opt.type == 'bool' else ' ' + italic(metavar(opt))
-    tag = ', '.join(rf'\fB{roff(name)}\fR' for name in names) + value
+    tag = ', '.join(rf'\fB{roff(name)}\fR' for name in option_names(opt)) + value
     return f'.TP\n{tag}\n{roff(opt.description)}\n'
 
 
@@ -95,6 +93,46 @@ syntax = configuration(InvocationSyntax, r'''
 @<.@/invocation syntax@>
 ''')
 print(''.join(map(option_entry, all_options(syntax))), end='')
+@|Basic@/evaluate@
+roff escapes a backslash as \e and a hyphen as \-,
+so option names render with minus signs that can be copied into a shell.
+@<Invocation@/manpage helpers@=
+def roff(text):
+    return text.replace('\\', r'\e').replace('-', r'\-')
+
+
+def italic(text):
+    return rf'\fI{roff(text)}\fR'
+
+
+def bold_option(opt):
+    text = rf'\fB{roff(option_name(opt))}\fR'
+    return text if opt.type == 'bool' else text + ' ' + italic(metavar(opt))
+@
+The option summary describes every option on one line:
+its names, the value it takes, its description, then its default unless that is empty, false, or zero.
+@<Invocation@/option summary@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+
+
+def default_note(opt):
+    if opt.default in (None, '', False, 0):
+        return ''
+    if opt.type == 'string':
+        return ' (default "' + opt.default + '")'
+    return ' (default ' + ('true' if opt.default is True else str(opt.default)) + ')'
+
+
+def summary_line(opt):
+    value = '' if opt.type == 'bool' else f' {metavar(opt)}'
+    return ', '.join(option_names(opt)) + value + f': {opt.description}' + default_note(opt) + '\n'
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print(''.join(map(summary_line, all_options(syntax))), end='')
 @|Basic@/evaluate@
 A text processing script is a Python script that declares its dependencies:
 jsonnet evaluates configuration, and pydantic validates it.
@@ -292,18 +330,8 @@ A structure whose parser reads long options after another prefix overrides it un
 @<Invocation@/long option prefix@=
 --
 @
-roff escapes a backslash as \e and a hyphen as \-,
-so option names render with minus signs that can be copied into a shell.
-@<Invocation@/manpage helpers@=
-def roff(text):
-    return text.replace('\\', r'\e').replace('-', r'\-')
-
-
-def italic(text):
-    return rf'\fI{roff(text)}\fR'
-
-
-def bold_option(opt):
-    text = rf'\fB{roff(option_name(opt))}\fR'
-    return text if opt.type == 'bool' else text + ' ' + italic(metavar(opt))
+A description of an option names it both ways, the short name first.
+@<Invocation@/invocation syntax helpers@+
+def option_names(opt):
+    return ([f'-{opt.short}'] if opt.short else []) + [LONG_PREFIX + opt.name]
 @

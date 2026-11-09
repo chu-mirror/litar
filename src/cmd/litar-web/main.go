@@ -37,10 +37,18 @@ func main() {
 	flag.StringVar(&command.flags.litar, "litar", "litar", "litar binary that serves the compositions")
 	flag.StringVar(&command.flags.file, "file", "", "archive whose composition is imported at start")
 	flag.Usage = func() {
-		fmt.Fprint(flag.CommandLine.Output(), "Usage: litar-web [-addr ADDR] [-litar LITAR] [-file FILE]\n")
-		flag.PrintDefaults()
+		fmt.Fprint(flag.CommandLine.Output(), "Usage: litar-web [-addr ADDR] [-litar LITAR] [-file FILE]\n\n-h, -help: print the usage\n-addr ADDR: address to listen on (default \"127.0.0.1:8080\")\n-litar LITAR: litar binary that serves the compositions (default \"litar\")\n-file FILE: archive whose composition is imported at start\n")
 	}
-	flag.Parse()
+	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
+	flag.CommandLine.Usage = func() {}
+	if err := flag.CommandLine.Parse(os.Args[1:]); err == flag.ErrHelp {
+		flag.CommandLine.SetOutput(os.Stdout)
+		flag.Usage()
+		os.Exit(0)
+	} else if err != nil {
+		flag.Usage()
+		os.Exit(2)
+	}
 	if len(flag.Args()) != 0 {
 		flag.Usage()
 		os.Exit(1)

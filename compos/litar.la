@@ -25,84 +25,7 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 @
 
-The command litar hands its arguments to litar.Main untouched.
-A command of Go Structure parses them with the flag package,
-so this file is a plain file of a package named main instead.
-@[cmd/litar/main.go@`go module@=
-@<main@:litar command@:Go Structure@/file@>@
-
-@<main@:litar command@:Go Structure@/import paths@+
-"os"
-
-"@<litar@:Go Project@/import path@>"
-@
-
-@<main@:litar command@:Go Structure@/functions@+
-func main() {
-	os.Exit(litar.Main(os.Args))
-}
-
-@~ Go@/functions@/litar.Main @
-
 @<litar@:Go Project@/package directory@=internal/litar@
-
-The command line: options, usage text, and dispatch to the print, listing, and agent modes.
-@[internal/litar/cli.go@`go module@=
-@<cli@:litar@:Go Structure@/file@>@
-
-@<cli@:litar@:Go Structure@/import paths@+
-"context"
-	"errors"
-	"fmt"
-	"io"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-@
-
-@<cli@:litar@:Go Structure@/constants@+
-const usageBody = `--help: print the usage
--a, --agent: open an MCP server to handle the requests from agents
--f, --file ARCHIVE: specify the archive file, find the composition and the node corresponding
--l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
--e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
--d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
--r, --reference ITEM: list all blocks that refer to ITEM
--p, --print EXPRESSION: evaluate EXPRESSION, and print it
-`
-
-@~ Go@/constants@/litar.usageBody @
-
-@<cli@:litar@:Go Structure@/functions@+
-// Main runs litar. args[0] is the program name.
-func Main(args []string) int {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	go func() {
-		sig := <-sigs
-		DetachMounts()
-		os.Exit(128 + int(sig.(syscall.Signal)))
-	}()
-	return run(args, os.Stdout, os.Stderr)
-}
-
-@~ Go@/functions@/litar.DetachMounts @~ Go@/functions@/litar.Main @~ Go@/functions@/litar.run @
-
-@<cli@:litar@:Go Structure@/functions@+
-func usage(prog string) string {
-	if prog == "" {
-		prog = "litar"
-	}
-	return "usage: " + prog + " [options]\n\n" + usageBody
-}
-
-@~ Go@/constants@/litar.usageBody @~ Go@/functions@/litar.usage @
-
-@<cli@:litar@:Go Structure@/constants@+
-const missingAction = "missing -p, --print, -l, --literal, -e, --effective, -d, --depend, -r, --reference, or -a, --agent"
-
-@~ Go@/constants@/litar.missingAction @
 
 @<cli@:litar@:Go Structure@/variables@+
 var modeOrder = []string{
@@ -110,358 +33,6 @@ var modeOrder = []string{
 }
 
 @~ Go@/variables@/litar.modeOrder @
-
-@<cli@:litar@:Go Structure@/functions@+
-func modeIndex(name string) int {
-	for i, m := range modeOrder {
-		if m == name {
-			return i
-		}
-	}
-	return -1
-}
-
-@~ Go@/functions@/litar.modeIndex @~ Go@/variables@/litar.modeOrder @
-
-Every error is reported as one line on stderr, and run exits with status 1.
-@<cli@:litar@:Go Structure@/functions@+
-func run(args []string, stdout, stderr io.Writer) int {
-prog := "litar"
-rest := args
-@<split 'args' into 'prog' and 'rest'@>
-@<print the usage of 'prog' if 'rest' asks for help@>
-
-var (
-	mode    string
-	archive string
-	operand string
-	sawFile bool
-)
-fail := func(format string, a ...any) int {
-	fmt.Fprintf(stderr, "Error: "+format+"\n", a...)
-	return 1
-}
-@<parse 'rest' into 'mode', 'archive', and 'operand'@>
-
-@<check that an action and an archive are given@>
-
-@<run the action chosen by 'mode'@>
-}
-
-@~ Go@/functions@/litar.run @
-
-Without arguments, the program is named litar and has no options.
-@<split 'args' into 'prog' and 'rest'@=
-if len(args) > 0 {
-	prog = args[0]
-	rest = args[1:]
-}
-@
-
---help anywhere among the arguments prints the usage, whatever else is given or malformed.
-@<print the usage of 'prog' if 'rest' asks for help@=
-for _, a := range rest {
-	if a == "--help" {
-		if _, err := io.WriteString(stdout, usage(prog)); err != nil {
-			fmt.Fprintf(stderr, "Error: could not write output\n")
-			return 1
-		}
-		return 0
-	}
-}
-@~ Go@/functions@/litar.usage @
-
-@<parse 'rest' into 'mode', 'archive', and 'operand'@=
-setMode := func(next string) int {
-@<set 'mode' to 'next' unless an action is already set@>
-}
-need := func(opt, what string, i *int) (string, int) {
-	if *i+1 >= len(rest) {
-		return "", fail("%s requires %s", opt, what)
-	}
-	*i++
-	return rest[*i], 0
-}
-
-for i := 0; i < len(rest); i++ {
-@<parse the argument at 'i'@>
-}
-@
-
-Only one action is allowed. Two different actions are reported in the order of modeOrder,
-so the message does not depend on the order of the arguments.
-@<set 'mode' to 'next' unless an action is already set@=
-if mode == next {
-	return fail("duplicate %s option", next)
-}
-if mode != "" {
-	first, second := mode, next
-	if modeIndex(first) > modeIndex(second) {
-		first, second = second, first
-	}
-	return fail("cannot combine %s and %s", first, second)
-}
-mode = next
-return 0
-@~ Go@/functions@/litar.modeIndex @
-
-@<parse the argument at 'i'@=
-a := rest[i]
-opt := a
-val := ""
-hasVal := false
-@<split 'a' into 'opt' and an attached 'val'@>
-
-takes := func(what string) (string, int) {
-	if hasVal {
-		return val, 0
-	}
-	return need(opt, what, &i)
-}
-// A short cluster that does not take a value is not an option.
-if hasVal && !optionTakesValue(opt) {
-	return fail("unknown option '%s'", a)
-}
-
-@<apply the option 'opt'@>
-@~ Go@/functions@/litar.optionTakesValue @
-
-Options come as --name, --name=value, -x, or -xvalue; a bare -- and positional arguments are errors.
-The cases are tested in order: --name must be recognized before -x.
-@<split 'a' into 'opt' and an attached 'val'@=
-switch {
-case a == "--":
-	return fail("unknown option '%s'", a)
-case strings.HasPrefix(a, "--"):
-	name, v, ok := strings.Cut(a, "=")
-	opt = name
-	if ok {
-		val = v
-		hasVal = true
-	}
-case strings.HasPrefix(a, "-") && len(a) > 1:
-	if len(a) > 2 {
-		// Attached value for an option that takes one.
-		opt = a[:2]
-		val = a[2:]
-		hasVal = true
-	}
-default:
-	return fail("unexpected argument '%s'", a)
-}
-@
-
-@<apply the option 'opt'@=
-var code int
-switch opt {
-@<cases of 'opt' in 'run'@>
-default:
-	return fail("unknown option '%s'", a)
-}
-if code != 0 {
-	return code
-}
-@
-
-@<cases of 'opt' in 'run'@=
-case "-f", "--file":
-	if sawFile {
-		return fail("duplicate file option")
-	}
-	archive, code = takes("an archive")
-	if code != 0 {
-		return code
-	}
-	sawFile = true
-@
-
-Each action option sets the mode, then takes its operand.
-@<cases of 'opt' in 'run'@+
-case "-p", "--print":
-	if code = setMode("print"); code != 0 {
-		return code
-	}
-	operand, code = takes("an expression")
-@
-
-@<cases of 'opt' in 'run'@+
-case "-l", "--literal":
-	if code = setMode("literal"); code != 0 {
-		return code
-	}
-	operand, code = takes("a chunk reference")
-case "-e", "--effective":
-	if code = setMode("effective"); code != 0 {
-		return code
-	}
-	operand, code = takes("a chunk reference")
-case "-d", "--depend":
-	if code = setMode("depend"); code != 0 {
-		return code
-	}
-	operand, code = takes("a chunk reference")
-@
-
-@<cases of 'opt' in 'run'@+
-case "-r", "--reference":
-	if code = setMode("reference"); code != 0 {
-		return code
-	}
-	operand, code = takes("an item")
-@
-
-The agent option takes no operand, so an attached value makes it unknown.
-@<cases of 'opt' in 'run'@+
-case "-a", "--agent":
-	if hasVal {
-		return fail("unknown option '%s'", a)
-	}
-	code = setMode("agent")
-@
-
-The agent mode may start without an archive; compositions can be imported later.
-@<check that an action and an archive are given@=
-if mode == "" {
-	return fail("%s", missingAction)
-}
-if mode != "agent" && !sawFile {
-	return fail("missing -f, --file")
-}
-@~ Go@/constants@/litar.missingAction @
-
-@<run the action chosen by 'mode'@=
-var (
-	world *World
-	node  string
-)
-@<load 'world' and 'node' from 'archive'@>
-
-@<serve agents in agent mode@>
-
-@<dispatch 'mode' and write the result to 'stdout'@>
-@~ Go@/types@/litar.World @
-
-@<load 'world' and 'node' from 'archive'@=
-if sawFile {
-	var err error
-	world, node, err = FindArchive(archive)
-	if err != nil {
-		return fail("%s", err.Error())
-	}
-}
-@~ Go@/functions@/litar.FindArchive @
-
-The agent serves until its input ends or it is cancelled; neither is an error.
-@<serve agents in agent mode@=
-if mode == "agent" {
-	ag := newAgent()
-	if world != nil {
-		ag.addWorld(world)
-		ag.refresh()
-	}
-	err := ag.serve(context.Background())
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
-		return fail("%s", err.Error())
-	}
-	return 0
-}
-@~ Go@/functions@/litar.newAgent @~ Go@/methods@/litar.agent.addWorld @~ Go@/methods@/litar.agent.refresh @~ Go@/methods@/litar.agent.serve @
-
-@<dispatch 'mode' and write the result to 'stdout'@=
-text, err := dispatch(world, node, mode, operand, stderr)
-if err != nil {
-	return fail("%s", err.Error())
-}
-if _, err := io.WriteString(stdout, text); err != nil {
-	return fail("could not write output")
-}
-return 0
-@~ Go@/functions@/litar.dispatch @
-
-@<cli@:litar@:Go Structure@/functions@+
-func optionTakesValue(opt string) bool {
-	switch opt {
-	case "-f", "--file", "-p", "--print",
-		"-l", "--literal", "-e", "--effective", "-d", "--depend",
-		"-r", "--reference":
-		return true
-	default:
-		return false
-	}
-}
-
-@~ Go@/functions@/litar.optionTakesValue @
-
-@<cli@:litar@:Go Structure@/functions@+
-func dispatch(world *World, node, mode, operand string, stderr io.Writer) (string, error) {
-@<resolve an empty 'node' to the root node@>
-chain, err := world.Chain(node)
-if err != nil {
-	return "", err
-}
-switch mode {
-@<cases of 'mode' in 'dispatch'@>
-default:
-	return "", fmt.Errorf("unknown option '%s'", mode)
-}
-}
-
-@~ Go@/functions@/litar.dispatch @~ Go@/methods@/litar.World.Chain @~ Go@/types@/litar.World @
-
-A caller that gives no node path gets the root node of the composition.
-@<resolve an empty 'node' to the root node@=
-if node == "" {
-	var err error
-	node, err = world.rootName()
-	if err != nil {
-		return "", err
-	}
-}
-@~ Go@/methods@/litar.World.rootName @
-
-@<cases of 'mode' in 'dispatch'@=
-case "print":
-	ref, filters, err := ParsePrint(operand)
-	if err != nil {
-		return "", err
-	}
-	maps, err := world.Mappings(node)
-	if err != nil {
-		return "", err
-	}
-	ev := NewEvaluator(chain, maps, stderr)
-	return ev.Eval(ref, filters)
-@~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.ParsePrint @~ Go@/methods@/litar.Evaluator.Eval @~ Go@/methods@/litar.World.Mappings @
-
-@<cases of 'mode' in 'dispatch'@+
-case "literal":
-	ref, err := ParseChunkRef(operand)
-	if err != nil {
-		return "", err
-	}
-	return Literal(chain, ref)
-case "effective":
-	ref, err := ParseChunkRef(operand)
-	if err != nil {
-		return "", err
-	}
-	return Effective(chain, ref)
-case "depend":
-	ref, err := ParseChunkRef(operand)
-	if err != nil {
-		return "", err
-	}
-	return Depend(chain, ref), nil
-@~ Go@/functions@/litar.Depend @~ Go@/functions@/litar.Effective @~ Go@/functions@/litar.Literal @~ Go@/functions@/litar.ParseChunkRef @
-
-@<cases of 'mode' in 'dispatch'@+
-case "reference":
-	item, err := ParseItem(operand)
-	if err != nil {
-		return "", err
-	}
-	return Refer(chain, item), nil
-@~ Go@/functions@/litar.ParseItem @~ Go@/functions@/litar.Refer @
 
 Tests of cli.go.
 @[internal/litar/cli_test.go@`go module@=
@@ -474,181 +45,6 @@ Tests of cli.go.
 	"strings"
 	"testing"
 @
-
-@<cli test@:litar@:Go Structure@/functions@+
-func runOut(t *testing.T, args ...string) (int, string, string) {
-	t.Helper()
-	var out, err bytes.Buffer
-	code := run(args, &out, &err)
-	return code, out.String(), err.String()
-}
-
-@~ Go@/functions@/litar.run @~ Go@/functions@/litar.runOut @
-
-@<cli test@:litar@:Go Structure@/functions@+
-func TestHelp(t *testing.T) {
-	code, out, err := runOut(t, "litar", "--help", "-p")
-	if code != 0 || err != "" || out != usage("litar") {
-		t.Fatalf("code %d err %q out %q", code, err, out)
-	}
-	if !strings.HasSuffix(out, "-p, --print EXPRESSION: evaluate EXPRESSION, and print it\n") {
-		t.Fatalf("help ending %q", out)
-	}
-	code, out, err = runOut(t, "litar", "-h")
-	if code == 0 || out != "" || !strings.Contains(err, "unknown option '-h'") {
-		t.Fatalf("%d %q %q", code, out, err)
-	}
-}
-
-@~ Go@/functions@/litar.runOut @~ Go@/functions@/litar.usage @
-
-@<cli test@:litar@:Go Structure@/functions@+
-func TestCLIErrors(t *testing.T) {
-	cases := []struct {
-		args []string
-		msg  string
-	}{
-		{[]string{"litar"}, missingAction},
-		{[]string{"litar", "-p", "a", "-l", "a"}, "cannot combine print and literal"},
-		{[]string{"litar", "-l", "a", "-p", "b"}, "cannot combine print and literal"},
-		{[]string{"litar", "-p", "a", "-p", "b"}, "duplicate print option"},
-		{[]string{"litar", "-f", "a", "-f", "b", "-p", "c"}, "duplicate file option"},
-		{[]string{"litar", "-p", "msg"}, "missing -f, --file"},
-		{[]string{"litar", "-t", ".", "-p", "msg"}, "unknown option '-t'"},
-		{[]string{"litar", "-al"}, "unknown option '-al'"},
-		{[]string{"litar", "archive.la"}, "unexpected argument 'archive.la'"},
-	}
-	for _, tc := range cases {
-		code, out, err := runOut(t, tc.args...)
-		if code == 0 || out != "" || !strings.Contains(err, tc.msg) || !strings.HasPrefix(err, "Error: ") {
-			t.Fatalf("%v code %d out %q err %q", tc.args, code, out, err)
-		}
-	}
-}
-
-@~ Go@/constants@/litar.missingAction @~ Go@/functions@/litar.runOut @
-
-@<cli test@:litar@:Go Structure@/functions@+
-func TestCLIPrint(t *testing.T) {
-dir := t.TempDir()
-writeFile(t, filepath.Join(dir, "a.la"), "@@<msg@@=\nHello\n@@\n")
-writeFile(t, filepath.Join(dir, "composer.json"), composerDoc(`[
-    {"name":"root","archive":"./a.la","description":"","mappings":[],"base":[]}
-]`))
-old, err := os.Getwd()
-if err != nil {
-	t.Fatal(err)
-}
-if err := os.Chdir(dir); err != nil {
-	t.Fatal(err)
-}
-t.Cleanup(func() { _ = os.Chdir(old) })
-var (
-	code    int
-	out     string
-	errText string
-)
-@<checks of running litar on 'a.la'@>
-}
-
-@~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.writeFile @
-
-Each check runs litar with one spelling of the file option.
-@<checks of running litar on 'a.la'@=
-code, out, errText = runOut(t, "litar", "-f", "a.la", "-p", "msg")
-if code != 0 || errText != "" || out != "Hello" {
-	t.Fatalf("%d %q %q", code, out, errText)
-}
-code, out, errText = runOut(t, "litar", "-fa.la", "-l", "msg")
-if code != 0 || errText != "" || !strings.Contains(out, "@@<msg@@=") {
-	t.Fatalf("literal %d %q %q", code, out, errText)
-}
-@~ Go@/functions@/litar.runOut @
-
-@<checks of running litar on 'a.la'@+
-code, out, errText = runOut(t, "litar", "--file=a.la", "-p", "missing")
-if code == 0 || out != "" || !strings.Contains(errText, "chunk 'missing' is not defined") {
-	t.Fatalf("missing %d %q %q", code, out, errText)
-}
-code, out, errText = runOut(t, "litar", "-f", "a.la", "-d", "nope")
-if code != 0 || out != "" || errText != "" {
-	t.Fatalf("depend %d %q %q", code, out, errText)
-}
-@~ Go@/functions@/litar.runOut @
-
-@<checks of running litar on 'a.la'@+
-code, out, errText = runOut(t, "litar", "-f", "a.la", "-m", "/")
-if code == 0 || out != "" || !strings.Contains(errText, "unknown option '-m'") {
-	t.Fatalf("modules %d %q %q", code, out, errText)
-}
-code, out, errText = runOut(t, "litar", "-f", "none.la", "-p", "msg")
-if code == 0 || out != "" || !strings.Contains(errText, "could not find archive 'none.la'") {
-	t.Fatalf("missing archive %d %q %q", code, out, errText)
-}
-@~ Go@/functions@/litar.runOut @
-
-@<checks of running litar on 'a.la'@+
-code, out, errText = runOut(t, "litar", "-pfoo", "-f", "a.la")
-if code != 0 || errText != "" || out != "" {
-	// foo is not defined. Attached value is the expression.
-	if code == 0 || !strings.Contains(errText, "chunk 'foo' is not defined") {
-		t.Fatalf("attached %d %q %q", code, out, errText)
-	}
-}
-@~ Go@/functions@/litar.runOut @
-
-@<cli test@:litar@:Go Structure@/functions@+
-func TestFindArchive(t *testing.T) {
-dir := t.TempDir()
-sub := filepath.Join(dir, "sub")
-@<write a composition in 'dir' with a child archive under 'sub', and another composition in 'sub'@>
-
-@<check the archives FindArchive finds in 'dir' and 'sub'@>
-
-code, out, errText := runOut(t, "litar", "-f", filepath.Join(sub, "deep", "child.la"), "-p", "msg")
-if code != 0 || errText != "" || out != "basechild" {
-	t.Fatalf("%d %q %q", code, out, errText)
-}
-}
-
-@~ Go@/functions@/litar.runOut @
-
-The child archive lies under sub, whose own composition does not declare it,
-so the search must go on past the nearest composer.
-@<write a composition in 'dir' with a child archive under 'sub', and another composition in 'sub'@=
-writeFile(t, filepath.Join(dir, "base.la"), "@@<msg@@=base@@\n")
-if err := os.MkdirAll(filepath.Join(sub, "deep"), 0o755); err != nil {
-	t.Fatal(err)
-}
-writeFile(t, filepath.Join(sub, "deep", "child.la"), "@@<msg@@+child@@\n")
-writeFile(t, filepath.Join(dir, "composer.json"), composerDoc(`[
-    {"name":"base","archive":"./base.la","description":"","mappings":[],"base":[]},
-    {"name":"child","archive":"./sub/deep/child.la","description":"","mappings":[],"base":["base"]}
-]`))
-writeFile(t, filepath.Join(sub, "other.la"), "@@<msg@@=other@@\n")
-writeFile(t, filepath.Join(sub, "composer.json"), composerDoc(`[
-    {"name":"other","archive":"./other.la","description":"","mappings":[],"base":[]}
-]`))
-@~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.writeFile @
-
-@<check the archives FindArchive finds in 'dir' and 'sub'@=
-w, node, err := FindArchive(filepath.Join(sub, "deep", "child.la"))
-if err != nil || node != "base/child" || w.Composer != filepath.Join(dir, "composer.json") {
-	t.Fatalf("child %v %q", err, node)
-}
-_, node, err = FindArchive(filepath.Join(sub, "other.la"))
-if err != nil || node != "other" {
-	t.Fatalf("nearest %v %q", err, node)
-}
-stray := filepath.Join(sub, "stray.la")
-writeFile(t, stray, "@@<msg@@=stray@@\n")
-if _, _, err := FindArchive(stray); err == nil || !strings.Contains(err.Error(), "no composition declares archive") {
-	t.Fatal(err)
-}
-if _, _, err := FindArchive(filepath.Join(dir, "none.la")); err == nil || !strings.Contains(err.Error(), "could not find archive") {
-	t.Fatal(err)
-}
-@~ Go@/functions@/litar.FindArchive @~ Go@/functions@/litar.writeFile @
 
 Compositions: composer.json, grounds, the node graph, and archive edits with compaction.
 @[internal/litar/compose.go@`go module@=
@@ -10153,19 +9549,6 @@ Hello
 }
 
 @
-@(tests/cases/blocks/driver.sh@`tests@=
-#!/bin/bash
-set -eu
-LITAR=$1
-ROOT=$2
-cd "$(dirname "$0")"
-. "$ROOT/tests/assert.sh"
-assert_text msg Hello "$LITAR" --file=archive.la -p msg
-assert_text line Hi "$LITAR" -f archive.la -p line
-assert_text nest '!' "$LITAR" -f archive.la -p base
-assert_text attached Hello "$LITAR" -farchive.la -pmsg
-
-@
 @[tests/cases/compose/base.la@`tests@=
 @@<msg@@=base@@
 
@@ -10227,25 +9610,6 @@ Hello
         }
     ]
 }
-
-@
-@(tests/cases/errors/driver.sh@`tests@=
-#!/bin/bash
-set -eu
-LITAR=$1
-ROOT=$2
-cd "$(dirname "$0")"
-. "$ROOT/tests/assert.sh"
-assert_fail none "missing -p, --print, -l, --literal, -e, --effective, -d, --depend, -r, --reference, or -a, --agent" "$LITAR"
-assert_fail combine "cannot combine print and literal" "$LITAR" -p a -l a
-assert_fail combine-rev "cannot combine print and literal" "$LITAR" -l a -p b
-assert_fail dup "duplicate print option" "$LITAR" -p a -p b
-assert_fail nofile "missing -f, --file" "$LITAR" -p msg
-assert_fail cluster "unknown option '-al'" "$LITAR" -al
-assert_fail positional "unexpected argument 'archive.la'" "$LITAR" archive.la
-assert_fail missing "chunk 'missing' is not defined" "$LITAR" -f archive.la -p missing
-assert_text depend-empty '' "$LITAR" -f archive.la -d nope
-assert_fail effective "chunk 'missing' is not defined" "$LITAR" -f archive.la -e missing
 
 @
 @[tests/cases/filter/archive.la@`tests@=
@@ -10364,33 +9728,6 @@ assert_text overlay overlay "$LITAR" -f archive.la -p made
 assert_fail readonly "exited with status" "$LITAR" -f archive.la -p row
 assert_fail missing "file 'missing' is not defined" "$LITAR" -f archive.la -p '@@|show@@,missing'
 assert_fail badpath "invalid file path '../x'" "$LITAR" -f archive.la -p '@@|show@@,../x'
-
-@
-@(tests/cases/help/driver.sh@`tests@=
-#!/bin/bash
-set -eu
-LITAR=$1
-ROOT=$2
-. "$ROOT/tests/assert.sh"
-exp=$(mktemp)
-{
-    printf 'usage: %s [options]\n\n' "$LITAR"
-    cat <<'EOF'
---help: print the usage
--a, --agent: open an MCP server to handle the requests from agents
--f, --file ARCHIVE: specify the archive file, find the composition and the node corresponding
--l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
--e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
--d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
--r, --reference ITEM: list all blocks that refer to ITEM
--p, --print EXPRESSION: evaluate EXPRESSION, and print it
-EOF
-} >"$exp"
-assert_ok help "$exp" "$LITAR" --help
-assert_ok help-with-other "$exp" "$LITAR" --help -p
-rm -f "$exp"
-assert_fail short-h "unknown option '-h'" "$LITAR" -h
-assert_fail help-eq "unknown option '--help=foo'" "$LITAR" --help=foo
 
 @
 @[tests/cases/list/depend-1.out@`tests@=
@@ -10849,10 +10186,6 @@ The status, out and err files are optional.
 
 @<Domain@/Go@/constants@=
 {"description": "Package-level constants."}
-@
-
-@<Index@/Go@/functions@/litar.Main@=
-{"description": "Entry point of the tool; takes os.Args and returns the exit status."}
 @
 @<Index@/Go@/types@/litar.World@=
 {"description": "A loaded composition: its composer file, directory, ground, and nodes, ground nodes first."}
@@ -11660,9 +10993,6 @@ The module path is litar, so the package reads litar/internal/litar in import pa
 module: 'litar',
 go: '1.25.0',
 @
-@<litar command@:Go Structure@/module properties@+
-name: 'main',
-@
 The package litar holds the whole tool; the command litar only calls litar.Main.
 Each file of the package carries its own label, its base name,
 and a test file the base name of the file it tests followed by test.
@@ -11817,6 +11147,437 @@ func TestParseShebang(t *testing.T) {
 }
 
 @~ Go@/functions@/litar.parseShebang @
+The command litar is a command of Go Structure:
+the flag package parses its invocation syntax, and the main body hands the flags to litar.Main.
+@[cmd/litar/main.go@`go module@=
+@<litar command@:command@:Go Structure@/file@>@
+
+@<litar command@:command@:Go Structure@/package comment@=
+// Command litar prints, lists, and serves the chunks of litar compositions.
+@
+
+@<litar command@:command@:Go Structure@/import paths@+
+"@<litar@:Go Project@/import path@>"
+@
+
+@<litar command@:command@:Go Structure@/main body@=
+os.Exit(litar.Main(litar.Options{
+	Agent:     command.flags.agent,
+	File:      command.flags.file,
+	Literal:   command.flags.literal,
+	Effective: command.flags.effective,
+	Depend:    command.flags.depend,
+	Reference: command.flags.reference,
+	Print:     command.flags.print,
+}))
+@~ Go@/functions@/litar.Main @~ Go@/types@/litar.Options @
+@<cli@:litar@:Go Structure@/constants@=
+const missingAction = "missing -p, --print, -l, --literal, -e, --effective, -d, --depend, -r, --reference, or -a, --agent"
+
+@~ Go@/constants@/litar.missingAction @
+
+The command litar parses its command line with the flag package and passes the result here.
+@<cli@:litar@:Go Structure@/types@+
+// Options is the command line of litar after parsing.
+// An action is given by a non-empty operand; Agent takes none.
+type Options struct {
+	Agent     bool
+	File      string
+	Literal   string
+	Effective string
+	Depend    string
+	Reference string
+	Print     string
+}
+
+@~ Go@/types@/litar.Options @
+
+@<cli@:litar@:Go Structure@/functions@=
+// Main runs litar with a parsed command line and returns the exit status.
+func Main(opts Options) int {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		sig := <-sigs
+		DetachMounts()
+		os.Exit(128 + int(sig.(syscall.Signal)))
+	}()
+	return run(opts, os.Stdout, os.Stderr)
+}
+
+@~ Go@/functions@/litar.DetachMounts @~ Go@/functions@/litar.Main @~ Go@/functions@/litar.run @~ Go@/types@/litar.Options @
+
+Every error is reported as one line on stderr, and run exits with status 1.
+@<cli@:litar@:Go Structure@/functions@+
+func run(opts Options, stdout, stderr io.Writer) int {
+fail := func(format string, a ...any) int {
+	fmt.Fprintf(stderr, "Error: "+format+"\n", a...)
+	return 1
+}
+var mode, operand string
+@<choose 'mode' and 'operand' from the actions given in 'opts'@>
+
+archive := opts.File
+sawFile := archive != ""
+@<check that an archive is given unless 'mode' is agent@>
+
+@<run the action chosen by 'mode'@>
+}
+
+@~ Go@/functions@/litar.run @~ Go@/types@/litar.Options @
+
+@<run the action chosen by 'mode'@=
+var (
+	world *World
+	node  string
+)
+@<load 'world' and 'node' from 'archive'@>
+
+@<serve agents in agent mode@>
+
+@<dispatch 'mode' and write the result to 'stdout'@>
+@~ Go@/types@/litar.World @
+
+@<load 'world' and 'node' from 'archive'@=
+if sawFile {
+	var err error
+	world, node, err = FindArchive(archive)
+	if err != nil {
+		return fail("%s", err.Error())
+	}
+}
+@~ Go@/functions@/litar.FindArchive @
+
+The agent serves until its input ends or it is cancelled; neither is an error.
+@<serve agents in agent mode@=
+if mode == "agent" {
+	ag := newAgent()
+	if world != nil {
+		ag.addWorld(world)
+		ag.refresh()
+	}
+	err := ag.serve(context.Background())
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
+		return fail("%s", err.Error())
+	}
+	return 0
+}
+@~ Go@/functions@/litar.newAgent @~ Go@/methods@/litar.agent.addWorld @~ Go@/methods@/litar.agent.refresh @~ Go@/methods@/litar.agent.serve @
+
+@<dispatch 'mode' and write the result to 'stdout'@=
+text, err := dispatch(world, node, mode, operand, stderr)
+if err != nil {
+	return fail("%s", err.Error())
+}
+if _, err := io.WriteString(stdout, text); err != nil {
+	return fail("could not write output")
+}
+return 0
+@~ Go@/functions@/litar.dispatch @
+
+@<cli@:litar@:Go Structure@/functions@+
+func dispatch(world *World, node, mode, operand string, stderr io.Writer) (string, error) {
+@<resolve an empty 'node' to the root node@>
+chain, err := world.Chain(node)
+if err != nil {
+	return "", err
+}
+switch mode {
+@<cases of 'mode' in 'dispatch'@>
+default:
+	return "", fmt.Errorf("unknown option '%s'", mode)
+}
+}
+
+@~ Go@/functions@/litar.dispatch @~ Go@/methods@/litar.World.Chain @~ Go@/types@/litar.World @
+
+A caller that gives no node path gets the root node of the composition.
+@<resolve an empty 'node' to the root node@=
+if node == "" {
+	var err error
+	node, err = world.rootName()
+	if err != nil {
+		return "", err
+	}
+}
+@~ Go@/methods@/litar.World.rootName @
+
+@<cases of 'mode' in 'dispatch'@=
+case "print":
+	ref, filters, err := ParsePrint(operand)
+	if err != nil {
+		return "", err
+	}
+	maps, err := world.Mappings(node)
+	if err != nil {
+		return "", err
+	}
+	ev := NewEvaluator(chain, maps, stderr)
+	return ev.Eval(ref, filters)
+@~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.ParsePrint @~ Go@/methods@/litar.Evaluator.Eval @~ Go@/methods@/litar.World.Mappings @
+
+@<cases of 'mode' in 'dispatch'@+
+case "literal":
+	ref, err := ParseChunkRef(operand)
+	if err != nil {
+		return "", err
+	}
+	return Literal(chain, ref)
+case "effective":
+	ref, err := ParseChunkRef(operand)
+	if err != nil {
+		return "", err
+	}
+	return Effective(chain, ref)
+case "depend":
+	ref, err := ParseChunkRef(operand)
+	if err != nil {
+		return "", err
+	}
+	return Depend(chain, ref), nil
+@~ Go@/functions@/litar.Depend @~ Go@/functions@/litar.Effective @~ Go@/functions@/litar.Literal @~ Go@/functions@/litar.ParseChunkRef @
+
+@<cases of 'mode' in 'dispatch'@+
+case "reference":
+	item, err := ParseItem(operand)
+	if err != nil {
+		return "", err
+	}
+	return Refer(chain, item), nil
+@~ Go@/functions@/litar.ParseItem @~ Go@/functions@/litar.Refer @
+
+Only one action is allowed. Two actions are reported in the order of modeOrder,
+so the message does not depend on the order of the arguments.
+@<choose 'mode' and 'operand' from the actions given in 'opts'@=
+operands := map[string]string{
+	"print":     opts.Print,
+	"literal":   opts.Literal,
+	"effective": opts.Effective,
+	"depend":    opts.Depend,
+	"reference": opts.Reference,
+}
+for _, name := range modeOrder {
+	given := operands[name] != ""
+	if name == "agent" {
+		given = opts.Agent
+	}
+	if !given {
+		continue
+	}
+	if mode != "" {
+		return fail("cannot combine %s and %s", mode, name)
+	}
+	mode, operand = name, operands[name]
+}
+if mode == "" {
+	return fail("%s", missingAction)
+}
+@~ Go@/constants@/litar.missingAction @~ Go@/variables@/litar.modeOrder @
+
+The agent mode may start without an archive; compositions can be imported later.
+@<check that an archive is given unless 'mode' is agent@=
+if mode != "agent" && !sawFile {
+	return fail("missing -f, --file")
+}
+@
+@<cli test@:litar@:Go Structure@/functions@=
+func runOut(t *testing.T, opts Options) (int, string, string) {
+	t.Helper()
+	var out, err bytes.Buffer
+	code := run(opts, &out, &err)
+	return code, out.String(), err.String()
+}
+
+@~ Go@/functions@/litar.run @~ Go@/functions@/litar.runOut @~ Go@/types@/litar.Options @
+
+@<cli test@:litar@:Go Structure@/functions@+
+func TestCLIErrors(t *testing.T) {
+	cases := []struct {
+		opts Options
+		msg  string
+	}{
+		{Options{}, missingAction},
+		{Options{File: "a.la"}, missingAction},
+		{Options{Print: "a", Literal: "a"}, "cannot combine print and literal"},
+		{Options{Reference: "a", Agent: true}, "cannot combine reference and agent"},
+		{Options{Print: "msg"}, "missing -f, --file"},
+	}
+	for _, tc := range cases {
+		code, out, err := runOut(t, tc.opts)
+		if code == 0 || out != "" || !strings.Contains(err, tc.msg) || !strings.HasPrefix(err, "Error: ") {
+			t.Fatalf("%+v code %d out %q err %q", tc.opts, code, out, err)
+		}
+	}
+}
+
+@~ Go@/constants@/litar.missingAction @~ Go@/functions@/litar.runOut @~ Go@/types@/litar.Options @
+
+@<cli test@:litar@:Go Structure@/functions@+
+func TestCLIPrint(t *testing.T) {
+dir := t.TempDir()
+writeFile(t, filepath.Join(dir, "a.la"), "@@<msg@@=\nHello\n@@\n")
+writeFile(t, filepath.Join(dir, "composer.json"), composerDoc(`[
+    {"name":"root","archive":"./a.la","description":"","mappings":[],"base":[]}
+]`))
+old, err := os.Getwd()
+if err != nil {
+	t.Fatal(err)
+}
+if err := os.Chdir(dir); err != nil {
+	t.Fatal(err)
+}
+t.Cleanup(func() { _ = os.Chdir(old) })
+var (
+	code    int
+	out     string
+	errText string
+)
+@<checks of running litar on 'a.la'@>
+}
+
+@~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.writeFile @
+
+@<cli test@:litar@:Go Structure@/functions@+
+func TestFindArchive(t *testing.T) {
+dir := t.TempDir()
+sub := filepath.Join(dir, "sub")
+@<write a composition in 'dir' with a child archive under 'sub', and another composition in 'sub'@>
+
+@<check the archives FindArchive finds in 'dir' and 'sub'@>
+
+code, out, errText := runOut(t, Options{File: filepath.Join(sub, "deep", "child.la"), Print: "msg"})
+if code != 0 || errText != "" || out != "basechild" {
+	t.Fatalf("%d %q %q", code, out, errText)
+}
+}
+
+@~ Go@/functions@/litar.runOut @~ Go@/types@/litar.Options @
+
+The child archive lies under sub, whose own composition does not declare it,
+so the search must go on past the nearest composer.
+@<write a composition in 'dir' with a child archive under 'sub', and another composition in 'sub'@=
+writeFile(t, filepath.Join(dir, "base.la"), "@@<msg@@=base@@\n")
+if err := os.MkdirAll(filepath.Join(sub, "deep"), 0o755); err != nil {
+	t.Fatal(err)
+}
+writeFile(t, filepath.Join(sub, "deep", "child.la"), "@@<msg@@+child@@\n")
+writeFile(t, filepath.Join(dir, "composer.json"), composerDoc(`[
+    {"name":"base","archive":"./base.la","description":"","mappings":[],"base":[]},
+    {"name":"child","archive":"./sub/deep/child.la","description":"","mappings":[],"base":["base"]}
+]`))
+writeFile(t, filepath.Join(sub, "other.la"), "@@<msg@@=other@@\n")
+writeFile(t, filepath.Join(sub, "composer.json"), composerDoc(`[
+    {"name":"other","archive":"./other.la","description":"","mappings":[],"base":[]}
+]`))
+@~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.writeFile @
+
+@<check the archives FindArchive finds in 'dir' and 'sub'@=
+w, node, err := FindArchive(filepath.Join(sub, "deep", "child.la"))
+if err != nil || node != "base/child" || w.Composer != filepath.Join(dir, "composer.json") {
+	t.Fatalf("child %v %q", err, node)
+}
+_, node, err = FindArchive(filepath.Join(sub, "other.la"))
+if err != nil || node != "other" {
+	t.Fatalf("nearest %v %q", err, node)
+}
+stray := filepath.Join(sub, "stray.la")
+writeFile(t, stray, "@@<msg@@=stray@@\n")
+if _, _, err := FindArchive(stray); err == nil || !strings.Contains(err.Error(), "no composition declares archive") {
+	t.Fatal(err)
+}
+if _, _, err := FindArchive(filepath.Join(dir, "none.la")); err == nil || !strings.Contains(err.Error(), "could not find archive") {
+	t.Fatal(err)
+}
+@~ Go@/functions@/litar.FindArchive @~ Go@/functions@/litar.writeFile @
+
+Each check runs litar on a.la with one action.
+@<checks of running litar on 'a.la'@=
+code, out, errText = runOut(t, Options{File: "a.la", Print: "msg"})
+if code != 0 || errText != "" || out != "Hello" {
+	t.Fatalf("%d %q %q", code, out, errText)
+}
+code, out, errText = runOut(t, Options{File: "a.la", Literal: "msg"})
+if code != 0 || errText != "" || !strings.Contains(out, "@@<msg@@=") {
+	t.Fatalf("literal %d %q %q", code, out, errText)
+}
+@~ Go@/functions@/litar.runOut @~ Go@/types@/litar.Options @
+
+@<checks of running litar on 'a.la'@+
+code, out, errText = runOut(t, Options{File: "a.la", Print: "missing"})
+if code == 0 || out != "" || !strings.Contains(errText, "chunk 'missing' is not defined") {
+	t.Fatalf("missing %d %q %q", code, out, errText)
+}
+code, out, errText = runOut(t, Options{File: "a.la", Depend: "nope"})
+if code != 0 || out != "" || errText != "" {
+	t.Fatalf("depend %d %q %q", code, out, errText)
+}
+code, out, errText = runOut(t, Options{File: "none.la", Print: "msg"})
+if code == 0 || out != "" || !strings.Contains(errText, "could not find archive 'none.la'") {
+	t.Fatalf("missing archive %d %q %q", code, out, errText)
+}
+@~ Go@/functions@/litar.runOut @~ Go@/types@/litar.Options @
+@(tests/cases/errors/driver.sh@`tests@=
+#!/bin/bash
+set -eu
+LITAR=$1
+ROOT=$2
+cd "$(dirname "$0")"
+. "$ROOT/tests/assert.sh"
+assert_fail none "missing -p, --print, -l, --literal, -e, --effective, -d, --depend, -r, --reference, or -a, --agent" "$LITAR"
+assert_fail combine "cannot combine print and literal" "$LITAR" -p a -l a
+assert_fail combine-rev "cannot combine print and literal" "$LITAR" -l a -p b
+assert_fail nofile "missing -f, --file" "$LITAR" -p msg
+assert_fail unknown "flag provided but not defined: -t" "$LITAR" -t . -p msg
+assert_fail cluster "flag provided but not defined: -al" "$LITAR" -al
+assert_fail positional "Usage: litar " "$LITAR" archive.la
+assert_fail missing "chunk 'missing' is not defined" "$LITAR" -f archive.la -p missing
+assert_fail long "chunk 'missing' is not defined" "$LITAR" --file archive.la --print missing
+assert_fail long-eq "chunk 'missing' is not defined" "$LITAR" --file=archive.la -print=missing
+assert_text depend-empty '' "$LITAR" -f archive.la -d nope
+assert_fail effective "chunk 'missing' is not defined" "$LITAR" -f archive.la -e missing
+
+@
+@(tests/cases/help/driver.sh@`tests@=
+#!/bin/bash
+set -eu
+LITAR=$1
+ROOT=$2
+. "$ROOT/tests/assert.sh"
+exp=$(mktemp)
+cat >"$exp" <<'EOF'
+Usage: litar [-a] [-f ARCHIVE] [-l CHUNK_REFERENCE] [-e CHUNK_REFERENCE] [-d CHUNK_REFERENCE] [-r ITEM] [-p EXPRESSION]
+
+-h, --help: print the usage
+-a, --agent: open an MCP server to handle the requests from agents
+-f, --file ARCHIVE: specify the archive file, find the composition and the node corresponding
+-l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
+-e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
+-d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
+-r, --reference ITEM: list all blocks that refer to ITEM
+-p, --print EXPRESSION: evaluate EXPRESSION, and print it
+EOF
+assert_ok help "$exp" "$LITAR" --help
+assert_ok short-h "$exp" "$LITAR" -h
+assert_ok help-after-other "$exp" "$LITAR" -p x --help
+rm -f "$exp"
+assert_fail help-as-value "missing -f, --file" "$LITAR" -p --help
+
+@
+@<Index@/Go@/functions@/litar.Main@=
+{"description": "Entry point of the tool; takes the parsed command line and returns the exit status."}
+@
+@<Index@/Go@/types@/litar.Options@=
+{"description": "Command line of litar after the flag package has parsed it."}
+@
+@<cli@:litar@:Go Structure@/import paths@=
+"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/signal"
+	"syscall"
+@
 The default address is on the loopback interface,
 because the interface reads archives and runs their filters on this machine.
 litar names the binary that serves the compositions;
@@ -11846,3 +11607,80 @@ file names an archive whose composition is imported before the first page.
     ],
 }
 @
+The options of litar, in the order of the usage in design/ui.md.
+An action is chosen by giving its operand; agent takes none.
+@<litar command@:command@:Invocation@/invocation syntax@=
+{
+    name: 'litar',
+    options: [
+        {
+            name: 'agent',
+            short: 'a',
+            description: 'open an MCP server to handle the requests from agents',
+        },
+        {
+            name: 'file',
+            short: 'f',
+            type: 'string',
+            argument: 'archive',
+            description: 'specify the archive file, find the composition and the node corresponding',
+        },
+        {
+            name: 'literal',
+            short: 'l',
+            type: 'string',
+            argument: 'chunk reference',
+            description: 'print the blocks applied to CHUNK_REFERENCE literally',
+        },
+        {
+            name: 'effective',
+            short: 'e',
+            type: 'string',
+            argument: 'chunk reference',
+            description: 'print the effective blocks of CHUNK_REFERENCE',
+        },
+        {
+            name: 'depend',
+            short: 'd',
+            type: 'string',
+            argument: 'chunk reference',
+            description: 'list all blocks that depend on CHUNK_REFERENCE',
+        },
+        {
+            name: 'reference',
+            short: 'r',
+            type: 'string',
+            argument: 'item',
+            description: 'list all blocks that refer to ITEM',
+        },
+        {
+            name: 'print',
+            short: 'p',
+            type: 'string',
+            argument: 'expression',
+            description: 'evaluate EXPRESSION, and print it',
+        },
+    ],
+}
+@
+The flag package also reads a flag after two hyphens, the way design/ui.md writes long options.
+@<litar command@:command@:Invocation@/long option prefix@=
+--
+@
+@(tests/cases/blocks/driver.sh@`tests@=
+#!/bin/bash
+set -eu
+LITAR=$1
+ROOT=$2
+cd "$(dirname "$0")"
+. "$ROOT/tests/assert.sh"
+assert_text msg Hello "$LITAR" --file=archive.la -p msg
+assert_text line Hi "$LITAR" -f archive.la -p line
+assert_text nest '!' "$LITAR" -f archive.la -p base
+assert_text separate Hello "$LITAR" -f=archive.la -p=msg
+assert_fail attached "flag provided but not defined: -farchive.la" "$LITAR" -farchive.la -pmsg
+
+@
+The parsed command line: choosing the action, and dispatch to the print, listing, and agent modes.
+@[internal/litar/cli.go@`go module@=
+@<cli@:litar@:Go Structure@/file@>@

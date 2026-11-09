@@ -7,4 +7,5 @@ cd "$(dirname "$0")"
 assert_text msg Hello "$LITAR" --file=archive.la -p msg
 assert_text line Hi "$LITAR" -f archive.la -p line
 assert_text nest '!' "$LITAR" -f archive.la -p base
-assert_text attached Hello "$LITAR" -farchive.la -pmsg
+assert_text separate Hello "$LITAR" -f=archive.la -p=msg
+assert_fail attached "flag provided but not defined: -farchive.la" "$LITAR" -farchive.la -pmsg

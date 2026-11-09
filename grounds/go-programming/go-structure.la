@@ -131,14 +131,6 @@ func main() {
     @<.@/main body@>
 }
 @
-
-@<Go Structure@/Flag@/parse command line arguments@=
-@<.@/register flags@>flag.Usage = func() {
-fmt.Fprint(flag.CommandLine.Output(), @<.@/usage literal@>)
-flag.PrintDefaults()
-}
-flag.Parse()
-@<.@/store arguments@>@
 @<Chunk@/Go Structure@/module meta information@=
 {"description": "Package name and other properties, as a Jsonnet object."}
 @
@@ -189,17 +181,6 @@ if paths:
     "fmt"
     "os"
 @
-command is the rightmost label of a package main program.
-These blocks set the package name to main,
-add the flag, fmt, and os imports,
-add the command variable when the invocation syntax needs one,
-and add func main.
-func main parses the command line and then runs the main body.
-Parsing always calls flag.Parse, flag.Usage, and os.Exit,
-so those three imports stay used when the command has no flags.
-Replace module meta information to name the other files in the node.
-That replacement does not rename the command.
-@<command@:Go Structure@/package name@=main@
 @<Go Structure@/Flag@/command variables@=
 @<Text Processing@/basic python settings@>
 @<.@/flag syntax helpers@>
@@ -223,19 +204,36 @@ if usage.options or usage.arguments:
         print('}')
     print('}')
 @|Basic@/evaluate@
-@<Go Structure@/Flag@/register flags@=
-@<Text Processing@/basic python settings@>
-@<.@/flag syntax helpers@>
-
-
-syntax = configuration(GoSyntax, r'''
-@<Invocation@/invocation syntax@>
-''')
-for opt in syntax.usages[0].options:
-    field = take_field(opt.name)
-    print(f'flag.{FLAG_FUNCS[opt.type]}(&command.flags.{field}, {go_string(opt.name)}, '
-          f'{go_literal(opt)}, {go_string(opt.description)})')
-@|Basic@/evaluate@
+@<Chunk@/Go Structure@/Flag@/flag syntax helpers@=
+{"description": "Go field names, Go literals, and the Go limits on the shared invocation syntax."}
+@
+The flag package shows a flag after one hyphen.
+@<command@:Invocation@/long option prefix@=
+-
+@
+@<Chunk@/Go Structure@/Flag@/usage literal@=
+{"description": "Go string literal of the shared usage lines."}
+@
+Help that is asked for goes to stdout and exits 0;
+a parse error goes to stderr, followed by the usage, and exits 2.
+The usage of flag.CommandLine is silenced while parsing,
+so the usage is printed once, after the stream is known.
+No variable is declared here, so the main body may declare any name.
+@<Go Structure@/Flag@/parse command line arguments@=
+@<.@/register flags@>flag.Usage = func() {
+fmt.Fprint(flag.CommandLine.Output(), @<.@/usage literal@>)
+}
+flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
+flag.CommandLine.Usage = func() {}
+if err := flag.CommandLine.Parse(os.Args[1:]); err == flag.ErrHelp {
+flag.CommandLine.SetOutput(os.Stdout)
+flag.Usage()
+os.Exit(0)
+} else if err != nil {
+flag.Usage()
+os.Exit(2)
+}
+@<.@/store arguments@>@
 @<Go Structure@/Flag@/store arguments@=
 @<Text Processing@/basic python settings@>
 @<.@/flag syntax helpers@>
@@ -252,20 +250,31 @@ print('}')
 for i, arg in enumerate(arguments):
     print(f'command.arguments.{take_field(arg)} = flag.Args()[{i}]')
 @|Basic@/evaluate@
-@<Chunk@/Go Structure@/Flag@/flag syntax helpers@=
-{"description": "Go field names, Go literals, and the Go limits on the shared invocation syntax."}
-@
-The flag package shows a flag after one hyphen.
-@<command@:Invocation@/long option prefix@=
--
-@
-flag.Usage prints the shared usage lines, then the defaults of every flag.
+A short name is registered as a second flag of the same variable.
+@<Go Structure@/Flag@/register flags@=
+@<Text Processing@/basic python settings@>
+@<.@/flag syntax helpers@>
+
+
+syntax = configuration(GoSyntax, r'''
+@<Invocation@/invocation syntax@>
+''')
+for opt in syntax.usages[0].options:
+    field = take_field(opt.name)
+    for name in [opt.name] + ([opt.short] if opt.short else []):
+        print(f'flag.{FLAG_FUNCS[opt.type]}(&command.flags.{field}, {go_string(name)}, '
+              f'{go_literal(opt)}, {go_string(opt.description)})')
+@|Basic@/evaluate@
+flag.Usage prints the shared usage lines, a blank line,
+the help flag that the flag package defines, then the shared option summary.
 @<Go Structure@/Flag@/usage literal@=
 @<Text Processing@/basic python settings@>
 @<.@/flag syntax helpers@>
 
 
-print(go_string(r'''@<Invocation@/command line usage@>'''), end='')
+usage = r'''@<Invocation@/command line usage@>'''
+summary = f'-h, {LONG_PREFIX}help: print the usage\n' + r'''@<Invocation@/option summary@>'''
+print(go_string(usage + '\n' + summary), end='')
 @|Basic@/evaluate@
 The generators include this chunk as one fragment, on top of the shared models,
 so an option name becomes the same Go field in each of them.
@@ -324,8 +333,9 @@ def go_literal(opt):
         return go_string(opt.default)
     return str(opt.default)
 @
-The flag package parses one usage of long options, so a command has one usage
-and no short option; its positional arguments are an exact list.
+The flag package parses one usage, so a command has one usage; its positional arguments are an exact list.
+A short name is a second flag, so no name may be both a short and a long name,
+and h and help stay the help flags of the flag package.
 Options, and separately arguments, must become distinct Go fields.
 @<Go Structure@/Flag@/flag syntax helpers@+
 class GoSyntax(InvocationSyntax):
@@ -334,9 +344,12 @@ class GoSyntax(InvocationSyntax):
         if len(self.usages) != 1:
             raise ValueError('the flag package parses one usage')
         usage = self.usages[0]
-        for opt in usage.options:
-            if opt.short:
-                raise ValueError(f'option {opt.name!r} has a short name, which the flag package lacks')
+        flags = [opt.name for opt in usage.options] + [opt.short for opt in usage.options if opt.short]
+        for name in flags:
+            if name in ('h', 'help'):
+                raise ValueError(f'flag {name!r} is the help flag of the flag package')
+            if flags.count(name) > 1:
+                raise ValueError(f'flag {name!r} is both a short name and a long name')
         for names in ([opt.name for opt in usage.options], usage.arguments):
             seen = set()
             for name in names:
@@ -346,6 +359,14 @@ class GoSyntax(InvocationSyntax):
                 seen.add(field)
         return self
 @
-@<Chunk@/Go Structure@/Flag@/usage literal@=
-{"description": "Go string literal of the shared usage lines."}
-@
+command is the rightmost label of a package main program.
+These blocks set the package name to main,
+add the flag, fmt, and os imports,
+add the command variable when the invocation syntax needs one,
+and add func main.
+func main parses the command line and then runs the main body.
+Parsing always uses the flag, fmt, and os packages,
+so those three imports stay used when the command has no flags.
+Replace module meta information to name the other files in the node.
+That replacement does not rename the command.
+@<command@:Go Structure@/package name@=main@

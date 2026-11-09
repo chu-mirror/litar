@@ -4,10 +4,10 @@ LITAR=$1
 ROOT=$2
 . "$ROOT/tests/assert.sh"
 exp=$(mktemp)
-{
-    printf 'usage: %s [options]\n\n' "$LITAR"
-    cat <<'EOF'
---help: print the usage
+cat >"$exp" <<'EOF'
+Usage: litar [-a] [-f ARCHIVE] [-l CHUNK_REFERENCE] [-e CHUNK_REFERENCE] [-d CHUNK_REFERENCE] [-r ITEM] [-p EXPRESSION]
+
+-h, --help: print the usage
 -a, --agent: open an MCP server to handle the requests from agents
 -f, --file ARCHIVE: specify the archive file, find the composition and the node corresponding
 -l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
@@ -16,9 +16,8 @@ exp=$(mktemp)
 -r, --reference ITEM: list all blocks that refer to ITEM
 -p, --print EXPRESSION: evaluate EXPRESSION, and print it
 EOF
-} >"$exp"
 assert_ok help "$exp" "$LITAR" --help
-assert_ok help-with-other "$exp" "$LITAR" --help -p
+assert_ok short-h "$exp" "$LITAR" -h
+assert_ok help-after-other "$exp" "$LITAR" -p x --help
 rm -f "$exp"
-assert_fail short-h "unknown option '-h'" "$LITAR" -h
-assert_fail help-eq "unknown option '--help=foo'" "$LITAR" --help=foo
+assert_fail help-as-value "missing -f, --file" "$LITAR" -p --help

@@ -8,46 +8,28 @@ import (
 	"testing"
 )
 
-func runOut(t *testing.T, args ...string) (int, string, string) {
+func runOut(t *testing.T, opts Options) (int, string, string) {
 	t.Helper()
 	var out, err bytes.Buffer
-	code := run(args, &out, &err)
+	code := run(opts, &out, &err)
 	return code, out.String(), err.String()
-}
-
-func TestHelp(t *testing.T) {
-	code, out, err := runOut(t, "litar", "--help", "-p")
-	if code != 0 || err != "" || out != usage("litar") {
-		t.Fatalf("code %d err %q out %q", code, err, out)
-	}
-	if !strings.HasSuffix(out, "-p, --print EXPRESSION: evaluate EXPRESSION, and print it\n") {
-		t.Fatalf("help ending %q", out)
-	}
-	code, out, err = runOut(t, "litar", "-h")
-	if code == 0 || out != "" || !strings.Contains(err, "unknown option '-h'") {
-		t.Fatalf("%d %q %q", code, out, err)
-	}
 }
 
 func TestCLIErrors(t *testing.T) {
 	cases := []struct {
-		args []string
+		opts Options
 		msg  string
 	}{
-		{[]string{"litar"}, missingAction},
-		{[]string{"litar", "-p", "a", "-l", "a"}, "cannot combine print and literal"},
-		{[]string{"litar", "-l", "a", "-p", "b"}, "cannot combine print and literal"},
-		{[]string{"litar", "-p", "a", "-p", "b"}, "duplicate print option"},
-		{[]string{"litar", "-f", "a", "-f", "b", "-p", "c"}, "duplicate file option"},
-		{[]string{"litar", "-p", "msg"}, "missing -f, --file"},
-		{[]string{"litar", "-t", ".", "-p", "msg"}, "unknown option '-t'"},
-		{[]string{"litar", "-al"}, "unknown option '-al'"},
-		{[]string{"litar", "archive.la"}, "unexpected argument 'archive.la'"},
+		{Options{}, missingAction},
+		{Options{File: "a.la"}, missingAction},
+		{Options{Print: "a", Literal: "a"}, "cannot combine print and literal"},
+		{Options{Reference: "a", Agent: true}, "cannot combine reference and agent"},
+		{Options{Print: "msg"}, "missing -f, --file"},
 	}
 	for _, tc := range cases {
-		code, out, err := runOut(t, tc.args...)
+		code, out, err := runOut(t, tc.opts)
 		if code == 0 || out != "" || !strings.Contains(err, tc.msg) || !strings.HasPrefix(err, "Error: ") {
-			t.Fatalf("%v code %d out %q err %q", tc.args, code, out, err)
+			t.Fatalf("%+v code %d out %q err %q", tc.opts, code, out, err)
 		}
 	}
 }
@@ -71,36 +53,25 @@ func TestCLIPrint(t *testing.T) {
 		out     string
 		errText string
 	)
-	code, out, errText = runOut(t, "litar", "-f", "a.la", "-p", "msg")
+	code, out, errText = runOut(t, Options{File: "a.la", Print: "msg"})
 	if code != 0 || errText != "" || out != "Hello" {
 		t.Fatalf("%d %q %q", code, out, errText)
 	}
-	code, out, errText = runOut(t, "litar", "-fa.la", "-l", "msg")
+	code, out, errText = runOut(t, Options{File: "a.la", Literal: "msg"})
 	if code != 0 || errText != "" || !strings.Contains(out, "@<msg@=") {
 		t.Fatalf("literal %d %q %q", code, out, errText)
 	}
-	code, out, errText = runOut(t, "litar", "--file=a.la", "-p", "missing")
+	code, out, errText = runOut(t, Options{File: "a.la", Print: "missing"})
 	if code == 0 || out != "" || !strings.Contains(errText, "chunk 'missing' is not defined") {
 		t.Fatalf("missing %d %q %q", code, out, errText)
 	}
-	code, out, errText = runOut(t, "litar", "-f", "a.la", "-d", "nope")
+	code, out, errText = runOut(t, Options{File: "a.la", Depend: "nope"})
 	if code != 0 || out != "" || errText != "" {
 		t.Fatalf("depend %d %q %q", code, out, errText)
 	}
-	code, out, errText = runOut(t, "litar", "-f", "a.la", "-m", "/")
-	if code == 0 || out != "" || !strings.Contains(errText, "unknown option '-m'") {
-		t.Fatalf("modules %d %q %q", code, out, errText)
-	}
-	code, out, errText = runOut(t, "litar", "-f", "none.la", "-p", "msg")
+	code, out, errText = runOut(t, Options{File: "none.la", Print: "msg"})
 	if code == 0 || out != "" || !strings.Contains(errText, "could not find archive 'none.la'") {
 		t.Fatalf("missing archive %d %q %q", code, out, errText)
-	}
-	code, out, errText = runOut(t, "litar", "-pfoo", "-f", "a.la")
-	if code != 0 || errText != "" || out != "" {
-		// foo is not defined. Attached value is the expression.
-		if code == 0 || !strings.Contains(errText, "chunk 'foo' is not defined") {
-			t.Fatalf("attached %d %q %q", code, out, errText)
-		}
 	}
 }
 
@@ -138,7 +109,7 @@ func TestFindArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	code, out, errText := runOut(t, "litar", "-f", filepath.Join(sub, "deep", "child.la"), "-p", "msg")
+	code, out, errText := runOut(t, Options{File: filepath.Join(sub, "deep", "child.la"), Print: "msg"})
 	if code != 0 || errText != "" || out != "basechild" {
 		t.Fatalf("%d %q %q", code, out, errText)
 	}

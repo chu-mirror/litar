@@ -184,7 +184,8 @@ func validFilePath(p string) error {
 }
 
 // parseShebang reads "#! interpreter" or "#! interpreter arg".
-// One optional word, as the kernel's script loader does.
+// As the kernel's script loader does, arg is the rest of the line,
+// one argument without its surrounding blanks.
 func parseShebang(script string) (interp, arg string, hasArg, ok bool) {
 	if len(script) < 2 || script[0] != '#' || script[1] != '!' {
 		return "", "", false, false
@@ -209,10 +210,11 @@ func parseShebang(script string) (interp, arg string, hasArg, ok bool) {
 	if i >= len(script) || script[i] == '\n' || script[i] == '\r' {
 		return interp, "", false, true
 	}
-	arg, _ = shebangWord(script, i)
-	if arg == "" {
-		return "", "", false, false
+	end := strings.IndexByte(script[i:], '\n')
+	if end < 0 {
+		end = len(script) - i
 	}
+	arg = strings.TrimRight(script[i:i+end], " \t\r")
 	return interp, arg, true, true
 }
 

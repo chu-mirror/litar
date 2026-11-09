@@ -26,6 +26,10 @@ including the MCP server it opens for agents.
 Prerequisites:
 
 - Go 1.25 or later.
+- Python 3.10 or later, for the text processing filters of the grounds,
+  which read their configuration as Jsonnet and validate it with pydantic.
+  When `python3` cannot import `pydantic` and `jsonnet`, the filters run through
+  [uv](https://docs.astral.sh/uv/), which downloads them on the first run.
 - FUSE (`/dev/fuse`) for the view tests.
   Those tests skip when it is absent.
 

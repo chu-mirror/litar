@@ -15,28 +15,6 @@
 @|C Structure@/Filters@/wrap with included flag
 @|C Structure@/Filters@/format C code@,.clang-format@
 
-@<C Structure@/Filters@/wrap with included flag@=
-@<Text Processing@/basic perl settings@>
-my %meta = @<..@/module meta information@>;
-
-printf("#ifndef $meta{included_flag_format}\n", uc($meta{name}));
-printf("#define $meta{included_flag_format}\n", uc($meta{name}));
-
-while (<STDIN>) {
-    print;
-}
-
-print "#endif\n";
-@
-
-@<C Structure@/module meta information@=
-(
-    name => 'default',
-    included_flag_format => '_MODULE_%s',
-    @<.@/module properties@>
-)
-@
-
 @<C Structure@/Filters@/extract function declarations@=
 #!/bin/sh
 cproto -s
@@ -55,102 +33,6 @@ cproto -v -e @<-I flags@>
 @<C Structure@/Filters@/format C code@=#!/bin/sh
 clang-format-19 -style=file
 @
-@<C Structure@/Invoke@/command line usage@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-
-sub option_to_str (_) {
-    my $opt = shift;
-    my $str = '[';
-    if ($opt->{opt}) {
-        $str .= "-$opt->{opt}";
-    } else {
-        $str .= "--$opt->{long_opt}";
-    }
-    if ($opt->{argument}) {
-        $str .= uc " $opt->{argument}";
-    }
-    $str .= ']'
-}
-
-sub usage_to_str (_) {
-    my $usage = shift;
-    my $str = $syntax->{name};
-
-    $str .= ' ';
-    $str .= join ' ', map option_to_str, grep {!$_->{hide}} @@{$usage->{options}};
-    $str .= ' ';
-    $str .= uc join ' ', @@{$usage->{arguments}};
-}
-
-my @usages = map usage_to_str, @@{$syntax->{usages}};
-my $usages_str = '';
-
-$usages_str .= 'Usage:\t' . (shift @usages);
-while (@usages) {
-    $usages_str .= '\n\t' . (shift @usages);
-}
-$usages_str .= '\n';
-
-print $usages_str;
-@|Basic@/evaluate@
-@<C Structure@/Invoke@/manpage synopsis@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-
-sub option_to_str (_) {
-    my $opt = shift;
-    my $str = '';
-    if ($opt->{opt}) {
-        $str .= '\fB\-' . $opt->{opt} . '\fR';
-    } else {
-        $str .= '\fB\-\-' . $opt->{long_opt} . '\fR';
-    }
-    if ($opt->{argument}) {
-        $str .= ' \fI' . $opt->{argument} . '\fR';
-    }
-    $str
-}
-
-sub usage_to_str (_) {
-    my $usage = shift;
-    my $str = ".B $syntax->{name}";
-
-    $str .= "\n";
-    $str .= '[' . (join '|', map option_to_str, grep {!$_->{hide}} @@{$usage->{options}}) . ']';
-    $str .= "\n";
-    $str .= "@@{[map {'\fI' . $_ . '\fR'} @@{$usage->{arguments}}]}";
-    $str .= "\n";
-    
-    $str
-}
-
-my @usages = map usage_to_str, @@{$syntax->{usages}};
-print join "\n", @usages;
-@|Basic@/evaluate@
-@<C Structure@/Invoke@/manpage options@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-
-my $options = '';
-for my $usage (@@{$syntax->{usages}}) {
-    for my $option (@@{$usage->{options}}) {
-        $options .= ".TP\n";
-        if ($option->{opt}) {
-            $options .= '.BR \-' . $option->{opt} . ', " " ';
-        }
-        $options .= '\-\-' . $option->{long_opt};
-        if ($option->{argument}) {
-            $options .= ' " " \fI' . $option->{argument} . '\fR' . "\n";
-        } else {
-            $options .= "\n";
-        }
-        $options .= $option->{description} . "\n";
-    }
-}
-
-print $options;
-@|Basic@/evaluate@
 
 A C file ends with a line break, and clang-format keeps a file without one as it is.
 The empty line before the filter leaves that line break in the content.
@@ -194,69 +76,6 @@ struct {
     struct {@<.@/Invoke@/command line arguments@>} arguments;
 } command;
 @
-@<C Structure@/Invoke@/usage enumeration@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-
-sub enum_constant (_) {
-    my $ug = shift;
-    $ug->{name} =~ tr/ /_/;
-    "COMMAND_USAGE_" . uc $ug->{name}
-}
-
-print join ',', map enum_constant, @@{$syntax->{usages}};
-@|Basic@/evaluate@
-@<C Structure@/Invoke@/command line options@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-
-sub option_to_c_decl (_) {
-    my $opt = shift;
-    my $c_decl = '';
-    if ($opt->{argument}) {
-        $c_decl .= 'const char *';
-    } else {
-        $c_decl .= 'int ';
-    }
-    my $name = $opt->{long_opt};
-    $name =~ tr/-/_/;
-    $c_decl . lc($name) . ';'
-}
-
-my @usages = @@{$syntax->{usages}};
-my @options;
-while (@usages) {
-    my $usage = shift @usages;
-    @options = (@options, @@{$usage->{options}});
-}
-my $options_decl = join "\n", map option_to_c_decl, @options;
-print $options_decl;
-@|Basic@/evaluate@
-@<C Structure@/Invoke@/command line arguments@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-
-sub argument_definition(_) {
-    my $name = shift;
-    $name =~ tr/ /_/;
-    $name = lc $name;
-    "const char *$name;"
-}
-
-my %arguments;
-my @usages;
-@usages = @@{$syntax->{usages}};
-while (@usages) {
-    my $usage = shift @usages;
-    for my $arg (@@{$usage->{arguments}}) {
-        $arguments{$arg} = 1;
-    }
-}
-
-my @arguments = keys %arguments;
-
-print (join "", map argument_definition, @arguments);
-@|Basic@/evaluate@
 @<executable@:C Structure@/includes@+
 #include <getopt.h>
 @
@@ -265,37 +84,6 @@ const struct option long_options[] = {
     @<.@/Invoke@/getopt long options@>
 };
 @
-@<C Structure@/Invoke@/getopt long options@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-
-sub option_to_longopt (_) {
-    my $opt = shift;
-    my $str = '{';
-    if ($opt->{long_opt}) {
-        $str .= '"' . $opt->{long_opt} . '"';
-        if ($opt->{argument}) {
-            $str .= ',required_argument';
-        } else {
-            $str .= ',no_argument';
-        }
-        $str .= ',NULL';
-        if ($opt->{opt}) {
-            $str .= ",'@@{[$opt->{opt}]}'";
-        } else {
-            $str .= ",0";
-        }
-    }
-    $str .= "},"
-}
-
-my @options = ();
-for my $usage (@@{$syntax->{usages}}) {
-    @options = (@options, @@{$usage->{options}});
-}
-
-print (join "", map option_to_longopt, @options);
-@|Basic@/evaluate@
 @<executable@:C Structure@/includes@+
 #include <unistd.h>
 #include <stdlib.h>
@@ -329,214 +117,315 @@ do {
     @<.@/choose usage and store arguments@>
 } while (0);
 @
-@<C Structure@/Invoke@/getopt string@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
+@<C Structure@/Filters@/wrap with included flag@=
+@<Text Processing@/basic python settings@>
 
-sub option_to_str (_) {
-    my $opt = shift;
-    my $str = '';
-    if ($opt->{opt}) {
-        $str = $opt->{opt};
-        if ($opt->{argument}) {
-            $str .= ':';
-        }
-    }
-    $str
+
+class ModuleMeta(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='allow')
+    name: str
+    included_flag_format: str
+
+
+meta = configuration(ModuleMeta, r'''
+@<..@/module meta information@>
+''')
+flag = meta.included_flag_format % meta.name.upper()
+sys.stdout.write(f'#ifndef {flag}\n#define {flag}\n')
+sys.stdout.write(sys.stdin.read())
+sys.stdout.write('#endif\n')
+@
+The module meta information is a Jsonnet object.
+The module properties are the fields of a second object, which override these defaults;
+Jsonnet rejects a field given twice in the module properties.
+@<C Structure@/module meta information@=
+{
+    name: 'default',
+    included_flag_format: '_MODULE_%s',
+} + {
+    @<.@/module properties@>
 }
+@
+@<C Structure@/Invoke@/command line usage@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
 
-my @options = ();
-for my $usage (@@{$syntax->{usages}}) {
-    @options = (@options, @@{$usage->{options}});
-}
 
-print (join "", map option_to_str, @options);
+def option_to_str(opt):
+    text = f'-{opt.opt}' if opt.opt else f'--{opt.long_opt}'
+    if opt.argument:
+        text += f' {opt.argument}'.upper()
+    return f'[{text}]'
+
+
+def usage_to_str(usage):
+    options = ' '.join(option_to_str(opt) for opt in usage.options if not opt.hide)
+    return f'{syntax.name} {options} ' + ' '.join(usage.arguments).upper()
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print(r'Usage:\t' + r'\n\t'.join(map(usage_to_str, syntax.usages)) + r'\n', end='')
 @|Basic@/evaluate@
-@<C Structure@/Invoke@/handle long option of index "idx"@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-my @usages = @@{$syntax->{usages}};
-my @options;
+@<C Structure@/Invoke@/manpage synopsis@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
 
-while (@usages) {
-    my $usage = shift @usages;
-    @options = (@options, @@{$usage->{options}});
-}
 
-sub long_option_handling(_) {
-    my $opt = shift;
-    if ($opt->{opt}) {
-        return "";
-    }
-    my $name = $opt->{long_opt};
-    $name =~ tr/-/_/;
+def option_to_str(opt):
+    text = rf'\fB\-{opt.opt}\fR' if opt.opt else rf'\fB\-\-{opt.long_opt}\fR'
+    if opt.argument:
+        text += rf' \fI{opt.argument}\fR'
+    return text
 
-    if ($opt->{argument}) {
-        return "
-            if (strcmp(long_options[idx].name, \"$opt->{long_opt}\")) {
-                command.options.$name = optarg;
-            }
-        "
-    } else {
-        return "
-            if (strcmp(long_options[idx].name, \"$opt->{long_opt}\")) {
-                command.options.$name = 1;
-            }
-        "
-    }
-}
-print (join "", map long_option_handling, @options);
+
+def usage_to_str(usage):
+    options = '|'.join(option_to_str(opt) for opt in usage.options if not opt.hide)
+    arguments = ' '.join(rf'\fI{arg}\fR' for arg in usage.arguments)
+    return f'.B {syntax.name}\n[{options}]\n{arguments}\n'
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print('\n'.join(map(usage_to_str, syntax.usages)), end='')
+@|Basic@/evaluate@
+@<C Structure@/Invoke@/manpage options@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+
+text = ''
+for opt in all_options(syntax):
+    text += '.TP\n'
+    if opt.opt:
+        text += rf'.BR \-{opt.opt}, " " '
+    text += rf'\-\-{opt.long_opt}'
+    if opt.argument:
+        text += rf' " " \fI{opt.argument}\fR'
+    text += f'\n{opt.description}\n'
+print(text, end='')
+@|Basic@/evaluate@
+@<C Structure@/Invoke@/usage enumeration@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print(','.join(map(enum_constant, syntax.usages)), end='')
+@|Basic@/evaluate@
+@<C Structure@/Invoke@/command line options@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print('\n'.join(('const char *' if opt.argument else 'int ') + option_field(opt) + ';'
+                for opt in all_options(syntax)), end='')
+@|Basic@/evaluate@
+An argument shared by several usages is declared once, where it first appears.
+@<C Structure@/Invoke@/command line arguments@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+arguments = dict.fromkeys(arg for usage in syntax.usages for arg in usage.arguments)
+print(''.join(f'const char *{argument_field(arg)};' for arg in arguments), end='')
+@|Basic@/evaluate@
+@<C Structure@/Invoke@/getopt string@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print(''.join(opt.opt + (':' if opt.argument else '')
+              for opt in all_options(syntax) if opt.opt), end='')
 @|Basic@/evaluate@
 @<C Structure@/Invoke@/cases for short options@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-my @usages = @@{$syntax->{usages}};
-my @options;
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
 
-while (@usages) {
-    my $usage = shift @usages;
-    @options = (@options, @@{$usage->{options}});
-}
 
-sub short_opt_case(_) {
-    my $opt = shift;
-    if (!$opt->{opt}) {
-        return "";
-    }
-    my $name = $opt->{long_opt};
-    $name =~ tr/-/_/;
-    if ($opt->{argument}) {
-        return "
-            case '$opt->{opt}':
-                command.options.$name = optarg;
+def short_opt_case(opt):
+    if not opt.opt:
+        return ''
+    value = 'optarg' if opt.argument else '1'
+    return f'''
+            case '{opt.opt}':
+                command.options.{option_field(opt)} = {value};
                 break;
-        "
-    } else {
-        return "
-            case '$opt->{opt}':
-                command.options.$name = 1;
-                break;
-        "
-    }
-}
-print (join "", map short_opt_case, @options);
+        '''
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print(''.join(map(short_opt_case, all_options(syntax))), end='')
 @|Basic@/evaluate@
 @<C Structure@/Invoke@/choose usage and store arguments@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-my @usages = @@{$syntax->{usages}};
-my @options;
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
 
-while (@usages) {
-    my $usage = shift @usages;
-    @options = (@options, @@{$usage->{options}});
-}
 
-sub enum_constant (_) {
-    my $ug = shift;
-    $ug->{name} =~ tr/ /_/;
-    "COMMAND_USAGE_" . uc $ug->{name}
-}
-
-sub look_option_of_usage($$) {
-    my ($opt, $usage) = @@_;
-    my $name = $opt->{long_opt};
-    $name =~ tr/-/_/;
-    my $constant = enum_constant($usage);
-    my $short_opt = "";
-    if ($opt->{opt}) {
-        $short_opt = " -$opt->{opt}";
-    }
-    "
-        if (command.options.$name) {
-            if (!found_usage) {
+def look_option_of_usage(opt, usage):
+    constant = enum_constant(usage)
+    short_opt = f' -{opt.opt}' if opt.opt else ''
+    return f'''
+        if (command.options.{option_field(opt)}) {{
+            if (!found_usage) {{
                 found_usage = 1;
-                command.usage = $constant;
-            } else if (command.usage != $constant) {
-                fprintf(stderr, \"Conflict option: --$opt->{long_opt}$short_opt\\n\");
+                command.usage = {constant};
+            }} else if (command.usage != {constant}) {{
+                fprintf(stderr, "Conflict option: --{opt.long_opt}{short_opt}\\n");
                 exit(1);
-            }
-        }
-    "
-}
+            }}
+        }}
+    '''
 
-sub look_usage_argument_number(_) {
-    my $usage = shift;
-    my $constant = enum_constant($usage);
-    my $number = @@{$usage->{arguments}};
-    "
-        if (!found_usage && argc - optind == $number) {
+
+def look_usage_argument_number(usage):
+    return f'''
+        if (!found_usage && argc - optind == {len(usage.arguments)}) {{
             found_usage = 1;
-            command.usage = $constant;
-        }
-    "
-}
+            command.usage = {enum_constant(usage)};
+        }}
+    '''
 
-sub store_argument($$) {
-    my ($name, $idx) = @@_;
-    $name =~ tr/ /_/;
-    $name = lc $name;
-    "command.arguments.$name = argv[optind + $idx];"
-}
 
-sub store_arguments_for_usage(_) {
-    my $usage = shift;
-    my $constant = enum_constant($usage);
-    my $number = @@{$usage->{arguments}};
-    my $idx = 0;
-    my $store_arguments = "";
-    for my $arg (@@{$usage->{arguments}}) {
-        $store_arguments .= store_argument($arg, $idx);
-        ++$idx;
-    }
-    "
-        case $constant:
-            if (argc - optind != $number) {
-                fprintf(stderr, \"Unmatched argument number, see --help for usage\\n\");
+def store_arguments_for_usage(usage):
+    store = ''.join(f'command.arguments.{argument_field(arg)} = argv[optind + {idx}];'
+                    for idx, arg in enumerate(usage.arguments))
+    return f'''
+        case {enum_constant(usage)}:
+            if (argc - optind != {len(usage.arguments)}) {{
+                fprintf(stderr, "Unmatched argument number, see --help for usage\\n");
                 exit(1);
-            }
-            $store_arguments
+            }}
+            {store}
             break;
-    "
-}
+    '''
 
-my $str = "do { int found_usage = 0;";
-for my $usage (@@{$syntax->{usages}}) {
-    for my $option (@@{$usage->{options}}) {
-        $str .= look_option_of_usage $option, $usage;
-    }
-}
-$str .= join "\n", map look_usage_argument_number, @@{$syntax->{usages}};
-$str .= "
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+text = 'do { int found_usage = 0;'
+text += ''.join(look_option_of_usage(opt, usage)
+                for usage in syntax.usages for opt in usage.options)
+text += '\n'.join(map(look_usage_argument_number, syntax.usages))
+text += '''
     if (!found_usage) {
-        fprintf(stderr, \"Invalid usage, see --help for usage\\n\");
+        fprintf(stderr, "Invalid usage, see --help for usage\\n");
         exit(1);
     }
-";
-$str .= "switch (command.usage) {";
-$str .= join "\n", map store_arguments_for_usage, @@{$syntax->{usages}};
-$str .= "}";
-$str .= "} while (0);";
-print $str;
+'''
+text += 'switch (command.usage) {'
+text += '\n'.join(map(store_arguments_for_usage, syntax.usages))
+text += '}} while (0);'
+print(text, end='')
 @|Basic@/evaluate@
+getopt_long finds the end of the options at an entry of zeros.
+@<C Structure@/Invoke@/getopt long options@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
 
-The invocation syntax:
+
+def option_to_longopt(opt):
+    has_arg = 'required_argument' if opt.argument else 'no_argument'
+    val = f"'{opt.opt}'" if opt.opt else '0'
+    return f'{{"{opt.long_opt}",{has_arg},NULL,{val}}},'
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print(''.join(map(option_to_longopt, all_options(syntax))) + '{0,0,0,0},', end='')
+@|Basic@/evaluate@
+@<C Structure@/Invoke@/handle long option of index "idx"@=
+@<Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+
+
+def long_option_handling(opt):
+    if opt.opt:
+        return ''
+    value = 'optarg' if opt.argument else '1'
+    return f'''
+            if (strcmp(long_options[idx].name, "{opt.long_opt}") == 0) {{
+                command.options.{option_field(opt)} = {value};
+            }}
+        '''
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print(''.join(map(long_option_handling, all_options(syntax))), end='')
+@|Basic@/evaluate@
+The generators include this chunk as one fragment.
+Its models validate the invocation syntax before any generator writes C,
+so a misspelled key or a missing name fails the evaluation.
+@<C Structure@/Invoke@/invocation syntax helpers@=
+class Option(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    long_opt: str
+    opt: str | None = pydantic.Field(None, pattern=r'^[0-9A-Za-z]$')
+    argument: str | None = None
+    description: str = ''
+    hide: bool = False
+
+
+class Usage(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str
+    options: list[Option] = []
+    arguments: list[str] = []
+
+
+class InvocationSyntax(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str
+    usages: list[Usage] = pydantic.Field(min_length=1)
+@
+Every generator names a field with these functions, so they agree on each field.
+@<C Structure@/Invoke@/invocation syntax helpers@+
+def all_options(syntax):
+    return [opt for usage in syntax.usages for opt in usage.options]
+
+
+def enum_constant(usage):
+    return 'COMMAND_USAGE_' + usage.name.replace(' ', '_').upper()
+
+
+def option_field(opt):
+    return opt.long_opt.replace('-', '_').lower()
+
+
+def argument_field(arg):
+    return arg.replace(' ', '_').lower()
+@
+The invocation syntax is a Jsonnet object:
 
 {
-    name => COMMAND_NAME,
-    usages => [
+    name: COMMAND_NAME,
+    usages: [
         {
-            name => USAGE_NAME,
-            options => [
+            name: USAGE_NAME,
+            options: [
                 {
-                    long_opt => LONG_OPTION,
-                    opt => SHORT_OPTION (optional),
-                    argument => OPTION_ARGUMENT (optional),
-                    description => DESCRIPTION,
+                    long_opt: LONG_OPTION,
+                    opt: SHORT_OPTION (optional),
+                    argument: OPTION_ARGUMENT (optional),
+                    description: DESCRIPTION,
+                    hide: HIDDEN_FROM_USAGE (optional),
                 },
                 ...
             ],
-            arguments => [
+            arguments: [
                 ARGUMENT,
                 ...
             ],
@@ -544,6 +433,8 @@ The invocation syntax:
         ...
     ],
 }
+
+A short option is one letter or digit, and a command has at least one usage.
 
 @<C Structure@/Invoke@/invocation syntax@=
 {}

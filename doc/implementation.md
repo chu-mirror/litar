@@ -149,7 +149,9 @@ Module, chunk, subdomain, and item trees are exposed through the MCP server (and
 `filter.go` and `fuse.go` run filter pipelines in isolated FUSE views:
 
 1. **Shebang and script:** A filter chunk must evaluate to a script whose first line is
-   `#! interpreter [arg]`. The script is written to a temporary file on the host; the input
+   `#! interpreter [arg]`; as with the kernel's script loader, `arg` is the rest of the line,
+   passed as one argument without its surrounding blanks (so `#!/usr/bin/env -S cmd args`
+   works). The script is written to a temporary file on the host; the input
    text is piped to `stdin`, `stdout` replaces the text, `stderr` passes through to litar's
    `stderr`, and a non-zero exit code fails the evaluation.
 2. **View calculation and tangling:** Before the filter process starts, its view operations

@@ -15,10 +15,6 @@ It also supports some common data structures.
 }
 @
 
-@<lightlib@:C Structure@/module properties@+
-name => 'light',
-@
-
 There are some idioms to make life a bit easier.
 
 @<lightlib@:C Structure@/exported macros@+
@@ -1137,4 +1133,7 @@ do {
     @<Light@/main body@>
     exit_context();
 } while (0);
+@
+@<lightlib@:C Structure@/module properties@+
+name: 'light',
 @

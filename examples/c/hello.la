@@ -5,20 +5,19 @@ A classic example at the beginning of learning programming.
 @<hello@:executable@:C Structure@/module@>
 @
 
-@<hello@:executable@:C Structure@/Invoke@/invocation syntax@=
-{
-    name => 'hello',
-    usages => [
-        {
-            name => 'run',
-            options => [],
-            arguments => [],
-        },
-    ],
-}
-@
-
 @<hello@:executable@:C Structure@/main body@=
 printf("Hello World!\n");
 @~ output @
 
+@<hello@:executable@:C Structure@/Invoke@/invocation syntax@=
+{
+    name: 'hello',
+    usages: [
+        {
+            name: 'run',
+            options: [],
+            arguments: [],
+        },
+    ],
+}
+@

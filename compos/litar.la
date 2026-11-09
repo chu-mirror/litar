@@ -1,10 +1,3 @@
-The litar tool: its Go module, build files, and acceptance tests.
-
-The module path is litar, so the package reads litar/internal/litar in import paths.
-@<Go Project@/project properties@+
-module => 'litar',
-go => '1.25.0',
-@
 
 go mod tidy writes the direct requirements and the indirect ones in two require blocks.
 Go Project emits the first; the second follows it in the file.
@@ -38,10 +31,6 @@ so this file is a plain file of a package named main instead.
 @[cmd/litar/main.go@`go module@=
 @<main@:litar command@:Go Structure@/file@>@
 
-@<litar command@:Go Structure@/module properties@+
-name => 'main',
-@
-
 @<main@:litar command@:Go Structure@/import paths@+
 "os"
 
@@ -54,13 +43,6 @@ func main() {
 }
 
 @~ Go@/functions@/litar.Main @
-
-The package litar holds the whole tool; the command litar only calls litar.Main.
-Each file of the package carries its own label, its base name,
-and a test file the base name of the file it tests followed by test.
-@<litar@:Go Structure@/module properties@+
-name => 'litar',
-@
 
 @<litar@:Go Project@/package directory@=internal/litar@
 
@@ -1721,7 +1703,13 @@ func (w *World) ApplyBlock(nodeName, text string) error {
 	if err != nil {
 		return fmt.Errorf("could not read '%s'", n.Archive)
 	}
-	next := append(append([]byte{}, orig...), text...)
+	next := append([]byte{}, orig...)
+	// An archive may end with the "@@" of its last block; text joined to it
+	// would turn that end control into ordinary text.
+	if len(next) > 0 && !endsWithSpace(string(next)) {
+		next = append(next, '\n')
+	}
+	next = append(next, text...)
 	arch, err := ParseArchive(next, n.Archive)
 	if err != nil {
 		return err
@@ -1759,22 +1747,6 @@ return data, arch, nil
 }
 
 @~ Go@/functions@/litar.ParseArchive @~ Go@/functions@/litar.compactOwn @~ Go@/functions@/litar.orderOwn @~ Go@/methods@/litar.Archive.Text @~ Go@/types@/litar.Archive @~ Go@/types@/litar.Block @~ Go@/types@/litar.Node @
-
-The effective set is computed once per chunk reference, since many blocks share one.
-@<keep the effective own blocks of 'n' in 'kept'@=
-cache := map[string]map[int]bool{}
-for bi, bl := range n.Own {
-	k := bl.Ref.key()
-	set, ok := cache[k]
-	if !ok {
-		set = effectiveIndexSet(n.Own, bl.Ref)
-		cache[k] = set
-	}
-	if set[bi] {
-		kept = append(kept, bl)
-	}
-}
-@~ Go@/functions@/litar.effectiveIndexSet @~ Go@/methods@/litar.ChunkRef.key @
 
 @<write 'kept' and the trailing text of 'n' to 'b'@=
 for i, bl := range kept {
@@ -1814,7 +1786,7 @@ func chunkKey(ref ChunkRef) string {
 
 @<compose@:litar@:Go Structure@/functions@+
 // orderOwn places a block after the blocks whose content includes its chunk.
-// Blocks of one module and chunk keep their order, because that order
+// Blocks of one module and chunk follow specializationOrder, because that order
 // decides the content and the effective blocks; when inclusion is circular,
 // the rule gives way to that order. Otherwise blocks keep their order.
 func orderOwn(blocks []Block) []Block {
@@ -1846,15 +1818,6 @@ for i, b := range blocks {
 	byChunk[keys[i]] = append(byChunk[keys[i]], i)
 }
 @~ Go@/functions@/litar.chunkKey @
-
-@<link each block to the earlier block of its chunk in 'chainPrev'@=
-for _, idx := range byChunk {
-	chainPrev[idx[0]] = -1
-	for j := 1; j < len(idx); j++ {
-		chainPrev[idx[j]] = idx[j-1]
-	}
-}
-@
 
 A reference is resolved against the module of the block that holds it;
 a block referring to its own chunk does not include itself.
@@ -3882,7 +3845,8 @@ return out, nil
 
 @<filter@:litar@:Go Structure@/functions@+
 // parseShebang reads "#! interpreter" or "#! interpreter arg".
-// One optional word, as the kernel's script loader does.
+// As the kernel's script loader does, arg is the rest of the line,
+// one argument without its surrounding blanks.
 func parseShebang(script string) (interp, arg string, hasArg, ok bool) {
 if len(script) < 2 || script[0] != '#' || script[1] != '!' {
 	return "", "", false, false
@@ -3896,10 +3860,11 @@ if interp == "" {
 	return "", "", false, false
 }
 @<return 'interp' alone unless a word follows it at 'i'@>
-arg, _ = shebangWord(script, i)
-if arg == "" {
-	return "", "", false, false
+end := strings.IndexByte(script[i:], '\n')
+if end < 0 {
+	end = len(script) - i
 }
+arg = strings.TrimRight(script[i:i+end], " \t\r")
 return interp, arg, true, true
 }
 
@@ -8195,7 +8160,7 @@ t.Fatal(err)
 }
 want := map[string]string{
 "Basic":           "Some common structures and filters.",
-"Text Processing": "Text processing based on perl.",
+"Text Processing": "Text processing based on python.",
 "C Structure":     "Common structures in C programming",
 "Light":           "Light is a framework mainly for C programming",
 }
@@ -10926,37 +10891,6 @@ The page is embedded beside the program, so the command is one file to install.
 
 @
 
-The default address is on the loopback interface,
-because the interface reads archives and runs their filters on this machine.
-litar names the binary that serves the compositions;
-file names an archive whose composition is imported before the first page.
-@<litar-web@:command@:Go Structure@/Flag@/invocation syntax@=
-{
-    name => 'litar-web',
-    flags => [
-        {
-            name => 'addr',
-            type => 'string',
-            default => '127.0.0.1:8080',
-            usage => 'address to listen on',
-        },
-        {
-            name => 'litar',
-            type => 'string',
-            default => 'litar',
-            usage => 'litar binary that serves the compositions',
-        },
-        {
-            name => 'file',
-            type => 'string',
-            default => '',
-            usage => 'archive whose composition is imported at start',
-        },
-    ],
-    arguments => [],
-}
-@
-
 @<litar-web@:command@:Go Structure@/package comment@=
 // Command litar-web serves a browser interface for litar compositions.
 @
@@ -11719,3 +11653,197 @@ $('expression').addEventListener('keydown', e => { if (e.key === 'Enter') evalua
 window.addEventListener('hashchange', route);
 route();
 @
+The litar tool: its Go module, build files, and acceptance tests.
+
+The module path is litar, so the package reads litar/internal/litar in import paths.
+@<Go Project@/project properties@+
+module: 'litar',
+go: '1.25.0',
+@
+@<litar command@:Go Structure@/module properties@+
+name: 'main',
+@
+The package litar holds the whole tool; the command litar only calls litar.Main.
+Each file of the package carries its own label, its base name,
+and a test file the base name of the file it tests followed by test.
+@<litar@:Go Structure@/module properties@+
+name: 'litar',
+@
+The default address is on the loopback interface,
+because the interface reads archives and runs their filters on this machine.
+litar names the binary that serves the compositions;
+file names an archive whose composition is imported before the first page.
+@<litar-web@:command@:Go Structure@/Flag@/invocation syntax@=
+{
+    name: 'litar-web',
+    flags: [
+        {
+            name: 'addr',
+            type: 'string',
+            default: '127.0.0.1:8080',
+            usage: 'address to listen on',
+        },
+        {
+            name: 'litar',
+            type: 'string',
+            default: 'litar',
+            usage: 'litar binary that serves the compositions',
+        },
+        {
+            name: 'file',
+            type: 'string',
+            default: '',
+            usage: 'archive whose composition is imported at start',
+        },
+    ],
+    arguments: [],
+}
+@
+The earlier block of a chunk is the one before it in specializationOrder.
+@<link each block to the earlier block of its chunk in 'chainPrev'@=
+for _, idx := range byChunk {
+	order := specializationOrder(blocks, idx)
+	chainPrev[order[0]] = -1
+	for j := 1; j < len(order); j++ {
+		chainPrev[order[j]] = order[j-1]
+	}
+}
+@~ Go@/functions@/litar.specializationOrder @
+The own blocks are ordered before the effective sets are computed,
+so a less specialized block applied later does not hide a more specialized one.
+The effective set is computed once per chunk reference, since many blocks share one.
+@<keep the effective own blocks of 'n' in 'kept'@=
+own := orderOwn(n.Own)
+cache := map[string]map[int]bool{}
+for bi, bl := range own {
+	k := bl.Ref.key()
+	set, ok := cache[k]
+	if !ok {
+		set = effectiveIndexSet(own, bl.Ref)
+		cache[k] = set
+	}
+	if set[bi] {
+		kept = append(kept, bl)
+	}
+}
+@~ Go@/functions@/litar.effectiveIndexSet @~ Go@/functions@/litar.orderOwn @~ Go@/methods@/litar.ChunkRef.key @
+A block applies after every block whose labels are a proper suffix of its own,
+because a reference that sees both means the more specialized one to win.
+Blocks with no such relation never apply to one reference together, so they keep their order;
+the first block whose less specialized blocks are placed goes next.
+@<compose@:litar@:Go Structure@/functions@+
+// specializationOrder lists idx, the blocks of one chunk, so that a block follows
+// the blocks whose labels are a proper suffix of its labels; otherwise idx keeps its order.
+func specializationOrder(blocks []Block, idx []int) []int {
+	k := len(idx)
+	before := make([]int, k)
+	after := make([][]int, k)
+	for p := 0; p < k; p++ {
+		for q := 0; q < k; q++ {
+			lp, lq := blocks[idx[p]].Ref.Labels, blocks[idx[q]].Ref.Labels
+			if len(lp) < len(lq) && isSuffix(lp, lq) {
+				after[p] = append(after[p], q)
+				before[q]++
+			}
+		}
+	}
+	order := make([]int, 0, k)
+	placed := make([]bool, k)
+	for len(order) < k {
+		for q := 0; q < k; q++ {
+			if !placed[q] && before[q] == 0 {
+				placed[q] = true
+				order = append(order, idx[q])
+				for _, r := range after[q] {
+					before[r]--
+				}
+				break
+			}
+		}
+	}
+	return order
+}
+
+@~ Go@/functions@/litar.isSuffix @~ Go@/functions@/litar.specializationOrder @~ Go@/types@/litar.Block @
+@<compose test@:litar@:Go Structure@/functions@+
+func TestOrderOwnSpecialization(t *testing.T) {
+	cases := []struct {
+		name, src, want string
+	}{
+		{
+			"less specialized first",
+			"@@<l@@:c@@=main@@\n@@<c@@=pkg@@\n",
+			"@@<c@@=pkg@@\n@@<l@@:c@@=main@@\n",
+		},
+		{
+			"equal labels keep their order",
+			"@@<l@@:c@@=1@@\n@@<c@@=0@@\n@@<l@@:c@@+2@@\n",
+			"@@<c@@=0@@\n@@<l@@:c@@=1@@\n@@<l@@:c@@+2@@\n",
+		},
+		{
+			"unrelated labels keep their order",
+			"@@<b@@:x@@:c@@=2@@\n@@<a@@:c@@=1@@\n",
+			"@@<b@@:x@@:c@@=2@@\n@@<a@@:c@@=1@@\n",
+		},
+	}
+	for _, tc := range cases {
+		if got := orderedRaw(t, tc.src); got != tc.want {
+			t.Fatalf("%s:\n%q\nwant\n%q", tc.name, got, tc.want)
+		}
+	}
+}
+
+@~ Go@/functions@/litar.orderedRaw @
+The archive ends with the end control of its block, and the applied block is less specialized:
+the append must keep that end control, and compaction must keep the specialized block.
+@<compose test@:litar@:Go Structure@/functions@+
+func TestApplyBlockAfterFinalEnd(t *testing.T) {
+dir := t.TempDir()
+arch := filepath.Join(dir, "a.la")
+writeFile(t, arch, "@@<l@@:c@@=main@@")
+comp := filepath.Join(dir, "composer.json")
+writeFile(t, comp, composerDoc(`[
+    {"name":"root","archive":"./a.la","description":"","mappings":[],"base":[]}
+]`))
+w, err := LoadComposer(comp)
+if err != nil {
+	t.Fatal(err)
+}
+if err := w.ApplyBlock("root", "@@<c@@=pkg@@\n"); err != nil {
+	t.Fatal(err)
+}
+chain, err := w.Chain("root")
+if err != nil {
+	t.Fatal(err)
+}
+for ref, want := range map[string]string{"c": "pkg", "l@@:c": "main"} {
+	got, err := NewEvaluator(chain, nil, nil).Eval(mustRef(t, ref), nil)
+	if err != nil || got != want {
+		t.Fatalf("%s: %v %q, want %q", ref, err, got, want)
+	}
+}
+}
+
+@~ Go@/functions@/litar.LoadComposer @~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.writeFile @~ Go@/methods@/litar.World.ApplyBlock @
+@<filter test@:litar@:Go Structure@/functions@+
+func TestParseShebang(t *testing.T) {
+	cases := []struct {
+		script, interp, arg string
+		hasArg, ok          bool
+	}{
+		{"#!/bin/sh\necho", "/bin/sh", "", false, true},
+		{"#! /bin/sh  \n", "/bin/sh", "", false, true},
+		{"#!/bin/sh -e", "/bin/sh", "-e", true, true},
+		{"#!/usr/bin/env -S uv run --script\n", "/usr/bin/env", "-S uv run --script", true, true},
+		{"#!/usr/bin/env  python3 \t\r\nx", "/usr/bin/env", "python3", true, true},
+		{"echo", "", "", false, false},
+	}
+	for _, tc := range cases {
+		interp, arg, hasArg, ok := parseShebang(tc.script)
+		if interp != tc.interp || arg != tc.arg || hasArg != tc.hasArg || ok != tc.ok {
+			t.Fatalf("%q: %q %q %v %v", tc.script, interp, arg, hasArg, ok)
+		}
+	}
+}
+
+@~ Go@/functions@/litar.parseShebang @

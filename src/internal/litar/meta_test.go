@@ -228,7 +228,7 @@ func TestLibraryModuleDescriptions(t *testing.T) {
 	}
 	want := map[string]string{
 		"Basic":           "Some common structures and filters.",
-		"Text Processing": "Text processing based on perl.",
+		"Text Processing": "Text processing based on python.",
 		"C Structure":     "Common structures in C programming",
 		"Light":           "Light is a framework mainly for C programming",
 	}

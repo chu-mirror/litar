@@ -20,14 +20,6 @@ gofmt
 {"description": "One Go source file."}
 @
 
-@<Chunk@/Go Structure@/module meta information@=
-{"description": "Package name and other properties, as a Perl hash."}
-@
-
-@<Chunk@/Go Structure@/module properties@=
-{"description": "Extra Perl hash entries for the module meta information."}
-@
-
 @<Chunk@/Go Structure@/package clause@=
 {"description": "Package comment followed by the package clause."}
 @
@@ -84,10 +76,6 @@ gofmt
 {"description": "Flags and positional arguments of a command."}
 @
 
-@<Chunk@/Go Structure@/Flag@/flag syntax helpers@=
-{"description": "Perl subroutines shared by the flag generators."}
-@
-
 @<Chunk@/Go Structure@/Flag@/command variables@=
 {"description": "Variable command, when the command has flags or arguments."}
 @
@@ -141,93 +129,9 @@ Leave no blank line between that comment and the clause.
 package @<.@/package name@>
 @
 
-@<Go Structure@/package name@=
-@<Text Processing@/basic perl settings@>
-my %meta = @<.@/module meta information@>;
-my $name = $meta{name};
-die "package name '$name' is not a Go identifier\n"
-    if $name !~ /^[A-Za-z_][A-Za-z0-9_]*$/;
-print $name;
-@|Basic@/evaluate@
-
-The name entry is the package identifier.
-pkg stands in until a file sets its own name.
-A command does not read this name; its package clause says main.
-Further entries belong in module properties.
-@<Go Structure@/module meta information@=
-(
-    name => 'pkg',
-    @<.@/module properties@>
-)
-@
-
-No import declaration is emitted when the path list is empty
-or contains only whitespace.
-A blank line between paths starts another group,
-and gofmt keeps that group.
-@<Go Structure@/imports@=
-@<Text Processing@/basic perl settings@>
-my $paths = <<'LITAR_END_IMPORTS';
-@<.@/import paths@>
-LITAR_END_IMPORTS
-$paths =~ s/\A\s+//;
-$paths =~ s/\s+\z//;
-print "import (\n$paths\n)\n" if $paths ne '';
-@|Basic@/evaluate@
-
-command is the rightmost label of a package main program.
-These blocks set the package name to main,
-add the flag, fmt, and os imports,
-add the command variable when the invocation syntax needs one,
-and add func main.
-func main parses the command line and then runs the main body.
-Parsing always calls flag.Parse, flag.Usage, and os.Exit,
-so those three imports stay used when the command has no flags.
-Replace module meta information to name the other files in the node.
-That replacement does not rename the command.
-@<command@:Go Structure@/package name@=main@
-
-@<command@:Go Structure@/import paths@+
-    "flag"
-    "fmt"
-    "os"
-@
-
 @<command@:Go Structure@/variables@+
 @<.@/Flag@/command variables@>
 @
-
-@<Go Structure@/Flag@/command variables@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
-@<.@/flag syntax helpers@>
-my @@flags = flag_list($syntax);
-my @@arguments = argument_list($syntax);
-exit 0 if !@@flags && !@@arguments;
-my %seen_flag;
-my %seen_arg;
-print "var command struct {\n";
-if (@@flags) {
-    print "flags struct {\n";
-    for my $flag (@@flags) {
-        my $field = take_field($flag->{name});
-        die "name '$flag->{name}' repeats field $field\n" if $seen_flag{$field}++;
-        die "unsupported flag type: $flag->{type}\n" if !flag_func($flag->{type});
-        print "$field $flag->{type}\n";
-    }
-    print "}\n";
-}
-if (@@arguments) {
-    print "arguments struct {\n";
-    for my $arg (@@arguments) {
-        my $field = take_field($arg);
-        die "name '$arg' repeats field $field\n" if $seen_arg{$field}++;
-        print "$field string\n";
-    }
-    print "}\n";
-}
-print "}\n";
-@|Basic@/evaluate@
 
 @<command@:Go Structure@/functions@+
 func main() {
@@ -243,72 +147,240 @@ flag.PrintDefaults()
 }
 flag.Parse()
 @<.@/store arguments@>@
+@<Chunk@/Go Structure@/module meta information@=
+{"description": "Package name and other properties, as a Jsonnet object."}
+@
+@<Chunk@/Go Structure@/module properties@=
+{"description": "Jsonnet fields that override the module meta information."}
+@
+@<Chunk@/Go Structure@/Flag@/flag syntax helpers@=
+{"description": "Pydantic models and Python functions shared by the flag generators."}
+@
+@<Go Structure@/package name@=
+@<Text Processing@/basic python settings@>
 
+
+class ModuleMeta(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='allow')
+    name: str = pydantic.Field(pattern=r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+meta = configuration(ModuleMeta, r'''
+@<.@/module meta information@>
+''')
+print(meta.name, end='')
+@|Basic@/evaluate@
+The name field is the package identifier.
+pkg stands in until a file sets its own name.
+A command does not read this name; its package clause says main.
+The module properties are the fields of a second Jsonnet object, which override these defaults;
+further fields belong there too, and Jsonnet rejects a field given twice.
+@<Go Structure@/module meta information@=
+{
+    name: 'pkg',
+} + {
+    @<.@/module properties@>
+}
+@
+No import declaration is emitted when the path list is empty
+or contains only whitespace.
+A blank line between paths starts another group,
+and gofmt keeps that group.
+@<Go Structure@/imports@=
+@<Text Processing@/basic python settings@>
+paths = r'''
+@<.@/import paths@>
+'''.strip(' \t\n\r\f\v')
+if paths:
+    print(f'import (\n{paths}\n)')
+@|Basic@/evaluate@
+
+@<command@:Go Structure@/import paths@+
+    "flag"
+    "fmt"
+    "os"
+@
+@<Go Structure@/Flag@/command variables@=
+@<Text Processing@/basic python settings@>
+@<.@/flag syntax helpers@>
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+if syntax.flags or syntax.arguments:
+    print('var command struct {')
+    if syntax.flags:
+        print('flags struct {')
+        for flag in syntax.flags:
+            print(f'{take_field(flag.name)} {flag.type}')
+        print('}')
+    if syntax.arguments:
+        print('arguments struct {')
+        for arg in syntax.arguments:
+            print(f'{take_field(arg)} string')
+        print('}')
+    print('}')
+@|Basic@/evaluate@
 @<Go Structure@/Flag@/register flags@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
+@<Text Processing@/basic python settings@>
 @<.@/flag syntax helpers@>
-for my $flag (flag_list($syntax)) {
-    my $field = take_field($flag->{name});
-    my $func = flag_func($flag->{type});
-    die "unsupported flag type: $flag->{type}\n" if !$func;
-    my $lit = go_literal($flag->{type}, $flag->{default});
-    my $usage = go_string($flag->{usage} // '');
-    my $name = go_string($flag->{name});
-    print "flag.$func(&command.flags.$field, $name, $lit, $usage)\n";
-}
-@|Basic@/evaluate@
 
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+for flag in syntax.flags:
+    field = take_field(flag.name)
+    print(f'flag.{FLAG_FUNCS[flag.type]}(&command.flags.{field}, {go_string(flag.name)}, '
+          f'{go_literal(flag)}, {go_string(flag.usage)})')
+@|Basic@/evaluate@
 @<Go Structure@/Flag@/usage literal@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
+@<Text Processing@/basic python settings@>
 @<.@/flag syntax helpers@>
-my $name = $syntax->{name} // 'command';
-my @@parts = ($name);
-for my $flag (flag_list($syntax)) {
-    my $opt = '-' . $flag->{name};
-    if (($flag->{type} // '') ne 'bool') {
-        my $meta = uc($flag->{name} // '');
-        $meta =~ tr/- /_/;
-        $opt .= " $meta";
-    }
-    push @@parts, "[$opt]";
-}
-for my $arg (argument_list($syntax)) {
-    my $shown = uc $arg;
-    $shown =~ tr/- /_/;
-    push @@parts, $shown;
-}
-print go_string('Usage: ' . join(' ', @@parts) . "\n");
-@|Basic@/evaluate@
 
+
+def shown(name):
+    return name.upper().replace('-', '_').replace(' ', '_')
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+parts = [syntax.name]
+for flag in syntax.flags:
+    opt = f'-{flag.name}'
+    if flag.type != 'bool':
+        opt += f' {shown(flag.name)}'
+    parts.append(f'[{opt}]')
+parts += map(shown, syntax.arguments)
+print(go_string('Usage: ' + ' '.join(parts) + '\n'), end='')
+@|Basic@/evaluate@
 @<Go Structure@/Flag@/store arguments@=
-@<Text Processing@/basic perl settings@>
-my $syntax = @<.@/invocation syntax@>;
+@<Text Processing@/basic python settings@>
 @<.@/flag syntax helpers@>
-my @@arguments = argument_list($syntax);
-my $n = @@arguments;
-print "if len(flag.Args()) != $n {\n";
-print "flag.Usage()\n";
-print "os.Exit(1)\n";
-print "}\n";
-my $i = 0;
-for my $arg (@@arguments) {
-    my $field = take_field($arg);
-    print "command.arguments.$field = flag.Args()[$i]\n";
-    $i++;
-}
-@|Basic@/evaluate@
 
-A command line is one Perl hash.
-The filters below turn that hash into Go,
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print(f'if len(flag.Args()) != {len(syntax.arguments)} {{')
+print('flag.Usage()')
+print('os.Exit(1)')
+print('}')
+for i, arg in enumerate(syntax.arguments):
+    print(f'command.arguments.{take_field(arg)} = flag.Args()[{i}]')
+@|Basic@/evaluate@
+The generators include this chunk as one fragment,
+so a flag name becomes the same Go field in each of them.
+@<Go Structure@/Flag@/flag syntax helpers@=
+GO_KEYWORDS = {
+    'break', 'default', 'func', 'interface', 'select',
+    'case', 'defer', 'go', 'map', 'struct',
+    'chan', 'else', 'goto', 'package', 'switch',
+    'const', 'fallthrough', 'if', 'range', 'type',
+    'continue', 'for', 'import', 'return', 'var',
+}
+
+
+def field_name(name):
+    parts = [part for part in re.split(r'[-_]+', re.sub(r'\s+', '-', name)) if part]
+    if not parts:
+        return ''
+    return parts[0].lower() + ''.join(part.capitalize() for part in parts[1:])
+
+
+def take_field(name):
+    field = field_name(name)
+    if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', field):
+        raise ValueError(f"name '{name}' is not a Go field")
+    if field in GO_KEYWORDS:
+        raise ValueError(f"name '{name}' is a Go keyword")
+    return field
+@
+@<Go Structure@/Flag@/flag syntax helpers@+
+FLAG_FUNCS = {
+    'bool': 'BoolVar',
+    'string': 'StringVar',
+    'int': 'IntVar',
+    'int64': 'Int64Var',
+    'uint': 'UintVar',
+    'uint64': 'Uint64Var',
+    'float64': 'Float64Var',
+}
+
+
+def go_string(text):
+    for raw, escaped in (('\\', '\\\\'), ('"', '\\"'), ('\n', '\\n'), ('\r', '\\r'), ('\t', '\\t')):
+        text = text.replace(raw, escaped)
+    return f'"{text}"'
+
+
+def go_literal(flag):
+    if flag.default is None:
+        return {'bool': 'false', 'string': '""'}.get(flag.type, '0')
+    if flag.type == 'bool':
+        return 'true' if flag.default else 'false'
+    if flag.type == 'string':
+        return go_string(flag.default)
+    return str(flag.default)
+@
+A default must suit the type of its flag: a boolean for bool, a string for string,
+an integer for the integer types, not negative for the unsigned ones, and a number for float64.
+@<Go Structure@/Flag@/flag syntax helpers@+
+class Flag(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str
+    type: Literal['bool', 'string', 'int', 'int64', 'uint', 'uint64', 'float64']
+    default: bool | int | float | str | None = None
+    usage: str = ''
+
+    @pydantic.model_validator(mode='after')
+    def check_default(self):
+        value = self.default
+        if value is None:
+            return self
+        if self.type == 'bool':
+            suits = isinstance(value, bool)
+        elif self.type == 'string':
+            suits = isinstance(value, str)
+        elif self.type == 'float64':
+            suits = isinstance(value, (int, float)) and not isinstance(value, bool)
+        else:
+            suits = (isinstance(value, int) and not isinstance(value, bool)
+                     and (value >= 0 or not self.type.startswith('u')))
+        if not suits:
+            raise ValueError(f'default {value!r} does not suit type {self.type}')
+        return self
+@
+Flags, and separately arguments, must become distinct Go fields.
+@<Go Structure@/Flag@/flag syntax helpers@+
+class InvocationSyntax(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str = 'command'
+    flags: list[Flag] = []
+    arguments: list[str] = []
+
+    @pydantic.model_validator(mode='after')
+    def check_fields(self):
+        for names in ([flag.name for flag in self.flags], self.arguments):
+            seen = set()
+            for name in names:
+                field = take_field(name)
+                if field in seen:
+                    raise ValueError(f"name '{name}' repeats field {field}")
+                seen.add(field)
+        return self
+@
+A command line is one Jsonnet object.
+The filters below validate it with pydantic and turn it into Go,
 and the program uses the standard flag package.
 name is the word in the usage line.
 Each flag has a name, a flag package type, a default, and a usage string.
 The type is bool, string, int, int64, uint, uint64, or float64.
-A bool default is a Perl boolean.
-A string default is a Perl string.
-A numeric default is a Perl number.
+A bool default is a Jsonnet boolean.
+A string default is a Jsonnet string.
+A numeric default is a Jsonnet number; an integer type takes a whole number.
 The Go field is the flag name in camel case.
 Hyphens and spaces separate words.
 Positional arguments are an exact list.
@@ -318,99 +390,30 @@ flag.Usage prints the usage line and the flag defaults.
 A man page is not generated.
 
 {
-    name => COMMAND_NAME,
-    flags => [
+    name: COMMAND_NAME,
+    flags: [
         {
-            name => FLAG_NAME,
-            type => TYPE,
-            default => DEFAULT,
-            usage => USAGE,
+            name: FLAG_NAME,
+            type: TYPE,
+            default: DEFAULT,
+            usage: USAGE,
         },
     ],
-    arguments => [
+    arguments: [
         ARGUMENT,
     ],
 }
 @<Go Structure@/Flag@/invocation syntax@=
 {}
 @
-
-The generators include this chunk as one fragment,
-so a flag name becomes the same Go field in each of them.
-@<Go Structure@/Flag@/flag syntax helpers@=
-my %go_keyword = map { $_ => 1 } qw(
-    break default func interface select
-    case defer go map struct
-    chan else goto package switch
-    const fallthrough if range type
-    continue for import return var
-);
-
-sub flag_list {
-    my ($syntax) = @@_;
-    return () if !$syntax->{flags};
-    return @@{$syntax->{flags}};
-}
-
-sub argument_list {
-    my ($syntax) = @@_;
-    return () if !$syntax->{arguments};
-    return @@{$syntax->{arguments}};
-}
-
-sub field_name {
-    my ($name) = @@_;
-    $name =~ s/\s+/-/g;
-    my @@parts = grep { length } split /[-_]+/, $name;
-    return '' if !@@parts;
-    my $out = lc shift @@parts;
-    $out .= ucfirst lc for @@parts;
-    return $out;
-}
-
-sub take_field {
-    my ($name) = @@_;
-    my $field = field_name($name);
-    die "name '$name' is not a Go field\n"
-        if $field !~ /^[A-Za-z_][A-Za-z0-9_]*$/;
-    die "name '$name' is a Go keyword\n" if $go_keyword{$field};
-    return $field;
-}
-
-sub go_string {
-    my ($s) = @@_;
-    $s //= '';
-    $s =~ s/\\/\\\\/g;
-    $s =~ s/"/\\"/g;
-    $s =~ s/\n/\\n/g;
-    $s =~ s/\r/\\r/g;
-    $s =~ s/\t/\\t/g;
-    return "\"$s\"";
-}
-
-sub go_literal {
-    my ($type, $default) = @@_;
-    if (!defined $default) {
-        return 'false' if $type eq 'bool';
-        return '""' if $type eq 'string';
-        return '0';
-    }
-    return $default ? 'true' : 'false' if $type eq 'bool';
-    return go_string($default) if $type eq 'string';
-    return $default;
-}
-
-sub flag_func {
-    my ($type) = @@_;
-    my %func = (
-        bool => 'BoolVar',
-        string => 'StringVar',
-        int => 'IntVar',
-        int64 => 'Int64Var',
-        uint => 'UintVar',
-        uint64 => 'Uint64Var',
-        float64 => 'Float64Var',
-    );
-    return $func{$type};
-}
-@
+command is the rightmost label of a package main program.
+These blocks set the package name to main,
+add the flag, fmt, and os imports,
+add the command variable when the invocation syntax needs one,
+and add func main.
+func main parses the command line and then runs the main body.
+Parsing always calls flag.Parse, flag.Usage, and os.Exit,
+so those three imports stay used when the command has no flags.
+Replace module meta information to name the other files in the node.
+That replacement does not rename the command.
+@<command@:Go Structure@/package name@=main@

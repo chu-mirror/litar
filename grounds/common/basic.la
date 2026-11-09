@@ -15,39 +15,72 @@ chmod +x $temp_file
 $temp_file
 rm $temp_file
 @
-
 @<Module@/Text Processing@=
 {
-    "description": "Text processing based on perl."
+    "description": "Text processing based on python."
 }
 @
-
 @<Text Processing@/remove newlines@=
-@<.@/basic perl settings@>
-my @pres = <STDIN>;
-chomp @pres;
-print "@pres";
+@<.@/basic python settings@>
+lines = sys.stdin.buffer.read().split(b'\n')
+if lines[-1] == b'':
+    lines.pop()
+sys.stdout.buffer.write(b' '.join(lines))
 @
-
 Strip every newline at the end of the input, so the text joins the line after its reference.
 Carriage returns of CRLF endings are stripped too; other trailing whitespace is kept.
 
 @<Text Processing@/remove ending newlines@=
-@<.@/basic perl settings@>
-local $/;
-my $text = <STDIN> // '';
-$text =~ s/[\r\n]+\z//;
-print $text;
+@<.@/basic python settings@>
+sys.stdout.buffer.write(sys.stdin.buffer.read().rstrip(b'\r\n'))
 @
+A text processing script is a Python script that declares its dependencies:
+jsonnet evaluates configuration, and pydantic validates it.
+When python3 cannot import them, the script runs itself again through uv,
+which provides them from its cache, downloading them on the first run.
+The marker variable stops a second attempt, and is removed so nested scripts start afresh.
+@<Text Processing@/basic python settings@=
+#!@<.@/Internals@/path to python interpreter@>
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["jsonnet>=0.20", "pydantic>=2"]
+# ///
+import os
+import re
+import sys
+from typing import Literal
 
-@<Text Processing@/basic perl settings@=
-#!@<.@/Internals@/path to perl interpreter@>
-use v5.14;
-use warnings FATAL => 'all';
-use strict;
+try:
+    import _jsonnet
+    import pydantic
+except ImportError:
+    if os.environ.pop('LITAR_UV_RUN', None):
+        raise
+    os.environ['LITAR_UV_RUN'] = '1'
+    os.execvp('uv', ['uv', 'run', '--quiet', '--script', *sys.argv])
+os.environ.pop('LITAR_UV_RUN', None)
+
+@<.@/configuration helpers@>
 @
+Configuration is a Jsonnet expression, so a block can extend an object of a base node with +.
+A pydantic model validates the evaluated value.
+An invalid configuration, like any fail, prints a message and fails the evaluation.
+@<Text Processing@/configuration helpers@=
+def fail(message):
+    sys.exit(message)
 
-@<Text Processing@/Internals@/path to perl interpreter@=
+
+def configuration(model, source):
+    try:
+        value = _jsonnet.evaluate_snippet('configuration', source)
+    except RuntimeError as error:
+        fail(str(error))
+    try:
+        return model.model_validate_json(value)
+    except pydantic.ValidationError as error:
+        fail(str(error))
+@
+@<Text Processing@/Internals@/path to python interpreter@=
 #!/bin/sh
-which perl
+which python3
 @|Basic@/evaluate@

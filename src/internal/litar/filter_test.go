@@ -317,3 +317,23 @@ func TestMappedFileAndCycle(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestParseShebang(t *testing.T) {
+	cases := []struct {
+		script, interp, arg string
+		hasArg, ok          bool
+	}{
+		{"#!/bin/sh\necho", "/bin/sh", "", false, true},
+		{"#! /bin/sh  \n", "/bin/sh", "", false, true},
+		{"#!/bin/sh -e", "/bin/sh", "-e", true, true},
+		{"#!/usr/bin/env -S uv run --script\n", "/usr/bin/env", "-S uv run --script", true, true},
+		{"#!/usr/bin/env  python3 \t\r\nx", "/usr/bin/env", "python3", true, true},
+		{"echo", "", "", false, false},
+	}
+	for _, tc := range cases {
+		interp, arg, hasArg, ok := parseShebang(tc.script)
+		if interp != tc.interp || arg != tc.arg || hasArg != tc.hasArg || ok != tc.ok {
+			t.Fatalf("%q: %q %q %v %v", tc.script, interp, arg, hasArg, ok)
+		}
+	}
+}

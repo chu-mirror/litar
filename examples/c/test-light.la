@@ -5,39 +5,6 @@ Test cases for light.
 @<test-light.c@=
 @<test light@:light-single@:executable@:C Structure@/module@>
 @
-@<test light@:light-single@:executable@:C Structure@/Invoke@/invocation syntax@=
-{
-    name => 'test-light',
-    usages => [
-        {
-            name => 'show help',
-            options => [
-                {
-                    long_opt => "help",
-                    opt => "h",
-                    description => "Show usage",
-                },
-                {
-                    long_opt => "version",
-                    opt => "V",
-                    description => "Show version",
-                },
-            ],
-            arguments => [],
-        },
-        {
-            name => 'test',
-            options => [
-                {
-                    long_opt => "no-log",
-                    description => "Do not print log",
-                },
-            ],
-            arguments => ["command"],
-        },
-    ],
-}
-@
 @<test light@:light-single@:executable@:C Structure@/includes@+
 #include <assert.h>
 @
@@ -370,4 +337,37 @@ do {
     light_log(INFO, "Passed deque");
     exit_frame();
 } while (0);
+@
+@<test light@:light-single@:executable@:C Structure@/Invoke@/invocation syntax@=
+{
+    name: 'test-light',
+    usages: [
+        {
+            name: 'show help',
+            options: [
+                {
+                    long_opt: "help",
+                    opt: "h",
+                    description: "Show usage",
+                },
+                {
+                    long_opt: "version",
+                    opt: "V",
+                    description: "Show version",
+                },
+            ],
+            arguments: [],
+        },
+        {
+            name: 'test',
+            options: [
+                {
+                    long_opt: "no-log",
+                    description: "Do not print log",
+                },
+            ],
+            arguments: ["command"],
+        },
+    ],
+}
 @

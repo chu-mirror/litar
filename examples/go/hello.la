@@ -5,15 +5,6 @@ A classic example at the beginning of learning programming, written in Go.
 @<hello@:command@:Go Structure@/file@>
 @
 
-The command takes no flags and no positional arguments.
-@<hello@:command@:Go Structure@/Flag@/invocation syntax@=
-{
-    name => 'hello',
-    flags => [],
-    arguments => [],
-}
-@
-
 @<hello@:command@:Go Structure@/package comment@=
 // Command hello prints a greeting.
 @
@@ -21,3 +12,11 @@ The command takes no flags and no positional arguments.
 @<hello@:command@:Go Structure@/main body@=
 fmt.Println("Hello, World!")
 @~ output @
+The command takes no flags and no positional arguments.
+@<hello@:command@:Go Structure@/Flag@/invocation syntax@=
+{
+    name: 'hello',
+    flags: [],
+    arguments: [],
+}
+@

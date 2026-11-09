@@ -8,10 +8,6 @@ A hello command split into a library package, its test, and a command, as one Go
 @[go.mod@`go module@=
 @<Go Project@/go.mod@>@
 
-@<Go Project@/project properties@+
-module => 'example.com/hello',
-@
-
 The package greet lives in the directory greet.
 lib is the label of its source file, test the label of its test file.
 @[greet/greet.go@`go module@=
@@ -19,10 +15,6 @@ lib is the label of its source file, test the label of its test file.
 
 @[greet/greet_test.go@`go module@=
 @<test@:greet@:Go Structure@/file@>@
-
-@<greet@:Go Structure@/module properties@+
-name => 'greet',
-@
 
 @<greet@:Go Project@/package directory@=greet@
 
@@ -53,21 +45,6 @@ The command hello takes the name to greet from the flag -name.
 @[cmd/hello/main.go@`go module@=
 @<hello@:command@:Go Structure@/file@>@
 
-@<hello@:command@:Go Structure@/Flag@/invocation syntax@=
-{
-    name => 'hello',
-    flags => [
-        {
-            name => 'name',
-            type => 'string',
-            default => 'World',
-            usage => 'who to greet',
-        },
-    ],
-    arguments => [],
-}
-@
-
 @<hello@:command@:Go Structure@/package comment@=
 // Command hello prints a greeting.
 @
@@ -79,3 +56,23 @@ The command hello takes the name to greet from the flag -name.
 @<hello@:command@:Go Structure@/main body@=
 fmt.Println(greet.Greeting(command.flags.name))
 @~ output @
+@<Go Project@/project properties@+
+module: 'example.com/hello',
+@
+@<greet@:Go Structure@/module properties@+
+name: 'greet',
+@
+@<hello@:command@:Go Structure@/Flag@/invocation syntax@=
+{
+    name: 'hello',
+    flags: [
+        {
+            name: 'name',
+            type: 'string',
+            default: 'World',
+            usage: 'who to greet',
+        },
+    ],
+    arguments: [],
+}
+@

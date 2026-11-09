@@ -712,3 +712,57 @@ func TestApplyBlockOrders(t *testing.T) {
 		t.Fatalf("%v %q", err, got)
 	}
 }
+
+func TestOrderOwnSpecialization(t *testing.T) {
+	cases := []struct {
+		name, src, want string
+	}{
+		{
+			"less specialized first",
+			"@<l@:c@=main@\n@<c@=pkg@\n",
+			"@<c@=pkg@\n@<l@:c@=main@\n",
+		},
+		{
+			"equal labels keep their order",
+			"@<l@:c@=1@\n@<c@=0@\n@<l@:c@+2@\n",
+			"@<c@=0@\n@<l@:c@=1@\n@<l@:c@+2@\n",
+		},
+		{
+			"unrelated labels keep their order",
+			"@<b@:x@:c@=2@\n@<a@:c@=1@\n",
+			"@<b@:x@:c@=2@\n@<a@:c@=1@\n",
+		},
+	}
+	for _, tc := range cases {
+		if got := orderedRaw(t, tc.src); got != tc.want {
+			t.Fatalf("%s:\n%q\nwant\n%q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestApplyBlockAfterFinalEnd(t *testing.T) {
+	dir := t.TempDir()
+	arch := filepath.Join(dir, "a.la")
+	writeFile(t, arch, "@<l@:c@=main@")
+	comp := filepath.Join(dir, "composer.json")
+	writeFile(t, comp, composerDoc(`[
+    {"name":"root","archive":"./a.la","description":"","mappings":[],"base":[]}
+]`))
+	w, err := LoadComposer(comp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.ApplyBlock("root", "@<c@=pkg@\n"); err != nil {
+		t.Fatal(err)
+	}
+	chain, err := w.Chain("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ref, want := range map[string]string{"c": "pkg", "l@:c": "main"} {
+		got, err := NewEvaluator(chain, nil, nil).Eval(mustRef(t, ref), nil)
+		if err != nil || got != want {
+			t.Fatalf("%s: %v %q, want %q", ref, err, got, want)
+		}
+	}
+}

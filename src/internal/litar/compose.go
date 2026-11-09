@@ -347,7 +347,13 @@ func (w *World) ApplyBlock(nodeName, text string) error {
 	if err != nil {
 		return fmt.Errorf("could not read '%s'", n.Archive)
 	}
-	next := append(append([]byte{}, orig...), text...)
+	next := append([]byte{}, orig...)
+	// An archive may end with the "@" of its last block; text joined to it
+	// would turn that end control into ordinary text.
+	if len(next) > 0 && !endsWithSpace(string(next)) {
+		next = append(next, '\n')
+	}
+	next = append(next, text...)
 	arch, err := ParseArchive(next, n.Archive)
 	if err != nil {
 		return err
@@ -932,12 +938,13 @@ func writeFileKeepMode(path string, data []byte) error {
 // chunk reference among this node's own blocks, then orders the rest.
 func compactOwn(n *Node) ([]byte, *Archive, error) {
 	var kept []Block
+	own := orderOwn(n.Own)
 	cache := map[string]map[int]bool{}
-	for bi, bl := range n.Own {
+	for bi, bl := range own {
 		k := bl.Ref.key()
 		set, ok := cache[k]
 		if !ok {
-			set = effectiveIndexSet(n.Own, bl.Ref)
+			set = effectiveIndexSet(own, bl.Ref)
 			cache[k] = set
 		}
 		if set[bi] {
@@ -985,7 +992,7 @@ func chunkKey(ref ChunkRef) string {
 }
 
 // orderOwn places a block after the blocks whose content includes its chunk.
-// Blocks of one module and chunk keep their order, because that order
+// Blocks of one module and chunk follow specializationOrder, because that order
 // decides the content and the effective blocks; when inclusion is circular,
 // the rule gives way to that order. Otherwise blocks keep their order.
 func orderOwn(blocks []Block) []Block {
@@ -999,9 +1006,10 @@ func orderOwn(blocks []Block) []Block {
 	// chainPrev[i] is the earlier block of the same chunk, or -1.
 	chainPrev := make([]int, n)
 	for _, idx := range byChunk {
-		chainPrev[idx[0]] = -1
-		for j := 1; j < len(idx); j++ {
-			chainPrev[idx[j]] = idx[j-1]
+		order := specializationOrder(blocks, idx)
+		chainPrev[order[0]] = -1
+		for j := 1; j < len(order); j++ {
+			chainPrev[order[j]] = order[j-1]
 		}
 	}
 	includers := make([]map[int]bool, n)
@@ -1075,4 +1083,36 @@ func effectiveIndexSet(blocks []Block, query ChunkRef) map[int]bool {
 		set[i] = true
 	}
 	return set
+}
+
+// specializationOrder lists idx, the blocks of one chunk, so that a block follows
+// the blocks whose labels are a proper suffix of its labels; otherwise idx keeps its order.
+func specializationOrder(blocks []Block, idx []int) []int {
+	k := len(idx)
+	before := make([]int, k)
+	after := make([][]int, k)
+	for p := 0; p < k; p++ {
+		for q := 0; q < k; q++ {
+			lp, lq := blocks[idx[p]].Ref.Labels, blocks[idx[q]].Ref.Labels
+			if len(lp) < len(lq) && isSuffix(lp, lq) {
+				after[p] = append(after[p], q)
+				before[q]++
+			}
+		}
+	}
+	order := make([]int, 0, k)
+	placed := make([]bool, k)
+	for len(order) < k {
+		for q := 0; q < k; q++ {
+			if !placed[q] && before[q] == 0 {
+				placed[q] = true
+				order = append(order, idx[q])
+				for _, r := range after[q] {
+					before[r]--
+				}
+				break
+			}
+		}
+	}
+	return order
 }

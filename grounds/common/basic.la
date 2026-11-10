@@ -134,56 +134,6 @@ syntax = configuration(InvocationSyntax, r'''
 ''')
 print(''.join(map(summary_line, all_options(syntax))), end='')
 @|Basic@/evaluate@
-A text processing script is a Python script that declares its dependencies:
-jsonnet evaluates configuration, and pydantic validates it.
-When python3 cannot import them, the script runs itself again through uv,
-which provides them from its cache, downloading them on the first run.
-The marker variable stops a second attempt, and is removed so nested scripts start afresh.
-@<Text Processing@/basic python settings@=
-#!@<.@/Internals@/path to python interpreter@>
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["jsonnet>=0.20", "pydantic>=2"]
-# ///
-import os
-import re
-import sys
-from typing import Literal
-
-try:
-    import _jsonnet
-    import pydantic
-except ImportError:
-    if os.environ.pop('LITAR_UV_RUN', None):
-        raise
-    os.environ['LITAR_UV_RUN'] = '1'
-    os.execvp('uv', ['uv', 'run', '--quiet', '--script', *sys.argv])
-os.environ.pop('LITAR_UV_RUN', None)
-
-@<.@/Internals@/configuration helpers@>
-@
-Configuration is a Jsonnet expression, so a block can extend an object of a base node with +.
-A pydantic model validates the evaluated value.
-An invalid configuration, like any fail, prints a message and fails the evaluation.
-@<Text Processing@/Internals@/configuration helpers@=
-def fail(message):
-    sys.exit(message)
-
-
-def configuration(model, source):
-    try:
-        value = _jsonnet.evaluate_snippet('configuration', source)
-    except RuntimeError as error:
-        fail(str(error))
-    try:
-        return model.model_validate_json(value)
-    except pydantic.ValidationError as error:
-        fail(str(error))
-@
-@<Text Processing@/Internals@/path to python interpreter@=
-#!/bin/sh
-which python3
-@|Basic@/evaluate@
 The structures include this chunk in their generators,
 so every generator validates the invocation syntax the same way.
 A short name is one letter or digit.
@@ -334,4 +284,290 @@ A description of an option names it both ways, the short name first.
 @<Invocation@/invocation syntax helpers@+
 def option_names(opt):
     return ([f'-{opt.short}'] if opt.short else []) + [LONG_PREFIX + opt.name]
+@
+A text processing script is a Python script that declares its dependencies:
+jsonnet evaluates configuration, and pydantic validates it.
+Its interpreter runs it in a background process that has loaded them already.
+@<Text Processing@/basic python settings@=
+#!@<.@/Internals@/path to python interpreter@>
+@<.@/Internals@/python dependencies@>
+import os
+import re
+import sys
+from typing import Literal
+
+@<.@/Internals@/import dependencies@>
+
+@<.@/Internals@/configuration helpers@>
+@
+Configuration is a Jsonnet expression, so a block can extend an object of a base node with +.
+A pydantic model validates the evaluated value.
+An invalid configuration, like any fail, prints a message and fails the evaluation.
+@<Text Processing@/Internals@/configuration helpers@=
+def fail(message):
+    sys.exit(message)
+
+
+def configuration(model, source):
+    try:
+        value = _jsonnet.evaluate_snippet('configuration', source)
+    except RuntimeError as error:
+        fail(str(error))
+    try:
+        return model.model_validate_json(value)
+    except pydantic.ValidationError as error:
+        fail(str(error))
+@
+The interpreter of a script is the client of a background Python process.
+The client and the server are written to a directory named by their checksum,
+private to the user, so a changed client, server, or python3 gets its own server.
+The directory is moved into place whole, so a concurrent evaluation never sees it half written.
+@<Text Processing@/Internals@/path to python interpreter@=
+#!/bin/sh
+set -e
+base=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/litar-python-`id -u`
+mkdir -p -m 700 "$base"
+if [ ! -O "$base" ]; then
+    echo "$base is not owned by the user" >&2
+    exit 1
+fi
+temp=`mktemp -d "$base/new.XXXXXX"`
+trap 'rm -rf "$temp"' EXIT
+printf '#!%s -S\n' "`which python3`" > "$temp/client"
+cat >> "$temp/client" <<'LITAR_PYTHON_CLIENT'
+@<.@/python client@>
+LITAR_PYTHON_CLIENT
+cat > "$temp/server" <<'LITAR_PYTHON_SERVER'
+@<.@/python server@>
+LITAR_PYTHON_SERVER
+chmod +x "$temp/client"
+dir=$base/`cat "$temp/client" "$temp/server" | cksum | tr ' ' -`
+if [ ! -x "$dir/client" ]; then
+    mv -T "$temp" "$dir" 2>/dev/null || [ -x "$dir/client" ]
+fi
+echo "$dir/client"
+@|Basic@/evaluate@
+The client is the interpreter of a script.
+It passes its standard streams, arguments, directory and environment to the server,
+then exits with the status the server reports.
+When no server listens, it starts one in the background and runs this script itself,
+so only the first script pays for loading the dependencies.
+The server leaves the working directory, a view that is unmounted after the script,
+and closes the standard streams, which the evaluation reads until they close.
+@<Text Processing@/Internals@/python client@=
+import json
+import os
+import socket
+import sys
+
+here = os.path.dirname(os.path.abspath(__file__))
+
+
+def start_server():
+    if os.fork() == 0:
+        os.setsid()
+        os.chdir('/')
+        null = os.open(os.devnull, os.O_RDWR)
+        for fd in range(3):
+            os.dup2(null, fd)
+        server = os.path.join(here, 'server')
+        os.execv(sys.executable, [sys.executable, server])
+
+
+try:
+    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    connection.connect(os.path.join(here, 'socket'))
+except OSError:
+    start_server()
+    os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
+request = {
+    'argv': [os.path.abspath(sys.argv[1]), *sys.argv[2:]],
+    'cwd': os.getcwd(),
+    'env': dict(os.environ),
+}
+socket.send_fds(connection, [b'\0'], [0, 1, 2])
+connection.sendall(json.dumps(request).encode())
+connection.shutdown(socket.SHUT_WR)
+status = b''
+while chunk := connection.recv(64):
+    status += chunk
+sys.exit(int(status) if status else 1)
+@
+The server loads the dependencies once, then forks a fresh child for every connection,
+so each script starts from the same state and none sees what another changed.
+A lock keeps one server per directory; a second one exits at once.
+After ten idle minutes the server removes its socket, so clients start a new server,
+serves the connections already waiting, and exits.
+@<Text Processing@/Internals@/python server@=
+@<.@/python dependencies@>
+import fcntl
+import hashlib
+import json
+import os
+import re
+import runpy
+import signal
+import socket
+import sys
+import traceback
+from typing import Literal
+
+@<.@/import dependencies@>
+
+@<.@/preload pydantic@>
+
+here = os.path.dirname(os.path.abspath(__file__))
+
+@<.@/cache jsonnet@>
+
+@<.@/run a script@>
+
+@<.@/serve a connection@>
+
+
+def accept_all():
+    while True:
+        try:
+            connection, _ = listener.accept()
+        except (TimeoutError, BlockingIOError):
+            return
+        if os.fork() == 0:
+            serve(connection)
+        connection.close()
+
+
+lock = open(os.path.join(here, 'lock'), 'w')
+try:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except OSError:
+    sys.exit()
+path = os.path.join(here, 'socket')
+if os.path.lexists(path):
+    os.unlink(path)
+listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+listener.bind(path)
+listener.listen(64)
+listener.settimeout(600)
+signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+accept_all()
+os.unlink(path)
+listener.setblocking(False)
+accept_all()
+@
+The inline script metadata tells uv what a script, or the background process, depends on.
+@<Text Processing@/Internals@/python dependencies@=
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["jsonnet>=0.20", "pydantic>=2"]
+# ///
+@
+When python3 cannot import the dependencies, the script runs itself again through uv,
+which provides them from its cache, downloading them on the first run.
+The marker variable stops a second attempt, and is removed so nested scripts start afresh.
+In the background process the imports already succeeded, so a script never reaches uv there.
+@<Text Processing@/Internals@/import dependencies@=
+try:
+    import _jsonnet
+    import pydantic
+except ImportError:
+    if os.environ.pop('LITAR_UV_RUN', None):
+        raise
+    os.environ['LITAR_UV_RUN'] = '1'
+    os.execvp('uv', ['uv', 'run', '--quiet', '--script', *sys.argv])
+os.environ.pop('LITAR_UV_RUN', None)
+@
+The child of a connection takes the client's standard streams, arguments, directory
+and environment, restores the default handling of exited children for the script,
+and reports its status. When the child fails before that, the client exits with 1.
+@<Text Processing@/Internals@/serve a connection@=
+def serve(connection):
+    try:
+        connection.setblocking(True)
+        signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+        lock.close()
+        listener.close()
+        _, fds, _, _ = socket.recv_fds(connection, 1, 3)
+        data = b''
+        while chunk := connection.recv(65536):
+            data += chunk
+        request = json.loads(data)
+        for target, fd in enumerate(fds):
+            os.dup2(fd, target)
+            os.close(fd)
+        os.chdir(request['cwd'])
+        os.environ.clear()
+        os.environ.update(request['env'])
+        sys.argv = request['argv']
+        connection.sendall(str(run(sys.argv[0])).encode())
+    except BaseException:
+        traceback.print_exc()
+    os._exit(0)
+@
+A script ends as it would in its own interpreter:
+sys.exit with a message prints it and gives 1, an uncaught exception prints its traceback,
+and the output is flushed before the status is known.
+@<Text Processing@/Internals@/run a script@=
+def run(script):
+    try:
+        runpy.run_path(script, run_name='__main__')
+        status = 0
+    except SystemExit as error:
+        status = error.code
+        if status is None:
+            status = 0
+        elif not isinstance(status, int):
+            print(status, file=sys.stderr)
+            status = 1
+    except BaseException:
+        traceback.print_exc()
+        status = 1
+    for stream in sys.stdout, sys.stderr:
+        try:
+            stream.flush()
+        except OSError:
+            status = status or 120
+    return status
+@
+pydantic imports its parts on first use and builds its validators on the first model,
+so the server does both once, before forking, instead of every script doing them.
+@<Text Processing@/Internals@/preload pydantic@=
+class Preload(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='allow')
+    name: str = pydantic.Field('', pattern=r'^$')
+
+
+Preload.model_validate_json('{}')
+@
+jsonnet parses its standard library again on every evaluation, which costs more than most scripts.
+The server replaces evaluate_snippet, so its scripts keep each result in a file
+named by the hash of the source, shared by later scripts and later builds.
+A source that may import a file, or an evaluation with options, is never cached,
+because its result depends on more than the source; a failed evaluation is not cached either.
+The result is written aside and renamed, so a concurrent script never reads it half written.
+@<Text Processing@/Internals@/cache jsonnet@=
+def cached(evaluate):
+    cache = os.path.join(here, 'jsonnet')
+    os.makedirs(cache, exist_ok=True)
+
+    def evaluate_snippet(filename, source, **options):
+        if options or 'import' in source:
+            return evaluate(filename, source, **options)
+        key = hashlib.sha256(f'{filename}\0{source}'.encode()).hexdigest()
+        path = os.path.join(cache, key)
+        try:
+            with open(path, encoding='utf-8') as file:
+                return file.read()
+        except FileNotFoundError:
+            pass
+        value = evaluate(filename, source)
+        temp = f'{path}.{os.getpid()}'
+        with open(temp, 'w', encoding='utf-8') as file:
+            file.write(value)
+        os.replace(temp, path)
+        return value
+
+    return evaluate_snippet
+
+
+_jsonnet.evaluate_snippet = cached(_jsonnet.evaluate_snippet)
 @

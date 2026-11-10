@@ -207,10 +207,6 @@ if usage.options or usage.arguments:
 @<Chunk@/Go Structure@/Flag@/flag syntax helpers@=
 {"description": "Go field names, Go literals, and the Go limits on the shared invocation syntax."}
 @
-The flag package shows a flag after one hyphen.
-@<command@:Invocation@/long option prefix@=
--
-@
 @<Chunk@/Go Structure@/Flag@/usage literal@=
 {"description": "Go string literal of the shared usage lines."}
 @

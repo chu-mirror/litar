@@ -11534,10 +11534,6 @@ An action is chosen by giving its operand; agent takes none.
     ],
 }
 @
-The flag package also reads a flag after two hyphens, the way design/ui.md writes long options.
-@<litar command@:command@:Invocation@/long option prefix@=
---
-@
 @(tests/cases/blocks/driver.sh@`tests@=
 #!/bin/bash
 set -eu

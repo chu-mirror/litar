@@ -260,6 +260,12 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 	if err := ev.tangle(files); err != nil {
 		return "", err
 	}
+	key, keyed := filterKey(script, input, files)
+	if keyed {
+		if out, ok := readCachedOutput(key); ok {
+			return out, nil
+		}
+	}
 	var scriptPath string
 	scriptFile, err := os.CreateTemp("", "litar-script-*")
 	if err != nil {
@@ -288,7 +294,12 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 	// memory with this process, whose FUSE server answers the chdir;
 	// a stop-the-world in between waits for the forking thread forever.
 	cmd := exec.Command("/bin/sh", append([]string{"-c", `cd "$0" && exec "$@"`, mnt.dir}, args...)...)
+	cmd.Env = filterEnv()
 	cmd.Stderr = ev.stderr
+	stderr := &countingWriter{w: ev.stderr}
+	if keyed {
+		cmd.Stderr = stderr
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
@@ -316,6 +327,9 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 	<-copyDone
 	if waitErr != nil {
 		return "", fmt.Errorf("filter '%s' exited with status %d", ref.String(), exitStatus(waitErr))
+	}
+	if keyed && stderr.n == 0 {
+		writeCachedOutput(key, out.String())
 	}
 	return out.String(), nil
 }

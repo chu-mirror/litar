@@ -30,6 +30,7 @@ Prerequisites:
   which read their configuration as Jsonnet and validate it with pydantic.
   When `python3` cannot import `pydantic` and `jsonnet`, the filters run through
   [uv](https://docs.astral.sh/uv/), which downloads them on the first run.
+  The filters run in a background Python process that loads them once.
 - FUSE (`/dev/fuse`) for the view tests.
   Those tests skip when it is absent.
 
@@ -52,6 +53,16 @@ and each target evaluates one of its chunks.
 - `make clean` removes `bin` and `tmp/boot`.
 
 Edit `compos`, not `src`; `make sync` overwrites the files it lists.
+
+# Filter cache
+
+litar keeps the output of each filter run in `~/.cache/litar`,
+under its script, its input, and the files of its view,
+and a later run with all of them unchanged reuses that output instead of starting the filter.
+A run is not kept when its view has a mapped file or directory, or when it writes to stderr.
+`LITAR_CACHE` names another directory; `LITAR_CACHE=off` turns the cache off.
+Filters see the directory in `LITAR_CACHE`; remove the whole directory to clear the cache.
+A filter that reads anything else, such as the network or the clock, must not rely on running every time.
 
 # Browse
 

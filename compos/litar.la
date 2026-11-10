@@ -3258,62 +3258,6 @@ type catalog struct {
 
 @~ Go@/types@/litar.catFile @~ Go@/types@/litar.catalog @
 
-@<filter@:litar@:Go Structure@/functions@+
-func buildCatalog(chain []Block, mappings []Mapping) *catalog {
-c := &catalog{
-	files:     map[string]*catFile{},
-	conflicts: map[string]bool{},
-}
-touch := func(path string) *catFile {
-	f := c.files[path]
-	if f == nil {
-		f = &catFile{sets: map[string]struct{}{}}
-		c.files[path] = f
-		c.order = append(c.order, path)
-	}
-	return f
-}
-@<Litar@/add the archive files of 'chain' to 'c'@>
-@<Litar@/add the 'mappings' to 'c', noting paths that are also archive files@>
-return c
-}
-
-@~ Go@/functions@/litar.buildCatalog @~ Go@/types@/litar.Block @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.catFile @~ Go@/types@/litar.catalog @
-
-A later file block with the same path replaces the executable bit and adds its sets.
-@<Litar@/add the archive files of 'chain' to 'c'@=
-for _, b := range chain {
-	if !b.IsFile {
-		continue
-	}
-	f := touch(string(b.Path))
-	f.archive = true
-	f.executable = b.Executable
-	for _, set := range b.Sets {
-		f.sets[string(set)] = struct{}{}
-	}
-}
-@
-
-A path that is both an archive file and a mapping is recorded as a conflict,
-reported only when a view asks for the file.
-A mapping whose path ends with a slash maps the directory origin, not a file.
-@<Litar@/add the 'mappings' to 'c', noting paths that are also archive files@=
-for _, m := range mappings {
-	path, dir := strings.CutSuffix(m.Path, "/")
-	f := touch(path)
-	if f.archive {
-		c.conflicts[path] = true
-	}
-	f.mapping = true
-	f.dir = dir
-	f.origin = m.Origin
-	for _, set := range m.FileSet {
-		f.sets[set] = struct{}{}
-	}
-}
-@
-
 @<filter@:litar@:Go Structure@/types@+
 type viewFile struct {
 	path       string
@@ -3328,21 +3272,6 @@ type viewFile struct {
 }
 
 @~ Go@/types@/litar.viewFile @
-
-@<filter@:litar@:Go Structure@/functions@+
-func validFilePath(p string) error {
-	if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "\x00") {
-		return fmt.Errorf("invalid file path '%s'", p)
-	}
-	for _, c := range strings.Split(p, "/") {
-		if c == "" || c == "." || c == ".." {
-			return fmt.Errorf("invalid file path '%s'", p)
-		}
-	}
-	return nil
-}
-
-@~ Go@/functions@/litar.validFilePath @
 
 @<filter@:litar@:Go Structure@/methods@+
 func (c *catalog) apply(ops []ViewOp) ([]viewFile, error) {
@@ -3442,187 +3371,6 @@ for _, path := range order {
 }
 return out, nil
 @~ Go@/types@/litar.viewFile @
-
-@<filter@:litar@:Go Structure@/functions@+
-// parseShebang reads "#! interpreter" or "#! interpreter arg".
-// As the kernel's script loader does, arg is the rest of the line,
-// one argument without its surrounding blanks.
-func parseShebang(script string) (interp, arg string, hasArg, ok bool) {
-if len(script) < 2 || script[0] != '#' || script[1] != '!' {
-	return "", "", false, false
-}
-i := 2
-for i < len(script) && (script[i] == ' ' || script[i] == '\t') {
-	i++
-}
-interp, i = shebangWord(script, i)
-if interp == "" {
-	return "", "", false, false
-}
-@<Litar@/return 'interp' alone unless a word follows it at 'i'@>
-end := strings.IndexByte(script[i:], '\n')
-if end < 0 {
-	end = len(script) - i
-}
-arg = strings.TrimRight(script[i:i+end], " \t\r")
-return interp, arg, true, true
-}
-
-@~ Go@/functions@/litar.parseShebang @~ Go@/functions@/litar.shebangWord @
-
-Blanks after the interpreter do not make an argument; only a word before the line end does.
-@<Litar@/return 'interp' alone unless a word follows it at 'i'@=
-if i < len(script) && script[i] == '\r' {
-	i++
-}
-if i >= len(script) || script[i] == '\n' {
-	return interp, "", false, true
-}
-for i < len(script) && (script[i] == ' ' || script[i] == '\t') {
-	i++
-}
-if i >= len(script) || script[i] == '\n' || script[i] == '\r' {
-	return interp, "", false, true
-}
-@
-
-@<filter@:litar@:Go Structure@/functions@+
-// shebangWord returns the word of script at i, up to a blank or a line end,
-// and the index after it.
-func shebangWord(script string, i int) (string, int) {
-	start := i
-	for i < len(script) && script[i] != ' ' && script[i] != '\t' && script[i] != '\n' && script[i] != '\r' {
-		i++
-	}
-	return stripCR(script[start:i]), i
-}
-
-@~ Go@/functions@/litar.shebangWord @~ Go@/functions@/litar.stripCR @
-
-@<filter@:litar@:Go Structure@/functions@+
-func stripCR(s string) string {
-	if strings.HasSuffix(s, "\r") {
-		return strings.TrimSuffix(s, "\r")
-	}
-	return s
-}
-
-@~ Go@/functions@/litar.stripCR @
-
-@<filter@:litar@:Go Structure@/functions@+
-func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []ViewOp) (string, error) {
-interp, arg, hasArg, ok := parseShebang(script)
-if !ok {
-	return "", fmt.Errorf("filter '%s' has no shebang", ref.String())
-}
-files, err := ev.cat.apply(view)
-if err != nil {
-	return "", err
-}
-if err := ev.tangle(files); err != nil {
-	return "", err
-}
-var scriptPath string
-@<Litar@/write 'script' to the temporary file 'scriptPath'@>
-
-mnt, err := mountView(files)
-if err != nil {
-	return "", err
-}
-defer mnt.close()
-
-args := []string{interp, scriptPath}
-if hasArg {
-	args = []string{interp, arg, scriptPath}
-}
-@<Litar@/run 'args' in the view mounted at 'mnt' with 'input' on stdin@>
-}
-
-@~ Go@/functions@/litar.executeFilter @~ Go@/functions@/litar.mountView @~ Go@/functions@/litar.parseShebang @~ Go@/methods@/litar.ChunkRef.String @~ Go@/methods@/litar.Evaluator.tangle @~ Go@/methods@/litar.catalog.apply @~ Go@/methods@/litar.mount.close @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.ViewOp @
-
-The script is passed to the interpreter as a file, so its stdin stays free for the input.
-A failure to write it is reported as a filter that exited with status 1.
-@<Litar@/write 'script' to the temporary file 'scriptPath'@=
-scriptFile, err := os.CreateTemp("", "litar-script-*")
-if err != nil {
-	return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
-}
-scriptPath = scriptFile.Name()
-if _, err := scriptFile.WriteString(script); err != nil {
-	scriptFile.Close()
-	os.Remove(scriptPath)
-	return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
-}
-scriptFile.Close()
-defer os.Remove(scriptPath)
-@~ Go@/methods@/litar.ChunkRef.String @
-
-@<Litar@/run 'args' in the view mounted at 'mnt' with 'input' on stdin@=
-// The child must not enter the mount before exec. Until exec it shares
-// memory with this process, whose FUSE server answers the chdir;
-// a stop-the-world in between waits for the forking thread forever.
-cmd := exec.Command("/bin/sh", append([]string{"-c", `cd "$0" && exec "$@@"`, mnt.dir}, args...)...)
-cmd.Stderr = ev.stderr
-stdin, err := cmd.StdinPipe()
-if err != nil {
-	return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
-}
-stdout, err := cmd.StdoutPipe()
-if err != nil {
-	return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
-}
-@<.@/start 'cmd', with status 127 if the interpreter is missing@>
-@<.@/send 'input' to 'stdin' and return what 'cmd' writes to 'stdout'@>
-@~ Go@/methods@/litar.ChunkRef.String @
-
-@<Litar@/start 'cmd', with status 127 if the interpreter is missing@=
-if err := cmd.Start(); err != nil {
-	code := 1
-	if os.IsNotExist(err) {
-		code = 127
-	}
-	return "", fmt.Errorf("filter '%s' exited with status %d", ref.String(), code)
-}
-@~ Go@/methods@/litar.ChunkRef.String @
-
-The output is read concurrently, so a filter that writes before reading all its input does not block.
-@<Litar@/send 'input' to 'stdin' and return what 'cmd' writes to 'stdout'@=
-var out bytes.Buffer
-copyDone := make(chan struct{})
-go func() {
-	_, _ = io.Copy(&out, stdout)
-	close(copyDone)
-}()
-_, _ = io.Copy(stdin, strings.NewReader(input))
-_ = stdin.Close()
-waitErr := cmd.Wait()
-<-copyDone
-if waitErr != nil {
-	return "", fmt.Errorf("filter '%s' exited with status %d", ref.String(), exitStatus(waitErr))
-}
-return out.String(), nil
-@~ Go@/functions@/litar.exitStatus @~ Go@/methods@/litar.ChunkRef.String @
-
-A process killed by a signal gets the status a shell reports for it.
-@<filter@:litar@:Go Structure@/functions@+
-// exitStatus is the status of a failed wait: the exit code,
-// or 128 plus the signal for a process killed by a signal.
-func exitStatus(err error) int {
-	code := 1
-	if ee, ok := err.(*exec.ExitError); ok {
-		code = ee.ExitCode()
-		if code < 0 {
-			if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-				code = 128 + int(ws.Signal())
-			} else {
-				code = 1
-			}
-		}
-	}
-	return code
-}
-
-@~ Go@/functions@/litar.exitStatus @
 
 @<filter@:litar@:Go Structure@/methods@+
 // tangle writes each view file's bytes before the filter process starts.
@@ -10451,175 +10199,6 @@ clean:
 	rm -rf tmp
 
 @
-@(tests/run.sh@`tests@=
-#!/bin/bash
-# Run every case under tests/cases.
-# A case is a directory with one of:
-#   driver.sh    bash driver.sh LITAR ROOT
-#   argv         one argument per line, passed to litar; cwd is the case dir
-# Successful checks expect empty stderr. A missing out file expects empty
-# stdout. The default status is 0. An err file is a substring of stderr.
-
-set -eu
-
-if [ "$#" -ne 1 ]; then
-    echo "usage: run.sh LITAR" >&2
-    exit 2
-fi
-
-LITAR=$1
-ROOT=$(cd "$(dirname "$0")/.." && pwd)
-CASEDIR=$ROOT/tests/cases
-
-if [ ! -x "$LITAR" ]; then
-    echo "litar binary is not executable: $LITAR" >&2
-    exit 1
-fi
-
-passed=0
-failed=0
-
-@<Litar@/functions of tests/run.sh that check a case and count it in 'passed' or 'failed'@>
-
-shopt -s nullglob
-
-for dir in "$CASEDIR"/*/; do
-    name=$(basename "$dir")
-@<Litar@/run the driver.sh of the case 'dir' named 'name', if it has one@>
-
-    case_bad=0
-    back=$(pwd)
-    cd "$dir"
-
-    if [ -f argv ]; then
-@<Litar@/run litar with the argv of the case 'dir' named 'name', and set 'case_bad' on a failure@>
-    else
-        echo "FAIL $name: no driver.sh or argv" >&2
-        case_bad=1
-    fi
-
-    cd "$back"
-    finish_case "$case_bad" "$name"
-done
-
-echo "passed $passed failed $failed"
-if [ "$((passed + failed))" -eq 0 ]; then
-    echo "no test cases found" >&2
-    exit 1
-fi
-[ "$failed" -eq 0 ]
-
-@
-
-@<Litar@/functions of tests/run.sh that check a case and count it in 'passed' or 'failed'@=
-finish_case() {
-    if [ "$1" -eq 0 ]; then
-        echo "ok $2"
-        passed=$((passed + 1))
-    else
-        echo "FAIL $2" >&2
-        failed=$((failed + 1))
-    fi
-}
-
-@
-
-@<Litar@/functions of tests/run.sh that check a case and count it in 'passed' or 'failed'@+
-# check_one name status out-file-or-empty err-file-or-empty cmd...
-check_one() {
-    _name=$1
-    _status=$2
-    _out_file=$3
-    _err_file=$4
-    shift 4
-    _got_out=$(mktemp)
-    _got_err=$(mktemp)
-    _exp_out=$(mktemp)
-    set +e
-    "$@@" >"$_got_out" 2>"$_got_err"
-    _st=$?
-    set -e
-    _bad=0
-@<.@/set '_bad' when the status '_st' or the stdout '_got_out' differs from '_status' and '_out_file'@>
-@<.@/set '_bad' when the stderr '_got_err' does not match '_err_file', and show it@>
-    rm -f "$_got_out" "$_got_err" "$_exp_out"
-    return "$_bad"
-}
-@
-
-Without an out file, the expected stdout '_exp_out' stays empty.
-@<Litar@/set '_bad' when the status '_st' or the stdout '_got_out' differs from '_status' and '_out_file'@=
-    if [ "$_st" -ne "$_status" ]; then
-        echo "FAIL $_name: exit $_st, expected $_status" >&2
-        _bad=1
-    fi
-    if [ -n "$_out_file" ]; then
-        cp "$_out_file" "$_exp_out"
-    fi
-    if ! cmp -s "$_exp_out" "$_got_out"; then
-        echo "FAIL $_name: stdout" >&2
-        diff -u "$_exp_out" "$_got_out" >&2 || true
-        _bad=1
-    fi
-@
-
-Only a successful case requires an empty stderr. A failed check shows the stderr
-once: the err file check has already shown it.
-@<Litar@/set '_bad' when the stderr '_got_err' does not match '_err_file', and show it@=
-    if [ -n "$_err_file" ]; then
-        _needle=$(cat "$_err_file")
-        if ! grep -F -q -e "$_needle" "$_got_err"; then
-            echo "FAIL $_name: stderr missing [$_needle]" >&2
-            cat "$_got_err" >&2
-            _bad=1
-        fi
-    elif [ "$_status" -eq 0 ] && [ -s "$_got_err" ]; then
-        echo "FAIL $_name: unexpected stderr" >&2
-        cat "$_got_err" >&2
-        _bad=1
-    fi
-    if [ "$_bad" -ne 0 ] && [ -s "$_got_err" ] && [ -n "$_err_file" ]; then
-        :
-    elif [ "$_bad" -ne 0 ] && [ -s "$_got_err" ]; then
-        echo "stderr:" >&2
-        cat "$_got_err" >&2
-    fi
-@
-
-@<Litar@/run the driver.sh of the case 'dir' named 'name', if it has one@=
-    if [ -f "$dir/driver.sh" ]; then
-        if bash "$dir/driver.sh" "$LITAR" "$ROOT"; then
-            finish_case 0 "$name"
-        else
-            finish_case 1 "$name"
-        fi
-        continue
-    fi
-@
-
-The status, out and err files are optional.
-@<Litar@/run litar with the argv of the case 'dir' named 'name', and set 'case_bad' on a failure@=
-        args=()
-        while IFS= read -r line || [ -n "$line" ]; do
-            args+=("$line")
-        done < argv
-        status=0
-        if [ -f status ]; then
-            status=$(tr -d '[:space:]' < status)
-        fi
-        out_file=
-        err_file=
-        if [ -f out ]; then
-            out_file=$dir/out
-        fi
-        if [ -f err ]; then
-            err_file=$dir/err
-        fi
-        if ! check_one "$name" "$status" "$out_file" "$err_file" \
-            "$LITAR" "${args[@@]}"; then
-            case_bad=1
-        fi
-@
 @<Index@/Go@=
 {"description": "Go declarations of the module litar, qualified by package."}
 @
@@ -11672,195 +11251,6 @@ type Options struct {
 }
 
 @~ Go@/types@/litar.Options @
-
-@<cli@:litar@:Go Structure@/functions@=
-// Main runs litar with a parsed command line and returns the exit status.
-func Main(opts Options) int {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	go func() {
-		sig := <-sigs
-		DetachMounts()
-		os.Exit(128 + int(sig.(syscall.Signal)))
-	}()
-	return run(opts, os.Stdout, os.Stderr)
-}
-
-@~ Go@/functions@/litar.DetachMounts @~ Go@/functions@/litar.Main @~ Go@/functions@/litar.run @~ Go@/types@/litar.Options @
-
-Every error is reported as one line on stderr, and run exits with status 1.
-@<cli@:litar@:Go Structure@/functions@+
-func run(opts Options, stdout, stderr io.Writer) int {
-fail := func(format string, a ...any) int {
-	fmt.Fprintf(stderr, "Error: "+format+"\n", a...)
-	return 1
-}
-var mode, operand string
-@<Litar@/choose 'mode' and 'operand' from the actions given in 'opts'@>
-
-archive := opts.File
-sawFile := archive != ""
-@<Litar@/check that an archive is given unless 'mode' is agent@>
-
-@<Litar@/run the action chosen by 'mode'@>
-}
-
-@~ Go@/functions@/litar.run @~ Go@/types@/litar.Options @
-
-@<Litar@/run the action chosen by 'mode'@=
-var (
-	world *World
-	node  string
-)
-@<.@/load 'world' and 'node' from 'archive'@>
-
-@<.@/serve agents in agent mode@>
-
-@<.@/dispatch 'mode' and write the result to 'stdout'@>
-@~ Go@/types@/litar.World @
-
-@<Litar@/load 'world' and 'node' from 'archive'@=
-if sawFile {
-	var err error
-	world, node, err = FindArchive(archive)
-	if err != nil {
-		return fail("%s", err.Error())
-	}
-}
-@~ Go@/functions@/litar.FindArchive @
-
-The agent serves until its input ends or it is cancelled; neither is an error.
-@<Litar@/serve agents in agent mode@=
-if mode == "agent" {
-	ag := newAgent()
-	if world != nil {
-		ag.addWorld(world)
-		ag.refresh()
-	}
-	err := ag.serve(context.Background())
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
-		return fail("%s", err.Error())
-	}
-	return 0
-}
-@~ Go@/functions@/litar.newAgent @~ Go@/methods@/litar.agent.addWorld @~ Go@/methods@/litar.agent.refresh @~ Go@/methods@/litar.agent.serve @
-
-@<Litar@/dispatch 'mode' and write the result to 'stdout'@=
-text, err := dispatch(world, node, mode, operand, stderr)
-if err != nil {
-	return fail("%s", err.Error())
-}
-if _, err := io.WriteString(stdout, text); err != nil {
-	return fail("could not write output")
-}
-return 0
-@~ Go@/functions@/litar.dispatch @
-
-@<cli@:litar@:Go Structure@/functions@+
-func dispatch(world *World, node, mode, operand string, stderr io.Writer) (string, error) {
-@<Litar@/resolve an empty 'node' to the root node@>
-chain, err := world.Chain(node)
-if err != nil {
-	return "", err
-}
-switch mode {
-@<Litar@/cases of 'mode' in 'dispatch'@>
-default:
-	return "", fmt.Errorf("unknown option '%s'", mode)
-}
-}
-
-@~ Go@/functions@/litar.dispatch @~ Go@/methods@/litar.World.Chain @~ Go@/types@/litar.World @
-
-A caller that gives no node path gets the root node of the composition.
-@<Litar@/resolve an empty 'node' to the root node@=
-if node == "" {
-	var err error
-	node, err = world.rootName()
-	if err != nil {
-		return "", err
-	}
-}
-@~ Go@/methods@/litar.World.rootName @
-
-@<Litar@/cases of 'mode' in 'dispatch'@=
-case "print":
-	ref, filters, err := ParsePrint(operand)
-	if err != nil {
-		return "", err
-	}
-	maps, err := world.Mappings(node)
-	if err != nil {
-		return "", err
-	}
-	ev := NewEvaluator(chain, maps, stderr)
-	return ev.Eval(ref, filters)
-@~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.ParsePrint @~ Go@/methods@/litar.Evaluator.Eval @~ Go@/methods@/litar.World.Mappings @
-
-@<Litar@/cases of 'mode' in 'dispatch'@+
-case "literal":
-	ref, err := ParseChunkRef(operand)
-	if err != nil {
-		return "", err
-	}
-	return Literal(chain, ref)
-case "effective":
-	ref, err := ParseChunkRef(operand)
-	if err != nil {
-		return "", err
-	}
-	return Effective(chain, ref)
-case "depend":
-	ref, err := ParseChunkRef(operand)
-	if err != nil {
-		return "", err
-	}
-	return Depend(chain, ref), nil
-@~ Go@/functions@/litar.Depend @~ Go@/functions@/litar.Effective @~ Go@/functions@/litar.Literal @~ Go@/functions@/litar.ParseChunkRef @
-
-@<Litar@/cases of 'mode' in 'dispatch'@+
-case "reference":
-	item, err := ParseItem(operand)
-	if err != nil {
-		return "", err
-	}
-	return Refer(chain, item), nil
-@~ Go@/functions@/litar.ParseItem @~ Go@/functions@/litar.Refer @
-
-Only one action is allowed. Two actions are reported in the order of modeOrder,
-so the message does not depend on the order of the arguments.
-@<Litar@/choose 'mode' and 'operand' from the actions given in 'opts'@=
-operands := map[string]string{
-	"print":     opts.Print,
-	"literal":   opts.Literal,
-	"effective": opts.Effective,
-	"depend":    opts.Depend,
-	"reference": opts.Reference,
-}
-for _, name := range modeOrder {
-	given := operands[name] != ""
-	if name == "agent" {
-		given = opts.Agent
-	}
-	if !given {
-		continue
-	}
-	if mode != "" {
-		return fail("cannot combine %s and %s", mode, name)
-	}
-	mode, operand = name, operands[name]
-}
-if mode == "" {
-	return fail("%s", missingAction)
-}
-@~ Go@/constants@/litar.missingAction @~ Go@/variables@/litar.modeOrder @
-
-The agent mode may start without an archive; compositions can be imported later.
-@<Litar@/check that an archive is given unless 'mode' is agent@=
-if mode != "agent" && !sawFile {
-	return fail("missing -f, --file")
-}
-@
 @<cli test@:litar@:Go Structure@/functions@=
 func runOut(t *testing.T, opts Options) (int, string, string) {
 	t.Helper()
@@ -12165,3 +11555,814 @@ assert_fail attached "flag provided but not defined: -farchive.la" "$LITAR" -far
 The parsed command line: choosing the action, and dispatch to the print, listing, and agent modes.
 @[internal/litar/cli.go@`go module@=
 @<cli@:litar@:Go Structure@/file@>@
+The filter cache: the output of a filter run kept on disk under everything the run reads,
+so a later run with the same script, input, and view files is not started again.
+@[internal/litar/cache.go@`go module@=
+@<cache@:litar@:Go Structure@/file@>@
+
+@<cache@:litar@:Go Structure@/import paths@+
+"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+@
+Only Main sets the cache directory, so the tests run every filter unless a test sets it.
+@<cache@:litar@:Go Structure@/variables@+
+// filterCacheDir is the directory of the filter cache; empty turns the cache off.
+var filterCacheDir string
+
+@~ Go@/variables@/litar.filterCacheDir @
+The directory is made absolute, because filters run in another working directory.
+@<cache@:litar@:Go Structure@/functions@+
+// cacheDirFromEnv is the directory that LITAR_CACHE names, or litar below the user cache
+// directory when it is unset. LITAR_CACHE=off, or an empty value, turns the cache off.
+func cacheDirFromEnv() string {
+	dir, ok := os.LookupEnv("LITAR_CACHE")
+	if !ok {
+		base, err := os.UserCacheDir()
+		if err != nil {
+			return ""
+		}
+		dir = filepath.Join(base, "litar")
+	}
+	if dir == "" || dir == "off" {
+		return ""
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return ""
+	}
+	return abs
+}
+
+@~ Go@/functions@/litar.cacheDirFromEnv @
+A run is keyed by everything it reads from litar. A mapped file or directory lies outside
+the archive and may be written by the run, so a view with one gets no key and always runs.
+The version line changes whenever the meaning of a key does.
+@<cache@:litar@:Go Structure@/functions@+
+// filterKey names a filter run by its script, its input, and the path, mode,
+// and contents of each file in its view.
+func filterKey(script, input string, files []viewFile) (string, bool) {
+	if filterCacheDir == "" {
+		return "", false
+	}
+	h := sha256.New()
+	fmt.Fprintf(h, "litar filter 1\n%d:%s%d:%s", len(script), script, len(input), input)
+	for _, f := range files {
+		if !f.archive {
+			return "", false
+		}
+		fmt.Fprintf(h, "%q %t %d:", f.path, f.executable, len(f.body))
+		h.Write(f.body)
+	}
+	return hex.EncodeToString(h.Sum(nil)), true
+}
+
+@~ Go@/functions@/litar.filterKey @~ Go@/types@/litar.viewFile @~ Go@/variables@/litar.filterCacheDir @
+Outputs are spread over subdirectories by the first two digits of their key.
+The cache is best effort: an output that cannot be read is computed again,
+and one that cannot be written is left out. An output is written beside its place
+and renamed, so a concurrent litar never reads part of it.
+@<cache@:litar@:Go Structure@/functions@+
+func cachedOutputPath(key string) string {
+	return filepath.Join(filterCacheDir, "filters", key[:2], key)
+}
+
+// readCachedOutput returns the output kept for key, if there is one.
+func readCachedOutput(key string) (string, bool) {
+	data, err := os.ReadFile(cachedOutputPath(key))
+	if err != nil {
+		return "", false
+	}
+	return string(data), true
+}
+
+// writeCachedOutput keeps out as the output for key.
+func writeCachedOutput(key, out string) {
+	path := cachedOutputPath(key)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), key+".*")
+	if err != nil {
+		return
+	}
+	_, err = f.WriteString(out)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil || os.Rename(f.Name(), path) != nil {
+		os.Remove(f.Name())
+	}
+}
+
+@~ Go@/functions@/litar.cachedOutputPath @~ Go@/functions@/litar.readCachedOutput @~ Go@/functions@/litar.writeCachedOutput @~ Go@/variables@/litar.filterCacheDir @
+A run that writes to stderr is not kept, so its messages are not lost on later runs.
+The count is read after the command is waited for, when its copying has finished.
+@<cache@:litar@:Go Structure@/types@+
+// countingWriter passes writes to w and counts the bytes written.
+type countingWriter struct {
+	w io.Writer
+	n int
+}
+
+@~ Go@/types@/litar.countingWriter @
+
+@<cache@:litar@:Go Structure@/methods@+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += n
+	return n, err
+}
+
+@~ Go@/methods@/litar.countingWriter.Write @~ Go@/types@/litar.countingWriter @
+A filter learns the cache directory from LITAR_CACHE, so the files it leaves for its output,
+such as an interpreter its output names, live and go with the outputs kept there.
+When the cache is off the variable is removed, so a filter never reads "off" as a directory.
+@<cache@:litar@:Go Structure@/functions@+
+// filterEnv is the environment of a filter process.
+func filterEnv() []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "LITAR_CACHE=") {
+			env = append(env, kv)
+		}
+	}
+	if filterCacheDir != "" {
+		env = append(env, "LITAR_CACHE="+filterCacheDir)
+	}
+	return env
+}
+
+@~ Go@/functions@/litar.filterEnv @~ Go@/variables@/litar.filterCacheDir @
+@<filter@:litar@:Go Structure@/functions@=
+func buildCatalog(chain []Block, mappings []Mapping) *catalog {
+c := &catalog{
+	files:     map[string]*catFile{},
+	conflicts: map[string]bool{},
+}
+touch := func(path string) *catFile {
+	f := c.files[path]
+	if f == nil {
+		f = &catFile{sets: map[string]struct{}{}}
+		c.files[path] = f
+		c.order = append(c.order, path)
+	}
+	return f
+}
+@<Litar@/add the archive files of 'chain' to 'c'@>
+@<Litar@/add the 'mappings' to 'c', noting paths that are also archive files@>
+return c
+}
+
+@~ Go@/functions@/litar.buildCatalog @~ Go@/types@/litar.Block @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.catFile @~ Go@/types@/litar.catalog @
+
+A later file block with the same path replaces the executable bit and adds its sets.
+@<Litar@/add the archive files of 'chain' to 'c'@=
+for _, b := range chain {
+	if !b.IsFile {
+		continue
+	}
+	f := touch(string(b.Path))
+	f.archive = true
+	f.executable = b.Executable
+	for _, set := range b.Sets {
+		f.sets[string(set)] = struct{}{}
+	}
+}
+@
+
+A path that is both an archive file and a mapping is recorded as a conflict,
+reported only when a view asks for the file.
+A mapping whose path ends with a slash maps the directory origin, not a file.
+@<Litar@/add the 'mappings' to 'c', noting paths that are also archive files@=
+for _, m := range mappings {
+	path, dir := strings.CutSuffix(m.Path, "/")
+	f := touch(path)
+	if f.archive {
+		c.conflicts[path] = true
+	}
+	f.mapping = true
+	f.dir = dir
+	f.origin = m.Origin
+	for _, set := range m.FileSet {
+		f.sets[set] = struct{}{}
+	}
+}
+@
+@<filter@:litar@:Go Structure@/functions@+
+func validFilePath(p string) error {
+	if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "\x00") {
+		return fmt.Errorf("invalid file path '%s'", p)
+	}
+	for _, c := range strings.Split(p, "/") {
+		if c == "" || c == "." || c == ".." {
+			return fmt.Errorf("invalid file path '%s'", p)
+		}
+	}
+	return nil
+}
+
+@~ Go@/functions@/litar.validFilePath @
+@<filter@:litar@:Go Structure@/functions@+
+// parseShebang reads "#! interpreter" or "#! interpreter arg".
+// As the kernel's script loader does, arg is the rest of the line,
+// one argument without its surrounding blanks.
+func parseShebang(script string) (interp, arg string, hasArg, ok bool) {
+if len(script) < 2 || script[0] != '#' || script[1] != '!' {
+	return "", "", false, false
+}
+i := 2
+for i < len(script) && (script[i] == ' ' || script[i] == '\t') {
+	i++
+}
+interp, i = shebangWord(script, i)
+if interp == "" {
+	return "", "", false, false
+}
+@<Litar@/return 'interp' alone unless a word follows it at 'i'@>
+end := strings.IndexByte(script[i:], '\n')
+if end < 0 {
+	end = len(script) - i
+}
+arg = strings.TrimRight(script[i:i+end], " \t\r")
+return interp, arg, true, true
+}
+
+@~ Go@/functions@/litar.parseShebang @~ Go@/functions@/litar.shebangWord @
+
+Blanks after the interpreter do not make an argument; only a word before the line end does.
+@<Litar@/return 'interp' alone unless a word follows it at 'i'@=
+if i < len(script) && script[i] == '\r' {
+	i++
+}
+if i >= len(script) || script[i] == '\n' {
+	return interp, "", false, true
+}
+for i < len(script) && (script[i] == ' ' || script[i] == '\t') {
+	i++
+}
+if i >= len(script) || script[i] == '\n' || script[i] == '\r' {
+	return interp, "", false, true
+}
+@
+@<filter@:litar@:Go Structure@/functions@+
+// shebangWord returns the word of script at i, up to a blank or a line end,
+// and the index after it.
+func shebangWord(script string, i int) (string, int) {
+	start := i
+	for i < len(script) && script[i] != ' ' && script[i] != '\t' && script[i] != '\n' && script[i] != '\r' {
+		i++
+	}
+	return stripCR(script[start:i]), i
+}
+
+@~ Go@/functions@/litar.shebangWord @~ Go@/functions@/litar.stripCR @
+@<filter@:litar@:Go Structure@/functions@+
+func stripCR(s string) string {
+	if strings.HasSuffix(s, "\r") {
+		return strings.TrimSuffix(s, "\r")
+	}
+	return s
+}
+
+@~ Go@/functions@/litar.stripCR @
+A run is looked up in the filter cache once its view files are known,
+before the script is written or the view mounted.
+@<filter@:litar@:Go Structure@/functions@+
+func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []ViewOp) (string, error) {
+interp, arg, hasArg, ok := parseShebang(script)
+if !ok {
+	return "", fmt.Errorf("filter '%s' has no shebang", ref.String())
+}
+files, err := ev.cat.apply(view)
+if err != nil {
+	return "", err
+}
+if err := ev.tangle(files); err != nil {
+	return "", err
+}
+key, keyed := filterKey(script, input, files)
+if keyed {
+	if out, ok := readCachedOutput(key); ok {
+		return out, nil
+	}
+}
+var scriptPath string
+@<Litar@/write 'script' to the temporary file 'scriptPath'@>
+
+mnt, err := mountView(files)
+if err != nil {
+	return "", err
+}
+defer mnt.close()
+
+args := []string{interp, scriptPath}
+if hasArg {
+	args = []string{interp, arg, scriptPath}
+}
+@<Litar@/run 'args' in the view mounted at 'mnt' with 'input' on stdin@>
+}
+
+@~ Go@/functions@/litar.executeFilter @~ Go@/functions@/litar.filterKey @~ Go@/functions@/litar.mountView @~ Go@/functions@/litar.parseShebang @~ Go@/functions@/litar.readCachedOutput @~ Go@/methods@/litar.ChunkRef.String @~ Go@/methods@/litar.Evaluator.tangle @~ Go@/methods@/litar.catalog.apply @~ Go@/methods@/litar.mount.close @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.ViewOp @
+
+The script is passed to the interpreter as a file, so its stdin stays free for the input.
+A failure to write it is reported as a filter that exited with status 1.
+@<Litar@/write 'script' to the temporary file 'scriptPath'@=
+scriptFile, err := os.CreateTemp("", "litar-script-*")
+if err != nil {
+	return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
+}
+scriptPath = scriptFile.Name()
+if _, err := scriptFile.WriteString(script); err != nil {
+	scriptFile.Close()
+	os.Remove(scriptPath)
+	return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
+}
+scriptFile.Close()
+defer os.Remove(scriptPath)
+@~ Go@/methods@/litar.ChunkRef.String @
+A process killed by a signal gets the status a shell reports for it.
+@<filter@:litar@:Go Structure@/functions@+
+// exitStatus is the status of a failed wait: the exit code,
+// or 128 plus the signal for a process killed by a signal.
+func exitStatus(err error) int {
+	code := 1
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+		if code < 0 {
+			if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+				code = 128 + int(ws.Signal())
+			} else {
+				code = 1
+			}
+		}
+	}
+	return code
+}
+
+@~ Go@/functions@/litar.exitStatus @
+@<Litar@/run 'args' in the view mounted at 'mnt' with 'input' on stdin@=
+// The child must not enter the mount before exec. Until exec it shares
+// memory with this process, whose FUSE server answers the chdir;
+// a stop-the-world in between waits for the forking thread forever.
+cmd := exec.Command("/bin/sh", append([]string{"-c", `cd "$0" && exec "$@@"`, mnt.dir}, args...)...)
+cmd.Env = filterEnv()
+cmd.Stderr = ev.stderr
+stderr := &countingWriter{w: ev.stderr}
+if keyed {
+	cmd.Stderr = stderr
+}
+stdin, err := cmd.StdinPipe()
+if err != nil {
+	return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
+}
+stdout, err := cmd.StdoutPipe()
+if err != nil {
+	return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
+}
+@<.@/start 'cmd', with status 127 if the interpreter is missing@>
+@<.@/send 'input' to 'stdin' and return what 'cmd' writes to 'stdout'@>
+@~ Go@/functions@/litar.filterEnv @~ Go@/methods@/litar.ChunkRef.String @~ Go@/types@/litar.countingWriter @
+
+@<Litar@/start 'cmd', with status 127 if the interpreter is missing@=
+if err := cmd.Start(); err != nil {
+	code := 1
+	if os.IsNotExist(err) {
+		code = 127
+	}
+	return "", fmt.Errorf("filter '%s' exited with status %d", ref.String(), code)
+}
+@~ Go@/methods@/litar.ChunkRef.String @
+The output is read concurrently, so a filter that writes before reading all its input does not block.
+A keyed run that succeeds without writing to stderr keeps its output in the filter cache.
+@<Litar@/send 'input' to 'stdin' and return what 'cmd' writes to 'stdout'@=
+var out bytes.Buffer
+copyDone := make(chan struct{})
+go func() {
+	_, _ = io.Copy(&out, stdout)
+	close(copyDone)
+}()
+_, _ = io.Copy(stdin, strings.NewReader(input))
+_ = stdin.Close()
+waitErr := cmd.Wait()
+<-copyDone
+if waitErr != nil {
+	return "", fmt.Errorf("filter '%s' exited with status %d", ref.String(), exitStatus(waitErr))
+}
+if keyed && stderr.n == 0 {
+	writeCachedOutput(key, out.String())
+}
+return out.String(), nil
+@~ Go@/functions@/litar.exitStatus @~ Go@/functions@/litar.writeCachedOutput @~ Go@/methods@/litar.ChunkRef.String @
+The command keeps filter outputs in the cache that LITAR_CACHE names; run alone, as the tests call it, keeps none.
+@<cli@:litar@:Go Structure@/functions@=
+// Main runs litar with a parsed command line and returns the exit status.
+func Main(opts Options) int {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		sig := <-sigs
+		DetachMounts()
+		os.Exit(128 + int(sig.(syscall.Signal)))
+	}()
+	filterCacheDir = cacheDirFromEnv()
+	return run(opts, os.Stdout, os.Stderr)
+}
+
+@~ Go@/functions@/litar.DetachMounts @~ Go@/functions@/litar.Main @~ Go@/functions@/litar.cacheDirFromEnv @~ Go@/functions@/litar.run @~ Go@/types@/litar.Options @~ Go@/variables@/litar.filterCacheDir @
+Every error is reported as one line on stderr, and run exits with status 1.
+@<cli@:litar@:Go Structure@/functions@+
+func run(opts Options, stdout, stderr io.Writer) int {
+fail := func(format string, a ...any) int {
+	fmt.Fprintf(stderr, "Error: "+format+"\n", a...)
+	return 1
+}
+var mode, operand string
+@<Litar@/choose 'mode' and 'operand' from the actions given in 'opts'@>
+
+archive := opts.File
+sawFile := archive != ""
+@<Litar@/check that an archive is given unless 'mode' is agent@>
+
+@<Litar@/run the action chosen by 'mode'@>
+}
+
+@~ Go@/functions@/litar.run @~ Go@/types@/litar.Options @
+
+@<Litar@/run the action chosen by 'mode'@=
+var (
+	world *World
+	node  string
+)
+@<.@/load 'world' and 'node' from 'archive'@>
+
+@<.@/serve agents in agent mode@>
+
+@<.@/dispatch 'mode' and write the result to 'stdout'@>
+@~ Go@/types@/litar.World @
+
+@<Litar@/load 'world' and 'node' from 'archive'@=
+if sawFile {
+	var err error
+	world, node, err = FindArchive(archive)
+	if err != nil {
+		return fail("%s", err.Error())
+	}
+}
+@~ Go@/functions@/litar.FindArchive @
+
+The agent serves until its input ends or it is cancelled; neither is an error.
+@<Litar@/serve agents in agent mode@=
+if mode == "agent" {
+	ag := newAgent()
+	if world != nil {
+		ag.addWorld(world)
+		ag.refresh()
+	}
+	err := ag.serve(context.Background())
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
+		return fail("%s", err.Error())
+	}
+	return 0
+}
+@~ Go@/functions@/litar.newAgent @~ Go@/methods@/litar.agent.addWorld @~ Go@/methods@/litar.agent.refresh @~ Go@/methods@/litar.agent.serve @
+
+@<Litar@/dispatch 'mode' and write the result to 'stdout'@=
+text, err := dispatch(world, node, mode, operand, stderr)
+if err != nil {
+	return fail("%s", err.Error())
+}
+if _, err := io.WriteString(stdout, text); err != nil {
+	return fail("could not write output")
+}
+return 0
+@~ Go@/functions@/litar.dispatch @
+
+Only one action is allowed. Two actions are reported in the order of modeOrder,
+so the message does not depend on the order of the arguments.
+@<Litar@/choose 'mode' and 'operand' from the actions given in 'opts'@=
+operands := map[string]string{
+	"print":     opts.Print,
+	"literal":   opts.Literal,
+	"effective": opts.Effective,
+	"depend":    opts.Depend,
+	"reference": opts.Reference,
+}
+for _, name := range modeOrder {
+	given := operands[name] != ""
+	if name == "agent" {
+		given = opts.Agent
+	}
+	if !given {
+		continue
+	}
+	if mode != "" {
+		return fail("cannot combine %s and %s", mode, name)
+	}
+	mode, operand = name, operands[name]
+}
+if mode == "" {
+	return fail("%s", missingAction)
+}
+@~ Go@/constants@/litar.missingAction @~ Go@/variables@/litar.modeOrder @
+
+The agent mode may start without an archive; compositions can be imported later.
+@<Litar@/check that an archive is given unless 'mode' is agent@=
+if mode != "agent" && !sawFile {
+	return fail("missing -f, --file")
+}
+@
+@<cli@:litar@:Go Structure@/functions@+
+func dispatch(world *World, node, mode, operand string, stderr io.Writer) (string, error) {
+@<Litar@/resolve an empty 'node' to the root node@>
+chain, err := world.Chain(node)
+if err != nil {
+	return "", err
+}
+switch mode {
+@<Litar@/cases of 'mode' in 'dispatch'@>
+default:
+	return "", fmt.Errorf("unknown option '%s'", mode)
+}
+}
+
+@~ Go@/functions@/litar.dispatch @~ Go@/methods@/litar.World.Chain @~ Go@/types@/litar.World @
+
+A caller that gives no node path gets the root node of the composition.
+@<Litar@/resolve an empty 'node' to the root node@=
+if node == "" {
+	var err error
+	node, err = world.rootName()
+	if err != nil {
+		return "", err
+	}
+}
+@~ Go@/methods@/litar.World.rootName @
+
+@<Litar@/cases of 'mode' in 'dispatch'@=
+case "print":
+	ref, filters, err := ParsePrint(operand)
+	if err != nil {
+		return "", err
+	}
+	maps, err := world.Mappings(node)
+	if err != nil {
+		return "", err
+	}
+	ev := NewEvaluator(chain, maps, stderr)
+	return ev.Eval(ref, filters)
+@~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.ParsePrint @~ Go@/methods@/litar.Evaluator.Eval @~ Go@/methods@/litar.World.Mappings @
+
+@<Litar@/cases of 'mode' in 'dispatch'@+
+case "literal":
+	ref, err := ParseChunkRef(operand)
+	if err != nil {
+		return "", err
+	}
+	return Literal(chain, ref)
+case "effective":
+	ref, err := ParseChunkRef(operand)
+	if err != nil {
+		return "", err
+	}
+	return Effective(chain, ref)
+case "depend":
+	ref, err := ParseChunkRef(operand)
+	if err != nil {
+		return "", err
+	}
+	return Depend(chain, ref), nil
+@~ Go@/functions@/litar.Depend @~ Go@/functions@/litar.Effective @~ Go@/functions@/litar.Literal @~ Go@/functions@/litar.ParseChunkRef @
+
+@<Litar@/cases of 'mode' in 'dispatch'@+
+case "reference":
+	item, err := ParseItem(operand)
+	if err != nil {
+		return "", err
+	}
+	return Refer(chain, item), nil
+@~ Go@/functions@/litar.ParseItem @~ Go@/functions@/litar.Refer @
+@(tests/run.sh@`tests@=
+#!/bin/bash
+# Run every case under tests/cases.
+# A case is a directory with one of:
+#   driver.sh    bash driver.sh LITAR ROOT
+#   argv         one argument per line, passed to litar; cwd is the case dir
+# Successful checks expect empty stderr. A missing out file expects empty
+# stdout. The default status is 0. An err file is a substring of stderr.
+# The filter cache is off, so every case runs its filters.
+
+set -eu
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: run.sh LITAR" >&2
+    exit 2
+fi
+
+LITAR=$1
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+CASEDIR=$ROOT/tests/cases
+export LITAR_CACHE=off
+
+if [ ! -x "$LITAR" ]; then
+    echo "litar binary is not executable: $LITAR" >&2
+    exit 1
+fi
+
+passed=0
+failed=0
+
+@<Litar@/functions of tests/run.sh that check a case and count it in 'passed' or 'failed'@>
+
+shopt -s nullglob
+
+for dir in "$CASEDIR"/*/; do
+    name=$(basename "$dir")
+@<Litar@/run the driver.sh of the case 'dir' named 'name', if it has one@>
+
+    case_bad=0
+    back=$(pwd)
+    cd "$dir"
+
+    if [ -f argv ]; then
+@<Litar@/run litar with the argv of the case 'dir' named 'name', and set 'case_bad' on a failure@>
+    else
+        echo "FAIL $name: no driver.sh or argv" >&2
+        case_bad=1
+    fi
+
+    cd "$back"
+    finish_case "$case_bad" "$name"
+done
+
+echo "passed $passed failed $failed"
+if [ "$((passed + failed))" -eq 0 ]; then
+    echo "no test cases found" >&2
+    exit 1
+fi
+[ "$failed" -eq 0 ]
+
+@
+
+@<Litar@/functions of tests/run.sh that check a case and count it in 'passed' or 'failed'@=
+finish_case() {
+    if [ "$1" -eq 0 ]; then
+        echo "ok $2"
+        passed=$((passed + 1))
+    else
+        echo "FAIL $2" >&2
+        failed=$((failed + 1))
+    fi
+}
+
+@
+
+@<Litar@/functions of tests/run.sh that check a case and count it in 'passed' or 'failed'@+
+# check_one name status out-file-or-empty err-file-or-empty cmd...
+check_one() {
+    _name=$1
+    _status=$2
+    _out_file=$3
+    _err_file=$4
+    shift 4
+    _got_out=$(mktemp)
+    _got_err=$(mktemp)
+    _exp_out=$(mktemp)
+    set +e
+    "$@@" >"$_got_out" 2>"$_got_err"
+    _st=$?
+    set -e
+    _bad=0
+@<.@/set '_bad' when the status '_st' or the stdout '_got_out' differs from '_status' and '_out_file'@>
+@<.@/set '_bad' when the stderr '_got_err' does not match '_err_file', and show it@>
+    rm -f "$_got_out" "$_got_err" "$_exp_out"
+    return "$_bad"
+}
+@
+
+Without an out file, the expected stdout '_exp_out' stays empty.
+@<Litar@/set '_bad' when the status '_st' or the stdout '_got_out' differs from '_status' and '_out_file'@=
+    if [ "$_st" -ne "$_status" ]; then
+        echo "FAIL $_name: exit $_st, expected $_status" >&2
+        _bad=1
+    fi
+    if [ -n "$_out_file" ]; then
+        cp "$_out_file" "$_exp_out"
+    fi
+    if ! cmp -s "$_exp_out" "$_got_out"; then
+        echo "FAIL $_name: stdout" >&2
+        diff -u "$_exp_out" "$_got_out" >&2 || true
+        _bad=1
+    fi
+@
+
+Only a successful case requires an empty stderr. A failed check shows the stderr
+once: the err file check has already shown it.
+@<Litar@/set '_bad' when the stderr '_got_err' does not match '_err_file', and show it@=
+    if [ -n "$_err_file" ]; then
+        _needle=$(cat "$_err_file")
+        if ! grep -F -q -e "$_needle" "$_got_err"; then
+            echo "FAIL $_name: stderr missing [$_needle]" >&2
+            cat "$_got_err" >&2
+            _bad=1
+        fi
+    elif [ "$_status" -eq 0 ] && [ -s "$_got_err" ]; then
+        echo "FAIL $_name: unexpected stderr" >&2
+        cat "$_got_err" >&2
+        _bad=1
+    fi
+    if [ "$_bad" -ne 0 ] && [ -s "$_got_err" ] && [ -n "$_err_file" ]; then
+        :
+    elif [ "$_bad" -ne 0 ] && [ -s "$_got_err" ]; then
+        echo "stderr:" >&2
+        cat "$_got_err" >&2
+    fi
+@
+
+@<Litar@/run the driver.sh of the case 'dir' named 'name', if it has one@=
+    if [ -f "$dir/driver.sh" ]; then
+        if bash "$dir/driver.sh" "$LITAR" "$ROOT"; then
+            finish_case 0 "$name"
+        else
+            finish_case 1 "$name"
+        fi
+        continue
+    fi
+@
+
+The status, out and err files are optional.
+@<Litar@/run litar with the argv of the case 'dir' named 'name', and set 'case_bad' on a failure@=
+        args=()
+        while IFS= read -r line || [ -n "$line" ]; do
+            args+=("$line")
+        done < argv
+        status=0
+        if [ -f status ]; then
+            status=$(tr -d '[:space:]' < status)
+        fi
+        out_file=
+        err_file=
+        if [ -f out ]; then
+            out_file=$dir/out
+        fi
+        if [ -f err ]; then
+            err_file=$dir/err
+        fi
+        if ! check_one "$name" "$status" "$out_file" "$err_file" \
+            "$LITAR" "${args[@@]}"; then
+            case_bad=1
+        fi
+@
+Every filter run appends a line to count, so the count tells which runs started a process.
+The pure run is started once and served from the cache the second time;
+the run with a mapped file and the run that writes to stderr are started every time.
+@<filter test@:litar@:Go Structure@/functions@+
+func TestFilterCache(t *testing.T) {
+if _, err := os.Stat("/dev/fuse"); err != nil {
+	t.Skip("no /dev/fuse")
+}
+filterCacheDir = t.TempDir()
+defer func() { filterCacheDir = "" }()
+dir := t.TempDir()
+count := filepath.Join(dir, "count")
+origin := filepath.Join(dir, "origin.txt")
+writeFile(t, origin, "mapped\n")
+src := "" +
+	"@@<tally@@=\n" +
+	"#!/bin/sh\n" +
+	"echo >> '" + count + "'\n" +
+	"cat; echo; wc -l < '" + count + "' | tr -d ' '\n" +
+	"@@\n" +
+	"@@<loud@@=\n" +
+	"#!/bin/sh\n" +
+	"echo >> '" + count + "'\n" +
+	"echo warning >&2; cat; echo\n" +
+	"@@\n" +
+	"@@<pure@@=\none\n@@|tally@@\n" +
+	"@@<mapped@@=\none\n@@|tally@@,data.txt@@\n" +
+	"@@<noisy@@=\none\n@@|loud@@\n"
+blocks := mustArch(t, src)
+maps := []Mapping{{Path: "data.txt", Origin: origin}}
+for i, want := range []struct{ name, out string }{
+	{"pure", "one\n1\n"},
+	{"pure", "one\n1\n"},
+	{"mapped", "one\n2\n"},
+	{"mapped", "one\n3\n"},
+	{"noisy", "one\n"},
+	{"noisy", "one\n"},
+} {
+	got, err := NewEvaluator(blocks, maps, nil).Eval(mustRef(t, want.name), nil)
+	if err != nil || got != want.out {
+		t.Fatalf("%d %s %v %q", i, want.name, err, got)
+	}
+}
+if data, err := os.ReadFile(count); err != nil || strings.Count(string(data), "\n") != 5 {
+	t.Fatalf("%v %q", err, data)
+}
+}
+
+@~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustArch @~ Go@/functions@/litar.mustRef @~ Go@/functions@/litar.writeFile @~ Go@/types@/litar.Mapping @~ Go@/variables@/litar.filterCacheDir @

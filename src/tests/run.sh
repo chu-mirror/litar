@@ -5,6 +5,7 @@
 #   argv         one argument per line, passed to litar; cwd is the case dir
 # Successful checks expect empty stderr. A missing out file expects empty
 # stdout. The default status is 0. An err file is a substring of stderr.
+# The filter cache is off, so every case runs its filters.
 
 set -eu
 
@@ -16,6 +17,7 @@ fi
 LITAR=$1
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CASEDIR=$ROOT/tests/cases
+export LITAR_CACHE=off
 
 if [ ! -x "$LITAR" ]; then
     echo "litar binary is not executable: $LITAR" >&2

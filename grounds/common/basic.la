@@ -322,10 +322,16 @@ The interpreter of a script is the client of a background Python process.
 The client and the server are written to a directory named by their checksum,
 private to the user, so a changed client, server, or python3 gets its own server.
 The directory is moved into place whole, so a concurrent evaluation never sees it half written.
+It lies in the filter cache of litar when there is one, because the cache keeps the output
+of this chunk, the path of the client, and both must go away together.
 @<Text Processing@/Internals@/path to python interpreter@=
 #!/bin/sh
 set -e
-base=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/litar-python-`id -u`
+if [ -n "$LITAR_CACHE" ]; then
+    base=$LITAR_CACHE/python
+else
+    base=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/litar-python-`id -u`
+fi
 mkdir -p -m 700 "$base"
 if [ ! -O "$base" ]; then
     echo "$base is not owned by the user" >&2

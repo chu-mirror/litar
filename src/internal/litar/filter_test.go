@@ -410,3 +410,47 @@ func TestParseShebang(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterCache(t *testing.T) {
+	if _, err := os.Stat("/dev/fuse"); err != nil {
+		t.Skip("no /dev/fuse")
+	}
+	filterCacheDir = t.TempDir()
+	defer func() { filterCacheDir = "" }()
+	dir := t.TempDir()
+	count := filepath.Join(dir, "count")
+	origin := filepath.Join(dir, "origin.txt")
+	writeFile(t, origin, "mapped\n")
+	src := "" +
+		"@<tally@=\n" +
+		"#!/bin/sh\n" +
+		"echo >> '" + count + "'\n" +
+		"cat; echo; wc -l < '" + count + "' | tr -d ' '\n" +
+		"@\n" +
+		"@<loud@=\n" +
+		"#!/bin/sh\n" +
+		"echo >> '" + count + "'\n" +
+		"echo warning >&2; cat; echo\n" +
+		"@\n" +
+		"@<pure@=\none\n@|tally@\n" +
+		"@<mapped@=\none\n@|tally@,data.txt@\n" +
+		"@<noisy@=\none\n@|loud@\n"
+	blocks := mustArch(t, src)
+	maps := []Mapping{{Path: "data.txt", Origin: origin}}
+	for i, want := range []struct{ name, out string }{
+		{"pure", "one\n1\n"},
+		{"pure", "one\n1\n"},
+		{"mapped", "one\n2\n"},
+		{"mapped", "one\n3\n"},
+		{"noisy", "one\n"},
+		{"noisy", "one\n"},
+	} {
+		got, err := NewEvaluator(blocks, maps, nil).Eval(mustRef(t, want.name), nil)
+		if err != nil || got != want.out {
+			t.Fatalf("%d %s %v %q", i, want.name, err, got)
+		}
+	}
+	if data, err := os.ReadFile(count); err != nil || strings.Count(string(data), "\n") != 5 {
+		t.Fatalf("%v %q", err, data)
+	}
+}

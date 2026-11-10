@@ -37,6 +37,7 @@ func Main(opts Options) int {
 		DetachMounts()
 		os.Exit(128 + int(sig.(syscall.Signal)))
 	}()
+	filterCacheDir = cacheDirFromEnv()
 	return run(opts, os.Stdout, os.Stderr)
 }
 

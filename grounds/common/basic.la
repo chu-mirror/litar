@@ -61,7 +61,7 @@ The manpage synopsis shows the usage lines in roff, one paragraph line per usage
 @<Invocation@/manpage synopsis@=
 @<Text Processing@/basic python settings@>
 @<.@/invocation syntax helpers@>
-@<.@/manpage helpers@>
+@<.@/Internals@/manpage helpers@>
 
 
 def usage_lines(usage):
@@ -80,7 +80,7 @@ The manpage options describe every option in a tagged paragraph, hidden ones inc
 @<Invocation@/manpage options@=
 @<Text Processing@/basic python settings@>
 @<.@/invocation syntax helpers@>
-@<.@/manpage helpers@>
+@<.@/Internals@/manpage helpers@>
 
 
 def option_entry(opt):
@@ -96,7 +96,7 @@ print(''.join(map(option_entry, all_options(syntax))), end='')
 @|Basic@/evaluate@
 roff escapes a backslash as \e and a hyphen as \-,
 so option names render with minus signs that can be copied into a shell.
-@<Invocation@/manpage helpers@=
+@<Invocation@/Internals@/manpage helpers@=
 def roff(text):
     return text.replace('\\', r'\e').replace('-', r'\-')
 
@@ -160,12 +160,12 @@ except ImportError:
     os.execvp('uv', ['uv', 'run', '--quiet', '--script', *sys.argv])
 os.environ.pop('LITAR_UV_RUN', None)
 
-@<.@/configuration helpers@>
+@<.@/Internals@/configuration helpers@>
 @
 Configuration is a Jsonnet expression, so a block can extend an object of a base node with +.
 A pydantic model validates the evaluated value.
 An invalid configuration, like any fail, prints a message and fails the evaluation.
-@<Text Processing@/configuration helpers@=
+@<Text Processing@/Internals@/configuration helpers@=
 def fail(message):
     sys.exit(message)
 

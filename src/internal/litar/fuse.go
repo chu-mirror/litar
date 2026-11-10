@@ -43,6 +43,9 @@ var (
 type ventry struct {
 	file *viewFile
 	dir  *vdir
+	// host is the origin of a mapped directory, and ino its inode number.
+	host string
+	ino  uint64
 }
 
 type vdir struct {
@@ -115,6 +118,15 @@ func (e *mountError) Error() string {
 	return "could not mount the filter view: " + e.err.Error()
 }
 
+func (d *dirNode) lookupHost(ctx context.Context, ch *ventry, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	var st syscall.Stat_t
+	if err := syscall.Stat(ch.host, &st); err != nil {
+		return nil, fs.ToErrno(err)
+	}
+	out.Attr.FromStat(&st)
+	return d.NewInode(ctx, hostNode(ch.host), fs.StableAttr{Mode: syscall.S_IFDIR, Ino: ch.ino}), 0
+}
+
 func (d *dirNode) hostDir() string {
 	if d.rel == "" {
 		return d.overlay
@@ -138,6 +150,9 @@ func (d *dirNode) childRel(name string) string {
 
 func (d *dirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	if ch := d.specChild(name); ch != nil {
+		if ch.host != "" {
+			return d.lookupHost(ctx, ch, out)
+		}
 		if ch.file != nil {
 			setFileAttr(ch.file, &out.Attr)
 			node := &fileNode{file: ch.file}
@@ -349,16 +364,17 @@ func buildVTree(files []viewFile) (*vdir, error) {
 			last := i == len(parts)-1
 			cur := dir.kids[part]
 			if last {
-				if cur != nil && cur.dir != nil {
+				if cur != nil {
 					return nil, errPath(f.path)
 				}
-				if cur != nil && cur.file != nil {
-					return nil, errPath(f.path)
+				if f.dir {
+					dir.kids[part] = &ventry{host: f.origin}
+				} else {
+					dir.kids[part] = &ventry{file: f}
 				}
-				dir.kids[part] = &ventry{file: f}
 				continue
 			}
-			if cur != nil && cur.file != nil {
+			if cur != nil && cur.dir == nil {
 				return nil, errPath(f.path)
 			}
 			if cur == nil {
@@ -386,14 +402,18 @@ func assignInos(root *vdir) {
 		sort.Strings(names)
 		for _, name := range names {
 			ch := d.kids[name]
-			if ch.file != nil {
+			switch {
+			case ch.file != nil:
 				ch.file.ino = next
-				next++
-				continue
+			case ch.dir != nil:
+				ch.dir.ino = next
+			default:
+				ch.ino = next
 			}
-			ch.dir.ino = next
 			next++
-			walk(ch.dir)
+			if ch.dir != nil {
+				walk(ch.dir)
+			}
 		}
 	}
 	walk(root)
@@ -496,6 +516,13 @@ func mountView(files []viewFile) (*mount, error) {
 
 func fmtMount(err error) error {
 	return &mountError{err}
+}
+
+func hostNode(dir string) *fs.LoopbackNode {
+	data := &fs.LoopbackRoot{Path: dir}
+	node := &fs.LoopbackNode{RootData: data}
+	data.RootNode = node
+	return node
 }
 
 func modeOf(f *viewFile) uint32 {

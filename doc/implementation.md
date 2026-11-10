@@ -26,8 +26,16 @@ from the litar composition in `compos/`:
 External dependencies are limited to `github.com/hanwen/go-fuse/v2` (for filter view mounts)
 and `github.com/modelcontextprotocol/go-sdk` (for the MCP server).
 
-At the repository root, `make` evaluates `compos/litar.la` into `tmp/build` and compiles
-`./litar` and `./litar-web`, while `make sync` writes all generated files into `src/`.
+At the repository root, the `Makefile` evaluates the node `Litar Build` of `build/build.la`,
+a composition on the ground `compos` that maps `bin/` and `src/` of the repository into
+the filter views: `make` runs `go build` in a view of the go module that writes the binaries
+into `bin/`, and `make sync` writes all generated files into `src/`.
+
+Each litar process keeps every file it evaluates, together with a digest of each chunk
+and filter view the evaluation used; the file is evaluated again only when one of them
+changes, so a file is evaluated once per process and the MCP server serves repeated reads
+from memory. A mapping whose path ends in `/` maps a host directory into the views of its
+file sets; the directory is created if missing, and filters read and write it in place.
 Inside `src/`, `make` builds `./litar` and `make test` runs `go test ./...` followed by
 `tests/run.sh`.
 On any user error, `litar` prints the error to `stderr`, leaves `stdout` empty, and exits

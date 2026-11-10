@@ -318,6 +318,79 @@ func TestMappedFileAndCycle(t *testing.T) {
 	}
 }
 
+func TestFileCache(t *testing.T) {
+	if _, err := os.Stat("/dev/fuse"); err != nil {
+		t.Skip("no /dev/fuse")
+	}
+	count := filepath.Join(t.TempDir(), "count")
+	src := "" +
+		"@[cached.txt@=\n" +
+		"@<counted@>\n" +
+		"@\n" +
+		"@<counted@=\n" +
+		"@<part@>\n" +
+		"@|tally@\n" +
+		"@<part@=one@\n" +
+		"@<tally@=\n" +
+		"#!/bin/sh\n" +
+		"echo >> '" + count + "'\n" +
+		"cat; echo; wc -l < '" + count + "' | tr -d ' '\n" +
+		"@\n" +
+		"@[copy.txt@=\n" +
+		"@<@|show@,cached.txt@>\n" +
+		"@\n" +
+		"@<show@=\n" +
+		"#!/bin/sh\n" +
+		"cat cached.txt\n" +
+		"@\n"
+	blocks := mustArch(t, src)
+	for _, name := range []string{"cached.txt", "cached.txt", "copy.txt"} {
+		got, err := NewEvaluator(blocks, nil, nil).Eval(mustRef(t, name), nil)
+		if err != nil || got != "one\n1\n" {
+			t.Fatalf("%s %v %q", name, err, got)
+		}
+	}
+	more := mustArch(t, src+"@<part@+ two@\n")
+	for _, name := range []string{"copy.txt", "cached.txt"} {
+		got, err := NewEvaluator(more, nil, nil).Eval(mustRef(t, name), nil)
+		if err != nil || got != "one two\n2\n" {
+			t.Fatalf("%s %v %q", name, err, got)
+		}
+	}
+}
+
+func TestMappedDirectory(t *testing.T) {
+	if _, err := os.Stat("/dev/fuse"); err != nil {
+		t.Skip("no /dev/fuse")
+	}
+	out := filepath.Join(t.TempDir(), "out")
+	src := "" +
+		"@<make@=\n" +
+		"#!/bin/sh\n" +
+		"mkdir out/sub\n" +
+		"echo made > out/sub/made.txt\n" +
+		"ls out/sub\n" +
+		"@\n" +
+		"@<run@=\n" +
+		"@|make@+build@\n" +
+		"@[out/x@`extra@=x@\n" +
+		"@<shadow@=\n" +
+		"@|make@+build@+extra@\n"
+	maps := []Mapping{{Path: "out/", FileSet: []string{"build"}, Origin: out}}
+	got, err := NewEvaluator(mustArch(t, src), maps, nil).Eval(mustRef(t, "run"), nil)
+	if err != nil || got != "made.txt\n" {
+		t.Fatalf("%v %q", err, got)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "sub", "made.txt"))
+	if err != nil || string(data) != "made\n" {
+		t.Fatalf("%v %q", err, data)
+	}
+	_, err = NewEvaluator(mustArch(t, src), maps, nil).Eval(mustRef(t, "shadow"), nil)
+	if err == nil || !strings.Contains(err.Error(), "invalid file path") {
+		t.Fatal(err)
+	}
+}
+
 func TestParseShebang(t *testing.T) {
 	cases := []struct {
 		script, interp, arg string

@@ -54,7 +54,7 @@ output may be appended directly to the new, still empty archive instead; re-impo
 Then:
 
 ```bash
-LITAR=./litar LITAR_LIBRARY=grounds scripts/port-check.sh path/to/project.la "$PROJECT"
+LITAR=bin/litar LITAR_LIBRARY=grounds scripts/port-check.sh path/to/project.la "$PROJECT"
 ```
 
 Do not continue until it reports `different 0`, apart from files that stay outside.
@@ -66,7 +66,8 @@ Do not continue until it reports `different 0`, apart from files that stay outsi
 2. Re-apply the file block as a tree that references the ground's structure,
    for example `@<prog@:executable@:C Structure@/module@>` or `@<cmd@:command@:Go Structure@/file@>`.
 3. Move the code into chunks that extend the ground's sequences (includes, types, functions)
-   and into named trees for big bodies, following the style rules.
+   and into named trees for big bodies, following the style rules. Name the trees in a module
+   named after the project (`Project@/…`), leaving the root module to the file chunks.
 4. Add a comment before each block that carries a design decision visible in the code.
 5. Run `port-check.sh` on that file.
    - If a ground formatting filter changes the layout, compare against the original run

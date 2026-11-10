@@ -19,23 +19,11 @@ echo 'go vet ./...: ok'
 go test ./...
 @
 
-Each check runs the go command in a view of the file set go module,
-so the module root is the working directory.
-GOTOOLCHAIN=local keeps the go command from downloading another toolchain,
-and GOWORK=off ignores a workspace file outside the view.
-The build cache and the module cache stay at their host locations.
-A failed check fails the evaluation, and the go command reports on stderr.
-@<Go Project@/Filters@/go command settings@=
-set -e
-export GOTOOLCHAIN=local
-export GOWORK=off
-@
-
 @<Chunk@/Go Project@/Filters@=
 {"description": "Run the go command on the files of the project."}
 @
 
-@<Chunk@/Go Project@/module path@=
+@<Chunk@/Go Project@/Internals@/module path@=
 {"description": "Module path from the project meta information."}
 @
 
@@ -94,7 +82,7 @@ directory = r'''
 if (re.search(r'^/|/$|//|\s', directory)
         or any(part in ('.', '..') for part in directory.split('/'))):
     fail(f"package directory '{directory}' is not valid")
-module = '@<.@/module path@>'
+module = '@<.@/Internals@/module path@>'
 print(f'{module}/{directory}' if directory else module, end='')
 @|Basic@/evaluate@
 
@@ -110,11 +98,11 @@ A project with requirements also declares go.sum in the file set go module,
 because the checks never rewrite go.mod or go.sum.
 @<Go Project@/go.mod@=
 @<Text Processing@/basic python settings@>
-@<.@/project meta model@>
+@<.@/Internals@/project meta model@>
 
 
 meta = configuration(ProjectMeta, r'''
-@<.@/project meta information@>
+@<.@/Internals@/project meta information@>
 ''')
 requirements = re.sub(r'\A\s*\n', '', r'''
 @<.@/requirements@>
@@ -123,7 +111,7 @@ print(f'module {meta.module}\n\ngo {meta.go}')
 if requirements:
     print(f'\nrequire (\n{requirements}\n)')
 @|Basic@/evaluate@
-@<Go Project@/module path@=
+@<Go Project@/Internals@/module path@=
 @<Text Processing@/basic python settings@>
 @<.@/project meta model@>
 
@@ -136,7 +124,7 @@ print(meta.module, end='')
 A module path has no blank and does not start with a slash;
 a Go version is 1.N or 1.N.P.
 Further fields are kept for other generators.
-@<Go Project@/project meta model@=
+@<Go Project@/Internals@/project meta model@=
 class ProjectMeta(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra='allow')
     module: str = pydantic.Field(pattern=r'^[^\s/]\S*$')
@@ -159,20 +147,55 @@ The module field is the module path, and the go field is the minimum Go version.
 example.com/project stands in until a project sets its own path.
 A project sets its fields in project properties, the fields of a second Jsonnet object,
 which override these defaults; Jsonnet rejects a field given twice.
-@<Go Project@/project meta information@=
+@<Go Project@/Internals@/project meta information@=
 {
     module: 'example.com/project',
     go: '1.24',
 } + {
-    @<.@/project properties@>
+    @<..@/project properties@>
 }
 @
-@<Chunk@/Go Project@/project meta information@=
+@<Chunk@/Go Project@/Internals@/project meta information@=
 {"description": "Module path, Go version, and other properties, as a Jsonnet object."}
 @
 @<Chunk@/Go Project@/project properties@=
 {"description": "Jsonnet fields that override the project meta information."}
 @
-@<Chunk@/Go Project@/project meta model@=
+@<Chunk@/Go Project@/Internals@/project meta model@=
 {"description": "Pydantic model that validates the project meta information."}
+@
+
+The commands are built in a view of the file set go module, like the checks.
+The view must also hold the command directory; a composition wrapping the project
+maps it to a directory of the host, so the binaries leave the view.
+Each binary is named after the directory of its command;
+the go command replaces an existing binary instead of writing into it.
+@<Go Project@/Filters@/build commands@=#!/bin/sh
+@<.@/go command settings@>
+go build -o '@<..@/command directory@>/' ./cmd/...
+echo 'go build -o @<..@/command directory@>/ ./cmd/...: ok'
+@
+
+The command directory is bin, below the module root of the view.
+@<Go Project@/command directory@=bin@
+
+
+@<Chunk@/Go Project@/Filters@/build commands@=
+{"description": "Build every command of the project into the command directory."}
+@
+
+@<Chunk@/Go Project@/command directory@=
+{"description": "Directory of the view, below the module root, that receives the built commands."}
+@
+
+Each check runs the go command in a view of the file set go module,
+so the module root is the working directory.
+GOTOOLCHAIN=local keeps the go command from downloading another toolchain,
+and GOWORK=off ignores a workspace file outside the view.
+The build cache and the module cache stay at their host locations.
+A failed check fails the evaluation, and the go command reports on stderr.
+@<Go Project@/Filters@/go command settings@=
+set -e
+export GOTOOLCHAIN=local
+export GOWORK=off
 @

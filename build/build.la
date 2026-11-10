@@ -1,0 +1,81 @@
+The Makefile of the repository evaluates this node, so the evaluation stands in for
+running the go command by hand: the go command may switch to the toolchain
+that go.mod asks for, as it does outside litar.
+@<Go Project@/Filters@/go command settings@+
+export GOTOOLCHAIN=auto
+@
+
+The commands are built in a view that adds the file set binaries to the go module;
+the node maps bin of the repository into the view at the command directory of Go Project.
+@<Litar Build@/commands@=
+@<@|Go Project@/Filters@/build commands@+go module@+binaries@>
+@
+
+The source tree is every file of the composition, written into src of the repository,
+which the node maps into the view as the file set source tree;
+a file set added to the composition must be added to this view.
+The input of the filter names the directory to write to.
+@<Litar Build@/source files@=
+@<Litar Build@/Internals@/source directory@|Litar Build@/Filters@/write files@+go module@+build@+tests@+source tree@>
+@
+@<Litar Build@/Internals@/source directory@=src@
+
+Every file of the view outside the destination is written to a temporary name beside
+its place in the destination and renamed there, so a failed write keeps the old file;
+other files of the destination are left alone.
+An executable file gets mode 755 and any other file 644.
+The filter prints each written path, in sorted order.
+@<Litar Build@/Filters@/write files@=#!/bin/sh
+set -e
+dest=$(cat)
+find . -path "./$dest" -prune -o -type f -printf '%P\n' | LC_ALL=C sort |
+while IFS= read -r f; do
+	mkdir -p "$dest/$(dirname "$f")"
+	cat "$f" > "$dest/$f.litar-new"
+	if [ -x "$f" ]; then mode=755; else mode=644; fi
+	chmod "$mode" "$dest/$f.litar-new"
+	mv "$dest/$f.litar-new" "$dest/$f"
+	echo "$f"
+done
+@
+
+The Makefile installs the MCP server for Cursor by piping this script to python3
+with the configuration file, the litar binary, and the directory of the grounds.
+Only the litar entry is set, so other servers stay,
+and the file is replaced at once, so an interrupted run keeps the old file.
+@<Litar Build@/MCP configuration script@=
+import json, os, sys
+path, litar, grounds = sys.argv[1:]
+try:
+    with open(path) as f:
+        text = f.read()
+except FileNotFoundError:
+    text = ''
+config = json.loads(text) if text.strip() else {}
+config.setdefault('mcpServers', {})['litar'] = {
+    'command': litar, 'args': ['-a'], 'env': {'LITAR_LIBRARY': grounds}}
+os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+with open(path + '.litar-new', 'w') as f:
+    json.dump(config, f, indent=2)
+    f.write('\n')
+os.replace(path + '.litar-new', path)
+@
+
+@<Chunk@/Litar Build@=
+{"description": "What the Makefile of the repository evaluates to build, sync, and install litar."}
+@
+@<Chunk@/Litar Build@/commands@=
+{"description": "Build litar and litar-web into bin of the repository."}
+@
+@<Chunk@/Litar Build@/source files@=
+{"description": "Write every file of the composition into src of the repository."}
+@
+@<Chunk@/Litar Build@/Internals@/source directory@=
+{"description": "Directory of the view that receives the source tree."}
+@
+@<Chunk@/Litar Build@/Filters@/write files@=
+{"description": "Write every file of the view into the directory named on stdin."}
+@
+@<Chunk@/Litar Build@/MCP configuration script@=
+{"description": "Python script that sets the litar entry of a Cursor MCP configuration."}
+@

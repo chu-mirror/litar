@@ -18,6 +18,30 @@ a **sequence** (a series of same-kind parts: includes, functions) or a
   block whose expansion holds all its uses.
 - Anything else: noun phrase (`main body`, `invocation syntax`).
 
+## Modules
+
+- Hide what other modules need not see: a chunk that shall not be referred to outside its
+  module goes into a submodule (`Internals`, or a name for its purpose such as `Output`).
+- Keep in the module itself the chunks other modules use: the parts of a template
+  (`includes`, `functions`), hooks they extend, and outputs they quote.
+- Refer to a submodule chunk relatively, `@<.@/Output@/print hello to stdout@>`;
+  inside the submodule, reach the module's own chunks with `..@/`.
+- Put the non-file chunks of a project in a module named after it (`Litar`),
+  not in the root module, which holds the file chunks.
+
+```
+@<C Structure@/definitions@+
+void print_hello()
+{
+    @<.@/Output@/print hello to stdout@>
+}
+@
+
+@<C Structure@/Output@/print hello to stdout@=
+printf("Hello\n");
+@
+```
+
 ## Blocks
 
 - Keep a block at or below about 150 tokens; divide a bigger tree into chunks.

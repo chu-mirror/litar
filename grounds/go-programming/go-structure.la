@@ -20,11 +20,11 @@ gofmt
 {"description": "One Go source file."}
 @
 
-@<Chunk@/Go Structure@/package clause@=
+@<Chunk@/Go Structure@/Internals@/package clause@=
 {"description": "Package comment followed by the package clause."}
 @
 
-@<Chunk@/Go Structure@/package name@=
+@<Chunk@/Go Structure@/Internals@/package name@=
 {"description": "Package identifier from the module meta information."}
 @
 
@@ -36,7 +36,7 @@ gofmt
 {"description": "go:build lines before the package clause."}
 @
 
-@<Chunk@/Go Structure@/imports@=
+@<Chunk@/Go Structure@/Internals@/imports@=
 {"description": "Import declaration, omitted when there are no paths."}
 @
 
@@ -105,8 +105,8 @@ The line break before the closing control of a block is not content,
 so a file block may close on the line after its reference.
 @<Go Structure@/file@=
 @<.@/build constraints@>
-@<.@/package clause@>
-@<.@/imports@>
+@<.@/Internals@/package clause@>
+@<.@/Internals@/imports@>
 @<.@/constants@>
 @<.@/variables@>
 @<.@/types@>
@@ -116,8 +116,8 @@ so a file block may close on the line after its reference.
 
 go doc attaches the comment that ends immediately above the package clause.
 Leave no blank line between that comment and the clause.
-@<Go Structure@/package clause@=
-@<.@/package comment@|Text Processing@/remove ending newlines@>
+@<Go Structure@/Internals@/package clause@=
+@<..@/package comment@|Text Processing@/remove ending newlines@>
 package @<.@/package name@>
 @
 
@@ -131,13 +131,13 @@ func main() {
     @<.@/main body@>
 }
 @
-@<Chunk@/Go Structure@/module meta information@=
+@<Chunk@/Go Structure@/Internals@/module meta information@=
 {"description": "Package name and other properties, as a Jsonnet object."}
 @
 @<Chunk@/Go Structure@/module properties@=
 {"description": "Jsonnet fields that override the module meta information."}
 @
-@<Go Structure@/package name@=
+@<Go Structure@/Internals@/package name@=
 @<Text Processing@/basic python settings@>
 
 
@@ -156,21 +156,21 @@ pkg stands in until a file sets its own name.
 A command does not read this name; its package clause says main.
 The module properties are the fields of a second Jsonnet object, which override these defaults;
 further fields belong there too, and Jsonnet rejects a field given twice.
-@<Go Structure@/module meta information@=
+@<Go Structure@/Internals@/module meta information@=
 {
     name: 'pkg',
 } + {
-    @<.@/module properties@>
+    @<..@/module properties@>
 }
 @
 No import declaration is emitted when the path list is empty
 or contains only whitespace.
 A blank line between paths starts another group,
 and gofmt keeps that group.
-@<Go Structure@/imports@=
+@<Go Structure@/Internals@/imports@=
 @<Text Processing@/basic python settings@>
 paths = r'''
-@<.@/import paths@>
+@<..@/import paths@>
 '''.strip(' \t\n\r\f\v')
 if paths:
     print(f'import (\n{paths}\n)')
@@ -369,4 +369,4 @@ Parsing always uses the flag, fmt, and os packages,
 so those three imports stay used when the command has no flags.
 Replace module meta information to name the other files in the node.
 That replacement does not rename the command.
-@<command@:Go Structure@/package name@=main@
+@<command@:Go Structure@/Internals@/package name@=main@

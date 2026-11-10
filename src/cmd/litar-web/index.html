@@ -120,10 +120,12 @@ function leafIndex(t) {
 // A subtree is shown when the filter matches its path or one of its leaves.
 const folds = new Map();
 const foldKey = (kind, path) => state.c + '/' + state.n + '/' + kind + '/' + JSON.stringify(path);
+const bySubTreesThenName = (a, b) =>
+  (subs(b).length > 0) - (subs(a).length > 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 function treeHTML(t, href, selected, filter, kind, path = []) {
   const items = [];
   let holds = false;
-  for (const s of subs(t)) {
+  for (const s of subs(t).slice().sort(bySubTreesThenName)) {
     const p = path.concat(s.name);
     const desc = s.description ? '<span class="desc">' + esc(s.description) + '</span>' : '';
     if (subs(s).length === 0) {

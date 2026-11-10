@@ -1,10 +1,9 @@
-
 go mod tidy writes the direct requirements and the indirect ones in two require blocks.
 Go Project emits the first; the second follows it in the file.
 @[go.mod@`go module@=
 @<Go Project@/go.mod@>
 require (
-@<indirect requirements@>
+@<Litar@/indirect requirements@>
 )
 
 @
@@ -15,7 +14,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 @
 
-@<indirect requirements@=
+@<Litar@/indirect requirements@=
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
@@ -166,30 +165,30 @@ func loadComposer(path string, allowEmpty bool) (*World, error) {
 
 @<compose@:litar@:Go Structure@/functions@+
 func loadAt(path, ident string, allowEmpty bool, stack []groundFrame) (*World, error) {
-@<fail if 'ident' is already on the ground 'stack'@>
+@<Litar@/fail if 'ident' is already on the ground 'stack'@>
 dirIdent, err := identityPath(filepath.Dir(path))
 if err != nil {
 	return nil, fmt.Errorf("could not read composer '%s': %v", path, err)
 }
 var file composerFile
-@<decode the composer at 'path' into 'file'@>
+@<Litar@/decode the composer at 'path' into 'file'@>
 var ground *string
 var groundNodes []Node
-@<load the ground named in 'file' into 'ground' and 'groundNodes'@>
+@<Litar@/load the ground named in 'file' into 'ground' and 'groundNodes'@>
 if ground == nil && len(file.Nodes) == 0 {
 	if allowEmpty {
 		return &World{Composer: path, Dir: dirIdent, Description: file.Description}, nil
 	}
 	return nil, fmt.Errorf("composer has no root")
 }
-@<combine 'groundNodes' and the nodes of 'file' into a World@>
+@<Litar@/combine 'groundNodes' and the nodes of 'file' into a World@>
 }
 
 @~ Go@/functions@/litar.identityPath @~ Go@/functions@/litar.loadAt @~ Go@/types@/litar.Node @~ Go@/types@/litar.World @~ Go@/types@/litar.composerFile @~ Go@/types@/litar.groundFrame @
 
 The stack holds the composers being loaded; meeting one again is a cycle,
 reported from its first occurrence back to itself.
-@<fail if 'ident' is already on the ground 'stack'@=
+@<Litar@/fail if 'ident' is already on the ground 'stack'@=
 for i, frame := range stack {
 	if frame.ident != ident {
 		continue
@@ -204,7 +203,7 @@ for i, frame := range stack {
 @
 
 Unknown fields and trailing data are errors, so a misspelled key is not silently ignored.
-@<decode the composer at 'path' into 'file'@=
+@<Litar@/decode the composer at 'path' into 'file'@=
 data, err := os.ReadFile(path)
 if err != nil {
 	return nil, fmt.Errorf("could not read composer '%s': %v", path, err)
@@ -219,7 +218,7 @@ if dec.More() {
 }
 @
 
-@<load the ground named in 'file' into 'ground' and 'groundNodes'@=
+@<Litar@/load the ground named in 'file' into 'ground' and 'groundNodes'@=
 if file.Ground != nil {
 	gname := *file.Ground
 	ground = &gname
@@ -242,7 +241,7 @@ if file.Ground != nil {
 }
 @~ Go@/functions@/litar.findGround @~ Go@/functions@/litar.identityPath @~ Go@/functions@/litar.loadAt @~ Go@/functions@/litar.validGroundName @~ Go@/types@/litar.groundFrame @
 
-@<combine 'groundNodes' and the nodes of 'file' into a World@=
+@<Litar@/combine 'groundNodes' and the nodes of 'file' into a World@=
 if err := prepareNodes(file.Nodes); err != nil {
 	return nil, err
 }
@@ -325,15 +324,15 @@ func graphNodes(ground []Node, raw []composerNode) []Node {
 @<compose@:litar@:Go Structure@/functions@+
 func validateGraph(nodes []Node) error {
 seen := map[string]int{}
-@<check that the names of 'nodes' are valid and distinct, indexing them in 'seen'@>
-@<check that every base in 'nodes' is in 'seen' and there is one root@>
+@<Litar@/check that the names of 'nodes' are valid and distinct, indexing them in 'seen'@>
+@<Litar@/check that every base in 'nodes' is in 'seen' and there is one root@>
 return nil
 }
 
 @~ Go@/functions@/litar.validateGraph @~ Go@/types@/litar.Node @
 
 Two nodes are the same when their full paths are equal, so equal names under different bases are allowed.
-@<check that the names of 'nodes' are valid and distinct, indexing them in 'seen'@=
+@<Litar@/check that the names of 'nodes' are valid and distinct, indexing them in 'seen'@=
 for i, n := range nodes {
 	if n.Name == "" {
 		return fmt.Errorf("empty name")
@@ -349,7 +348,7 @@ for i, n := range nodes {
 }
 @~ Go@/functions@/litar.formatNodePath @~ Go@/functions@/litar.nodePath @
 
-@<check that every base in 'nodes' is in 'seen' and there is one root@=
+@<Litar@/check that every base in 'nodes' is in 'seen' and there is one root@=
 var roots int
 for _, n := range nodes {
 	if len(n.Base) == 0 {
@@ -378,9 +377,9 @@ for i, n := range raw {
 		ident string
 		arch  *Archive
 	)
-	@<read the archive of 'n' into 'ident' and 'arch'@>
+	@<Litar@/read the archive of 'n' into 'ident' and 'arch'@>
 	maps := make([]Mapping, len(n.Mappings))
-	@<convert the mappings of 'n' to 'maps'@>
+	@<Litar@/convert the mappings of 'n' to 'maps'@>
 	nodes[i] = Node{
 		Name:        n.Name,
 		Archive:     ident,
@@ -398,7 +397,7 @@ return nodes, nil
 @~ Go@/functions@/litar.copyPath @~ Go@/functions@/litar.nodesFrom @~ Go@/types@/litar.Archive @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.Node @~ Go@/types@/litar.composerNode @
 
 A node's archive is identified by its resolved path, so symbolic links to one file are the same archive.
-@<read the archive of 'n' into 'ident' and 'arch'@=
+@<Litar@/read the archive of 'n' into 'ident' and 'arch'@=
 resolved, err := resolveArchive(n.Archive, dir)
 if err != nil {
 	return nil, err
@@ -418,7 +417,7 @@ if err != nil {
 @~ Go@/functions@/litar.ParseArchive @~ Go@/functions@/litar.identityPath @~ Go@/functions@/litar.resolveArchive @
 
 A relative origin is resolved against the composer's directory; the original text is kept for saving.
-@<convert the mappings of 'n' to 'maps'@=
+@<Litar@/convert the mappings of 'n' to 'maps'@=
 for j, m := range n.Mappings {
 	origin := m.Origin
 	if origin != "" && !filepath.IsAbs(origin) {
@@ -474,14 +473,14 @@ if spec == "" || filepath.IsAbs(spec) {
 	return "", fmt.Errorf("could not find archive '%s'", spec)
 }
 path := filepath.Join(composerDir, spec)
-@<fail if the archive 'path' exists@>
-@<create 'path' as an empty file@>
+@<Litar@/fail if the archive 'path' exists@>
+@<Litar@/create 'path' as an empty file@>
 return path, nil
 }
 
 @~ Go@/functions@/litar.createNewArchive @
 
-@<fail if the archive 'path' exists@=
+@<Litar@/fail if the archive 'path' exists@=
 if _, err := os.Stat(path); err == nil {
 	return "", fmt.Errorf("archive '%s' already exists", spec)
 } else if !os.IsNotExist(err) {
@@ -490,7 +489,7 @@ if _, err := os.Stat(path); err == nil {
 @
 
 O_EXCL makes the creation fail if another process created the file after the check.
-@<create 'path' as an empty file@=
+@<Litar@/create 'path' as an empty file@=
 f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 if err != nil {
 	return "", fmt.Errorf("could not write '%s'", path)
@@ -559,7 +558,7 @@ if err != nil || !isRegular(ident) {
 var loadErr error
 dir := filepath.Dir(ident)
 for {
-	@<return the composition in 'dir' if it declares 'ident', keeping the first 'loadErr'@>
+	@<Litar@/return the composition in 'dir' if it declares 'ident', keeping the first 'loadErr'@>
 	parent := filepath.Dir(dir)
 	if parent == dir {
 		break
@@ -576,7 +575,7 @@ return nil, "", fmt.Errorf("no composition declares archive '%s'", archive)
 
 A composer that fails to load is passed over; its error is reported only when no composer
 further up declares the archive. A ground node with the archive does not count.
-@<return the composition in 'dir' if it declares 'ident', keeping the first 'loadErr'@=
+@<Litar@/return the composition in 'dir' if it declares 'ident', keeping the first 'loadErr'@=
 comp := filepath.Join(dir, "composer.json")
 if isRegular(comp) {
 	w, err := LoadComposer(comp)
@@ -680,13 +679,13 @@ func (w *World) rootName() (string, error) {
 func (w *World) ancestry(ref string) ([]*Node, error) {
 var n *Node
 var err error
-@<find the node 'n' named 'ref', the root if 'ref' is empty@>
-@<collect 'n' and its bases up to the root@>
+@<Litar@/find the node 'n' named 'ref', the root if 'ref' is empty@>
+@<Litar@/collect 'n' and its bases up to the root@>
 }
 
 @~ Go@/methods@/litar.World.ancestry @~ Go@/types@/litar.Node @~ Go@/types@/litar.World @
 
-@<find the node 'n' named 'ref', the root if 'ref' is empty@=
+@<Litar@/find the node 'n' named 'ref', the root if 'ref' is empty@=
 if ref == "" {
 	n, err = w.root()
 } else {
@@ -698,7 +697,7 @@ if err != nil {
 @~ Go@/methods@/litar.World.lookup @~ Go@/methods@/litar.World.root @
 
 A loaded composer has no cycles, but a node edited in memory could form one; the walk stops at a repeated node.
-@<collect 'n' and its bases up to the root@=
+@<Litar@/collect 'n' and its bases up to the root@=
 var rev []*Node
 seen := map[string]bool{}
 for {
@@ -783,7 +782,7 @@ func emptyComposerBytes() []byte {
 func (w *World) save() error {
 local := w.Nodes[w.localAt:]
 raw := make([]composerNode, len(local))
-@<convert the nodes in 'local' to composer nodes in 'raw'@>
+@<Litar@/convert the nodes in 'local' to composer nodes in 'raw'@>
 data, err := composerFileBytes(w.Description, w.Ground, raw)
 if err != nil {
 	return err
@@ -794,7 +793,7 @@ return os.WriteFile(w.Composer, data, 0o644)
 @~ Go@/functions@/litar.composerFileBytes @~ Go@/methods@/litar.World.save @~ Go@/types@/litar.World @~ Go@/types@/litar.composerNode @
 
 Mappings and file sets are written as empty arrays, never null, and an origin keeps the text it was read with.
-@<convert the nodes in 'local' to composer nodes in 'raw'@=
+@<Litar@/convert the nodes in 'local' to composer nodes in 'raw'@=
 for i, n := range local {
 	maps := make([]composerMapping, len(n.Mappings))
 	for j, m := range n.Mappings {
@@ -828,13 +827,13 @@ st, err := os.Stat(path)
 if err != nil {
 	return nil, fmt.Errorf("could not read composer '%s': %v", path, err)
 }
-@<replace a directory 'path' with the composer.json inside it@>
+@<Litar@/replace a directory 'path' with the composer.json inside it@>
 return LoadComposerAllowEmpty(path)
 }
 
 @~ Go@/functions@/litar.LoadComposerAllowEmpty @~ Go@/functions@/litar.SpecifyComposer @~ Go@/types@/litar.World @
 
-@<replace a directory 'path' with the composer.json inside it@=
+@<Litar@/replace a directory 'path' with the composer.json inside it@=
 if st.IsDir() {
 	path = filepath.Join(path, "composer.json")
 	st, err = os.Stat(path)
@@ -858,16 +857,16 @@ if dir == "" {
 	return nil, fmt.Errorf("missing path")
 }
 var stored *string
-@<check the 'ground' and keep its name in 'stored'@>
+@<Litar@/check the 'ground' and keep its name in 'stored'@>
 createdDir := false
 comp := filepath.Join(dir, "composer.json")
-@<create 'dir' for a new composer 'comp', noting 'createdDir'@>
-@<write and load the new composer 'comp', removing it on failure@>
+@<Litar@/create 'dir' for a new composer 'comp', noting 'createdDir'@>
+@<Litar@/write and load the new composer 'comp', removing it on failure@>
 }
 
 @~ Go@/functions@/litar.CreateComposedArchive @~ Go@/types@/litar.World @
 
-@<check the 'ground' and keep its name in 'stored'@=
+@<Litar@/check the 'ground' and keep its name in 'stored'@=
 if ground != "" {
 	if err := validGroundName(ground); err != nil {
 		return nil, err
@@ -882,7 +881,7 @@ if ground != "" {
 
 An existing directory is used as is; one that is missing is created and remembered,
 so a failure can remove it again.
-@<create 'dir' for a new composer 'comp', noting 'createdDir'@=
+@<Litar@/create 'dir' for a new composer 'comp', noting 'createdDir'@=
 st, err := os.Stat(dir)
 if err != nil {
 	if !os.IsNotExist(err) {
@@ -902,7 +901,7 @@ if err := os.MkdirAll(dir, 0o755); err != nil {
 }
 @
 
-@<write and load the new composer 'comp', removing it on failure@=
+@<Litar@/write and load the new composer 'comp', removing it on failure@=
 removeNew := func() {
 	_ = os.Remove(comp)
 	if createdDir {
@@ -931,7 +930,7 @@ return w, nil
 // An empty base creates the root, and only when the composer has none.
 // The archive file is created empty and must not already exist.
 func (w *World) CreateNode(name, archive, description string, base []string) error {
-@<check the 'name' and 'base' of the new node@>
+@<Litar@/check the 'name' and 'base' of the new node@>
 dir := filepath.Dir(w.Composer)
 resolved, err := createNewArchive(archive, dir)
 if err != nil {
@@ -944,13 +943,13 @@ removeCreated := func() {
 	}
 }
 var ident string
-@<set 'ident' to the identity of 'resolved' unless another node has it@>
-@<parse 'resolved' and append the new node to the composer@>
+@<Litar@/set 'ident' to the identity of 'resolved' unless another node has it@>
+@<Litar@/parse 'resolved' and append the new node to the composer@>
 }
 
 @~ Go@/functions@/litar.createNewArchive @~ Go@/methods@/litar.World.CreateNode @~ Go@/types@/litar.World @
 
-@<check the 'name' and 'base' of the new node@=
+@<Litar@/check the 'name' and 'base' of the new node@=
 if name == "" {
 	return fmt.Errorf("empty name")
 }
@@ -972,7 +971,7 @@ for _, n := range w.Nodes {
 }
 @~ Go@/functions@/litar.copyPath @~ Go@/functions@/litar.formatNodePath @~ Go@/functions@/litar.samePath @~ Go@/methods@/litar.World.lookup @~ Go@/methods@/litar.World.root @
 
-@<set 'ident' to the identity of 'resolved' unless another node has it@=
+@<Litar@/set 'ident' to the identity of 'resolved' unless another node has it@=
 ident, err = identityPath(resolved)
 if err != nil {
 	removeCreated()
@@ -989,7 +988,7 @@ for _, n := range w.Nodes {
 
 The node is appended before saving and dropped again if the composer cannot be written,
 so memory and file stay in step.
-@<parse 'resolved' and append the new node to the composer@=
+@<Litar@/parse 'resolved' and append the new node to the composer@=
 data, err := os.ReadFile(resolved)
 if err != nil {
 	removeCreated()
@@ -1032,19 +1031,19 @@ if err != nil {
 targetPath := nodePath(*target)
 keep := append([]Node{}, w.Nodes[:w.localAt]...)
 var archives []string
-@<move the local nodes under 'targetPath' from 'keep' to 'archives'@>
+@<Litar@/move the local nodes under 'targetPath' from 'keep' to 'archives'@>
 prev := w.Nodes
 w.Nodes = keep
 if err := w.save(); err != nil {
 	w.Nodes = prev
 	return fmt.Errorf("could not write '%s'", w.Composer)
 }
-@<remove the files in 'archives'@>
+@<Litar@/remove the files in 'archives'@>
 }
 
 @~ Go@/functions@/litar.nodePath @~ Go@/methods@/litar.World.DeleteNode @~ Go@/methods@/litar.World.requireLocal @~ Go@/methods@/litar.World.save @~ Go@/types@/litar.Node @~ Go@/types@/litar.World @
 
-@<move the local nodes under 'targetPath' from 'keep' to 'archives'@=
+@<Litar@/move the local nodes under 'targetPath' from 'keep' to 'archives'@=
 for _, n := range w.Nodes[w.localAt:] {
 	if hasPathPrefix(nodePath(n), targetPath) {
 		archives = append(archives, n.Archive)
@@ -1055,7 +1054,7 @@ for _, n := range w.Nodes[w.localAt:] {
 @~ Go@/functions@/litar.hasPathPrefix @~ Go@/functions@/litar.nodePath @
 
 Every file is tried; the ones that could not be removed are reported together.
-@<remove the files in 'archives'@=
+@<Litar@/remove the files in 'archives'@=
 var failed []string
 for _, path := range archives {
 	if path == "" {
@@ -1127,10 +1126,10 @@ func (w *World) ApplyBlock(nodeName, text string) error {
 // chunk reference among this node's own blocks, then orders the rest.
 func compactOwn(n *Node) ([]byte, *Archive, error) {
 var kept []Block
-@<keep the effective own blocks of 'n' in 'kept'@>
+@<Litar@/keep the effective own blocks of 'n' in 'kept'@>
 kept = orderOwn(kept)
 var b strings.Builder
-@<write 'kept' and the trailing text of 'n' to 'b'@>
+@<Litar@/write 'kept' and the trailing text of 'n' to 'b'@>
 data := []byte(b.String())
 arch, err := ParseArchive(data, n.Archive)
 if err != nil {
@@ -1144,7 +1143,7 @@ return data, arch, nil
 
 @~ Go@/functions@/litar.ParseArchive @~ Go@/functions@/litar.compactOwn @~ Go@/functions@/litar.orderOwn @~ Go@/methods@/litar.Archive.Text @~ Go@/types@/litar.Archive @~ Go@/types@/litar.Block @~ Go@/types@/litar.Node @
 
-@<write 'kept' and the trailing text of 'n' to 'b'@=
+@<Litar@/write 'kept' and the trailing text of 'n' to 'b'@=
 for i, bl := range kept {
 	b.WriteString(bl.Comment)
 	b.WriteString(bl.Raw)
@@ -1189,26 +1188,26 @@ func orderOwn(blocks []Block) []Block {
 n := len(blocks)
 keys := make([]string, n)
 byChunk := map[string][]int{}
-@<index 'blocks' by chunk in 'keys' and 'byChunk'@>
+@<Litar@/index 'blocks' by chunk in 'keys' and 'byChunk'@>
 // chainPrev[i] is the earlier block of the same chunk, or -1.
 chainPrev := make([]int, n)
-@<link each block to the earlier block of its chunk in 'chainPrev'@>
+@<Litar@/link each block to the earlier block of its chunk in 'chainPrev'@>
 includers := make([]map[int]bool, n)
-@<record in 'includers' the blocks whose content includes each block's chunk@>
+@<Litar@/record in 'includers' the blocks whose content includes each block's chunk@>
 placed := make([]bool, n)
 ready := func(i int, strict bool) bool {
-	@<tell whether block 'i' can be placed, requiring its 'includers' if 'strict'@>
+	@<Litar@/tell whether block 'i' can be placed, requiring its 'includers' if 'strict'@>
 }
 out := make([]Block, 0, n)
 for len(out) < n {
-	@<append to 'out' the first ready block, preferring one whose includers are placed@>
+	@<Litar@/append to 'out' the first ready block, preferring one whose includers are placed@>
 }
 return out
 }
 
 @~ Go@/functions@/litar.orderOwn @~ Go@/types@/litar.Block @
 
-@<index 'blocks' by chunk in 'keys' and 'byChunk'@=
+@<Litar@/index 'blocks' by chunk in 'keys' and 'byChunk'@=
 for i, b := range blocks {
 	keys[i] = chunkKey(b.Ref)
 	byChunk[keys[i]] = append(byChunk[keys[i]], i)
@@ -1217,7 +1216,7 @@ for i, b := range blocks {
 
 A reference is resolved against the module of the block that holds it;
 a block referring to its own chunk does not include itself.
-@<record in 'includers' the blocks whose content includes each block's chunk@=
+@<Litar@/record in 'includers' the blocks whose content includes each block's chunk@=
 for a, b := range blocks {
 	for _, part := range b.Parts {
 		if part.Ref == nil || part.Ref.Chunk == "" {
@@ -1238,7 +1237,7 @@ for a, b := range blocks {
 }
 @~ Go@/functions@/litar.chunkKey @~ Go@/functions@/litar.resolveBody @
 
-@<tell whether block 'i' can be placed, requiring its 'includers' if 'strict'@=
+@<Litar@/tell whether block 'i' can be placed, requiring its 'includers' if 'strict'@=
 if placed[i] || (chainPrev[i] >= 0 && !placed[chainPrev[i]]) {
 	return false
 }
@@ -1255,7 +1254,7 @@ return true
 
 When no block has all its includers placed, inclusion is circular,
 and the first block whose chunk predecessor is placed goes next.
-@<append to 'out' the first ready block, preferring one whose includers are placed@=
+@<Litar@/append to 'out' the first ready block, preferring one whose includers are placed@=
 next := -1
 for i := 0; i < n && next < 0; i++ {
 	if ready(i, true) {
@@ -1388,15 +1387,15 @@ type pending struct {
 	arch *Archive
 }
 var all []pending
-@<compact every local node into 'all'@>
-@<write each archive in 'all' and update its node@>
+@<Litar@/compact every local node into 'all'@>
+@<Litar@/write each archive in 'all' and update its node@>
 return nil
 }
 
 @~ Go@/methods@/litar.World.DumpArchives @~ Go@/types@/litar.Archive @~ Go@/types@/litar.Node @~ Go@/types@/litar.World @
 
 Every archive is compacted before any is written, so a failure leaves all files unchanged.
-@<compact every local node into 'all'@=
+@<Litar@/compact every local node into 'all'@=
 for i := w.localAt; i < len(w.Nodes); i++ {
 	n := &w.Nodes[i]
 	data, arch, err := compactOwn(n)
@@ -1407,7 +1406,7 @@ for i := w.localAt; i < len(w.Nodes); i++ {
 }
 @~ Go@/functions@/litar.compactOwn @
 
-@<write each archive in 'all' and update its node@=
+@<Litar@/write each archive in 'all' and update its node@=
 for _, p := range all {
 	if err := writeFileKeepMode(p.n.Archive, p.data); err != nil {
 		return fmt.Errorf("could not write '%s'", p.n.Archive)
@@ -1449,7 +1448,7 @@ func writeFile(t *testing.T, path, data string) {
 func TestComposerChain(t *testing.T) {
 dir := t.TempDir()
 comp := filepath.Join(dir, "composer.json")
-@<write to 'comp' a root with a mapping and a child, in 'dir'@>
+@<Litar@/write to 'comp' a root with a mapping and a child, in 'dir'@>
 w, err := LoadComposer(comp)
 if err != nil {
 	t.Fatal(err)
@@ -1457,12 +1456,12 @@ if err != nil {
 if !samePath(w.Nodes[1].Base, []string{"root"}) || w.Nodes[0].Description != "the root" {
 	t.Fatalf("%+v", w.Nodes)
 }
-@<check the chain and the mappings of root/child in 'w'@>
+@<Litar@/check the chain and the mappings of root/child in 'w'@>
 }
 
 @~ Go@/functions@/litar.LoadComposer @~ Go@/functions@/litar.samePath @
 
-@<write to 'comp' a root with a mapping and a child, in 'dir'@=
+@<Litar@/write to 'comp' a root with a mapping and a child, in 'dir'@=
 writeFile(t, filepath.Join(dir, "base.la"), "@@<msg@@=base@@\n@@<extra@@+B@@\n")
 writeFile(t, filepath.Join(dir, "child.la"), "@@<msg@@+child@@\n")
 writeFile(t, filepath.Join(dir, "origin.txt"), "mapped\n")
@@ -1487,7 +1486,7 @@ writeFile(t, comp, composerDoc(`[
 @~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.writeFile @
 
 The mapping's origin is relative in the composer, so it exists only if it was resolved against dir.
-@<check the chain and the mappings of root/child in 'w'@=
+@<Litar@/check the chain and the mappings of root/child in 'w'@=
 blocks, err := w.Chain("root/child")
 if err != nil {
 	t.Fatal(err)
@@ -1516,19 +1515,19 @@ if _, err := w.Chain("missing"); err == nil || !strings.Contains(err.Error(), "u
 func TestSameNameDifferentParents(t *testing.T) {
 dir := t.TempDir()
 comp := filepath.Join(dir, "composer.json")
-@<write to 'comp' nodes with equal names under different bases, in 'dir'@>
+@<Litar@/write to 'comp' nodes with equal names under different bases, in 'dir'@>
 w, err := LoadComposer(comp)
 if err != nil {
 	t.Fatal(err)
 }
-@<check that the leaves of 'w' are found by their full paths only@>
-@<check that 'w' tells root from root/root@>
+@<Litar@/check that the leaves of 'w' are found by their full paths only@>
+@<Litar@/check that 'w' tells root from root/root@>
 }
 
 @~ Go@/functions@/litar.LoadComposer @
 
 Two leaves share a name under different bases, and a node named root sits under the root.
-@<write to 'comp' nodes with equal names under different bases, in 'dir'@=
+@<Litar@/write to 'comp' nodes with equal names under different bases, in 'dir'@=
 for name, body := range map[string]string{
 	"root.la":  "@@<x@@=\n@@\n",
 	"left.la":  "@@<x@@=\n@@\n",
@@ -1549,7 +1548,7 @@ writeFile(t, comp, composerDoc(`[
 ]`))
 @~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.writeFile @
 
-@<check that the leaves of 'w' are found by their full paths only@=
+@<Litar@/check that the leaves of 'w' are found by their full paths only@=
 if _, err := w.Chain("leaf"); err == nil || !strings.Contains(err.Error(), "unknown node 'leaf'") {
 	t.Fatal(err)
 }
@@ -1577,7 +1576,7 @@ if _, err := w.Chain("root/left"); err != nil {
 }
 @~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @~ Go@/methods@/litar.World.Chain @
 
-@<check that 'w' tells root from root/root@=
+@<Litar@/check that 'w' tells root from root/root@=
 root, err := w.lookup("root")
 if err != nil || formatNodePath(nodePath(*root)) != "root" {
 	t.Fatalf("%v %+v", err, root)
@@ -1648,12 +1647,12 @@ func TestComposerErrors(t *testing.T) {
 func TestGroundPrecedes(t *testing.T) {
 dir := t.TempDir()
 lib := filepath.Join(dir, "lib")
-@<write the ground common with a root node in 'lib'@>
+@<Litar@/write the ground common with a root node in 'lib'@>
 sub := filepath.Join(dir, "sub")
 comp := filepath.Join(sub, "composer.json")
-@<write to 'comp' a child node on the ground common@>
+@<Litar@/write to 'comp' a child node on the ground common@>
 t.Setenv("LITAR_LIBRARY", lib)
-@<change to an empty directory in 'dir'@>
+@<Litar@/change to an empty directory in 'dir'@>
 w, err := LoadComposer(comp)
 if err != nil {
 	t.Fatal(err)
@@ -1661,14 +1660,14 @@ if err != nil {
 if w.localAt != 1 || w.Nodes[0].Name != "root" || w.Nodes[1].Name != "child" {
 	t.Fatalf("%d %+v", w.localAt, w.Nodes)
 }
-@<check that the child of 'w' extends the ground's chunk@>
-@<check that 'w' refuses to edit its ground node@>
-@<check that saving 'w' leaves the ground node out of 'comp'@>
+@<Litar@/check that the child of 'w' extends the ground's chunk@>
+@<Litar@/check that 'w' refuses to edit its ground node@>
+@<Litar@/check that saving 'w' leaves the ground node out of 'comp'@>
 }
 
 @~ Go@/functions@/litar.LoadComposer @
 
-@<write the ground common with a root node in 'lib'@=
+@<Litar@/write the ground common with a root node in 'lib'@=
 common := filepath.Join(lib, "common")
 if err := os.MkdirAll(common, 0o755); err != nil {
 	t.Fatal(err)
@@ -1679,7 +1678,7 @@ writeFile(t, filepath.Join(common, "composer.json"), composerDoc(`[
     ]`))
 @~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.writeFile @
 
-@<write to 'comp' a child node on the ground common@=
+@<Litar@/write to 'comp' a child node on the ground common@=
 if err := os.Mkdir(sub, 0o755); err != nil {
 	t.Fatal(err)
 }
@@ -1694,7 +1693,7 @@ writeFile(t, comp, `{
 @~ Go@/functions@/litar.writeFile @
 
 The ground must be found through LITAR_LIBRARY, not through the working directory.
-@<change to an empty directory in 'dir'@=
+@<Litar@/change to an empty directory in 'dir'@=
 elsewhere := filepath.Join(dir, "elsewhere")
 if err := os.Mkdir(elsewhere, 0o755); err != nil {
 	t.Fatal(err)
@@ -1702,7 +1701,7 @@ if err := os.Mkdir(elsewhere, 0o755); err != nil {
 t.Chdir(elsewhere)
 @
 
-@<check that the child of 'w' extends the ground's chunk@=
+@<Litar@/check that the child of 'w' extends the ground's chunk@=
 blocks, err := w.Chain("root/child")
 if err != nil {
 	t.Fatal(err)
@@ -1713,7 +1712,7 @@ if err != nil || got != "basechild" {
 }
 @~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @~ Go@/methods@/litar.World.Chain @
 
-@<check that 'w' refuses to edit its ground node@=
+@<Litar@/check that 'w' refuses to edit its ground node@=
 if err := w.DeleteNode("root"); err == nil || !strings.Contains(err.Error(), "defined in the ground") {
 	t.Fatal(err)
 }
@@ -1728,7 +1727,7 @@ if err := w.DeleteFile("root", "base.la"); err == nil || !strings.Contains(err.E
 }
 @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.World.ApplyBlock @~ Go@/methods@/litar.World.DeleteChunk @~ Go@/methods@/litar.World.DeleteFile @~ Go@/methods@/litar.World.DeleteNode @
 
-@<check that saving 'w' leaves the ground node out of 'comp'@=
+@<Litar@/check that saving 'w' leaves the ground node out of 'comp'@=
 if err := w.save(); err != nil {
 	t.Fatal(err)
 }
@@ -1746,7 +1745,7 @@ if strings.Contains(text, `"name": "root"`) || !strings.Contains(text, `"ground"
 func TestGroundErrors(t *testing.T) {
 dir := t.TempDir()
 lib := filepath.Join(dir, "lib")
-@<write the grounds a and b in 'lib', each on the other@>
+@<Litar@/write the grounds a and b in 'lib', each on the other@>
 t.Setenv("LITAR_LIBRARY", lib)
 _, err := LoadComposer(filepath.Join(lib, "a", "composer.json"))
 if err == nil || !strings.Contains(err.Error(), "cycle in grounds") {
@@ -1762,7 +1761,7 @@ if err == nil || !strings.Contains(err.Error(), "could not find ground 'nope'") 
 
 @~ Go@/functions@/litar.LoadComposer @~ Go@/functions@/litar.writeFile @
 
-@<write the grounds a and b in 'lib', each on the other@=
+@<Litar@/write the grounds a and b in 'lib', each on the other@=
 for _, name := range []string{"a", "b"} {
 	g := filepath.Join(lib, name)
 	if err := os.MkdirAll(g, 0o755); err != nil {
@@ -1794,15 +1793,15 @@ if err != nil {
 	t.Fatal(err)
 }
 var data []byte
-@<check that DumpArchives drops the overridden block from 'arch'@>
-@<check that DeleteChunk removes chunk from 'arch' and keeps its specialization@>
-@<check that DeleteFile removes a file and its root chunk from 'arch'@>
-@<check that DeleteNode empties 'comp' and removes 'arch'@>
+@<Litar@/check that DumpArchives drops the overridden block from 'arch'@>
+@<Litar@/check that DeleteChunk removes chunk from 'arch' and keeps its specialization@>
+@<Litar@/check that DeleteFile removes a file and its root chunk from 'arch'@>
+@<Litar@/check that DeleteNode empties 'comp' and removes 'arch'@>
 }
 
 @~ Go@/functions@/litar.LoadComposer @~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.writeFile @
 
-@<check that DumpArchives drops the overridden block from 'arch'@=
+@<Litar@/check that DumpArchives drops the overridden block from 'arch'@=
 if err := w.DumpArchives(); err != nil {
 	t.Fatal(err)
 }
@@ -1816,7 +1815,7 @@ if strings.Contains(text, "@@<chunk@@=A@@") || !strings.Contains(text, "@@<chunk
 }
 @~ Go@/methods@/litar.World.DumpArchives @
 
-@<check that DeleteChunk removes chunk from 'arch' and keeps its specialization@=
+@<Litar@/check that DeleteChunk removes chunk from 'arch' and keeps its specialization@=
 if err := w.DeleteChunk("root", mustRef(t, "chunk")); err != nil {
 	t.Fatal(err)
 }
@@ -1826,7 +1825,7 @@ if strings.Contains(string(data), "@@<chunk@@=B@@") || !strings.Contains(string(
 }
 @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.World.DeleteChunk @
 
-@<check that DeleteFile removes a file and its root chunk from 'arch'@=
+@<Litar@/check that DeleteFile removes a file and its root chunk from 'arch'@=
 writeFile(t, arch, "@@[hello.c@@=hi@@\n@@<hello.c@@+more@@\n")
 w, err = LoadComposer(comp)
 if err != nil {
@@ -1841,7 +1840,7 @@ if strings.TrimSpace(string(data)) != "" {
 }
 @~ Go@/functions@/litar.LoadComposer @~ Go@/functions@/litar.writeFile @~ Go@/methods@/litar.World.DeleteFile @
 
-@<check that DeleteNode empties 'comp' and removes 'arch'@=
+@<Litar@/check that DeleteNode empties 'comp' and removes 'arch'@=
 if err := w.DeleteNode("root"); err != nil {
 	t.Fatal(err)
 }
@@ -1862,16 +1861,16 @@ comp := filepath.Join(dir, "composer.json")
 if err != nil {
 	t.Fatal(err)
 }
-@<create the nodes root, root/child, and root/child/grand in 'w'@>
+@<Litar@/create the nodes root, root/child, and root/child/grand in 'w'@>
 rootArch := filepath.Join(dir, "root.la")
 var raw []byte
-@<check that deleting root/child keeps 'rootArch' and removes the archives below@>
-@<check that deleting root succeeds when 'rootArch' is already gone@>
+@<Litar@/check that deleting root/child keeps 'rootArch' and removes the archives below@>
+@<Litar@/check that deleting root succeeds when 'rootArch' is already gone@>
 }
 
 @~ Go@/functions@/litar.CreateComposedArchive @
 
-@<create the nodes root, root/child, and root/child/grand in 'w'@=
+@<Litar@/create the nodes root, root/child, and root/child/grand in 'w'@=
 if err := w.CreateNode("root", "./root.la", "root", nil); err != nil {
 	t.Fatal(err)
 }
@@ -1883,7 +1882,7 @@ if err := w.CreateNode("grand", "./grand.la", "grand", []string{"root", "child"}
 }
 @~ Go@/methods@/litar.World.CreateNode @
 
-@<check that deleting root/child keeps 'rootArch' and removes the archives below@=
+@<Litar@/check that deleting root/child keeps 'rootArch' and removes the archives below@=
 childArch := filepath.Join(dir, "child.la")
 grandArch := filepath.Join(dir, "grand.la")
 if err := w.DeleteNode("root/child"); err != nil {
@@ -1908,7 +1907,7 @@ if strings.Contains(text, "child") || strings.Contains(text, "grand") || !string
 }
 @~ Go@/methods@/litar.World.DeleteNode @
 
-@<check that deleting root succeeds when 'rootArch' is already gone@=
+@<Litar@/check that deleting root succeeds when 'rootArch' is already gone@=
 if err := os.Remove(rootArch); err != nil {
 	t.Fatal(err)
 }
@@ -1931,21 +1930,21 @@ if err != nil {
 }
 fresh := filepath.Join(dir, "fresh.la")
 var data []byte
-@<check that CreateNode creates the empty archive 'fresh'@>
+@<Litar@/check that CreateNode creates the empty archive 'fresh'@>
 
-@<check that CreateNode refuses an archive path that exists@>
+@<Litar@/check that CreateNode refuses an archive path that exists@>
 
-@<check that CreateNode does not create a missing directory@>
+@<Litar@/check that CreateNode does not create a missing directory@>
 
-@<check that CreateNode from another directory puts bare.la beside 'comp'@>
-@<check that 'comp' keeps the archive of the bare node as written@>
+@<Litar@/check that CreateNode from another directory puts bare.la beside 'comp'@>
+@<Litar@/check that 'comp' keeps the archive of the bare node as written@>
 
-@<check that CreateNode removes its archive when another node has it@>
+@<Litar@/check that CreateNode removes its archive when another node has it@>
 }
 
 @~ Go@/functions@/litar.CreateComposedArchive @
 
-@<check that CreateNode creates the empty archive 'fresh'@=
+@<Litar@/check that CreateNode creates the empty archive 'fresh'@=
 if err := w.CreateNode("root", "./fresh.la", "new", nil); err != nil {
 	t.Fatal(err)
 }
@@ -1973,7 +1972,7 @@ if err != nil || !strings.Contains(string(data), "@@<msg@@=hi@@") {
 @~ Go@/functions@/litar.LoadComposer @~ Go@/methods@/litar.World.ApplyBlock @~ Go@/methods@/litar.World.CreateNode @
 
 An existing file keeps its content, and a directory counts as existing.
-@<check that CreateNode refuses an archive path that exists@=
+@<Litar@/check that CreateNode refuses an archive path that exists@=
 old := filepath.Join(dir, "old.la")
 writeFile(t, old, "@@<m@@=keep@@\n")
 if err := w.CreateNode("child", "./old.la", "old", []string{"root"}); err == nil || !strings.Contains(err.Error(), "archive './old.la' already exists") {
@@ -1993,7 +1992,7 @@ if err == nil || !strings.Contains(err.Error(), "archive './dir.la' already exis
 }
 @~ Go@/functions@/litar.writeFile @~ Go@/methods@/litar.World.CreateNode @
 
-@<check that CreateNode does not create a missing directory@=
+@<Litar@/check that CreateNode does not create a missing directory@=
 err = w.CreateNode("nested", "./no/such.la", "", []string{"root"})
 if err == nil || !strings.Contains(err.Error(), "could not write") {
 	t.Fatal(err)
@@ -2004,7 +2003,7 @@ if _, statErr := os.Stat(filepath.Join(dir, "no")); !os.IsNotExist(statErr) {
 @~ Go@/methods@/litar.World.CreateNode @
 
 An archive path is relative to the composer, whatever the working directory.
-@<check that CreateNode from another directory puts bare.la beside 'comp'@=
+@<Litar@/check that CreateNode from another directory puts bare.la beside 'comp'@=
 elsewhere := filepath.Join(dir, "elsewhere")
 if err := os.Mkdir(elsewhere, 0o755); err != nil {
 	t.Fatal(err)
@@ -2028,7 +2027,7 @@ if _, err := os.Stat(filepath.Join(elsewhere, "bare.la")); !os.IsNotExist(err) {
 }
 @~ Go@/methods@/litar.World.ApplyBlock @~ Go@/methods@/litar.World.CreateNode @
 
-@<check that 'comp' keeps the archive of the bare node as written@=
+@<Litar@/check that 'comp' keeps the archive of the bare node as written@=
 again, err := LoadComposer(comp)
 if err != nil {
 	t.Fatal(err)
@@ -2046,7 +2045,7 @@ if !saw {
 
 The root's archive is removed from disk but still recorded, so the new file is created
 before the clash is found and must be removed again.
-@<check that CreateNode removes its archive when another node has it@=
+@<Litar@/check that CreateNode removes its archive when another node has it@=
 if err := os.Remove(fresh); err != nil {
 	t.Fatal(err)
 }
@@ -2063,7 +2062,7 @@ if _, statErr := os.Stat(fresh); !os.IsNotExist(statErr) {
 func TestCreateComposedArchiveGround(t *testing.T) {
 dir := t.TempDir()
 lib := filepath.Join(dir, "lib")
-@<write the grounds sample-ground and blank-ground in 'lib'@>
+@<Litar@/write the grounds sample-ground and blank-ground in 'lib'@>
 t.Setenv("LITAR_LIBRARY", lib)
 work := filepath.Join(dir, "work")
 if err := os.Mkdir(work, 0o755); err != nil {
@@ -2076,19 +2075,19 @@ var (
 	err error
 	raw []byte
 )
-@<check a composition created in 'dir' without a ground@>
+@<Litar@/check a composition created in 'dir' without a ground@>
 
 named := filepath.Join(dir, "named")
-@<check the composition 'named' created on sample-ground@>
-@<check that a child node saved in 'named' leaves the ground node out@>
+@<Litar@/check the composition 'named' created on sample-ground@>
+@<Litar@/check that a child node saved in 'named' leaves the ground node out@>
 
-@<checks that a failed CreateComposedArchive leaves nothing behind@>
+@<Litar@/checks that a failed CreateComposedArchive leaves nothing behind@>
 }
 
 @~ Go@/functions@/litar.CreateComposedArchive @~ Go@/types@/litar.World @
 
 blank-ground has no nodes, so a composition on it has no root and fails to load.
-@<write the grounds sample-ground and blank-ground in 'lib'@=
+@<Litar@/write the grounds sample-ground and blank-ground in 'lib'@=
 common := filepath.Join(lib, "sample-ground")
 if err := os.MkdirAll(common, 0o755); err != nil {
 	t.Fatal(err)
@@ -2104,7 +2103,7 @@ if err := os.MkdirAll(blank, 0o755); err != nil {
 writeFile(t, filepath.Join(blank, "composer.json"), string(emptyComposerBytes()))
 @~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.emptyComposerBytes @~ Go@/functions@/litar.writeFile @
 
-@<check a composition created in 'dir' without a ground@=
+@<Litar@/check a composition created in 'dir' without a ground@=
 bare := filepath.Join(dir, "bare")
 w, err = CreateComposedArchive(bare, "")
 if err != nil {
@@ -2122,7 +2121,7 @@ if string(raw) != string(emptyComposerBytes()) {
 }
 @~ Go@/functions@/litar.CreateComposedArchive @~ Go@/functions@/litar.emptyComposerBytes @
 
-@<check the composition 'named' created on sample-ground@=
+@<Litar@/check the composition 'named' created on sample-ground@=
 w, err = CreateComposedArchive(named, "sample-ground")
 if err != nil {
 	t.Fatal(err)
@@ -2147,7 +2146,7 @@ if !strings.Contains(string(raw), `"ground": "sample-ground"`) || strings.Contai
 }
 @~ Go@/functions@/litar.CreateComposedArchive @~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @~ Go@/methods@/litar.World.Chain @
 
-@<check that a child node saved in 'named' leaves the ground node out@=
+@<Litar@/check that a child node saved in 'named' leaves the ground node out@=
 if err := w.CreateNode("child", "./child.la", "local", []string{"root"}); err != nil {
 	t.Fatal(err)
 }
@@ -2162,7 +2161,7 @@ if !strings.Contains(text, `"ground": "sample-ground"`) || !strings.Contains(tex
 @~ Go@/methods@/litar.World.CreateNode @
 
 A missing or invalid ground is found before anything is written.
-@<checks that a failed CreateComposedArchive leaves nothing behind@=
+@<Litar@/checks that a failed CreateComposedArchive leaves nothing behind@=
 missing := filepath.Join(dir, "missing")
 _, err = CreateComposedArchive(missing, "no-such-ground")
 if err == nil || !strings.Contains(err.Error(), "could not find ground 'no-such-ground'") {
@@ -2184,7 +2183,7 @@ if _, statErr := os.Stat(invalid); !os.IsNotExist(statErr) {
 @~ Go@/functions@/litar.CreateComposedArchive @
 
 A composer that fails to load is removed, and so is the directory if it was created for it.
-@<checks that a failed CreateComposedArchive leaves nothing behind@+
+@<Litar@/checks that a failed CreateComposedArchive leaves nothing behind@+
 failed := filepath.Join(dir, "failed")
 _, err = CreateComposedArchive(failed, "blank-ground")
 if err == nil || !strings.Contains(err.Error(), "composer has no root") {
@@ -2286,13 +2285,13 @@ w, err := LoadComposer(comp)
 if err != nil {
 	t.Fatal(err)
 }
-@<check that ApplyBlock writes top before the chunks it includes in 'arch'@>
-@<check that top still evaluates to xone in 'w'@>
+@<Litar@/check that ApplyBlock writes top before the chunks it includes in 'arch'@>
+@<Litar@/check that top still evaluates to xone in 'w'@>
 }
 
 @~ Go@/functions@/litar.LoadComposer @~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.writeFile @
 
-@<check that ApplyBlock writes top before the chunks it includes in 'arch'@=
+@<Litar@/check that ApplyBlock writes top before the chunks it includes in 'arch'@=
 if err := w.ApplyBlock("root", "@@<top@@=@@<sub@@>@@<c@@>@@"); err != nil {
 	t.Fatal(err)
 }
@@ -2306,7 +2305,7 @@ if string(data) != want {
 }
 @~ Go@/methods@/litar.World.ApplyBlock @
 
-@<check that top still evaluates to xone in 'w'@=
+@<Litar@/check that top still evaluates to xone in 'w'@=
 chain, err := w.Chain("root")
 if err != nil {
 	t.Fatal(err)
@@ -2358,16 +2357,55 @@ type frame struct {
 // Evaluator expands chunk references on one node chain.
 // The mutex is held across in-memory expansion and released around
 // filter execution, which may mount a filesystem and block.
+// deps holds the dependencies of each file being expanded, innermost last.
 type Evaluator struct {
 	mu      sync.Mutex
 	chain   []Block
 	cat     *catalog
 	stack   []frame
+	deps    []map[string]dependency
 	fuseErr error
 	stderr  io.Writer
 }
 
-@~ Go@/types@/litar.Block @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.catalog @~ Go@/types@/litar.frame @
+@~ Go@/types@/litar.Block @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.catalog @~ Go@/types@/litar.dependency @~ Go@/types@/litar.frame @
+
+An evaluated file is kept for the rest of the process,
+so a file is evaluated again only when something it depends on changes.
+Filters and mapped files are assumed to give the same output for the same blocks:
+a file whose filter reads the outside world keeps its first output.
+@<eval@:litar@:Go Structure@/variables@+
+// fileCache holds the files evaluated in this process, by path.
+var fileCache = struct {
+	sync.Mutex
+	files map[string]cachedFile
+}{files: map[string]cachedFile{}}
+
+@~ Go@/types@/litar.cachedFile @~ Go@/variables@/litar.fileCache @
+
+@<eval@:litar@:Go Structure@/types@+
+type cachedFile struct {
+	text string
+	deps map[string]dependency
+}
+
+@~ Go@/types@/litar.cachedFile @~ Go@/types@/litar.dependency @
+
+A dependency is a chunk an evaluation expanded or the view of a filter it ran,
+with a digest of the blocks matching the chunk or of the files in the view.
+@<eval@:litar@:Go Structure@/types@+
+type dependency struct {
+	ref    ChunkRef
+	view   []ViewOp
+	isView bool
+	sum    [sha256.Size]byte
+}
+
+@~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.ViewOp @~ Go@/types@/litar.dependency @
+
+@<eval@:litar@:Go Structure@/import paths@+
+"crypto/sha256"
+@
 
 @<eval@:litar@:Go Structure@/functions@+
 func NewEvaluator(chain []Block, mappings []Mapping, stderr io.Writer) *Evaluator {
@@ -2436,16 +2474,56 @@ func (e *Evaluator) evalLocked(ref ChunkRef, filters []Filter) (string, error) {
 
 @~ Go@/methods@/litar.Evaluator.evalLocked @~ Go@/methods@/litar.Evaluator.expandLocked @~ Go@/methods@/litar.Evaluator.runFiltersLocked @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.Filter @
 
+A file of the root module, referred to without labels, comes from fileCache
+while its dependencies are unchanged; otherwise it is expanded and kept.
 @<eval@:litar@:Go Structure@/methods@+
 func (e *Evaluator) expandLocked(ref ChunkRef, missingErr bool) (string, error) {
+	if !e.isArchiveFile(ref) {
+		return e.expandChunkLocked(ref, missingErr)
+	}
+	fileCache.Lock()
+	cached, ok := fileCache.files[string(ref.Chunk)]
+	fileCache.Unlock()
+	if ok && e.unchanged(cached.deps) {
+		e.addDeps(cached.deps)
+		return cached.text, nil
+	}
+	return e.expandFileLocked(ref, missingErr)
+}
+
+@~ Go@/methods@/litar.Evaluator.addDeps @~ Go@/methods@/litar.Evaluator.expandChunkLocked @~ Go@/methods@/litar.Evaluator.expandFileLocked @~ Go@/methods@/litar.Evaluator.expandLocked @~ Go@/methods@/litar.Evaluator.isArchiveFile @~ Go@/methods@/litar.Evaluator.unchanged @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/variables@/litar.fileCache @
+
+The dependencies of a file are also dependencies of the file that includes it
+or shows it to a filter. A failed expansion is not kept.
+@<eval@:litar@:Go Structure@/methods@+
+func (e *Evaluator) expandFileLocked(ref ChunkRef, missingErr bool) (string, error) {
+	e.deps = append(e.deps, map[string]dependency{})
+	text, err := e.expandChunkLocked(ref, missingErr)
+	deps := e.deps[len(e.deps)-1]
+	e.deps = e.deps[:len(e.deps)-1]
+	if err != nil {
+		return "", err
+	}
+	e.addDeps(deps)
+	fileCache.Lock()
+	fileCache.files[string(ref.Chunk)] = cachedFile{text: text, deps: deps}
+	fileCache.Unlock()
+	return text, nil
+}
+
+@~ Go@/methods@/litar.Evaluator.addDeps @~ Go@/methods@/litar.Evaluator.expandChunkLocked @~ Go@/methods@/litar.Evaluator.expandFileLocked @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.cachedFile @~ Go@/types@/litar.dependency @~ Go@/variables@/litar.fileCache @
+
+@<eval@:litar@:Go Structure@/methods@+
+func (e *Evaluator) expandChunkLocked(ref ChunkRef, missingErr bool) (string, error) {
 key := ref.key()
-@<fail if 'key' is already on the visit stack@>
+@<Litar@/fail if 'key' is already on the visit stack@>
+e.recordChunk(key, ref)
 e.stack = append(e.stack, frame{key: key, ref: ref})
 defer func() { e.stack = e.stack[:len(e.stack)-1] }()
 
 var acc string
 matched := false
-@<add the expansion of each block matching 'ref' to 'acc'@>
+@<Litar@/add the expansion of each block matching 'ref' to 'acc'@>
 if !matched {
 	if missingErr {
 		return "", fmt.Errorf("chunk '%s' is not defined", ref.String())
@@ -2455,10 +2533,128 @@ if !matched {
 return acc, nil
 }
 
-@~ Go@/methods@/litar.ChunkRef.String @~ Go@/methods@/litar.ChunkRef.key @~ Go@/methods@/litar.Evaluator.expandLocked @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.frame @
+@~ Go@/methods@/litar.ChunkRef.String @~ Go@/methods@/litar.ChunkRef.key @~ Go@/methods@/litar.Evaluator.expandChunkLocked @~ Go@/methods@/litar.Evaluator.recordChunk @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.frame @
+
+@<eval@:litar@:Go Structure@/methods@+
+// isArchiveFile reports whether ref names a file of the archive:
+// a chunk of the root module, without labels, that a file block defines.
+func (e *Evaluator) isArchiveFile(ref ChunkRef) bool {
+	if len(ref.Labels) > 0 || len(ref.Module) > 0 {
+		return false
+	}
+	f := e.cat.files[string(ref.Chunk)]
+	return f != nil && f.archive
+}
+
+@~ Go@/methods@/litar.Evaluator.isArchiveFile @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.catFile @
+
+@<eval@:litar@:Go Structure@/methods@+
+// recording is the dependencies of the innermost file being expanded,
+// or nil when no file is.
+func (e *Evaluator) recording() map[string]dependency {
+	if len(e.deps) == 0 {
+		return nil
+	}
+	return e.deps[len(e.deps)-1]
+}
+
+@~ Go@/methods@/litar.Evaluator.recording @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.dependency @
+
+@<eval@:litar@:Go Structure@/methods@+
+func (e *Evaluator) addDeps(deps map[string]dependency) {
+	into := e.recording()
+	if into == nil {
+		return
+	}
+	for key, dep := range deps {
+		into[key] = dep
+	}
+}
+
+@~ Go@/methods@/litar.Evaluator.addDeps @~ Go@/methods@/litar.Evaluator.recording @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.dependency @
+
+@<eval@:litar@:Go Structure@/methods@+
+func (e *Evaluator) recordChunk(key string, ref ChunkRef) {
+	if deps := e.recording(); deps != nil {
+		deps["chunk "+key] = dependency{ref: ref, sum: e.chunkSum(ref)}
+	}
+}
+
+@~ Go@/methods@/litar.Evaluator.chunkSum @~ Go@/methods@/litar.Evaluator.recordChunk @~ Go@/methods@/litar.Evaluator.recording @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.dependency @
+
+A view is keyed by its operations in order, since the order decides which files it holds.
+@<eval@:litar@:Go Structure@/methods@+
+func (e *Evaluator) recordView(view []ViewOp) {
+	deps := e.recording()
+	if deps == nil {
+		return
+	}
+	var key strings.Builder
+	key.WriteString("view")
+	for _, op := range view {
+		fmt.Fprintf(&key, " %d:%q", op.Kind, op.Name)
+	}
+	deps[key.String()] = dependency{view: view, isView: true, sum: e.viewSum(view)}
+}
+
+@~ Go@/methods@/litar.Evaluator.recordView @~ Go@/methods@/litar.Evaluator.recording @~ Go@/methods@/litar.Evaluator.viewSum @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.ViewOp @~ Go@/types@/litar.dependency @
+
+@<eval@:litar@:Go Structure@/methods@+
+func (e *Evaluator) unchanged(deps map[string]dependency) bool {
+	for _, dep := range deps {
+		var sum [sha256.Size]byte
+		if dep.isView {
+			sum = e.viewSum(dep.view)
+		} else {
+			sum = e.chunkSum(dep.ref)
+		}
+		if sum != dep.sum {
+			return false
+		}
+	}
+	return true
+}
+
+@~ Go@/methods@/litar.Evaluator.chunkSum @~ Go@/methods@/litar.Evaluator.unchanged @~ Go@/methods@/litar.Evaluator.viewSum @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.dependency @
+
+A block's Raw is the expression as written, so any edit of a matching block,
+or a block added or removed, changes the digest of the chunk.
+@<eval@:litar@:Go Structure@/methods@+
+func (e *Evaluator) chunkSum(ref ChunkRef) [sha256.Size]byte {
+	h := sha256.New()
+	for _, b := range e.chain {
+		if matchRef(b.Ref, ref) {
+			fmt.Fprintf(h, "%d:%s", len(b.Raw), b.Raw)
+		}
+	}
+	var sum [sha256.Size]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
+}
+
+@~ Go@/functions@/litar.matchRef @~ Go@/methods@/litar.Evaluator.chunkSum @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @
+
+The digest of a view covers what the filter sees of each file besides its bytes,
+and the error of a view that cannot be built.
+@<eval@:litar@:Go Structure@/methods@+
+func (e *Evaluator) viewSum(view []ViewOp) [sha256.Size]byte {
+	h := sha256.New()
+	files, err := e.cat.apply(view)
+	if err != nil {
+		fmt.Fprintf(h, "error %s\n", err)
+	}
+	for _, f := range files {
+		fmt.Fprintf(h, "%q %t %t %t %q\n", f.path, f.archive, f.executable, f.dir, f.origin)
+	}
+	var sum [sha256.Size]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
+}
+
+@~ Go@/methods@/litar.Evaluator.viewSum @~ Go@/methods@/litar.catalog.apply @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.ViewOp @
 
 The cycle is reported from the first visit of the chunk to the reference that repeats it.
-@<fail if 'key' is already on the visit stack@=
+@<Litar@/fail if 'key' is already on the visit stack@=
 for i, fr := range e.stack {
 	if fr.key == key {
 		chain := make([]ChunkRef, 0, len(e.stack)-i+1)
@@ -2473,7 +2669,7 @@ for i, fr := range e.stack {
 
 A set block replaces what came before. An extension whose content ended with a line break
 is joined with a line feed, unless nothing came before; otherwise it is concatenated.
-@<add the expansion of each block matching 'ref' to 'acc'@=
+@<Litar@/add the expansion of each block matching 'ref' to 'acc'@=
 for _, b := range e.chain {
 	if !matchRef(b.Ref, ref) {
 		continue
@@ -2497,7 +2693,7 @@ for _, b := range e.chain {
 @<eval@:litar@:Go Structure@/methods@+
 func (e *Evaluator) expandBlock(b Block, applied ChunkRef) (string, error) {
 var sb strings.Builder
-@<write each part of 'b' to 'sb', expanding its references@>
+@<Litar@/write each part of 'b' to 'sb', expanding its references@>
 text := sb.String()
 if len(b.Filters) > 0 {
 	var err error
@@ -2514,7 +2710,7 @@ return text, nil
 An inner reference takes the labels of the reference being expanded when it has none,
 and its relative module is resolved against the block's header.
 A missing inner chunk expands to nothing.
-@<write each part of 'b' to 'sb', expanding its references@=
+@<Litar@/write each part of 'b' to 'sb', expanding its references@=
 for _, part := range b.Parts {
 	if part.Ref == nil {
 		sb.WriteString(part.Text)
@@ -2575,6 +2771,7 @@ func (e *Evaluator) runFiltersLocked(text string, filters []Filter, attached Chu
 		if err != nil {
 			return "", err
 		}
+		e.recordView(f.View)
 		e.mu.Unlock()
 		out, runErr := executeFilter(e, script, text, resolved, f.View)
 		e.mu.Lock()
@@ -2589,7 +2786,7 @@ func (e *Evaluator) runFiltersLocked(text string, filters []Filter, attached Chu
 	return text, nil
 }
 
-@~ Go@/functions@/litar.executeFilter @~ Go@/functions@/litar.resolveFilter @~ Go@/methods@/litar.Evaluator.expandLocked @~ Go@/methods@/litar.Evaluator.runFiltersLocked @~ Go@/methods@/litar.Evaluator.takeFuseErr @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.Filter @
+@~ Go@/functions@/litar.executeFilter @~ Go@/functions@/litar.resolveFilter @~ Go@/methods@/litar.Evaluator.expandLocked @~ Go@/methods@/litar.Evaluator.recordView @~ Go@/methods@/litar.Evaluator.runFiltersLocked @~ Go@/methods@/litar.Evaluator.takeFuseErr @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.Filter @
 
 @<eval@:litar@:Go Structure@/methods@+
 // readChunk evaluates a root-module file chunk on the current visit stack.
@@ -2663,14 +2860,14 @@ ref, err := ParseChunkRef("s2@@:s1@@:c")
 if err != nil {
 	t.Fatal(err)
 }
-@<check that the literal of 'ref' lists only the blocks whose labels are its suffixes@>
-@<check the evaluation and the effective blocks of 'ref'@>
+@<Litar@/check that the literal of 'ref' lists only the blocks whose labels are its suffixes@>
+@<Litar@/check the evaluation and the effective blocks of 'ref'@>
 }
 
 @~ Go@/functions@/litar.ParseChunkRef @~ Go@/functions@/litar.mustArch @
 
 The labels s2 and c are not a suffix of s2, s1, and c, so that block must be left out.
-@<check that the literal of 'ref' lists only the blocks whose labels are its suffixes@=
+@<Litar@/check that the literal of 'ref' lists only the blocks whose labels are its suffixes@=
 lit, err := Literal(blocks, ref)
 if err != nil {
 	t.Fatal(err)
@@ -2683,7 +2880,7 @@ if !strings.Contains(lit, "@@<c@@+") || !strings.Contains(lit, "@@<s1@@:c@@+") |
 }
 @~ Go@/functions@/litar.Literal @
 
-@<check the evaluation and the effective blocks of 'ref'@=
+@<Litar@/check the evaluation and the effective blocks of 'ref'@=
 mustEval(t, src, "s2@@:s1@@:c", "ABC")
 mustEval(t, ""+
 	"@@<c@@=A@@\n"+
@@ -2733,16 +2930,16 @@ func TestExtendJoin(t *testing.T) {
 @<eval test@:litar@:Go Structure@/functions@+
 func TestLabelInheritanceAndDot(t *testing.T) {
 var src string
-@<check that an inner reference without labels inherits the outer labels@>
+@<Litar@/check that an inner reference without labels inherits the outer labels@>
 
-@<check that relative module paths resolve against the header module@>
+@<Litar@/check that relative module paths resolve against the header module@>
 
-@<check that a path above the root module stays in it@>
+@<Litar@/check that a path above the root module stays in it@>
 }
 
 @~ Go@/functions@/litar.mustEval @
 
-@<check that an inner reference without labels inherits the outer labels@=
+@<Litar@/check that an inner reference without labels inherits the outer labels@=
 src = "" +
 	"@@<base@@+\n" +
 	"@@<inner@@>\n" +
@@ -2760,7 +2957,7 @@ mustEval(t, src, "spec@@:base", "special\n!")
 mustEval(t, src, "base", "plain")
 @~ Go@/functions@/litar.mustEval @
 
-@<check that relative module paths resolve against the header module@=
+@<Litar@/check that relative module paths resolve against the header module@=
 src = "" +
 	"@@<mod@@/chunk@@=@@<.@@/other@@>@@<..@@/rootchunk@@>@@<sub@@/x@@>@@\n" +
 	"@@<mod@@/other@@=O@@\n" +
@@ -2771,7 +2968,7 @@ mustEval(t, src, "mod@@/chunk", "ORT")
 @~ Go@/functions@/litar.mustEval @
 
 A path cannot go above the root module, so the reference is a cycle.
-@<check that a path above the root module stays in it@=
+@<Litar@/check that a path above the root module stays in it@=
 _, err := NewEvaluator(mustArch(t, ""+
 	"@@<top@@=\n"+
 	"@@<..@@/top@@>\n"+
@@ -2799,14 +2996,14 @@ var (
 	ev  *Evaluator
 	err error
 )
-@<check that the cycle between a and b is reported@>
-@<check that a missing chunk is empty inside a block and an error at the top@>
+@<Litar@/check that the cycle between a and b is reported@>
+@<Litar@/check that a missing chunk is empty inside a block and an error at the top@>
 }
 
 @~ Go@/types@/litar.Evaluator @
 
 The later set block of a does not break the cycle, because the cycle goes through the first.
-@<check that the cycle between a and b is reported@=
+@<Litar@/check that the cycle between a and b is reported@=
 src := "" +
 	"@@<a@@=\n" +
 	"@@<b@@>\n" +
@@ -2824,7 +3021,7 @@ if err == nil || !strings.Contains(err.Error(), "circular reference a -> b -> a"
 }
 @~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustArch @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @
 
-@<check that a missing chunk is empty inside a block and an error at the top@=
+@<Litar@/check that a missing chunk is empty inside a block and an error at the top@=
 mustEval(t, "@@<msg@@=@@<missing@@>@@", "msg", "")
 ev = NewEvaluator(mustArch(t, "@@<msg@@=x@@"), nil, nil)
 _, err = ev.Eval(mustRef(t, "nope"), nil)
@@ -2850,14 +3047,14 @@ src := "" +
 	"@@\n"
 blocks := mustArch(t, src)
 meta := newMeta()
-@<check the modules and chunks listed for 'blocks' with 'meta'@>
-@<check the domains and items listed for 'blocks' with 'meta'@>
-@<check the blocks of 'blocks' that refer to an item@>
+@<Litar@/check the modules and chunks listed for 'blocks' with 'meta'@>
+@<Litar@/check the domains and items listed for 'blocks' with 'meta'@>
+@<Litar@/check the blocks of 'blocks' that refer to an item@>
 }
 
 @~ Go@/functions@/litar.mustArch @~ Go@/functions@/litar.newMeta @
 
-@<check the modules and chunks listed for 'blocks' with 'meta'@=
+@<Litar@/check the modules and chunks listed for 'blocks' with 'meta'@=
 if got := Modules(blocks, nil, meta); got != "a\na@@/b\n" {
 	t.Fatalf("modules / %q", got)
 }
@@ -2877,7 +3074,7 @@ if got := Chunks(blocks, ab, meta); got != "c\n" {
 }
 @~ Go@/functions@/litar.Chunks @~ Go@/functions@/litar.Modules @~ Go@/functions@/litar.ParseModulePath @~ Go@/functions@/litar.mustMod @
 
-@<check the domains and items listed for 'blocks' with 'meta'@=
+@<Litar@/check the domains and items listed for 'blocks' with 'meta'@=
 if got := Subdomains(blocks, nil, meta); got != "C\nonly\n" {
 	t.Fatalf("sub / %q", got)
 }
@@ -2894,7 +3091,7 @@ if got := Items(blocks, cv, meta); got != "C@@/variables@@/times\n" {
 }
 @~ Go@/functions@/litar.Items @~ Go@/functions@/litar.ParseModulePath @~ Go@/functions@/litar.Subdomains @
 
-@<check the blocks of 'blocks' that refer to an item@=
+@<Litar@/check the blocks of 'blocks' that refer to an item@=
 if got := Refer(blocks, mustItem(t, "C@@/functions@@/main")); !strings.Contains(got, "@@<z@@=") {
 	t.Fatalf("refer %q", got)
 }
@@ -2942,14 +3139,14 @@ src := "" +
 	"content\n" +
 	"@@|label 2@@:chunk 2@@\n"
 blocks := mustArch(t, src)
-@<check the blocks of 'blocks' that depend on chunk 1 and chunk 2@>
+@<Litar@/check the blocks of 'blocks' that depend on chunk 1 and chunk 2@>
 }
 
 @~ Go@/functions@/litar.mustArch @
 
 chunk 2 includes chunk 1, and chunk 3 uses chunk 2 as a filter; a block does not depend on its own chunk,
 and the labels of the queried reference do not matter.
-@<check the blocks of 'blocks' that depend on chunk 1 and chunk 2@=
+@<Litar@/check the blocks of 'blocks' that depend on chunk 1 and chunk 2@=
 d1 := Depend(blocks, mustRef(t, "chunk 1"))
 if !strings.Contains(d1, "@@<chunk 2@@=") || strings.Contains(d1, "@@<chunk 3@@=") || strings.Contains(d1, "@@<chunk 1@@=") {
 	t.Fatalf("depend chunk 1\n%s", d1)
@@ -3045,7 +3242,9 @@ type catFile struct {
 	executable bool
 	archive    bool
 	mapping    bool
-	origin     string
+	// dir is set for a mapping of a directory.
+	dir    bool
+	origin string
 }
 
 @~ Go@/types@/litar.catFile @
@@ -3074,15 +3273,15 @@ touch := func(path string) *catFile {
 	}
 	return f
 }
-@<add the archive files of 'chain' to 'c'@>
-@<add the 'mappings' to 'c', noting paths that are also archive files@>
+@<Litar@/add the archive files of 'chain' to 'c'@>
+@<Litar@/add the 'mappings' to 'c', noting paths that are also archive files@>
 return c
 }
 
 @~ Go@/functions@/litar.buildCatalog @~ Go@/types@/litar.Block @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.catFile @~ Go@/types@/litar.catalog @
 
 A later file block with the same path replaces the executable bit and adds its sets.
-@<add the archive files of 'chain' to 'c'@=
+@<Litar@/add the archive files of 'chain' to 'c'@=
 for _, b := range chain {
 	if !b.IsFile {
 		continue
@@ -3098,13 +3297,16 @@ for _, b := range chain {
 
 A path that is both an archive file and a mapping is recorded as a conflict,
 reported only when a view asks for the file.
-@<add the 'mappings' to 'c', noting paths that are also archive files@=
+A mapping whose path ends with a slash maps the directory origin, not a file.
+@<Litar@/add the 'mappings' to 'c', noting paths that are also archive files@=
 for _, m := range mappings {
-	f := touch(m.Path)
+	path, dir := strings.CutSuffix(m.Path, "/")
+	f := touch(path)
 	if f.archive {
-		c.conflicts[m.Path] = true
+		c.conflicts[path] = true
 	}
 	f.mapping = true
+	f.dir = dir
 	f.origin = m.Origin
 	for _, set := range m.FileSet {
 		f.sets[set] = struct{}{}
@@ -3118,6 +3320,7 @@ type viewFile struct {
 	executable bool
 	origin     string
 	archive    bool
+	dir        bool
 	body       []byte
 	// ino is assigned once for the mount. A fresh number on each
 	// lookup makes tools treat the file as replaced mid-invocation.
@@ -3146,20 +3349,20 @@ func (c *catalog) apply(ops []ViewOp) ([]viewFile, error) {
 in := map[string]bool{}
 var order []string
 add := func(path string) error {
-	@<add 'path' to 'in' and 'order' if it names one defined file@>
+	@<Litar@/add 'path' to 'in' and 'order' if it names one defined file@>
 }
 for _, op := range ops {
 	switch op.Kind {
-	@<cases of 'op' in 'catalog.apply'@>
+	@<Litar@/cases of 'op' in 'catalog.apply'@>
 	}
 }
-@<return the files of 'order' still in 'in' as view files@>
+@<Litar@/return the files of 'order' still in 'in' as view files@>
 }
 
 @~ Go@/methods@/litar.catalog.apply @~ Go@/types@/litar.ViewOp @~ Go@/types@/litar.catalog @~ Go@/types@/litar.viewFile @
 
 A file must be defined either by an archive or by a mapping, not both.
-@<add 'path' to 'in' and 'order' if it names one defined file@=
+@<Litar@/add 'path' to 'in' and 'order' if it names one defined file@=
 if err := validFilePath(path); err != nil {
 	return err
 }
@@ -3178,7 +3381,7 @@ return nil
 @~ Go@/functions@/litar.validFilePath @
 
 A set adds its files in catalog order, so the first block or mapping of a file decides its place.
-@<cases of 'op' in 'catalog.apply'@=
+@<Litar@/cases of 'op' in 'catalog.apply'@=
 case AddSet:
 	name := string(op.Name)
 	for _, path := range c.order {
@@ -3193,7 +3396,7 @@ case AddSet:
 @~ Go@/constants@/litar.AddSet @
 
 Removing a set does not check its files; a set that matches nothing removes nothing.
-@<cases of 'op' in 'catalog.apply'@+
+@<Litar@/cases of 'op' in 'catalog.apply'@+
 case SubSet:
 	name := string(op.Name)
 	for _, path := range c.order {
@@ -3205,7 +3408,7 @@ case SubSet:
 @~ Go@/constants@/litar.SubSet @
 
 A removed file only needs a valid path; it need not be defined or in the view.
-@<cases of 'op' in 'catalog.apply'@+
+@<Litar@/cases of 'op' in 'catalog.apply'@+
 case AddFile:
 	if err := add(string(op.Name)); err != nil {
 		return nil, err
@@ -3220,7 +3423,7 @@ case DelFile:
 
 A file removed and added again appears once, at its first place in order.
 Only an archive file can be executable.
-@<return the files of 'order' still in 'in' as view files@=
+@<Litar@/return the files of 'order' still in 'in' as view files@=
 var out []viewFile
 seen := map[string]bool{}
 for _, path := range order {
@@ -3234,6 +3437,7 @@ for _, path := range order {
 		executable: f.executable && f.archive,
 		origin:     f.origin,
 		archive:    f.archive,
+		dir:        f.dir && !f.archive,
 	})
 }
 return out, nil
@@ -3255,7 +3459,7 @@ interp, i = shebangWord(script, i)
 if interp == "" {
 	return "", "", false, false
 }
-@<return 'interp' alone unless a word follows it at 'i'@>
+@<Litar@/return 'interp' alone unless a word follows it at 'i'@>
 end := strings.IndexByte(script[i:], '\n')
 if end < 0 {
 	end = len(script) - i
@@ -3267,7 +3471,7 @@ return interp, arg, true, true
 @~ Go@/functions@/litar.parseShebang @~ Go@/functions@/litar.shebangWord @
 
 Blanks after the interpreter do not make an argument; only a word before the line end does.
-@<return 'interp' alone unless a word follows it at 'i'@=
+@<Litar@/return 'interp' alone unless a word follows it at 'i'@=
 if i < len(script) && script[i] == '\r' {
 	i++
 }
@@ -3319,7 +3523,7 @@ if err := ev.tangle(files); err != nil {
 	return "", err
 }
 var scriptPath string
-@<write 'script' to the temporary file 'scriptPath'@>
+@<Litar@/write 'script' to the temporary file 'scriptPath'@>
 
 mnt, err := mountView(files)
 if err != nil {
@@ -3331,14 +3535,14 @@ args := []string{interp, scriptPath}
 if hasArg {
 	args = []string{interp, arg, scriptPath}
 }
-@<run 'args' in the view mounted at 'mnt' with 'input' on stdin@>
+@<Litar@/run 'args' in the view mounted at 'mnt' with 'input' on stdin@>
 }
 
 @~ Go@/functions@/litar.executeFilter @~ Go@/functions@/litar.mountView @~ Go@/functions@/litar.parseShebang @~ Go@/methods@/litar.ChunkRef.String @~ Go@/methods@/litar.Evaluator.tangle @~ Go@/methods@/litar.catalog.apply @~ Go@/methods@/litar.mount.close @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.ViewOp @
 
 The script is passed to the interpreter as a file, so its stdin stays free for the input.
 A failure to write it is reported as a filter that exited with status 1.
-@<write 'script' to the temporary file 'scriptPath'@=
+@<Litar@/write 'script' to the temporary file 'scriptPath'@=
 scriptFile, err := os.CreateTemp("", "litar-script-*")
 if err != nil {
 	return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
@@ -3353,7 +3557,7 @@ scriptFile.Close()
 defer os.Remove(scriptPath)
 @~ Go@/methods@/litar.ChunkRef.String @
 
-@<run 'args' in the view mounted at 'mnt' with 'input' on stdin@=
+@<Litar@/run 'args' in the view mounted at 'mnt' with 'input' on stdin@=
 // The child must not enter the mount before exec. Until exec it shares
 // memory with this process, whose FUSE server answers the chdir;
 // a stop-the-world in between waits for the forking thread forever.
@@ -3367,11 +3571,11 @@ stdout, err := cmd.StdoutPipe()
 if err != nil {
 	return "", fmt.Errorf("filter '%s' exited with status 1", ref.String())
 }
-@<start 'cmd', with status 127 if the interpreter is missing@>
-@<send 'input' to 'stdin' and return what 'cmd' writes to 'stdout'@>
+@<.@/start 'cmd', with status 127 if the interpreter is missing@>
+@<.@/send 'input' to 'stdin' and return what 'cmd' writes to 'stdout'@>
 @~ Go@/methods@/litar.ChunkRef.String @
 
-@<start 'cmd', with status 127 if the interpreter is missing@=
+@<Litar@/start 'cmd', with status 127 if the interpreter is missing@=
 if err := cmd.Start(); err != nil {
 	code := 1
 	if os.IsNotExist(err) {
@@ -3382,7 +3586,7 @@ if err := cmd.Start(); err != nil {
 @~ Go@/methods@/litar.ChunkRef.String @
 
 The output is read concurrently, so a filter that writes before reading all its input does not block.
-@<send 'input' to 'stdin' and return what 'cmd' writes to 'stdout'@=
+@<Litar@/send 'input' to 'stdin' and return what 'cmd' writes to 'stdout'@=
 var out bytes.Buffer
 copyDone := make(chan struct{})
 go func() {
@@ -3423,16 +3627,23 @@ func exitStatus(err error) int {
 @<filter@:litar@:Go Structure@/methods@+
 // tangle writes each view file's bytes before the filter process starts.
 // An archive file is the root-module chunk named by its path.
-// A mapped file is the contents of origin.
+// A mapped file is the contents of origin. A mapped directory is created
+// when it is missing, so a build can write into a fresh tree.
 func (e *Evaluator) tangle(files []viewFile) error {
 	for i := range files {
 		var (
 			data []byte
 			err  error
 		)
-		if files[i].archive {
+		switch {
+		case files[i].archive:
 			data, err = e.readChunk(Name(files[i].path))
-		} else {
+		case files[i].dir:
+			if err = os.MkdirAll(files[i].origin, 0o755); err != nil {
+				err = fmt.Errorf("could not create '%s'", files[i].origin)
+				e.noteErr(err)
+			}
+		default:
 			data, err = os.ReadFile(files[i].origin)
 			if err != nil {
 				err = fmt.Errorf("could not read '%s'", files[i].origin)
@@ -3468,20 +3679,20 @@ if _, err := os.Stat("/bin/sh"); err != nil {
 	t.Skip(err)
 }
 src := "" +
-	@<archive text of the filters upper, bad, die, and copy, with msg through upper@>
+	@<Litar@/archive text of the filters upper, bad, die, and copy, with msg through upper@>
 blocks := mustArch(t, src)
 ev := NewEvaluator(blocks, nil, nil)
 got, err := ev.Eval(mustRef(t, "msg"), nil)
 if err != nil || got != "HELLO" {
 	t.Fatalf("%v %q", err, got)
 }
-@<check pipelines through the filters bad, die, and copy of 'src'@>
+@<Litar@/check pipelines through the filters bad, die, and copy of 'src'@>
 }
 
 @~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustArch @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @
 
 bad has no shebang, and die exits with status 3.
-@<archive text of the filters upper, bad, die, and copy, with msg through upper@=
+@<Litar@/archive text of the filters upper, bad, die, and copy, with msg through upper@=
 "@@<upper@@=\n" +
 	"#!/bin/sh\n" +
 	"tr '[:lower:]' '[:upper:]'\n" +
@@ -3502,7 +3713,7 @@ bad has no shebang, and die exits with status 3.
 	"@@\n"
 @
 
-@<check pipelines through the filters bad, die, and copy of 'src'@=
+@<Litar@/check pipelines through the filters bad, die, and copy of 'src'@=
 // A chunk body is not a filter until a pipeline names it.
 src2 := src + "@@<use@@=\n" +
 	"hi\n" +
@@ -3515,11 +3726,11 @@ src2 := src + "@@<use@@=\n" +
 	"@@|copy@@\n"
 blocks = mustArch(t, src2)
 ev = NewEvaluator(blocks, nil, nil)
-@<check that use fails without a shebang and use2 with status 3@>
-@<check that use3 copies its input and missing is not defined@>
+@<.@/check that use fails without a shebang and use2 with status 3@>
+@<.@/check that use3 copies its input and missing is not defined@>
 @~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustArch @
 
-@<check that use fails without a shebang and use2 with status 3@=
+@<Litar@/check that use fails without a shebang and use2 with status 3@=
 _, err = ev.Eval(mustRef(t, "use"), nil)
 if err == nil || !strings.Contains(err.Error(), "filter 'bad' has no shebang") {
 	t.Fatal(err)
@@ -3530,7 +3741,7 @@ if err == nil || !strings.Contains(err.Error(), "filter 'die' exited with status
 }
 @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @
 
-@<check that use3 copies its input and missing is not defined@=
+@<Litar@/check that use3 copies its input and missing is not defined@=
 got, err = ev.Eval(mustRef(t, "use3"), nil)
 if err != nil || got != "hi" {
 	t.Fatalf("copy %v %q", err, got)
@@ -3547,7 +3758,7 @@ if _, err := os.Stat("/dev/fuse"); err != nil {
 	t.Skip("no /dev/fuse")
 }
 src := "" +
-	@<blocks of the archive text in TestFUSEView@>
+	@<Litar@/blocks of the archive text in TestFUSEView@>
 	""
 blocks := mustArch(t, src)
 ev := NewEvaluator(blocks, nil, nil)
@@ -3555,13 +3766,13 @@ var (
 	got string
 	err error
 )
-@<checks of the filters in TestFUSEView@>
+@<Litar@/checks of the filters in TestFUSEView@>
 }
 
 @~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustArch @
 
 The files of the set docs; show reads one of them through the whole set.
-@<blocks of the archive text in TestFUSEView@=
+@<Litar@/blocks of the archive text in TestFUSEView@=
 "@@[hello.txt@@`docs@@=\n" +
 	"hello world\n" +
 	"@@\n" +
@@ -3576,7 +3787,7 @@ The files of the set docs; show reads one of them through the whole set.
 	"@@|show@@+docs@@\n" +
 @
 
-@<blocks of the archive text in TestFUSEView@+
+@<Litar@/blocks of the archive text in TestFUSEView@+
 "@@<size@@=\n" +
 	"#!/bin/sh\n" +
 	"stat -c %s hello.txt\n" +
@@ -3592,7 +3803,7 @@ The files of the set docs; show reads one of them through the whole set.
 @
 
 make writes a file the view does not hold; ro writes to a file the view holds.
-@<blocks of the archive text in TestFUSEView@+
+@<Litar@/blocks of the archive text in TestFUSEView@+
 "@@<make@@=\n" +
 	"#!/bin/sh\n" +
 	"printf overlay > created.txt\n" +
@@ -3608,7 +3819,7 @@ make writes a file the view does not hold; ro writes to a file the view holds.
 	"@@|ro@@,hello.txt@@\n" +
 @
 
-@<checks of the filters in TestFUSEView@=
+@<Litar@/checks of the filters in TestFUSEView@=
 got, err = ev.Eval(mustRef(t, "msg"), nil)
 if err != nil || got != "hello world" {
 	t.Fatalf("view %v %q", err, got)
@@ -3624,7 +3835,7 @@ if err != nil || got != "yes\n" {
 @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @
 
 New files go to an overlay, and the files of the view cannot be written.
-@<checks of the filters in TestFUSEView@+
+@<Litar@/checks of the filters in TestFUSEView@+
 got, err = ev.Eval(mustRef(t, "made"), nil)
 if err != nil || got != "overlay" {
 	t.Fatalf("overlay %v %q", err, got)
@@ -3635,7 +3846,7 @@ if err == nil || !strings.Contains(err.Error(), "exited with status") {
 }
 @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @
 
-@<checks of the filters in TestFUSEView@+
+@<Litar@/checks of the filters in TestFUSEView@+
 ref, filters := mustPrint(t, "@@|show@@,missing")
 _, err = ev.Eval(ref, filters)
 if err == nil || !strings.Contains(err.Error(), "file 'missing' is not defined") {
@@ -3663,7 +3874,7 @@ src := "" +
 	"@@|leave@@\n"
 blocks := mustArch(t, src)
 ev := NewEvaluator(blocks, nil, nil)
-@<check that 'ev' returns msg before the background process ends@>
+@<Litar@/check that 'ev' returns msg before the background process ends@>
 mounts, err := os.ReadFile("/proc/self/mounts")
 if err == nil && strings.Contains(string(mounts), "fuse.litar") {
 	t.Fatalf("a filter view is still mounted:\n%s", mounts)
@@ -3673,7 +3884,7 @@ if err == nil && strings.Contains(string(mounts), "fuse.litar") {
 @~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustArch @
 
 The background process sleeps 3 seconds; waiting at most 2 shows that evaluation does not wait for it.
-@<check that 'ev' returns msg before the background process ends@=
+@<Litar@/check that 'ev' returns msg before the background process ends@=
 type result struct {
 	text string
 	err  error
@@ -3706,7 +3917,7 @@ src := "" +
 	"note\n" +
 	"@@\n" +
 	"@@<probe@@=\n" +
-	@<lines of the probe script in TestArchiveFileStatStable@>
+	@<Litar@/lines of the probe script in TestArchiveFileStatStable@>
 	"@@\n" +
 	"@@<run@@=\n" +
 	"@@|probe@@,hello.txt@@,doc/note.txt@@\n"
@@ -3716,23 +3927,23 @@ got, err := ev.Eval(mustRef(t, "run"), nil)
 if err != nil {
 	t.Fatalf("%v\n%s\n%s", err, got, errb.String())
 }
-@<check the stats of hello.txt and doc/note.txt printed in 'got'@>
+@<Litar@/check the stats of hello.txt and doc/note.txt printed in 'got'@>
 }
 
 @~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustArch @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @
 
 The probe prints the stats of both files, after checking that reading and copying
 change neither them nor the directory.
-@<lines of the probe script in TestArchiveFileStatStable@=
+@<Litar@/lines of the probe script in TestArchiveFileStatStable@=
 "#!/bin/sh\n" +
 	"fields='%i %s %f %h %X %Y %Z'\n" +
-	@<probe lines that stat the files around reads and a copy@>
-	@<probe lines that fail if a stat changed or hello.txt can be modified@>
+	@<.@/probe lines that stat the files around reads and a copy@>
+	@<.@/probe lines that fail if a stat changed or hello.txt can be modified@>
 	"echo \"$s1\"\n" +
 	"echo \"$n1\"\n" +
 @
 
-@<probe lines that stat the files around reads and a copy@=
+@<Litar@/probe lines that stat the files around reads and a copy@=
 "s1=$(stat -c \"$fields\" hello.txt)\n" +
 	"cat hello.txt >/dev/null\n" +
 	"out=$(mktemp)\n" +
@@ -3747,7 +3958,7 @@ change neither them nor the directory.
 @
 
 Both touch and chmod must fail, and the failed attempts must not change the stats either.
-@<probe lines that fail if a stat changed or hello.txt can be modified@=
+@<Litar@/probe lines that fail if a stat changed or hello.txt can be modified@=
 "if [ \"$s1\" != \"$s2\" ] || [ \"$d1\" != \"$d2\" ]; then\n" +
 	"  echo \"changed $s1 $s2 $d1 $d2\"\n" +
 	"  exit 1\n" +
@@ -3764,7 +3975,7 @@ Both touch and chmod must fail, and the failed attempts must not change the stat
 @
 
 Each file has its own inode, one link, the size of its content, and zero times.
-@<check the stats of hello.txt and doc/note.txt printed in 'got'@=
+@<Litar@/check the stats of hello.txt and doc/note.txt printed in 'got'@=
 lines := strings.Split(strings.TrimSpace(got), "\n")
 if len(lines) != 2 {
 	t.Fatalf("%q", got)
@@ -3810,21 +4021,127 @@ dir := t.TempDir()
 origin := filepath.Join(dir, "origin.txt")
 writeFile(t, origin, "mapped\n")
 src := "" +
-	@<archive text with a filter on the mapped data.txt and a file b in a cycle@>
+	@<Litar@/archive text with a filter on the mapped data.txt and a file b in a cycle@>
 blocks := mustArch(t, src)
 ev := NewEvaluator(blocks, []Mapping{{
 	Path:    "data.txt",
 	FileSet: []string{"data"},
 	Origin:  origin,
 }}, nil)
-@<check that top reads 'origin' and loop reports the cycle through b@>
-@<check that data.txt as both an archive file and a mapping fails@>
+@<Litar@/check that top reads 'origin' and loop reports the cycle through b@>
+@<Litar@/check that data.txt as both an archive file and a mapping fails@>
 }
 
 @~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustArch @~ Go@/functions@/litar.writeFile @~ Go@/types@/litar.Mapping @
 
+@<filter test@:litar@:Go Structure@/functions@+
+func TestFileCache(t *testing.T) {
+if _, err := os.Stat("/dev/fuse"); err != nil {
+	t.Skip("no /dev/fuse")
+}
+count := filepath.Join(t.TempDir(), "count")
+src := "" +
+	@<Litar@/archive text of the file cached.txt, whose filter counts its runs in 'count'@>
+blocks := mustArch(t, src)
+@<Litar@/check that evaluators of 'blocks' run the counting filter once@>
+@<Litar@/check that extending part runs the counting filter again for copy.txt and cached.txt@>
+}
+
+@~ Go@/functions@/litar.mustArch @
+
+The filter tally appends a line to count and prints how many lines count has,
+so its output tells how often it ran. copy.txt shows cached.txt to a filter.
+@<Litar@/archive text of the file cached.txt, whose filter counts its runs in 'count'@=
+"@@[cached.txt@@=\n" +
+	"@@<counted@@>\n" +
+	"@@\n" +
+	"@@<counted@@=\n" +
+	"@@<part@@>\n" +
+	"@@|tally@@\n" +
+	"@@<part@@=one@@\n" +
+	"@@<tally@@=\n" +
+	"#!/bin/sh\n" +
+	"echo >> '" + count + "'\n" +
+	"cat; echo; wc -l < '" + count + "' | tr -d ' '\n" +
+	"@@\n" +
+	"@@[copy.txt@@=\n" +
+	"@@<@@|show@@,cached.txt@@>\n" +
+	"@@\n" +
+	"@@<show@@=\n" +
+	"#!/bin/sh\n" +
+	"cat cached.txt\n" +
+	"@@\n"
+@
+
+Each evaluator is new, so the second evaluation of cached.txt and the view of copy.txt
+can only see the first run through the file cache.
+@<Litar@/check that evaluators of 'blocks' run the counting filter once@=
+for _, name := range []string{"cached.txt", "cached.txt", "copy.txt"} {
+	got, err := NewEvaluator(blocks, nil, nil).Eval(mustRef(t, name), nil)
+	if err != nil || got != "one\n1\n" {
+		t.Fatalf("%s %v %q", name, err, got)
+	}
+}
+@~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @
+
+copy.txt does not refer to part; it depends on part through the file cached.txt in its view.
+@<Litar@/check that extending part runs the counting filter again for copy.txt and cached.txt@=
+more := mustArch(t, src+"@@<part@@+ two@@\n")
+for _, name := range []string{"copy.txt", "cached.txt"} {
+	got, err := NewEvaluator(more, nil, nil).Eval(mustRef(t, name), nil)
+	if err != nil || got != "one two\n2\n" {
+		t.Fatalf("%s %v %q", name, err, got)
+	}
+}
+@~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustArch @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @
+
+@<filter test@:litar@:Go Structure@/functions@+
+func TestMappedDirectory(t *testing.T) {
+if _, err := os.Stat("/dev/fuse"); err != nil {
+	t.Skip("no /dev/fuse")
+}
+out := filepath.Join(t.TempDir(), "out")
+src := "" +
+	@<Litar@/archive text of a filter that writes into the mapped directory out@>
+maps := []Mapping{{Path: "out/", FileSet: []string{"build"}, Origin: out}}
+got, err := NewEvaluator(mustArch(t, src), maps, nil).Eval(mustRef(t, "run"), nil)
+if err != nil || got != "made.txt\n" {
+	t.Fatalf("%v %q", err, got)
+}
+data, err := os.ReadFile(filepath.Join(out, "sub", "made.txt"))
+if err != nil || string(data) != "made\n" {
+	t.Fatalf("%v %q", err, data)
+}
+@<Litar@/check that an archive file below out makes the view of shadow invalid@>
+}
+
+@~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustArch @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @~ Go@/types@/litar.Mapping @
+
+The directory out does not exist yet, so the view creates it.
+shadow adds the archive file out/x, which collides with the mapped directory.
+@<Litar@/archive text of a filter that writes into the mapped directory out@=
+"@@<make@@=\n" +
+	"#!/bin/sh\n" +
+	"mkdir out/sub\n" +
+	"echo made > out/sub/made.txt\n" +
+	"ls out/sub\n" +
+	"@@\n" +
+	"@@<run@@=\n" +
+	"@@|make@@+build@@\n" +
+	"@@[out/x@@`extra@@=x@@\n" +
+	"@@<shadow@@=\n" +
+	"@@|make@@+build@@+extra@@\n"
+@
+
+@<Litar@/check that an archive file below out makes the view of shadow invalid@=
+_, err = NewEvaluator(mustArch(t, src), maps, nil).Eval(mustRef(t, "shadow"), nil)
+if err == nil || !strings.Contains(err.Error(), "invalid file path") {
+	t.Fatal(err)
+}
+@~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.mustArch @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @
+
 The file b includes a, which includes b, so tangling b for the view of loop is a cycle.
-@<archive text with a filter on the mapped data.txt and a file b in a cycle@=
+@<Litar@/archive text with a filter on the mapped data.txt and a file b in a cycle@=
 "@@<show@@=\n" +
 	"#!/bin/sh\n" +
 	"cat data.txt\n" +
@@ -3845,7 +4162,7 @@ The file b includes a, which includes b, so tangling b for the view of loop is a
 	"@@|run@@,b@@\n"
 @
 
-@<check that top reads 'origin' and loop reports the cycle through b@=
+@<Litar@/check that top reads 'origin' and loop reports the cycle through b@=
 got, err := ev.Eval(mustRef(t, "top"), nil)
 if err != nil || got != "mapped\n" {
 	t.Fatalf("map %v %q", err, got)
@@ -3856,7 +4173,7 @@ if err == nil || !strings.Contains(err.Error(), "circular reference b -> a -> b"
 }
 @~ Go@/functions@/litar.mustRef @~ Go@/methods@/litar.Evaluator.Eval @
 
-@<check that data.txt as both an archive file and a mapping fails@=
+@<Litar@/check that data.txt as both an archive file and a mapping fails@=
 both := mustArch(t, "@@[data.txt@@=no@@\n")
 ev = NewEvaluator(append(both, blocks...), []Mapping{{
 	Path:   "data.txt",
@@ -3889,6 +4206,9 @@ The FUSE view that shows a filter the files of its view.
 type ventry struct {
 	file *viewFile
 	dir  *vdir
+	// host is the origin of a mapped directory, and ino its inode number.
+	host string
+	ino  uint64
 }
 
 @~ Go@/types@/litar.vdir @~ Go@/types@/litar.ventry @~ Go@/types@/litar.viewFile @
@@ -3916,7 +4236,7 @@ for i := range files {
 	parts := stringsSplit(f.path)
 	dir := root
 	for i, part := range parts {
-		@<add 'part' of the path of 'f' under 'dir'@>
+		@<Litar@/add 'part' of the path of 'f' under 'dir'@>
 	}
 }
 assignInos(root)
@@ -3925,22 +4245,23 @@ return root, nil
 
 @~ Go@/functions@/litar.assignInos @~ Go@/functions@/litar.buildVTree @~ Go@/functions@/litar.newVdir @~ Go@/functions@/litar.stringsSplit @~ Go@/types@/litar.vdir @~ Go@/types@/litar.viewFile @
 
-A file may not share its path with another file or a directory,
-and a path may not pass through a file.
-@<add 'part' of the path of 'f' under 'dir'@=
+A file or a mapped directory may not share its path with anything else,
+and a path may only pass through directories of the view.
+@<Litar@/add 'part' of the path of 'f' under 'dir'@=
 last := i == len(parts)-1
 cur := dir.kids[part]
 if last {
-	if cur != nil && cur.dir != nil {
+	if cur != nil {
 		return nil, errPath(f.path)
 	}
-	if cur != nil && cur.file != nil {
-		return nil, errPath(f.path)
+	if f.dir {
+		dir.kids[part] = &ventry{host: f.origin}
+	} else {
+		dir.kids[part] = &ventry{file: f}
 	}
-	dir.kids[part] = &ventry{file: f}
 	continue
 }
-if cur != nil && cur.file != nil {
+if cur != nil && cur.dir == nil {
 	return nil, errPath(f.path)
 }
 if cur == nil {
@@ -3958,7 +4279,7 @@ func assignInos(root *vdir) {
 next := uint64(2)
 var walk func(*vdir)
 walk = func(d *vdir) {
-	@<number the children of 'd' from 'next' in name order, walking into directories@>
+	@<Litar@/number the children of 'd' from 'next' in name order, walking into directories@>
 }
 walk(root)
 }
@@ -3967,7 +4288,7 @@ walk(root)
 
 Numbers start at 2, after the root's 1, and follow the sorted names,
 so they do not depend on map order.
-@<number the children of 'd' from 'next' in name order, walking into directories@=
+@<Litar@/number the children of 'd' from 'next' in name order, walking into directories@=
 names := make([]string, 0, len(d.kids))
 for name := range d.kids {
 	names = append(names, name)
@@ -3975,14 +4296,18 @@ for name := range d.kids {
 sort.Strings(names)
 for _, name := range names {
 	ch := d.kids[name]
-	if ch.file != nil {
+	switch {
+	case ch.file != nil:
 		ch.file.ino = next
-		next++
-		continue
+	case ch.dir != nil:
+		ch.dir.ino = next
+	default:
+		ch.ino = next
 	}
-	ch.dir.ino = next
 	next++
-	walk(ch.dir)
+	if ch.dir != nil {
+		walk(ch.dir)
+	}
 }
 @
 
@@ -4119,7 +4444,7 @@ var (
 	server *fuse.Server
 	direct bool
 )
-@<mount 'tree' at 'dir' with new files in 'overlay', setting 'server' and 'direct'@>
+@<Litar@/mount 'tree' at 'dir' with new files in 'overlay', setting 'server' and 'direct'@>
 m := &mount{dir: dir, server: server, direct: direct, extra: []string{overlay}}
 liveMu.Lock()
 liveMounts[m] = struct{}{}
@@ -4131,7 +4456,7 @@ return m, nil
 
 The kernel caches neither entries nor attributes, and NullPermissions leaves
 the permission bits as the nodes report them.
-@<mount 'tree' at 'dir' with new files in 'overlay', setting 'server' and 'direct'@=
+@<Litar@/mount 'tree' at 'dir' with new files in 'overlay', setting 'server' and 'direct'@=
 root := &dirNode{rel: "", spec: tree, overlay: overlay}
 zero := time.Duration(0)
 opts := &fs.Options{
@@ -4141,12 +4466,12 @@ opts := &fs.Options{
 }
 opts.FsName = "litar"
 opts.Name = "litar"
-@<mount 'root' at 'dir' with 'opts', directly if allowed, else through fusermount@>
+@<.@/mount 'root' at 'dir' with 'opts', directly if allowed, else through fusermount@>
 @~ Go@/types@/litar.dirNode @
 
 A direct mount needs privileges. Without them the mount is tried again through
 fusermount, in a fresh directory and with a fresh root node.
-@<mount 'root' at 'dir' with 'opts', directly if allowed, else through fusermount@=
+@<Litar@/mount 'root' at 'dir' with 'opts', directly if allowed, else through fusermount@=
 opts.DirectMount = true
 server, err = fs.Mount(dir, root, opts)
 direct = err == nil
@@ -4196,6 +4521,35 @@ type dirNode struct {
 }
 
 @~ Go@/types@/litar.dirNode @~ Go@/types@/litar.vdir @
+
+A mapped directory is a loopback of its origin, for reading and writing.
+Its inode number is fixed at mount time, so a later lookup gets back the inode
+of the first one, and the fresh loopback node is dropped.
+@<fuse@:litar@:Go Structure@/methods@+
+func (d *dirNode) lookupHost(ctx context.Context, ch *ventry, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	var st syscall.Stat_t
+	if err := syscall.Stat(ch.host, &st); err != nil {
+		return nil, fs.ToErrno(err)
+	}
+	out.Attr.FromStat(&st)
+	return d.NewInode(ctx, hostNode(ch.host), fs.StableAttr{Mode: syscall.S_IFDIR, Ino: ch.ino}), 0
+}
+
+@~ Go@/functions@/litar.hostNode @~ Go@/methods@/litar.dirNode.lookupHost @~ Go@/types@/litar.dirNode @~ Go@/types@/litar.ventry @
+
+A loopback node of go-fuse resolves its paths from the root node of its data;
+making the node that root lets it sit anywhere below the root of the view.
+The device of the data is left zero, so the inode numbers of host files keep
+their device in the high bits, apart from the small numbers of the view.
+@<fuse@:litar@:Go Structure@/functions@+
+func hostNode(dir string) *fs.LoopbackNode {
+	data := &fs.LoopbackRoot{Path: dir}
+	node := &fs.LoopbackNode{RootData: data}
+	data.RootNode = node
+	return node
+}
+
+@~ Go@/functions@/litar.hostNode @
 
 @<fuse@:litar@:Go Structure@/types@+
 type fileNode struct {
@@ -4302,15 +4656,18 @@ func setDirAttr(d *vdir, out *fuse.Attr) {
 @<fuse@:litar@:Go Structure@/methods@+
 func (d *dirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 if ch := d.specChild(name); ch != nil {
-	@<return the inode of the view entry 'ch'@>
+	if ch.host != "" {
+		return d.lookupHost(ctx, ch, out)
+	}
+	@<Litar@/return the inode of the view entry 'ch'@>
 }
-@<return the inode of the overlay entry 'name'@>
+@<Litar@/return the inode of the overlay entry 'name'@>
 }
 
-@~ Go@/methods@/litar.dirNode.specChild @~ Go@/types@/litar.dirNode @
+@~ Go@/methods@/litar.dirNode.lookupHost @~ Go@/methods@/litar.dirNode.specChild @~ Go@/types@/litar.dirNode @
 
 A view entry keeps the inode number given at mount time.
-@<return the inode of the view entry 'ch'@=
+@<Litar@/return the inode of the view entry 'ch'@=
 if ch.file != nil {
 	setFileAttr(ch.file, &out.Attr)
 	node := &fileNode{file: ch.file}
@@ -4322,7 +4679,7 @@ return d.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFDIR, Ino: ch.dir.in
 @~ Go@/functions@/litar.setDirAttr @~ Go@/functions@/litar.setFileAttr @~ Go@/methods@/litar.dirNode.childRel @~ Go@/types@/litar.dirNode @~ Go@/types@/litar.fileNode @
 
 A name the view does not hold is looked up among the files the filter created.
-@<return the inode of the overlay entry 'name'@=
+@<Litar@/return the inode of the overlay entry 'name'@=
 host := filepath.Join(d.hostDir(), name)
 st, err := os.Lstat(host)
 if err != nil {
@@ -4342,14 +4699,14 @@ return d.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFREG}), 0
 @<fuse@:litar@:Go Structure@/methods@+
 func (d *dirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 names := map[string]uint32{}
-@<add the view entries of 'd' to 'names'@>
-@<add the overlay entries of 'd' to 'names', unless the view has them@>
-@<return '.', '..', and 'names' sorted as a directory stream@>
+@<Litar@/add the view entries of 'd' to 'names'@>
+@<Litar@/add the overlay entries of 'd' to 'names', unless the view has them@>
+@<Litar@/return '.', '..', and 'names' sorted as a directory stream@>
 }
 
 @~ Go@/types@/litar.dirNode @
 
-@<add the view entries of 'd' to 'names'@=
+@<Litar@/add the view entries of 'd' to 'names'@=
 if d.spec != nil {
 	for name, ch := range d.spec.kids {
 		if ch.file != nil {
@@ -4362,7 +4719,7 @@ if d.spec != nil {
 @
 
 A missing overlay directory means the filter created nothing here.
-@<add the overlay entries of 'd' to 'names', unless the view has them@=
+@<Litar@/add the overlay entries of 'd' to 'names', unless the view has them@=
 entries, err := os.ReadDir(d.hostDir())
 if err == nil {
 	for _, ent := range entries {
@@ -4378,7 +4735,7 @@ if err == nil {
 }
 @~ Go@/methods@/litar.dirNode.hostDir @
 
-@<return '.', '..', and 'names' sorted as a directory stream@=
+@<Litar@/return '.', '..', and 'names' sorted as a directory stream@=
 list := []fuse.DirEntry{
 	{Name: ".", Mode: syscall.S_IFDIR},
 	{Name: "..", Mode: syscall.S_IFDIR},
@@ -4424,7 +4781,7 @@ if d.specChild(name) != nil {
 }
 host := filepath.Join(d.hostDir(), name)
 var fh *os.File
-@<open the new overlay file 'host' as 'fh'@>
+@<Litar@/open the new overlay file 'host' as 'fh'@>
 out.Mode = syscall.S_IFREG | 0o644
 node := &overlayNode{host: host}
 ino := d.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFREG})
@@ -4435,7 +4792,7 @@ return ino, fs.NewLoopbackFileFromOS(fh), 0, 0
 
 The overlay directory is created on the first file in it.
 The requested mode is ignored; every new file is 0644.
-@<open the new overlay file 'host' as 'fh'@=
+@<Litar@/open the new overlay file 'host' as 'fh'@=
 if err := os.MkdirAll(d.hostDir(), 0o755); err != nil {
 	return nil, nil, 0, syscall.EIO
 }
@@ -4781,16 +5138,16 @@ func moduleSeen(seen []ModulePath, m ModulePath) bool {
 // A reserved namespace is omitted. A description follows `Name:`, aligned with tabs.
 func Modules(blocks []Block, parent ModulePath, meta metaInfo) string {
 var seen []ModulePath
-@<collect in 'seen' each module of 'blocks' and its prefixes, in first order@>
+@<Litar@/collect in 'seen' each module of 'blocks' and its prefixes, in first order@>
 var rows []namedLine
-@<add to 'rows' the modules of 'seen' strictly under 'parent'@>
+@<Litar@/add to 'rows' the modules of 'seen' strictly under 'parent'@>
 return formatNamed(rows)
 }
 
 @~ Go@/functions@/litar.Modules @~ Go@/functions@/litar.formatNamed @~ Go@/types@/litar.Block @~ Go@/types@/litar.ModulePath @~ Go@/types@/litar.metaInfo @~ Go@/types@/litar.namedLine @
 
 A module with no block of its own still appears when a submodule has one.
-@<collect in 'seen' each module of 'blocks' and its prefixes, in first order@=
+@<Litar@/collect in 'seen' each module of 'blocks' and its prefixes, in first order@=
 for _, b := range blocks {
 	mod := b.Ref.Module
 	for i := 1; i <= len(mod); i++ {
@@ -4803,7 +5160,7 @@ for _, b := range blocks {
 }
 @~ Go@/functions@/litar.copyModule @~ Go@/functions@/litar.moduleSeen @
 
-@<add to 'rows' the modules of 'seen' strictly under 'parent'@=
+@<Litar@/add to 'rows' the modules of 'seen' strictly under 'parent'@=
 for _, m := range seen {
 	if _, reserved := reservedNamespace(m); reserved {
 		continue
@@ -4857,16 +5214,16 @@ type namedLine struct {
 func formatNamed(rows []namedLine) string {
 const tabWidth = 8
 col := 0
-@<set 'col' to the tab stop past the longest 'Name:' with a description@>
+@<Litar@/set 'col' to the tab stop past the longest 'Name:' with a description@>
 lines := make([]string, len(rows))
-@<write each row to 'lines', its description padded to 'col'@>
+@<Litar@/write each row to 'lines', its description padded to 'col'@>
 return joinLines(lines)
 }
 
 @~ Go@/functions@/litar.formatNamed @~ Go@/functions@/litar.joinLines @~ Go@/types@/litar.namedLine @
 
 Widths count runes, so names outside ASCII align as long as each rune takes one column.
-@<set 'col' to the tab stop past the longest 'Name:' with a description@=
+@<Litar@/set 'col' to the tab stop past the longest 'Name:' with a description@=
 width := 0
 for _, row := range rows {
 	if row.desc == "" {
@@ -4881,7 +5238,7 @@ if width > 0 {
 }
 @
 
-@<write each row to 'lines', its description padded to 'col'@=
+@<Litar@/write each row to 'lines', its description padded to 'col'@=
 for i, row := range rows {
 	if row.desc == "" {
 		lines[i] = row.name
@@ -5025,16 +5382,16 @@ a := &agent{
 	worlds: map[string]*World{},
 	uris:   []string{"list://composition"},
 }
-@<create the MCP server of 'a'@>
-@<tools of the MCP server of 'a'@>
-@<add the resources and resource templates of 'a'@>
+@<Litar@/create the MCP server of 'a'@>
+@<Litar@/tools of the MCP server of 'a'@>
+@<Litar@/add the resources and resource templates of 'a'@>
 return a
 }
 
 @~ Go@/functions@/litar.newAgent @~ Go@/types@/litar.World @~ Go@/types@/litar.agent @
 
 Subscriptions need no bookkeeping: refresh notifies every URI it lists, subscribed or not.
-@<create the MCP server of 'a'@=
+@<Litar@/create the MCP server of 'a'@=
 a.server = mcp.NewServer(
 	&mcp.Implementation{Name: "litar", Version: "0.1.0"},
 	&mcp.ServerOptions{
@@ -5049,7 +5406,7 @@ a.server = mcp.NewServer(
 @
 
 A nullable input gets an explicit schema; the others are inferred from their input types.
-@<tools of the MCP server of 'a'@=
+@<Litar@/tools of the MCP server of 'a'@=
 mcp.AddTool(a.server, &mcp.Tool{
 	Name:        "import_composition",
 	Description: "Import an existing composition.",
@@ -5061,7 +5418,7 @@ mcp.AddTool(a.server, &mcp.Tool{
 }, a.createComposition)
 @~ Go@/functions@/litar.nullableStringSchema @~ Go@/methods@/litar.agent.createComposition @~ Go@/methods@/litar.agent.importComposition @~ Go@/types@/litar.createArchiveIn @
 
-@<tools of the MCP server of 'a'@+
+@<Litar@/tools of the MCP server of 'a'@+
 mcp.AddTool(a.server, &mcp.Tool{
 	Name:        "create_node",
 	Description: "Create a new node. The corresponding archive file is created empty and must not already exist. A null base creates the root.",
@@ -5073,7 +5430,7 @@ mcp.AddTool(a.server, &mcp.Tool{
 }, a.deleteNode)
 @~ Go@/functions@/litar.nullableIntegerSchema @~ Go@/methods@/litar.agent.createNode @~ Go@/methods@/litar.agent.deleteNode @~ Go@/types@/litar.createIn @
 
-@<tools of the MCP server of 'a'@+
+@<Litar@/tools of the MCP server of 'a'@+
 mcp.AddTool(a.server, &mcp.Tool{
 	Name:        "delete_chunk",
 	Description: "Delete a chunk. All applied blocks are deleted.",
@@ -5084,7 +5441,7 @@ mcp.AddTool(a.server, &mcp.Tool{
 }, a.deleteFile)
 @~ Go@/methods@/litar.agent.deleteChunk @~ Go@/methods@/litar.agent.deleteFile @
 
-@<tools of the MCP server of 'a'@+
+@<Litar@/tools of the MCP server of 'a'@+
 mcp.AddTool(a.server, &mcp.Tool{
 	Name:        "evaluate_expression",
 	Description: "Evaluate the content of an expression.",
@@ -5096,7 +5453,7 @@ mcp.AddTool(a.server, &mcp.Tool{
 @~ Go@/methods@/litar.agent.applyBlock @~ Go@/methods@/litar.agent.evaluate @
 
 Every resource is read by one handler, which tells them apart by URI.
-@<add the resources and resource templates of 'a'@=
+@<Litar@/add the resources and resource templates of 'a'@=
 for _, r := range fixedResources {
 	a.server.AddResource(&mcp.Resource{
 		URI:         r.uri,
@@ -5385,7 +5742,7 @@ if err != nil {
 	return toolErr(err)
 }
 var base []string
-@<set 'base' to the path of the parent node 'in.Base', if one is given@>
+@<Litar@/set 'base' to the path of the parent node 'in.Base', if one is given@>
 if err := w.CreateNode(in.Name, in.Archive, in.Description, base); err != nil {
 	a.mu.Unlock()
 	return toolErr(err)
@@ -5401,7 +5758,7 @@ return toolText(strconv.Itoa(id))
 
 @~ Go@/functions@/litar.formatNodePath @~ Go@/functions@/litar.nodeID @~ Go@/functions@/litar.toolErr @~ Go@/functions@/litar.toolText @~ Go@/methods@/litar.World.CreateNode @~ Go@/methods@/litar.agent.compositionByID @~ Go@/methods@/litar.agent.createNode @~ Go@/methods@/litar.agent.refresh @~ Go@/types@/litar.agent @~ Go@/types@/litar.createIn @
 
-@<set 'base' to the path of the parent node 'in.Base', if one is given@=
+@<Litar@/set 'base' to the path of the parent node 'in.Base', if one is given@=
 if in.Base != nil {
 	parent, err := nodeByID(w, *in.Base)
 	if err != nil {
@@ -5650,7 +6007,7 @@ for ci, w := range a.compositions() {
 		if len(place.names) == 0 {
 			continue
 		}
-		@<add the URIs of the node with 'id' at 'place' in the composition 'cs'@>
+		@<Litar@/add the URIs of the node with 'id' at 'place' in the composition 'cs'@>
 	}
 }
 return uris
@@ -5660,7 +6017,7 @@ return uris
 
 A node whose blocks cannot be read or described lists only its trees and blocks;
 its chunks, items, and files are skipped.
-@<add the URIs of the node with 'id' at 'place' in the composition 'cs'@=
+@<Litar@/add the URIs of the node with 'id' at 'place' in the composition 'cs'@=
 np := formatNodePath(place.names)
 ns := strconv.Itoa(id)
 add("tree://chunk/" + cs + "/" + ns)
@@ -5675,11 +6032,11 @@ maps, err := w.Mappings(np)
 if err != nil {
 	continue
 }
-@<add the URIs of the chunks in 'chain' and their specializations@>
-@<add the URIs of the items and files in 'chain'@>
+@<.@/add the URIs of the chunks in 'chain' and their specializations@>
+@<.@/add the URIs of the items and files in 'chain'@>
 @~ Go@/functions@/litar.formatNodePath @~ Go@/methods@/litar.World.Chain @~ Go@/methods@/litar.World.Mappings @
 
-@<add the URIs of the chunks in 'chain' and their specializations@=
+@<Litar@/add the URIs of the chunks in 'chain' and their specializations@=
 chunks, err := chunkTree(chain, maps)
 if err != nil {
 	continue
@@ -5691,11 +6048,11 @@ for cid, cp := range indexTree(chunks, false) {
 	}
 	ch := strconv.Itoa(cid)
 	add("tree://specialization/" + cs + "/" + ns + "/" + ch)
-	@<add the block URIs of each specialization of the chunk 'cp' with id 'ch'@>
+	@<.@/add the block URIs of each specialization of the chunk 'cp' with id 'ch'@>
 }
 @~ Go@/functions@/litar.assignIDs @~ Go@/functions@/litar.chunkTree @~ Go@/functions@/litar.indexTree @
 
-@<add the block URIs of each specialization of the chunk 'cp' with id 'ch'@=
+@<Litar@/add the block URIs of each specialization of the chunk 'cp' with id 'ch'@=
 spec, err := specializationTree(chain, maps, chunkRefOf(cp))
 if err != nil {
 	continue
@@ -5709,7 +6066,7 @@ for sid := range indexTree(spec, false) {
 }
 @~ Go@/functions@/litar.assignIDs @~ Go@/functions@/litar.chunkRefOf @~ Go@/functions@/litar.indexTree @~ Go@/functions@/litar.specializationTree @
 
-@<add the URIs of the items and files in 'chain'@=
+@<Litar@/add the URIs of the items and files in 'chain'@=
 items, err := itemTree(chain, maps)
 if err == nil {
 	assignIDs(&items)
@@ -5734,7 +6091,7 @@ if err == nil {
 func (a *agent) render(uri string) (text, mime string, blob []byte, err error) {
 mime = mimeOf(uri)
 switch {
-@<cases of 'uri' in 'agent.render'@>
+@<Litar@/cases of 'uri' in 'agent.render'@>
 default:
 	return "", "", nil, errString("unknown resource")
 }
@@ -5743,7 +6100,7 @@ default:
 @~ Go@/functions@/litar.mimeOf @~ Go@/methods@/litar.agent.render @~ Go@/types@/litar.agent @~ Go@/types@/litar.errString @
 
 No scheme prefix is a prefix of another, so the cases do not depend on their order.
-@<cases of 'uri' in 'agent.render'@=
+@<Litar@/cases of 'uri' in 'agent.render'@=
 case uri == "list://composition":
 	raw, err := json.Marshal(a.compositionList())
 	if err != nil {
@@ -5765,7 +6122,7 @@ case strings.HasPrefix(uri, "tree://node/"):
 @~ Go@/functions@/litar.assignIDs @~ Go@/functions@/litar.nodeTree @~ Go@/methods@/litar.agent.compositionList @~ Go@/methods@/litar.agent.idParts @
 
 The trees of a node share their lookup, so renderTree takes the builder.
-@<cases of 'uri' in 'agent.render'@+
+@<Litar@/cases of 'uri' in 'agent.render'@+
 case strings.HasPrefix(uri, "tree://chunk/"):
 	return a.renderTree(uri, "tree://chunk/", chunkTree)
 case strings.HasPrefix(uri, "tree://item/"):
@@ -5774,7 +6131,7 @@ case strings.HasPrefix(uri, "tree://file/"):
 	return a.renderTree(uri, "tree://file/", fileTree)
 @~ Go@/functions@/litar.chunkTree @~ Go@/functions@/litar.fileTree @~ Go@/functions@/litar.itemTree @~ Go@/methods@/litar.agent.renderTree @
 
-@<cases of 'uri' in 'agent.render'@+
+@<Litar@/cases of 'uri' in 'agent.render'@+
 case strings.HasPrefix(uri, "tree://specialization/"):
 	w, ids, err := a.idParts(strings.TrimPrefix(uri, "tree://specialization/"), 3)
 	if err != nil {
@@ -5784,10 +6141,10 @@ case strings.HasPrefix(uri, "tree://specialization/"):
 	if err != nil {
 		return "", "", nil, err
 	}
-	@<render the specialization tree of the chunk with id 'ids[2]'@>
+	@<.@/render the specialization tree of the chunk with id 'ids[2]'@>
 @~ Go@/methods@/litar.agent.idParts @~ Go@/methods@/litar.agent.nodeChain @
 
-@<render the specialization tree of the chunk with id 'ids[2]'@=
+@<Litar@/render the specialization tree of the chunk with id 'ids[2]'@=
 chunk, err := chunkByID(chain, maps, ids[2])
 if err != nil {
 	return "", "", nil, err
@@ -5805,7 +6162,7 @@ return string(raw), mime, nil, nil
 @~ Go@/functions@/litar.assignIDs @~ Go@/functions@/litar.chunkByID @~ Go@/functions@/litar.specializationTree @
 
 The node's own blocks are its archive as stored, not a view of the chain.
-@<cases of 'uri' in 'agent.render'@+
+@<Litar@/cases of 'uri' in 'agent.render'@+
 case strings.HasPrefix(uri, "blocks://node/"):
 	w, ids, err := a.idParts(strings.TrimPrefix(uri, "blocks://node/"), 2)
 	if err != nil {
@@ -5818,7 +6175,7 @@ case strings.HasPrefix(uri, "blocks://node/"):
 	return FormatBlocks(n.Own), mime, nil, nil
 @~ Go@/functions@/litar.FormatBlocks @~ Go@/functions@/litar.nodeByID @~ Go@/methods@/litar.agent.idParts @
 
-@<cases of 'uri' in 'agent.render'@+
+@<Litar@/cases of 'uri' in 'agent.render'@+
 case strings.HasPrefix(uri, "blocks://apply/"),
 	strings.HasPrefix(uri, "blocks://effective/"),
 	strings.HasPrefix(uri, "blocks://depend/"),
@@ -5928,7 +6285,7 @@ func (a *agent) renderTree(uri, prefix string, build func([]Block, []Mapping) (t
 func (a *agent) renderBlocks(uri, mime string) (string, string, []byte, error) {
 var kind, rest string
 n := 4
-@<set the listing 'kind', the id tail 'rest', and the id count 'n' from 'uri'@>
+@<Litar@/set the listing 'kind', the id tail 'rest', and the id count 'n' from 'uri'@>
 w, ids, err := a.idParts(rest, n)
 if err != nil {
 	return "", "", nil, err
@@ -5942,7 +6299,7 @@ if err != nil {
 	return "", "", nil, err
 }
 var arg string
-@<set 'arg' to the chunk reference or the item named by 'ids'@>
+@<Litar@/set 'arg' to the chunk reference or the item named by 'ids'@>
 text, err := dispatch(w, formatNodePath(nodePath(*node)), kind, arg, nil)
 if err != nil {
 	return "", "", nil, err
@@ -5954,7 +6311,7 @@ return text, mime, nil, nil
 
 Each listing is the CLI mode of the same name, so the resource prints what litar prints.
 The chunk listings name a chunk and a specialization; refer names an item.
-@<set the listing 'kind', the id tail 'rest', and the id count 'n' from 'uri'@=
+@<Litar@/set the listing 'kind', the id tail 'rest', and the id count 'n' from 'uri'@=
 switch {
 case strings.HasPrefix(uri, "blocks://apply/"):
 	kind, rest = "literal", strings.TrimPrefix(uri, "blocks://apply/")
@@ -5968,7 +6325,7 @@ default:
 }
 @
 
-@<set 'arg' to the chunk reference or the item named by 'ids'@=
+@<Litar@/set 'arg' to the chunk reference or the item named by 'ids'@=
 if n == 4 {
 	ref, err := chunkByID(chain, maps, ids[2])
 	if err != nil {
@@ -6005,9 +6362,9 @@ if err != nil {
 	return "", "", nil, err
 }
 f := buildCatalog(chain, maps).files[path]
-@<fail unless the catalog file 'f' at 'path' is defined exactly once@>
+@<Litar@/fail unless the catalog file 'f' at 'path' is defined exactly once@>
 var data []byte
-@<read 'f' into 'data', from its origin or by evaluating 'path'@>
+@<Litar@/read 'f' into 'data', from its origin or by evaluating 'path'@>
 if utf8.Valid(data) {
 	return string(data), mime, nil, nil
 }
@@ -6016,7 +6373,7 @@ return "", "application/octet-stream", data, nil
 
 @~ Go@/functions@/litar.buildCatalog @~ Go@/functions@/litar.fileByID @~ Go@/methods@/litar.agent.idParts @~ Go@/methods@/litar.agent.nodeChain @~ Go@/methods@/litar.agent.renderFile @~ Go@/types@/litar.agent @
 
-@<fail unless the catalog file 'f' at 'path' is defined exactly once@=
+@<Litar@/fail unless the catalog file 'f' at 'path' is defined exactly once@=
 if f == nil {
 	return "", "", nil, errString("file '" + path + "' is not defined")
 }
@@ -6026,7 +6383,7 @@ if f.archive && f.mapping {
 @~ Go@/types@/litar.errString @
 
 Evaluation may run filters for long, so it runs without a.mu; the chain and mappings are already copied.
-@<read 'f' into 'data', from its origin or by evaluating 'path'@=
+@<Litar@/read 'f' into 'data', from its origin or by evaluating 'path'@=
 if f.mapping && !f.archive {
 	data, err = readOrigin(f.origin)
 	if err != nil {
@@ -6135,9 +6492,9 @@ func (n *nest) treeWith(name, desc string, path []Name, nodeDesc func([]Name) st
 t := treeJSON{Name: name, Description: desc, SubTrees: emptySub()}
 for _, e := range n.order {
 	if e.module {
-		@<append to 't' the subtree of the module entry 'e'@>
+		@<Litar@/append to 't' the subtree of the module entry 'e'@>
 	} else {
-		@<append to 't' the leaf of the entry 'e'@>
+		@<Litar@/append to 't' the leaf of the entry 'e'@>
 	}
 }
 return t
@@ -6146,7 +6503,7 @@ return t
 @~ Go@/functions@/litar.emptySub @~ Go@/methods@/litar.nest.treeWith @~ Go@/types@/litar.Name @~ Go@/types@/litar.nest @~ Go@/types@/litar.treeJSON @
 
 The path of a submodule is copied, so sibling subtrees do not share its backing array.
-@<append to 't' the subtree of the module entry 'e'@=
+@<Litar@/append to 't' the subtree of the module entry 'e'@=
 sub := append(append([]Name(nil), path...), Name(e.name))
 d := ""
 if nodeDesc != nil {
@@ -6155,7 +6512,7 @@ if nodeDesc != nil {
 t.SubTrees = append(t.SubTrees, n.subs[e.name].treeWith(e.name, d, sub, nodeDesc, leafDesc))
 @~ Go@/methods@/litar.nest.treeWith @~ Go@/types@/litar.Name @
 
-@<append to 't' the leaf of the entry 'e'@=
+@<Litar@/append to 't' the leaf of the entry 'e'@=
 d := ""
 if leafDesc != nil {
 	d = leafDesc(path, e.name)
@@ -6259,9 +6616,9 @@ for _, b := range blocks {
 	}
 	seen[ref.key()] = true
 	var desc string
-	@<set 'desc' to the description in the meta chunk 'ref'@>
+	@<Litar@/set 'desc' to the description in the meta chunk 'ref'@>
 	target := append(append([]Name{}, b.Ref.Module[1:]...), b.Ref.Chunk)
-	@<record 'desc' in 'meta' for the 'target' of the namespace 'ns'@>
+	@<Litar@/record 'desc' in 'meta' for the 'target' of the namespace 'ns'@>
 }
 return meta, nil
 }
@@ -6270,7 +6627,7 @@ return meta, nil
 
 A meta chunk is evaluated on the whole chain, so a later block can replace a description.
 A labeled block does not describe anything.
-@<set 'desc' to the description in the meta chunk 'ref'@=
+@<Litar@/set 'desc' to the description in the meta chunk 'ref'@=
 text, err := ev.Eval(ref, nil)
 if err != nil {
 	return metaInfo{}, err
@@ -6281,7 +6638,7 @@ if err != nil {
 }
 @~ Go@/functions@/litar.metaDescription @~ Go@/methods@/litar.ChunkRef.String @~ Go@/methods@/litar.Evaluator.Eval @~ Go@/types@/litar.metaInfo @
 
-@<record 'desc' in 'meta' for the 'target' of the namespace 'ns'@=
+@<Litar@/record 'desc' in 'meta' for the 'target' of the namespace 'ns'@=
 switch ns {
 case "Chunk":
 	meta.chunks[pathKey(target)] = desc
@@ -6323,7 +6680,7 @@ if err != nil {
 	return treeJSON{}, err
 }
 root := newNest()
-@<add the modules and chunks of 'blocks' outside the reserved namespaces to 'root'@>
+@<Litar@/add the modules and chunks of 'blocks' outside the reserved namespaces to 'root'@>
 return root.treeWith("/", meta.chunkDescription(nil), nil,
 	meta.chunkDescription,
 	func(path []Name, name string) string { return meta.chunkDescription(joinPath(path, name)) },
@@ -6347,15 +6704,15 @@ func (m metaInfo) chunkDescription(path []Name) string {
 A file block's chunk is its path in the root module. The chunk tree lists such a chunk
 below File, one branch for each directory, as the File meta chunks name it,
 so a file never looks like a chunk of the root module.
-@<add the modules and chunks of 'blocks' outside the reserved namespaces to 'root'@=
+@<Litar@/add the modules and chunks of 'blocks' outside the reserved namespaces to 'root'@=
 files := map[Name]bool{}
-@<collect in 'files' the paths of the file blocks of 'blocks'@>
+@<.@/collect in 'files' the paths of the file blocks of 'blocks'@>
 for _, b := range blocks {
 	if _, reserved := reservedNamespace(b.Ref.Module); reserved {
 		continue
 	}
 	if len(b.Ref.Module) == 0 && files[b.Ref.Chunk] {
-		@<add the file chunk of 'b' to 'root' below File@>
+		@<.@/add the file chunk of 'b' to 'root' below File@>
 		continue
 	}
 	cur := root
@@ -6368,7 +6725,7 @@ for _, b := range blocks {
 }
 @~ Go@/functions@/litar.reservedNamespace @~ Go@/methods@/litar.nest.addLeaf @~ Go@/methods@/litar.nest.addSub @~ Go@/types@/litar.Name @
 
-@<collect in 'files' the paths of the file blocks of 'blocks'@=
+@<Litar@/collect in 'files' the paths of the file blocks of 'blocks'@=
 for _, b := range blocks {
 	if b.IsFile {
 		files[b.Path] = true
@@ -6376,7 +6733,7 @@ for _, b := range blocks {
 }
 @
 
-@<add the file chunk of 'b' to 'root' below File@=
+@<Litar@/add the file chunk of 'b' to 'root' below File@=
 cur := root.addSub("File")
 parts := strings.Split(string(b.Ref.Chunk), "/")
 for _, part := range parts[:len(parts)-1] {
@@ -6393,7 +6750,7 @@ if err != nil {
 }
 cat := buildCatalog(blocks, mappings)
 root := newNest()
-@<add each file of 'cat' to 'root', its directories as branches@>
+@<Litar@/add each file of 'cat' to 'root', its directories as branches@>
 return root.treeWith("/", meta.files[pathKey(nil)], nil,
 	func(path []Name) string { return meta.files[pathKey(path)] },
 	func(path []Name, name string) string { return meta.files[pathKey(joinPath(path, name))] },
@@ -6402,8 +6759,12 @@ return root.treeWith("/", meta.files[pathKey(nil)], nil,
 
 @~ Go@/functions@/litar.buildCatalog @~ Go@/functions@/litar.describe @~ Go@/functions@/litar.fileTree @~ Go@/functions@/litar.joinPath @~ Go@/functions@/litar.newNest @~ Go@/functions@/litar.pathKey @~ Go@/methods@/litar.nest.treeWith @~ Go@/types@/litar.Block @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.Name @~ Go@/types@/litar.treeJSON @
 
-@<add each file of 'cat' to 'root', its directories as branches@=
+A mapped directory is not a file, so it has no resource.
+@<Litar@/add each file of 'cat' to 'root', its directories as branches@=
 for _, path := range cat.order {
+	if cat.files[path].dir {
+		continue
+	}
 	parts := strings.Split(path, "/")
 	cur := root
 	for i, part := range parts {
@@ -6423,7 +6784,7 @@ if err != nil {
 	return treeJSON{}, err
 }
 root := newNest()
-@<add each item of 'blocks' to 'root', its domains as branches@>
+@<Litar@/add each item of 'blocks' to 'root', its domains as branches@>
 return root.treeWith("/", meta.items[pathKey(nil)], nil,
 	func(path []Name) string { return meta.items[pathKey(path)] },
 	func(path []Name, name string) string { return meta.items[pathKey(joinPath(path, name))] },
@@ -6432,7 +6793,7 @@ return root.treeWith("/", meta.items[pathKey(nil)], nil,
 
 @~ Go@/functions@/litar.describe @~ Go@/functions@/litar.itemTree @~ Go@/functions@/litar.joinPath @~ Go@/functions@/litar.newNest @~ Go@/functions@/litar.pathKey @~ Go@/methods@/litar.nest.treeWith @~ Go@/types@/litar.Block @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.Name @~ Go@/types@/litar.treeJSON @
 
-@<add each item of 'blocks' to 'root', its domains as branches@=
+@<Litar@/add each item of 'blocks' to 'root', its domains as branches@=
 for _, b := range blocks {
 	for _, it := range b.Items {
 		cur := root
@@ -6451,20 +6812,20 @@ for _, b := range blocks {
 func nodeTree(w *World) treeJSON {
 children := map[string][]*Node{}
 var root *Node
-@<find the 'root' of 'w' and group the other nodes by base in 'children'@>
+@<Litar@/find the 'root' of 'w' and group the other nodes by base in 'children'@>
 if root == nil {
 	return treeJSON{SubTrees: emptySub()}
 }
 var build func(*Node) treeJSON
 build = func(n *Node) treeJSON {
-	@<build the tree of the node 'n' and the nodes on it@>
+	@<Litar@/build the tree of the node 'n' and the nodes on it@>
 }
 return build(root)
 }
 
 @~ Go@/functions@/litar.emptySub @~ Go@/functions@/litar.nodeTree @~ Go@/types@/litar.Node @~ Go@/types@/litar.World @~ Go@/types@/litar.treeJSON @
 
-@<find the 'root' of 'w' and group the other nodes by base in 'children'@=
+@<Litar@/find the 'root' of 'w' and group the other nodes by base in 'children'@=
 for i := range w.Nodes {
 	n := &w.Nodes[i]
 	if len(n.Base) == 0 {
@@ -6476,7 +6837,7 @@ for i := range w.Nodes {
 @~ Go@/functions@/litar.formatNodePath @
 
 Every node is addressable, so every node is a leaf, whatever nodes it has on it.
-@<build the tree of the node 'n' and the nodes on it@=
+@<Litar@/build the tree of the node 'n' and the nodes on it@=
 path := formatNodePath(nodePath(*n))
 t := treeJSON{
 	Name:        n.Name,
@@ -6511,12 +6872,12 @@ type specNode struct {
 }
 root := &specNode{name: "/", index: map[string]*specNode{}}
 ensure := func(labels []Name) {
-	@<add the label path of 'labels' under 'root', the last label first@>
+	@<Litar@/add the label path of 'labels' under 'root', the last label first@>
 }
-@<ensure the labels of every reference to 'chunk' in 'blocks'@>
+@<Litar@/ensure the labels of every reference to 'chunk' in 'blocks'@>
 var build func(*specNode) treeJSON
 build = func(n *specNode) treeJSON {
-	@<build the tree of the specialization 'n', described from 'meta'@>
+	@<Litar@/build the tree of the specialization 'n', described from 'meta'@>
 }
 tree := build(root)
 assignIDs(&tree)
@@ -6526,7 +6887,7 @@ return tree, nil
 @~ Go@/functions@/litar.assignIDs @~ Go@/functions@/litar.describe @~ Go@/functions@/litar.specializationTree @~ Go@/types@/litar.Block @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.Name @~ Go@/types@/litar.treeJSON @
 
 Labels are written most specific first, so the walk from the root reads them backward.
-@<add the label path of 'labels' under 'root', the last label first@=
+@<Litar@/add the label path of 'labels' under 'root', the last label first@=
 cur := root
 for i := len(labels) - 1; i >= 0; i-- {
 	name := string(labels[i])
@@ -6543,7 +6904,7 @@ for i := len(labels) - 1; i >= 0; i-- {
 
 A reference is resolved as evaluation resolves it: an inner reference inherits the labels
 of its block, and a filter the labels of what it filters.
-@<ensure the labels of every reference to 'chunk' in 'blocks'@=
+@<Litar@/ensure the labels of every reference to 'chunk' in 'blocks'@=
 note := func(ref ChunkRef) {
 	if ref.Chunk == chunk.Chunk && modulesEqual(ref.Module, chunk.Module) {
 		ensure(ref.Labels)
@@ -6568,7 +6929,7 @@ for _, b := range blocks {
 @~ Go@/functions@/litar.modulesEqual @~ Go@/functions@/litar.resolveBody @~ Go@/functions@/litar.resolveFilter @~ Go@/types@/litar.ChunkRef @
 
 The description key is the specialization as written, most specific label first.
-@<build the tree of the specialization 'n', described from 'meta'@=
+@<Litar@/build the tree of the specialization 'n', described from 'meta'@=
 key := ""
 if len(n.path) > 0 {
 	rev := make([]string, len(n.path))
@@ -6623,7 +6984,7 @@ func indexTree(t treeJSON, includeRoot bool) map[int]treePlace {
 out := map[int]treePlace{}
 var walk func(treeJSON, []string)
 walk = func(node treeJSON, path []string) {
-	@<record the place of 'node' at 'path' in 'out', then walk its subtrees@>
+	@<Litar@/record the place of 'node' at 'path' in 'out', then walk its subtrees@>
 }
 var start []string
 if includeRoot && t.Name != "" {
@@ -6636,7 +6997,7 @@ return out
 @~ Go@/functions@/litar.indexTree @~ Go@/types@/litar.treeJSON @~ Go@/types@/litar.treePlace @
 
 Each path is a fresh copy, since the walk extends it for every subtree.
-@<record the place of 'node' at 'path' in 'out', then walk its subtrees@=
+@<Litar@/record the place of 'node' at 'path' in 'out', then walk its subtrees@=
 out[node.ID] = treePlace{names: append([]string{}, path...), leaf: node.Leaf}
 for _, sub := range node.SubTrees {
 	next := append(append([]string{}, path...), sub.Name)
@@ -6825,18 +7186,18 @@ arch := filepath.Join(archDir, "a.la")
 comp := filepath.Join(archDir, "composer.json")
 ctx := context.Background()
 session := connectMCP(t, ctx)
-@<check the tools, resources and templates that 'session' lists@>
+@<Litar@/check the tools, resources and templates that 'session' lists@>
 callToolError(t, ctx, session, "import_composition", map[string]any{"path": filepath.Join(dir, "missing.json")})
-@<create through 'session' the composition 'archDir' with its composer 'comp'@>
-@<create through 'session' the root node of 'archDir', fill its archive 'arch' with msg, and reload it@>
-@<check the resources that 'session' reads from the composition 'archDir'@>
-@<apply through 'session' a block extending msg, and check the archive 'arch'@>
-@<delete through 'session' the msg chunk and the node of 'arch', and check 'comp'@>
+@<Litar@/create through 'session' the composition 'archDir' with its composer 'comp'@>
+@<Litar@/create through 'session' the root node of 'archDir', fill its archive 'arch' with msg, and reload it@>
+@<Litar@/check the resources that 'session' reads from the composition 'archDir'@>
+@<Litar@/apply through 'session' a block extending msg, and check the archive 'arch'@>
+@<Litar@/delete through 'session' the msg chunk and the node of 'arch', and check 'comp'@>
 }
 
 @~ Go@/functions@/litar.callToolError @~ Go@/functions@/litar.connectMCP @
 
-@<check the tools, resources and templates that 'session' lists@=
+@<Litar@/check the tools, resources and templates that 'session' lists@=
 var gotTools []string
 for _, tool := range listTools(t, ctx, session) {
 gotTools = append(gotTools, tool.Name)
@@ -6847,7 +7208,7 @@ t.Fatalf("tools %v", gotTools)
 assertMCPLists(t, ctx, session, wantResources, wantTemplates)
 @~ Go@/functions@/litar.assertMCPLists @~ Go@/functions@/litar.listTools @~ Go@/functions@/litar.sameStrings @~ Go@/variables@/litar.wantResources @~ Go@/variables@/litar.wantTemplates @~ Go@/variables@/litar.wantTools @
 
-@<create through 'session' the composition 'archDir' with its composer 'comp'@=
+@<Litar@/create through 'session' the composition 'archDir' with its composer 'comp'@=
 if id := callTool(t, ctx, session, "create_composition", map[string]any{"path": archDir, "ground": nil}); id != "0" {
 t.Fatalf("composition id %q", id)
 }
@@ -6857,7 +7218,7 @@ t.Fatal(err)
 assertMCPLists(t, ctx, session, wantResources, wantTemplates)
 @~ Go@/functions@/litar.assertMCPLists @~ Go@/functions@/litar.callTool @~ Go@/variables@/litar.wantResources @~ Go@/variables@/litar.wantTemplates @
 
-@<create through 'session' the root node of 'archDir', fill its archive 'arch' with msg, and reload it@=
+@<Litar@/create through 'session' the root node of 'archDir', fill its archive 'arch' with msg, and reload it@=
 if id := callTool(t, ctx, session, "create_node", map[string]any{
 "composition": 0,
 "name":        "root",
@@ -6879,15 +7240,15 @@ t.Fatalf("eval text %q", text)
 }
 @~ Go@/functions@/litar.assertMCPLists @~ Go@/functions@/litar.callTool @~ Go@/functions@/litar.writeFile @~ Go@/variables@/litar.wantResources @~ Go@/variables@/litar.wantTemplates @
 
-@<check the resources that 'session' reads from the composition 'archDir'@=
-@<check the composition list that 'session' reads, holding 'archDir'@>
-@<check the node, chunk and file trees that 'session' reads@>
-@<check the blocks that 'session' reads from the node and from chunk msg@>
-@<check the specializations and the missing file that 'session' reads@>
+@<Litar@/check the resources that 'session' reads from the composition 'archDir'@=
+@<.@/check the composition list that 'session' reads, holding 'archDir'@>
+@<.@/check the node, chunk and file trees that 'session' reads@>
+@<.@/check the blocks that 'session' reads from the node and from chunk msg@>
+@<.@/check the specializations and the missing file that 'session' reads@>
 @
 
 The list is read twice: composition ids must stay stable between reads.
-@<check the composition list that 'session' reads, holding 'archDir'@=
+@<Litar@/check the composition list that 'session' reads, holding 'archDir'@=
 compDir, err := identityPath(archDir)
 if err != nil {
 t.Fatal(err)
@@ -6905,7 +7266,7 @@ t.Fatalf("id changed %s", again)
 }
 @~ Go@/functions@/litar.identityPath @~ Go@/functions@/litar.readResource @~ Go@/types@/litar.listJSON @
 
-@<check the node, chunk and file trees that 'session' reads@=
+@<Litar@/check the node, chunk and file trees that 'session' reads@=
 tree := readResource(t, ctx, session, "tree://node/0")
 treeText := strings.ReplaceAll(tree, " ", "")
 if !strings.Contains(treeText, `"name":"root"`) || !strings.Contains(treeText, `"id":0`) || !strings.Contains(treeText, `"sub-trees":[]`) {
@@ -6921,7 +7282,7 @@ t.Fatalf("file tree %s", files)
 }
 @~ Go@/functions@/litar.readResource @
 
-@<check the blocks that 'session' reads from the node and from chunk msg@=
+@<Litar@/check the blocks that 'session' reads from the node and from chunk msg@=
 if blocks := readResource(t, ctx, session, "blocks://node/0/0"); !strings.Contains(blocks, "@@<msg@@=hello@@") {
 t.Fatalf("blocks %s", blocks)
 }
@@ -6930,7 +7291,7 @@ t.Fatalf("applied %s", applied)
 }
 @~ Go@/functions@/litar.readResource @
 
-@<check the specializations and the missing file that 'session' reads@=
+@<Litar@/check the specializations and the missing file that 'session' reads@=
 var specTree treeJSON
 if err := json.Unmarshal([]byte(readResource(t, ctx, session, "tree://specialization/0/0/1")), &specTree); err != nil {
 t.Fatal(err)
@@ -6944,7 +7305,7 @@ t.Fatalf("missing file: %v", err)
 @~ Go@/functions@/litar.readResource @~ Go@/types@/litar.treeJSON @
 
 The applied block must replace the overridden hello block in the archive, not just add to it.
-@<apply through 'session' a block extending msg, and check the archive 'arch'@=
+@<Litar@/apply through 'session' a block extending msg, and check the archive 'arch'@=
 callTool(t, ctx, session, "apply_block", map[string]any{
 "composition": 0,
 "node":        0,
@@ -6963,7 +7324,7 @@ t.Fatalf("archive %s", data)
 }
 @~ Go@/functions@/litar.callTool @
 
-@<delete through 'session' the msg chunk and the node of 'arch', and check 'comp'@=
+@<Litar@/delete through 'session' the msg chunk and the node of 'arch', and check 'comp'@=
 callTool(t, ctx, session, "delete_chunk", map[string]any{"composition": 0, "node": 0, "chunk": 1})
 if data, _ := os.ReadFile(arch); strings.Contains(string(data), "msg") {
 t.Fatalf("still has msg %s", data)
@@ -7070,7 +7431,7 @@ if id := callTool(t, ctx, session, "import_composition", map[string]any{"path": 
 t.Fatalf("composition id %q", id)
 }
 checkNullableArg(t, ctx, session, "create_node", "base", "integer")
-@<create through 'session' a root node in 'comp' with the base of 'tc', and check 'comp' and 'dir'@>
+@<Litar@/create through 'session' a root node in 'comp' with the base of 'tc', and check 'comp' and 'dir'@>
 })
 }
 }
@@ -7078,7 +7439,7 @@ checkNullableArg(t, ctx, session, "create_node", "base", "integer")
 @~ Go@/functions@/litar.callTool @~ Go@/functions@/litar.checkNullableArg @~ Go@/functions@/litar.connectMCP @~ Go@/functions@/litar.emptyComposerBytes @~ Go@/functions@/litar.writeFile @
 
 A rejected base must leave the composer as it was.
-@<create through 'session' a root node in 'comp' with the base of 'tc', and check 'comp' and 'dir'@=
+@<Litar@/create through 'session' a root node in 'comp' with the base of 'tc', and check 'comp' and 'dir'@=
 args := map[string]any{
 "composition": 0,
 "name":        "root",
@@ -7114,13 +7475,13 @@ A nullable argument must be required and typed by anyOf rather than by a type ar
 func checkNullableArg(t *testing.T, ctx context.Context, session *mcp.ClientSession, tool, arg, typ string) {
 t.Helper()
 var schema map[string]any
-@<set 'schema' to the input schema of 'tool' listed by 'session'@>
-@<check that 'arg' of 'schema' is required and is either null or of type 'typ'@>
+@<Litar@/set 'schema' to the input schema of 'tool' listed by 'session'@>
+@<Litar@/check that 'arg' of 'schema' is required and is either null or of type 'typ'@>
 }
 
 @~ Go@/functions@/litar.checkNullableArg @
 
-@<set 'schema' to the input schema of 'tool' listed by 'session'@=
+@<Litar@/set 'schema' to the input schema of 'tool' listed by 'session'@=
 for _, tl := range listTools(t, ctx, session) {
 rejectTypeArrays(t, tl.InputSchema, tl.Name)
 if tl.Name != tool {
@@ -7137,7 +7498,7 @@ t.Fatalf("%s missing", tool)
 }
 @~ Go@/functions@/litar.listTools @~ Go@/functions@/litar.rejectTypeArrays @
 
-@<check that 'arg' of 'schema' is required and is either null or of type 'typ'@=
+@<Litar@/check that 'arg' of 'schema' is required and is either null or of type 'typ'@=
 if !slices.Contains(schema["required"].([]any), any(arg)) {
 t.Fatalf("%s is not required", arg)
 }
@@ -7223,19 +7584,19 @@ func assertMCPLists(t *testing.T, ctx context.Context, session *mcp.ClientSessio
 @<mcp test@:litar@:Go Structure@/functions@+
 func TestCreateComposedArchiveGroundTool(t *testing.T) {
 dir := t.TempDir()
-@<make in 'dir' a library holding sample-ground, and work in a new directory of 'dir'@>
+@<Litar@/make in 'dir' a library holding sample-ground, and work in a new directory of 'dir'@>
 ctx := context.Background()
 session := connectMCP(t, ctx)
 checkNullableArg(t, ctx, session, "create_composition", "ground", "string")
-@<check the compositions that 'session' creates in 'dir' with the ground omitted, null or empty@>
-@<create through 'session' the composition 'named' in 'dir' on sample-ground@>
-@<check that 'session' evaluates the ground of 'named', and adds a child node to it@>
-@<check that 'session' creates nothing in 'dir' on a missing ground@>
+@<Litar@/check the compositions that 'session' creates in 'dir' with the ground omitted, null or empty@>
+@<Litar@/create through 'session' the composition 'named' in 'dir' on sample-ground@>
+@<Litar@/check that 'session' evaluates the ground of 'named', and adds a child node to it@>
+@<Litar@/check that 'session' creates nothing in 'dir' on a missing ground@>
 }
 
 @~ Go@/functions@/litar.checkNullableArg @~ Go@/functions@/litar.connectMCP @
 
-@<make in 'dir' a library holding sample-ground, and work in a new directory of 'dir'@=
+@<Litar@/make in 'dir' a library holding sample-ground, and work in a new directory of 'dir'@=
 lib := filepath.Join(dir, "lib")
 common := filepath.Join(lib, "sample-ground")
 if err := os.MkdirAll(common, 0o755); err != nil {
@@ -7259,7 +7620,7 @@ t.Chdir(work)
 @~ Go@/functions@/litar.writeFile @
 
 An omitted ground is an error, while null and the empty string both mean no ground.
-@<check the compositions that 'session' creates in 'dir' with the ground omitted, null or empty@=
+@<Litar@/check the compositions that 'session' creates in 'dir' with the ground omitted, null or empty@=
 omit := filepath.Join(dir, "omit")
 callToolError(t, ctx, session, "create_composition", map[string]any{"path": omit})
 if _, err := os.Stat(omit); !os.IsNotExist(err) {
@@ -7284,7 +7645,7 @@ t.Fatalf("%s ground %s", tc.name, raw)
 @~ Go@/functions@/litar.callTool @~ Go@/functions@/litar.callToolError @~ Go@/functions@/litar.emptyComposerBytes @
 
 The composer of a grounded composition names the ground but holds none of its nodes.
-@<create through 'session' the composition 'named' in 'dir' on sample-ground@=
+@<Litar@/create through 'session' the composition 'named' in 'dir' on sample-ground@=
 named := filepath.Join(dir, "named")
 if id := callTool(t, ctx, session, "create_composition", map[string]any{"path": named, "ground": "sample-ground"}); id != "2" {
 t.Fatalf("named id %q", id)
@@ -7298,7 +7659,7 @@ t.Fatalf("named %s", raw)
 }
 @~ Go@/functions@/litar.callTool @
 
-@<check that 'session' evaluates the ground of 'named', and adds a child node to it@=
+@<Litar@/check that 'session' evaluates the ground of 'named', and adds a child node to it@=
 if text := callTool(t, ctx, session, "evaluate_expression", map[string]any{
 "composition": 2,
 "node":        0,
@@ -7319,7 +7680,7 @@ t.Fatalf("with child %s", text)
 }
 @~ Go@/functions@/litar.callTool @
 
-@<check that 'session' creates nothing in 'dir' on a missing ground@=
+@<Litar@/check that 'session' creates nothing in 'dir' on a missing ground@=
 missing := filepath.Join(dir, "missing")
 msg := callToolError(t, ctx, session, "create_composition", map[string]any{"path": missing, "ground": "no-such-ground"})
 if !strings.Contains(msg, "could not find ground 'no-such-ground'") {
@@ -7362,20 +7723,20 @@ src := "" +
 "@@<Chunk@@/Basic@@=\n" +
 "{\"description\": \"@@<note@@>\"}\n" +
 "@@\n" +
-@<archive text of the meta chunks below Basic, Text Processing and C@>
+@<Litar@/archive text of the meta chunks below Basic, Text Processing and C@>
 ""
 arch, err := ParseArchive([]byte(src), "a.la")
 if err != nil {
 t.Fatal(err)
 }
-@<check that the chunk tree of 'arch' hides the reserved modules and holds the descriptions@>
-@<check the descriptions in the item tree of 'arch'@>
-@<check that a module meta chunk that is not JSON fails the chunk tree@>
+@<Litar@/check that the chunk tree of 'arch' hides the reserved modules and holds the descriptions@>
+@<Litar@/check the descriptions in the item tree of 'arch'@>
+@<Litar@/check that a module meta chunk that is not JSON fails the chunk tree@>
 }
 
 @~ Go@/functions@/litar.ParseArchive @
 
-@<check that the chunk tree of 'arch' hides the reserved modules and holds the descriptions@=
+@<Litar@/check that the chunk tree of 'arch' hides the reserved modules and holds the descriptions@=
 chunks, err := chunkTree(arch.Blocks, nil)
 if err != nil {
 t.Fatal(err)
@@ -7402,7 +7763,7 @@ t.Fatalf("helper missing: %s", mustTree(t, chunks))
 }
 @~ Go@/functions@/litar.chunkTree @~ Go@/functions@/litar.findTree @~ Go@/functions@/litar.mustTree @
 
-@<check the descriptions in the item tree of 'arch'@=
+@<Litar@/check the descriptions in the item tree of 'arch'@=
 items, err := itemTree(arch.Blocks, nil)
 if err != nil {
 t.Fatal(err)
@@ -7417,7 +7778,7 @@ t.Fatalf("item %+v", times)
 }
 @~ Go@/functions@/litar.findTree @~ Go@/functions@/litar.itemTree @
 
-@<check that a module meta chunk that is not JSON fails the chunk tree@=
+@<Litar@/check that a module meta chunk that is not JSON fails the chunk tree@=
 bad, err := ParseArchive([]byte("@@<Chunk@@/Basic@@=\nnot json\n@@\n@@<Basic@@/x@@=\n@@\n"), "a.la")
 if err != nil {
 t.Fatal(err)
@@ -7437,7 +7798,7 @@ arch, err := ParseArchive([]byte(src), "a.la")
 if err != nil {
 t.Fatal(err)
 }
-@<check that the chunk tree of 'arch' hides the reserved Specialization module@>
+@<Litar@/check that the chunk tree of 'arch' hides the reserved Specialization module@>
 meta, err := describe(arch.Blocks, nil)
 if err != nil {
 t.Fatal(err)
@@ -7448,16 +7809,16 @@ t.Fatalf("specs %+v", meta.specs)
 if specName([]Name{"label1", "label2"}) != "label2@@:label1" {
 t.Fatal(specName([]Name{"label1", "label2"}))
 }
-@<check the specialization tree of msg in 'arch', and that its ids are stable@>
+@<Litar@/check the specialization tree of msg in 'arch', and that its ids are stable@>
 if got := Modules(arch.Blocks, nil, meta); strings.Contains(got, "Specialization") {
 t.Fatalf("listed %q", got)
 }
-@<check the specialization tree of a chunk only specialized by a reference@>
+@<Litar@/check the specialization tree of a chunk only specialized by a reference@>
 }
 
 @~ Go@/functions@/litar.Modules @~ Go@/functions@/litar.ParseArchive @~ Go@/functions@/litar.describe @~ Go@/functions@/litar.specName @~ Go@/types@/litar.Name @
 
-@<check that the chunk tree of 'arch' hides the reserved Specialization module@=
+@<Litar@/check that the chunk tree of 'arch' hides the reserved Specialization module@=
 chunks, err := chunkTree(arch.Blocks, nil)
 if err != nil {
 t.Fatal(err)
@@ -7470,7 +7831,7 @@ t.Fatal("msg missing")
 }
 @~ Go@/functions@/litar.chunkTree @~ Go@/functions@/litar.findTree @~ Go@/functions@/litar.mustTree @
 
-@<check the specialization tree of msg in 'arch', and that its ids are stable@=
+@<Litar@/check the specialization tree of msg in 'arch', and that its ids are stable@=
 chunk := ChunkRef{Chunk: "msg"}
 tree, err := specializationTree(arch.Blocks, nil, chunk)
 if err != nil {
@@ -7497,7 +7858,7 @@ t.Fatalf("ids %+v", again)
 @~ Go@/functions@/litar.specializationTree @~ Go@/types@/litar.ChunkRef @
 
 A specialization that is only named by a reference is still on the chunk.
-@<check the specialization tree of a chunk only specialized by a reference@=
+@<Litar@/check the specialization tree of a chunk only specialized by a reference@=
 refOnly, err := ParseArchive([]byte("@@<msg@@=\nplain\n@@\n@@<other@@=\n@@<hello@@:executable@@:msg@@>\n@@\n"), "a.la")
 if err != nil {
 t.Fatal(err)
@@ -7522,7 +7883,7 @@ src := "" +
 "@@<Chunk@@/Basic@@=\n" +
 "{\"description\": \"basics\"}\n" +
 "@@\n" +
-@<archive text of the meta chunks below Basic, Text Processing and C@>
+@<Litar@/archive text of the meta chunks below Basic, Text Processing and C@>
 ""
 arch, err := ParseArchive([]byte(src), "a.la")
 if err != nil {
@@ -7532,13 +7893,13 @@ meta, err := describe(arch.Blocks, nil)
 if err != nil {
 t.Fatal(err)
 }
-@<check the module, chunk, subdomain and item listings of 'arch' with 'meta'@>
+@<Litar@/check the module, chunk, subdomain and item listings of 'arch' with 'meta'@>
 }
 
 @~ Go@/functions@/litar.ParseArchive @~ Go@/functions@/litar.describe @
 
 Each test puts its own meta chunk of the module Basic before this text.
-@<archive text of the meta chunks below Basic, Text Processing and C@=
+@<Litar@/archive text of the meta chunks below Basic, Text Processing and C@=
 "@@<Chunk@@/Basic@@/evaluate@@=\n" +
 "{\"description\": \"run\"}\n" +
 "@@\n" +
@@ -7563,7 +7924,7 @@ Each test puts its own meta chunk of the module Basic before this text.
 @
 
 
-@<check the module, chunk, subdomain and item listings of 'arch' with 'meta'@=
+@<Litar@/check the module, chunk, subdomain and item listings of 'arch' with 'meta'@=
 if got := Modules(arch.Blocks, nil, meta); got != "Basic:\t\t\t\tbasics\nText Processing\nText Processing@@/Internals:\tinside\n" {
 t.Fatalf("modules %q", got)
 }
@@ -7596,13 +7957,13 @@ arch, err := ParseArchive([]byte(src), "a.la")
 if err != nil {
 t.Fatal(err)
 }
-@<check that the chunk tree of 'arch' lists cmd/main.go below File, described@>
-@<check the descriptions in the file tree of 'arch'@>
+@<Litar@/check that the chunk tree of 'arch' lists cmd/main.go below File, described@>
+@<Litar@/check the descriptions in the file tree of 'arch'@>
 }
 
 @~ Go@/functions@/litar.ParseArchive @
 
-@<check that the chunk tree of 'arch' lists cmd/main.go below File, described@=
+@<Litar@/check that the chunk tree of 'arch' lists cmd/main.go below File, described@=
 chunks, err := chunkTree(arch.Blocks, nil)
 if err != nil {
 t.Fatal(err)
@@ -7625,7 +7986,7 @@ t.Fatalf("chunk %+v %v", ref, err)
 }
 @~ Go@/functions@/litar.assignIDs @~ Go@/functions@/litar.chunkByID @~ Go@/functions@/litar.chunkTree @~ Go@/functions@/litar.findTree @~ Go@/functions@/litar.mustTree @
 
-@<check the descriptions in the file tree of 'arch'@=
+@<Litar@/check the descriptions in the file tree of 'arch'@=
 files, err := fileTree(arch.Blocks, nil)
 if err != nil {
 t.Fatal(err)
@@ -7655,14 +8016,14 @@ want := map[string]string{
 "C Structure":     "Common structures in C programming",
 "Light":           "Light is a framework mainly for C programming",
 }
-@<check that the chunk tree 'tree' hides Chunk and describes the modules of 'want'@>
-@<check that the module listing of 'chain' with 'meta' describes the modules of 'want' in one column@>
+@<Litar@/check that the chunk tree 'tree' hides Chunk and describes the modules of 'want'@>
+@<Litar@/check that the module listing of 'chain' with 'meta' describes the modules of 'want' in one column@>
 }
 
 @~ Go@/functions@/litar.chunkTree @~ Go@/functions@/litar.describe @~ Go@/functions@/litar.exampleChain @
 
 Internals has no meta chunk of its own, so its description stays empty.
-@<check that the chunk tree 'tree' hides Chunk and describes the modules of 'want'@=
+@<Litar@/check that the chunk tree 'tree' hides Chunk and describes the modules of 'want'@=
 if name, found := findNamed(tree, "Chunk"); found {
 t.Fatalf("tree contains %s", name)
 }
@@ -7678,7 +8039,7 @@ t.Fatalf("internals %+v", inner)
 }
 @~ Go@/functions@/litar.findNamed @~ Go@/functions@/litar.findTree @
 
-@<check that the module listing of 'chain' with 'meta' describes the modules of 'want' in one column@=
+@<Litar@/check that the module listing of 'chain' with 'meta' describes the modules of 'want' in one column@=
 listed := Modules(chain, nil, meta)
 if strings.Contains(listed, "\nChunk\n") || strings.HasPrefix(listed, "Chunk\n") || strings.HasPrefix(listed, "Chunk:") {
 t.Fatalf("reserved module listed %q", listed)
@@ -8056,7 +8417,7 @@ if err != nil {
 return ChunkRef{}, 0, 0, err
 }
 for n == 2 && (kind == ':' || kind == '/') {
-@<add 'name' to 'labels' or to 'module', as the control 'kind' after it says@>
+@<Litar@/add 'name' to 'labels' or to 'module', as the control 'kind' after it says@>
 p.i += n
 name, kind, n, err = p.readName(opt.allowEOF)
 if err != nil {
@@ -8073,7 +8434,7 @@ return ChunkRef{Labels: labels, Module: module, Chunk: name}, kind, n, nil
 
 Labels come before the module path, and the cases overlap, so their order matters.
 An empty name before the first '/' names the root explicitly.
-@<add 'name' to 'labels' or to 'module', as the control 'kind' after it says@=
+@<Litar@/add 'name' to 'labels' or to 'module', as the control 'kind' after it says@=
 switch {
 case kind == ':' && moduleStarted:
 return ChunkRef{}, 0, 0, p.fail("label after module name")
@@ -8128,7 +8489,7 @@ if ref.Chunk == "" {
 return nil, 0, 0, p.fail("empty name")
 }
 var view []ViewOp
-@<read into 'view' the view operations of 'ref', moving 'kind' past them@>
+@<Litar@/read into 'view' the view operations of 'ref', moving 'kind' past them@>
 filters = append(filters, Filter{Ref: ref, View: view})
 if kind == '|' && n == 2 {
 p.i += n
@@ -8140,7 +8501,7 @@ return filters, kind, n, nil
 
 @~ Go@/methods@/litar.parser.fail @~ Go@/methods@/litar.parser.parseFilterList @~ Go@/methods@/litar.parser.parseQName @~ Go@/types@/litar.Filter @~ Go@/types@/litar.ViewOp @~ Go@/types@/litar.parser @~ Go@/types@/litar.qOpt @
 
-@<read into 'view' the view operations of 'ref', moving 'kind' past them@=
+@<Litar@/read into 'view' the view operations of 'ref', moving 'kind' past them@=
 for isViewOp(kind, n) {
 op := kind
 p.i += n
@@ -8240,7 +8601,7 @@ p.i += n
 return b, nil
 }
 switch kind {
-@<cases of the control 'kind' in the body 'b', after the content 'text'@>
+@<Litar@/cases of the control 'kind' in the body 'b', after the content 'text'@>
 default:
 return body{}, p.unexpected(kind, n)
 }
@@ -8250,7 +8611,7 @@ return body{}, p.unexpected(kind, n)
 @~ Go@/functions@/litar.isEndControl @~ Go@/methods@/litar.body.endContent @~ Go@/methods@/litar.parser.atControl @~ Go@/methods@/litar.parser.fail @~ Go@/methods@/litar.parser.parseBody @~ Go@/methods@/litar.parser.unexpected @~ Go@/types@/litar.body @~ Go@/types@/litar.parser @
 
 A reference splits the content where it stands.
-@<cases of the control 'kind' in the body 'b', after the content 'text'@=
+@<Litar@/cases of the control 'kind' in the body 'b', after the content 'text'@=
 case '<':
 b.flush(&text)
 p.i += n
@@ -8262,7 +8623,7 @@ b.parts = append(b.parts, Part{Ref: ref})
 @~ Go@/methods@/litar.body.flush @~ Go@/methods@/litar.parser.parseInnerRef @~ Go@/types@/litar.Part @
 
 A pipeline ends the content, and only items or the end control may follow it.
-@<cases of the control 'kind' in the body 'b', after the content 'text'@+
+@<Litar@/cases of the control 'kind' in the body 'b', after the content 'text'@+
 case '|':
 b.endContent(&text)
 p.i += n
@@ -8286,7 +8647,7 @@ return b, nil
 return body{}, p.unexpected(k2, n2)
 @~ Go@/functions@/litar.isEndControl @~ Go@/methods@/litar.body.endContent @~ Go@/methods@/litar.parser.parseFilterList @~ Go@/methods@/litar.parser.parseItems @~ Go@/methods@/litar.parser.unexpected @
 
-@<cases of the control 'kind' in the body 'b', after the content 'text'@+
+@<Litar@/cases of the control 'kind' in the body 'b', after the content 'text'@+
 case '~':
 b.endContent(&text)
 p.i += n
@@ -8445,8 +8806,8 @@ if kind == '/' && n == 2 {
 return Block{}, p.fail("files cannot be modularized")
 }
 var sets []Name
-@<read into 'sets' the sets of the file, moving 'kind' past them@>
-@<check that the control 'kind' after the sets is the operation of a file@>
+@<Litar@/read into 'sets' the sets of the file, moving 'kind' past them@>
+@<Litar@/check that the control 'kind' after the sets is the operation of a file@>
 b, err := p.finishBlock(ChunkRef{Chunk: path}, Op(kind), startLine)
 if err != nil {
 return Block{}, err
@@ -8460,7 +8821,7 @@ return b, nil
 
 @~ Go@/methods@/litar.parser.fail @~ Go@/methods@/litar.parser.finishBlock @~ Go@/methods@/litar.parser.line @~ Go@/methods@/litar.parser.parseFile @~ Go@/methods@/litar.parser.readName @~ Go@/types@/litar.Block @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Name @~ Go@/types@/litar.Op @~ Go@/types@/litar.parser @
 
-@<read into 'sets' the sets of the file, moving 'kind' past them@=
+@<Litar@/read into 'sets' the sets of the file, moving 'kind' past them@=
 for kind == '`' && n == 2 {
 p.i += n
 setName, k2, n2, err := p.readName(false)
@@ -8476,7 +8837,7 @@ kind, n = k2, n2
 @~ Go@/methods@/litar.parser.fail @~ Go@/methods@/litar.parser.readName @
 
 A file is only ever defined, never extended.
-@<check that the control 'kind' after the sets is the operation of a file@=
+@<Litar@/check that the control 'kind' after the sets is the operation of a file@=
 if kind == '+' && n == 2 {
 return Block{}, p.fail("files are paired only with @@=")
 }
@@ -8532,7 +8893,7 @@ b   Block
 err error
 )
 switch kind {
-@<cases of the control 'kind' that opens the block 'b' in 'p'@>
+@<Litar@/cases of the control 'kind' that opens the block 'b' in 'p'@>
 default:
 return nil, p.unexpected(kind, n)
 }
@@ -8549,12 +8910,12 @@ blocks = append(blocks, b)
 
 @~ Go@/functions@/litar.ParseArchive @~ Go@/methods@/litar.parser.atControl @~ Go@/methods@/litar.parser.line @~ Go@/methods@/litar.parser.skipToControl @~ Go@/methods@/litar.parser.unexpected @~ Go@/types@/litar.Archive @~ Go@/types@/litar.Block @~ Go@/types@/litar.parser @
 
-@<cases of the control 'kind' that opens the block 'b' in 'p'@=
+@<Litar@/cases of the control 'kind' that opens the block 'b' in 'p'@=
 case '<':
 b, err = p.parseBlock()
 @~ Go@/methods@/litar.parser.parseBlock @
 
-@<cases of the control 'kind' that opens the block 'b' in 'p'@+
+@<Litar@/cases of the control 'kind' that opens the block 'b' in 'p'@+
 case '[':
 b, err = p.parseFile(false)
 case '(':
@@ -8701,7 +9062,7 @@ Tests of parse.go.
 @<parse test@:litar@:Go Structure@/functions@+
 func TestParseRoundTrip(t *testing.T) {
 src := "" +
-@<archive text of two chunks of module and a label extending one, between a lead and a tail@>
+@<Litar@/archive text of two chunks of module and a label extending one, between a lead and a tail@>
 ""
 arch, err := ParseArchive([]byte(src), "a.la")
 if err != nil {
@@ -8710,13 +9071,13 @@ t.Fatal(err)
 if got := arch.Text(); got != src {
 t.Fatalf("round trip\n got %q\nwant %q", got, src)
 }
-@<check the blocks and the trailing text of 'arch'@>
+@<Litar@/check the blocks and the trailing text of 'arch'@>
 }
 
 @~ Go@/functions@/litar.ParseArchive @~ Go@/methods@/litar.Archive.Text @
 
 The last block is commented, and the tail follows it.
-@<archive text of two chunks of module and a label extending one, between a lead and a tail@=
+@<Litar@/archive text of two chunks of module and a label extending one, between a lead and a tail@=
 "lead\n" +
 "@@<module@@/chunk1@@=\n" +
 "@@<substructure 1@@>\n" +
@@ -8733,7 +9094,7 @@ The last block is commented, and the tail follows it.
 "tail\n" +
 @
 
-@<check the blocks and the trailing text of 'arch'@=
+@<Litar@/check the blocks and the trailing text of 'arch'@=
 if len(arch.Blocks) != 3 {
 t.Fatalf("blocks %d", len(arch.Blocks))
 }
@@ -8823,12 +9184,12 @@ t.Fatal(err)
 if arch.Blocks[0].Ref.Chunk != "@@" {
 t.Fatalf("chunk %q", arch.Blocks[0].Ref.Chunk)
 }
-@<check the errors of names that are misplaced labels, empty, or relative@>
+@<Litar@/check the errors of names that are misplaced labels, empty, or relative@>
 }
 
 @~ Go@/functions@/litar.ParseArchive @
 
-@<check the errors of names that are misplaced labels, empty, or relative@=
+@<Litar@/check the errors of names that are misplaced labels, empty, or relative@=
 for _, tc := range []struct{ src, msg string }{
 {"@@<a@@:b@@/c@@:d@@=x@@", "label after module name"},
 {"@@<@@=x@@", "empty name"},
@@ -8875,7 +9236,7 @@ func TestParseErrors(t *testing.T) {
 @<parse test@:litar@:Go Structure@/functions@+
 func TestFileItemsPipeline(t *testing.T) {
 src := "" +
-@<archive text of a file with a set, filters and items, an executable file, and a chunk invoking a pipeline@>
+@<Litar@/archive text of a file with a set, filters and items, an executable file, and a chunk invoking a pipeline@>
 ""
 arch, err := ParseArchive([]byte(src), "a.la")
 if err != nil {
@@ -8887,14 +9248,14 @@ t.Fatalf("round trip\n%q\n%q", arch.Text(), src)
 if len(arch.Blocks) != 3 {
 t.Fatalf("blocks %d", len(arch.Blocks))
 }
-@<check the file block of 'arch' with its set, filters and items@>
-@<check the executable file of 'arch' and the pipeline invoked in its chunk@>
+@<Litar@/check the file block of 'arch' with its set, filters and items@>
+@<Litar@/check the executable file of 'arch' and the pipeline invoked in its chunk@>
 }
 
 @~ Go@/functions@/litar.ParseArchive @~ Go@/methods@/litar.Archive.Text @
 
 An invocation is not a block at top level, so the chunk holds it, followed by an escaped control.
-@<archive text of a file with a set, filters and items, an executable file, and a chunk invoking a pipeline@=
+@<Litar@/archive text of a file with a set, filters and items, an executable file, and a chunk invoking a pipeline@=
 "@@[hello.c@@`source files@@=\n" +
 "int x;\n" +
 "@@|upper@@+docs@@,hello.c\n" +
@@ -8908,7 +9269,7 @@ An invocation is not a block at top level, so the chunk holds it, followed by an
 "@@\n" +
 @
 
-@<check the file block of 'arch' with its set, filters and items@=
+@<Litar@/check the file block of 'arch' with its set, filters and items@=
 f := arch.Blocks[0]
 if !f.IsFile || f.Executable || f.Path != "hello.c" || len(f.Sets) != 1 || f.Sets[0] != "source files" {
 t.Fatalf("file %+v", f)
@@ -8921,7 +9282,7 @@ t.Fatalf("items %+v", f.Items)
 }
 @~ Go@/functions@/litar.formatItem @
 
-@<check the executable file of 'arch' and the pipeline invoked in its chunk@=
+@<Litar@/check the executable file of 'arch' and the pipeline invoked in its chunk@=
 if !arch.Blocks[1].Executable {
 t.Fatal("expected executable")
 }
@@ -9538,12 +9899,12 @@ The acceptance tests run the binary on the case directories; they stay verbatim.
 # Helpers for tests/cases/*/driver.sh. Source this file; do not execute it.
 # assert_* print a diagnostic and exit 1 on failure.
 
-@<assertions of tests/assert.sh@>
+@<Litar@/assertions of tests/assert.sh@>
 
 @
 
 A passing command must leave stderr empty.
-@<assertions of tests/assert.sh@=
+@<Litar@/assertions of tests/assert.sh@=
 assert_ok() {
     _name=$1
     _exp=$2
@@ -9574,7 +9935,7 @@ assert_ok() {
 
 @
 
-@<assertions of tests/assert.sh@+
+@<Litar@/assertions of tests/assert.sh@+
 assert_text() {
     _name=$1
     _text=$2
@@ -9588,7 +9949,7 @@ assert_text() {
 @
 
 A failing command must leave stdout empty, and its stderr only has to contain the needle.
-@<assertions of tests/assert.sh@+
+@<Litar@/assertions of tests/assert.sh@+
 assert_fail() {
     _name=$1
     _needle=$2
@@ -10118,20 +10479,20 @@ fi
 passed=0
 failed=0
 
-@<functions of tests/run.sh that check a case and count it in 'passed' or 'failed'@>
+@<Litar@/functions of tests/run.sh that check a case and count it in 'passed' or 'failed'@>
 
 shopt -s nullglob
 
 for dir in "$CASEDIR"/*/; do
     name=$(basename "$dir")
-@<run the driver.sh of the case 'dir' named 'name', if it has one@>
+@<Litar@/run the driver.sh of the case 'dir' named 'name', if it has one@>
 
     case_bad=0
     back=$(pwd)
     cd "$dir"
 
     if [ -f argv ]; then
-@<run litar with the argv of the case 'dir' named 'name', and set 'case_bad' on a failure@>
+@<Litar@/run litar with the argv of the case 'dir' named 'name', and set 'case_bad' on a failure@>
     else
         echo "FAIL $name: no driver.sh or argv" >&2
         case_bad=1
@@ -10150,7 +10511,7 @@ fi
 
 @
 
-@<functions of tests/run.sh that check a case and count it in 'passed' or 'failed'@=
+@<Litar@/functions of tests/run.sh that check a case and count it in 'passed' or 'failed'@=
 finish_case() {
     if [ "$1" -eq 0 ]; then
         echo "ok $2"
@@ -10163,7 +10524,7 @@ finish_case() {
 
 @
 
-@<functions of tests/run.sh that check a case and count it in 'passed' or 'failed'@+
+@<Litar@/functions of tests/run.sh that check a case and count it in 'passed' or 'failed'@+
 # check_one name status out-file-or-empty err-file-or-empty cmd...
 check_one() {
     _name=$1
@@ -10179,15 +10540,15 @@ check_one() {
     _st=$?
     set -e
     _bad=0
-@<set '_bad' when the status '_st' or the stdout '_got_out' differs from '_status' and '_out_file'@>
-@<set '_bad' when the stderr '_got_err' does not match '_err_file', and show it@>
+@<.@/set '_bad' when the status '_st' or the stdout '_got_out' differs from '_status' and '_out_file'@>
+@<.@/set '_bad' when the stderr '_got_err' does not match '_err_file', and show it@>
     rm -f "$_got_out" "$_got_err" "$_exp_out"
     return "$_bad"
 }
 @
 
 Without an out file, the expected stdout '_exp_out' stays empty.
-@<set '_bad' when the status '_st' or the stdout '_got_out' differs from '_status' and '_out_file'@=
+@<Litar@/set '_bad' when the status '_st' or the stdout '_got_out' differs from '_status' and '_out_file'@=
     if [ "$_st" -ne "$_status" ]; then
         echo "FAIL $_name: exit $_st, expected $_status" >&2
         _bad=1
@@ -10204,7 +10565,7 @@ Without an out file, the expected stdout '_exp_out' stays empty.
 
 Only a successful case requires an empty stderr. A failed check shows the stderr
 once: the err file check has already shown it.
-@<set '_bad' when the stderr '_got_err' does not match '_err_file', and show it@=
+@<Litar@/set '_bad' when the stderr '_got_err' does not match '_err_file', and show it@=
     if [ -n "$_err_file" ]; then
         _needle=$(cat "$_err_file")
         if ! grep -F -q -e "$_needle" "$_got_err"; then
@@ -10225,7 +10586,7 @@ once: the err file check has already shown it.
     fi
 @
 
-@<run the driver.sh of the case 'dir' named 'name', if it has one@=
+@<Litar@/run the driver.sh of the case 'dir' named 'name', if it has one@=
     if [ -f "$dir/driver.sh" ]; then
         if bash "$dir/driver.sh" "$LITAR" "$ROOT"; then
             finish_case 0 "$name"
@@ -10237,7 +10598,7 @@ once: the err file check has already shown it.
 @
 
 The status, out and err files are optional.
-@<run litar with the argv of the case 'dir' named 'name', and set 'case_bad' on a failure@=
+@<Litar@/run litar with the argv of the case 'dir' named 'name', and set 'case_bad' on a failure@=
         args=()
         while IFS= read -r line || [ -n "$line" ]; do
             args+=("$line")
@@ -10286,25 +10647,8 @@ The status, out and err files are optional.
 {"description": "A loaded composition: its composer file, directory, ground, and nodes, ground nodes first."}
 @
 
-@<Chunk@/Build@=
-{"description": "What a build outside litar reads from the composition."}
-@
-A build outside litar evaluates each file of the file set go module.
-@<Build@/go module files@=
-@<@|Build@/Filters@/list files@+go module@>
-@
-
-Syncing the project tree writes every file of the composition,
-so this view names every file set; a new file set must be added here.
-@<Build@/project files@=
-@<@|Build@/Filters@/list files@+go module@+build@+tests@>
-@
-
-Each line is x for an executable file or - for a regular one, a space, and the path.
-The view shows an executable with execute permission, which the -p output loses.
-Lines are sorted by path, so the listing is stable.
-@<Build@/Filters@/list files@=#!/bin/sh
-find . -type f \( -perm -u+x -printf 'x %P\n' -o -printf '- %P\n' \) | LC_ALL=C sort -k 2
+@<Chunk@/Litar@=
+{"description": "The chunks of litar that are not files: parts of its sources and its web page."}
 @
 The command litar-web serves a browser interface for compositions.
 It runs litar -a and reads everything through that MCP server,
@@ -10315,7 +10659,7 @@ and the command line of litar stays as the design defines it.
 
 The page is embedded beside the program, so the command is one file to install.
 @[cmd/litar-web/index.html@`go module@=
-@<Litar Web@/page@>
+@<Litar@/Web@/page@>
 
 @
 
@@ -10416,20 +10760,20 @@ var call struct {
 Name      string         `json:"name"`
 Arguments map[string]any `json:"arguments"`
 }
-@<read into 'call' the JSON tool call of 'r', answering 'w' when it is refused@>
+@<Litar@/read into 'call' the JSON tool call of 'r', answering 'w' when it is refused@>
 res, err := session.CallTool(r.Context(), &mcp.CallToolParams{Name: call.Name, Arguments: call.Arguments})
 if err != nil {
 http.Error(w, err.Error(), http.StatusBadGateway)
 return
 }
-@<write to 'w' the text of the tool result 'res', as an error when it is one@>
+@<Litar@/write to 'w' the text of the tool result 'res', as an error when it is one@>
 }
 }
 
 @~ Go@/functions@/litar-web.toolHandler @
 
 Only the read-only tools may be called from the page.
-@<read into 'call' the JSON tool call of 'r', answering 'w' when it is refused@=
+@<Litar@/read into 'call' the JSON tool call of 'r', answering 'w' when it is refused@=
 if r.Header.Get("Content-Type") != "application/json" {
 http.Error(w, "the request must be application/json", http.StatusUnsupportedMediaType)
 return
@@ -10444,7 +10788,7 @@ return
 }
 @~ Go@/variables@/litar-web.readOnlyTools @
 
-@<write to 'w' the text of the tool result 'res', as an error when it is one@=
+@<Litar@/write to 'w' the text of the tool result 'res', as an error when it is one@=
 var text strings.Builder
 for _, c := range res.Content {
 if t, ok := c.(*mcp.TextContent); ok {
@@ -10476,13 +10820,13 @@ if err := http.ListenAndServe(command.flags.addr, nil); err != nil {
 	os.Exit(1)
 }
 @~ Go@/functions@/litar-web.connect @~ Go@/functions@/litar-web.serveIndex @~ Go@/functions@/litar-web.resourceHandler @~ Go@/functions@/litar-web.toolHandler @
-@<Chunk@/Litar Web@=
+@<Chunk@/Litar@/Web@=
 {"description": "The page that litar-web serves: markup, style, and script."}
 @
 
 The page is one HTML file with its style and script inline,
 so litar-web embeds a single file and needs no other assets.
-@<Litar Web@/page@=
+@<Litar@/Web@/page@=
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10516,7 +10860,7 @@ so litar-web embeds a single file and needs no other assets.
 
 Colors are custom properties, one per kind of name in a block,
 so the highlighting of blocks can be changed in one place.
-@<Litar Web@/style rules@=
+@<Litar@/Web@/style rules@=
 :root {
   --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --bg: #ffffff; --panel: #f6f8fa;
   --accent: #0969da; --ref: #8250df; --item: #1a7f37; --header: #cf222e; --pipe: #953800;
@@ -10532,7 +10876,7 @@ header .grow { flex: 1; min-width: 120px; }
 @
 
 The class wide hides the list, for the views that need no tree.
-@<Litar Web@/style rules@+
+@<Litar@/Web@/style rules@+
 #sidebar { overflow: auto; border-right: 1px solid var(--line); padding: 8px; }
 #main { display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
 #tabs, .subtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); padding: 0 8px; }
@@ -10545,7 +10889,7 @@ The class wide hides the list, for the views that need no tree.
 #body.wide #list { display: none; }
 @
 
-@<Litar Web@/style rules@+
+@<Litar@/Web@/style rules@+
 ul.tree { list-style: none; margin: 0; padding-left: 14px; }
 ul.tree.top { padding-left: 0; }
 ul.tree li { margin: 1px 0; }
@@ -10563,7 +10907,7 @@ h2 { font-size: 16px; margin: 0 0 8px; word-break: break-all; }
 @
 
 The names in a block take the color of their kind, and links inside them keep it.
-@<Litar Web@/style rules@+
+@<Litar@/Web@/style rules@+
 .block { border: 1px solid var(--line); border-radius: 6px; margin: 0 0 12px; overflow: hidden; }
 .block .comment { padding: 6px 10px; background: var(--panel); white-space: pre-wrap; color: var(--muted); }
 pre { margin: 0; padding: 8px 10px; font: 13px/1.45 ui-monospace, monospace; overflow: auto; }
@@ -10576,7 +10920,7 @@ pre a { text-decoration: none; }
 @
 
 Line numbers are generated by a CSS counter, so copied text has none.
-@<Litar Web@/style rules@+
+@<Litar@/Web@/style rules@+
 pre.lines { counter-reset: line; padding-left: 0; }
 pre.lines span { display: block; padding-left: 4.5em; text-indent: -4.5em; }
 pre.lines span::before { counter-increment: line; content: counter(line);
@@ -10589,7 +10933,7 @@ select.spec { font: inherit; margin: 0 0 8px; }
 A header holds the composition picker and the expression box;
 below it the sidebar lists nodes, and the main area shows the tabs of a node,
 a tree of chunks, files, or items, and the detail of one entry.
-@<Litar Web@/page layout@=
+@<Litar@/Web@/page layout@=
 <header>
   <h1>litar</h1>
   <select id="composition" title="composition"></select>
@@ -10604,7 +10948,7 @@ a tree of chunks, files, or items, and the detail of one entry.
   <div id="body"><div id="list"></div><div id="detail"></div></div>
 </section>
 @
-@<Litar Web@/resource access@=
+@<Litar@/Web@/resource access@=
 // Resource access: the server forwards these to the MCP server of litar.
 async function answer(response) {
   const text = await response.text();
@@ -10622,7 +10966,7 @@ async function tool(name, args) {
 }
 @
 
-@<Litar Web@/resource access@+
+@<Litar@/Web@/resource access@+
 // Ids stay valid while nothing changes the composition, so trees are cached per node.
 const cache = new Map();
 async function tree(kind, c, n, extra) {
@@ -10632,7 +10976,7 @@ async function tree(kind, c, n, extra) {
 }
 @
 
-@<Litar Web@/trees@=
+@<Litar@/Web@/trees@=
 // Trees: every tree has a root; the leaves are the chunks, files, or items.
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
@@ -10655,14 +10999,17 @@ function leafIndex(t) {
 
 A branch folds. While filtering, every branch is open. Otherwise a branch the reader opened or folded
 keeps that state, for each node and kind of tree, and any other branch is open when it holds the selected leaf.
-@<Litar Web@/trees@+
+A tree lists its sub-trees before its leaves, each group in name order.
+@<Litar@/Web@/trees@+
 // A subtree is shown when the filter matches its path or one of its leaves.
 const folds = new Map();
 const foldKey = (kind, path) => state.c + '/' + state.n + '/' + kind + '/' + JSON.stringify(path);
+const bySubTreesThenName = (a, b) =>
+  (subs(b).length > 0) - (subs(a).length > 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 function treeHTML(t, href, selected, filter, kind, path = []) {
   const items = [];
   let holds = false;
-  for (const s of subs(t)) {
+  for (const s of subs(t).slice().sort(bySubTreesThenName)) {
     const p = path.concat(s.name);
     const desc = s.description ? '<span class="desc">' + esc(s.description) + '</span>' : '';
     if (subs(s).length === 0) {
@@ -10686,7 +11033,7 @@ function treeHTML(t, href, selected, filter, kind, path = []) {
 
 The filter box redraws the tree on every keystroke, without fetching it again.
 Folding while filtering is not remembered, since the filter opens every branch.
-@<Litar Web@/trees@+
+@<Litar@/Web@/trees@+
 function showTree(t, href, selected, kind) {
   const list = $('list');
   list.innerHTML = '<div class="tools"><input class="filter" placeholder="filter ' + esc(kind) + '">'
@@ -10713,7 +11060,7 @@ function showTree(t, href, selected, kind) {
   draw();
 }
 @
-@<Litar Web@/names@=
+@<Litar@/Web@/names@=
 // Names: '@@@@' is a literal '@@', so a separator is a control not preceded by another '@@'.
 function splitControl(raw, c) {
   const parts = [];
@@ -10730,7 +11077,7 @@ const decode = s => s.replace(/@@@@/g, '@@').trim();
 const encode = s => s.replace(/@@/g, '@@@@');
 @
 
-@<Litar Web@/names@+
+@<Litar@/Web@/names@+
 // A reference without labels takes the labels of scope, the reference that applies its block,
 // and a module path starting with . or .. is relative to the module of scope, its block's header.
 function parseRef(raw, scope) {
@@ -10755,7 +11102,7 @@ function refText(ref) {
 
 @
 
-@<Litar Web@/names@+
+@<Litar@/Web@/names@+
 // Meta chunks live in reserved modules that the chunk tree leaves out.
 // Chunk, File, and Index blocks link to what they describe; the others stay plain.
 const reserved = ['Chunk', 'Specialization', 'File', 'Index'];
@@ -10774,7 +11121,7 @@ function pathRef(path, labels) {
 }
 @
 
-@<Litar Web@/block rendering@=
+@<Litar@/Web@/block rendering@=
 // Block rendering: a small scanner of the archive syntax that links names to their pages.
 // Blocks apply with labels, the labels of the reference being viewed, or else with the labels of their headers.
 const isLetter = c => /[A-Za-z]/.test(c) || c > '\x7f';
@@ -10799,7 +11146,7 @@ function linesHTML(text) {
 @
 
 The text before a block is its comment, shown above it.
-@<Litar Web@/render into 'blocks' the block opened by 'open', after its 'comment'@=
+@<Litar@/Web@/render into 'blocks' the block opened by 'open', after its 'comment'@=
     i += 2;
     let head = '', header = null;
 @<.@/render into 'head' the header of the block opened by 'open', and parse it into 'header'@>
@@ -10813,7 +11160,7 @@ The text before a block is its comment, shown above it.
 @
 
 A stop of ' ' stands for any white space, and so for the end of the text.
-@<Litar Web@/scanners 'name' and 'ctl' of the names and controls of 'text' at 'i'@=
+@<Litar@/Web@/scanners 'name' and 'ctl' of the names and controls of 'text' at 'i'@=
   // Read a name up to a control in stops; '@@@@', '@@:' and '@@/' belong to names.
   const name = stops => {
     const start = i;
@@ -10831,7 +11178,7 @@ A stop of ' ' stands for any white space, and so for the end of the text.
 @
 
 A file header links its path, and its sets stay plain.
-@<Litar Web@/render into 'head' the header of the block opened by 'open', and parse it into 'header'@=
+@<Litar@/Web@/render into 'head' the header of the block opened by 'open', and parse it into 'header'@=
     if (open === '<') {
       const raw = name('=+');
       header = parseRef(raw, null);
@@ -10846,7 +11193,7 @@ A file header links its path, and its sets stay plain.
 @
 
 The end control is a '@@' before white space or the end of the text.
-@<Litar Web@/render into 'body' the content of the block, resolving its references in 'scope'@=
+@<Litar@/Web@/render into 'body' the content of the block, resolving its references in 'scope'@=
     while (i < text.length) {
       if (text[i] !== '@@') { body += esc(text[i++]); continue; }
       const c = text[i + 1];
@@ -10867,7 +11214,7 @@ The end control is a '@@' before white space or the end of the text.
     }
 @
 
-@<Litar Web@/render into 'body' the reference at 'i' and its filters, in 'scope'@=
+@<Litar@/Web@/render into 'body' the reference at 'i' and its filters, in 'scope'@=
         i += 2;
         const raw = name('>');
         i += 2;
@@ -10880,7 +11227,7 @@ The end control is a '@@' before white space or the end of the text.
         body += '<span class="r">' + ctl('@@<') + inner + ctl('@@>') + '</span>';
 @
 
-@<Litar Web@/views@=
+@<Litar@/Web@/views@=
 // Views: the sidebar shows the nodes, the list shows a tree of the node, the detail one entry.
 const state = {c: null, n: null};
 async function showCompositions() {
@@ -10899,7 +11246,7 @@ async function showNodes() {
 }
 @
 
-@<Litar Web@/views@+
+@<Litar@/Web@/views@+
 function showTabs(tab) {
   const base = '#/' + state.c + '/' + state.n;
   $('tabs').innerHTML = ['chunks', 'files', 'items', 'blocks'].map(t =>
@@ -10915,7 +11262,7 @@ const isSuffix = (spec, labels) => spec.every((l, k) => l === labels[labels.leng
 @
 
 The labels of the reference followed to the chunk stay when its specialization applies to them.
-@<Litar Web@/views@+
+@<Litar@/Web@/views@+
 async function chunkView(chunkId, specId, view, refLabels) {
   const chunks = await tree('chunk', state.c, state.n);
   const index = leafIndex(chunks);
@@ -10934,7 +11281,7 @@ async function chunkView(chunkId, specId, view, refLabels) {
 }
 @
 
-@<Litar Web@/show in the detail 'ref', the specializations 'options', and the subtabs of 'view' at 'here'@=
+@<Litar@/Web@/show in the detail 'ref', the specializations 'options', and the subtabs of 'view' at 'here'@=
   let html = '<h2>' + esc(refText(ref)) + '</h2>';
 @<.@/add to 'html' the picker of 'options', and a note on the 'labels' beyond 'spec'@>
   const views = {effective: 'Effective', apply: 'Applied', depend: 'Dependents', result: 'Result'};
@@ -10946,7 +11293,7 @@ async function chunkView(chunkId, specId, view, refLabels) {
   if (select) select.addEventListener('change', () => { location.hash = here + '/' + select.value + '/' + view; });
 @
 
-@<Litar Web@/add to 'html' the picker of 'options', and a note on the 'labels' beyond 'spec'@=
+@<Litar@/Web@/add to 'html' the picker of 'options', and a note on the 'labels' beyond 'spec'@=
   if (options.length > 1) {
     html += '<select class="spec">' + options.map(o => '<option value="' + o.id + '"' + (o === spec ? ' selected' : '') + '>'
       + esc(o.labels.length ? o.labels.join('@@:') : '(no label)') + '</option>').join('') + '</select>';
@@ -10958,7 +11305,7 @@ async function chunkView(chunkId, specId, view, refLabels) {
 @
 
 Dependents are shown with the labels of their own headers, since they apply elsewhere.
-@<Litar Web@/show the 'view' of 'ref' through the specialization 'spec' with 'labels'@=
+@<Litar@/Web@/show the 'view' of 'ref' through the specialization 'spec' with 'labels'@=
   let out;
   try {
     out = view === 'result'
@@ -10973,7 +11320,7 @@ Dependents are shown with the labels of their own headers, since they apply else
 @
 
 A file is fetched directly, so its Content-Type tells text from a binary file.
-@<Litar Web@/views@+
+@<Litar@/Web@/views@+
 async function fileView(fileId) {
   const files = await tree('file', state.c, state.n);
   showTree(files, s => nodeBase() + '/files/' + s.id, fileId, 'files');
@@ -10988,7 +11335,7 @@ async function fileView(fileId) {
 }
 @
 
-@<Litar Web@/views@+
+@<Litar@/Web@/views@+
 async function itemView(itemId) {
   const items = await tree('item', state.c, state.n);
   showTree(items, s => nodeBase() + '/items/' + s.id, itemId, 'items');
@@ -10999,7 +11346,7 @@ async function itemView(itemId) {
 }
 @
 
-@<Litar Web@/views@+
+@<Litar@/Web@/views@+
 async function blocksView() {
   detail('<h2>Own blocks</h2><div id="view"><p class="note">Loading…</p></div>');
   $('view').innerHTML = renderBlocks(await resource('blocks://node/' + state.c + '/' + state.n), nodeBase());
@@ -11013,7 +11360,7 @@ async function evalView(expression) {
 }
 @
 
-@<Litar Web@/views@+
+@<Litar@/Web@/views@+
 // Links in blocks name their target; find its id, then replace the location with its page.
 // A chunk opens at its deepest specialization whose labels end the target's labels.
 async function resolveLink(kind, target) {
@@ -11030,7 +11377,7 @@ async function resolveLink(kind, target) {
 @
 
 The labels of a specialization path run from the innermost, so the target's labels are reversed to match.
-@<Litar Web@/go to the chunk of the reference 'target', at its deepest matching specialization@=
+@<Litar@/Web@/go to the chunk of the reference 'target', at its deepest matching specialization@=
     const chunks = await tree('chunk', state.c, state.n);
     // A root chunk that is a file is listed below File.
     const byPath = leafIndex(chunks).byPath;
@@ -11049,7 +11396,7 @@ The labels of a specialization path run from the innermost, so the target's labe
     location.replace(nodeBase() + '/chunks/' + id + '/' + best + '/effective' + labelsPart(target.labels, want.slice(0, depth)));
 @
 
-@<Litar Web@/routing@=
+@<Litar@/Web@/routing@=
 // Routing: #/composition/node/tab/..., so every page has a link and history works.
 async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(p => p !== '').map(decodeURIComponent);
@@ -11073,7 +11420,7 @@ async function route() {
 
 @
 
-@<Litar Web@/go to the last node of 'root' when 'parts' names no node@=
+@<Litar@/Web@/go to the last node of 'root' when 'parts' names no node@=
     if (parts.length < 2) {
       let last = root;
       walk(root, s => { last = s; });
@@ -11082,7 +11429,7 @@ async function route() {
 @
 
 The singular tabs ref, file, and item resolve a link from a block, under the tab of their kind.
-@<Litar Web@/show the tab of the node that 'parts' names@=
+@<Litar@/Web@/show the tab of the node that 'parts' names@=
     const [tab = 'chunks', a, b, c, d] = parts.slice(2);
     const num = x => x === undefined ? undefined : Number(x);
     showTabs(tab === 'ref' ? 'chunks' : tab === 'file' || tab === 'item' ? tab + 's' : tab);
@@ -11096,7 +11443,7 @@ The singular tabs ref, file, and item resolve a link from a block, under the tab
 @
 
 Importing clears the cache of trees, since ids of other compositions may change.
-@<Litar Web@/routing@+
+@<Litar@/Web@/routing@+
 $('composition').addEventListener('change', e => { location.hash = '#/' + e.target.value; });
 $('import').addEventListener('click', async () => {
   const path = $('import-path').value.trim();
@@ -11110,7 +11457,7 @@ $('import').addEventListener('click', async () => {
 });
 @
 
-@<Litar Web@/routing@+
+@<Litar@/Web@/routing@+
 const evaluate = () => {
   const expression = $('expression').value.trim();
   if (expression && state.n !== null) location.hash = nodeBase() + '/eval/' + encodeURIComponent(expression);
@@ -11134,7 +11481,7 @@ and a test file the base name of the file it tests followed by test.
 name: 'litar',
 @
 The earlier block of a chunk is the one before it in specializationOrder.
-@<link each block to the earlier block of its chunk in 'chainPrev'@=
+@<Litar@/link each block to the earlier block of its chunk in 'chainPrev'@=
 for _, idx := range byChunk {
 	order := specializationOrder(blocks, idx)
 	chainPrev[order[0]] = -1
@@ -11146,7 +11493,7 @@ for _, idx := range byChunk {
 The own blocks are ordered before the effective sets are computed,
 so a less specialized block applied later does not hide a more specialized one.
 The effective set is computed once per chunk reference, since many blocks share one.
-@<keep the effective own blocks of 'n' in 'kept'@=
+@<Litar@/keep the effective own blocks of 'n' in 'kept'@=
 own := orderOwn(n.Own)
 cache := map[string]map[int]bool{}
 for bi, bl := range own {
@@ -11349,30 +11696,30 @@ fail := func(format string, a ...any) int {
 	return 1
 }
 var mode, operand string
-@<choose 'mode' and 'operand' from the actions given in 'opts'@>
+@<Litar@/choose 'mode' and 'operand' from the actions given in 'opts'@>
 
 archive := opts.File
 sawFile := archive != ""
-@<check that an archive is given unless 'mode' is agent@>
+@<Litar@/check that an archive is given unless 'mode' is agent@>
 
-@<run the action chosen by 'mode'@>
+@<Litar@/run the action chosen by 'mode'@>
 }
 
 @~ Go@/functions@/litar.run @~ Go@/types@/litar.Options @
 
-@<run the action chosen by 'mode'@=
+@<Litar@/run the action chosen by 'mode'@=
 var (
 	world *World
 	node  string
 )
-@<load 'world' and 'node' from 'archive'@>
+@<.@/load 'world' and 'node' from 'archive'@>
 
-@<serve agents in agent mode@>
+@<.@/serve agents in agent mode@>
 
-@<dispatch 'mode' and write the result to 'stdout'@>
+@<.@/dispatch 'mode' and write the result to 'stdout'@>
 @~ Go@/types@/litar.World @
 
-@<load 'world' and 'node' from 'archive'@=
+@<Litar@/load 'world' and 'node' from 'archive'@=
 if sawFile {
 	var err error
 	world, node, err = FindArchive(archive)
@@ -11383,7 +11730,7 @@ if sawFile {
 @~ Go@/functions@/litar.FindArchive @
 
 The agent serves until its input ends or it is cancelled; neither is an error.
-@<serve agents in agent mode@=
+@<Litar@/serve agents in agent mode@=
 if mode == "agent" {
 	ag := newAgent()
 	if world != nil {
@@ -11398,7 +11745,7 @@ if mode == "agent" {
 }
 @~ Go@/functions@/litar.newAgent @~ Go@/methods@/litar.agent.addWorld @~ Go@/methods@/litar.agent.refresh @~ Go@/methods@/litar.agent.serve @
 
-@<dispatch 'mode' and write the result to 'stdout'@=
+@<Litar@/dispatch 'mode' and write the result to 'stdout'@=
 text, err := dispatch(world, node, mode, operand, stderr)
 if err != nil {
 	return fail("%s", err.Error())
@@ -11411,13 +11758,13 @@ return 0
 
 @<cli@:litar@:Go Structure@/functions@+
 func dispatch(world *World, node, mode, operand string, stderr io.Writer) (string, error) {
-@<resolve an empty 'node' to the root node@>
+@<Litar@/resolve an empty 'node' to the root node@>
 chain, err := world.Chain(node)
 if err != nil {
 	return "", err
 }
 switch mode {
-@<cases of 'mode' in 'dispatch'@>
+@<Litar@/cases of 'mode' in 'dispatch'@>
 default:
 	return "", fmt.Errorf("unknown option '%s'", mode)
 }
@@ -11426,7 +11773,7 @@ default:
 @~ Go@/functions@/litar.dispatch @~ Go@/methods@/litar.World.Chain @~ Go@/types@/litar.World @
 
 A caller that gives no node path gets the root node of the composition.
-@<resolve an empty 'node' to the root node@=
+@<Litar@/resolve an empty 'node' to the root node@=
 if node == "" {
 	var err error
 	node, err = world.rootName()
@@ -11436,7 +11783,7 @@ if node == "" {
 }
 @~ Go@/methods@/litar.World.rootName @
 
-@<cases of 'mode' in 'dispatch'@=
+@<Litar@/cases of 'mode' in 'dispatch'@=
 case "print":
 	ref, filters, err := ParsePrint(operand)
 	if err != nil {
@@ -11450,7 +11797,7 @@ case "print":
 	return ev.Eval(ref, filters)
 @~ Go@/functions@/litar.NewEvaluator @~ Go@/functions@/litar.ParsePrint @~ Go@/methods@/litar.Evaluator.Eval @~ Go@/methods@/litar.World.Mappings @
 
-@<cases of 'mode' in 'dispatch'@+
+@<Litar@/cases of 'mode' in 'dispatch'@+
 case "literal":
 	ref, err := ParseChunkRef(operand)
 	if err != nil {
@@ -11471,7 +11818,7 @@ case "depend":
 	return Depend(chain, ref), nil
 @~ Go@/functions@/litar.Depend @~ Go@/functions@/litar.Effective @~ Go@/functions@/litar.Literal @~ Go@/functions@/litar.ParseChunkRef @
 
-@<cases of 'mode' in 'dispatch'@+
+@<Litar@/cases of 'mode' in 'dispatch'@+
 case "reference":
 	item, err := ParseItem(operand)
 	if err != nil {
@@ -11482,7 +11829,7 @@ case "reference":
 
 Only one action is allowed. Two actions are reported in the order of modeOrder,
 so the message does not depend on the order of the arguments.
-@<choose 'mode' and 'operand' from the actions given in 'opts'@=
+@<Litar@/choose 'mode' and 'operand' from the actions given in 'opts'@=
 operands := map[string]string{
 	"print":     opts.Print,
 	"literal":   opts.Literal,
@@ -11509,7 +11856,7 @@ if mode == "" {
 @~ Go@/constants@/litar.missingAction @~ Go@/variables@/litar.modeOrder @
 
 The agent mode may start without an archive; compositions can be imported later.
-@<check that an archive is given unless 'mode' is agent@=
+@<Litar@/check that an archive is given unless 'mode' is agent@=
 if mode != "agent" && !sawFile {
 	return fail("missing -f, --file")
 }
@@ -11566,7 +11913,7 @@ var (
 	out     string
 	errText string
 )
-@<checks of running litar on 'a.la'@>
+@<Litar@/checks of running litar on 'a.la'@>
 }
 
 @~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.writeFile @
@@ -11575,9 +11922,9 @@ var (
 func TestFindArchive(t *testing.T) {
 dir := t.TempDir()
 sub := filepath.Join(dir, "sub")
-@<write a composition in 'dir' with a child archive under 'sub', and another composition in 'sub'@>
+@<Litar@/write a composition in 'dir' with a child archive under 'sub', and another composition in 'sub'@>
 
-@<check the archives FindArchive finds in 'dir' and 'sub'@>
+@<Litar@/check the archives FindArchive finds in 'dir' and 'sub'@>
 
 code, out, errText := runOut(t, Options{File: filepath.Join(sub, "deep", "child.la"), Print: "msg"})
 if code != 0 || errText != "" || out != "basechild" {
@@ -11589,7 +11936,7 @@ if code != 0 || errText != "" || out != "basechild" {
 
 The child archive lies under sub, whose own composition does not declare it,
 so the search must go on past the nearest composer.
-@<write a composition in 'dir' with a child archive under 'sub', and another composition in 'sub'@=
+@<Litar@/write a composition in 'dir' with a child archive under 'sub', and another composition in 'sub'@=
 writeFile(t, filepath.Join(dir, "base.la"), "@@<msg@@=base@@\n")
 if err := os.MkdirAll(filepath.Join(sub, "deep"), 0o755); err != nil {
 	t.Fatal(err)
@@ -11605,7 +11952,7 @@ writeFile(t, filepath.Join(sub, "composer.json"), composerDoc(`[
 ]`))
 @~ Go@/functions@/litar.composerDoc @~ Go@/functions@/litar.writeFile @
 
-@<check the archives FindArchive finds in 'dir' and 'sub'@=
+@<Litar@/check the archives FindArchive finds in 'dir' and 'sub'@=
 w, node, err := FindArchive(filepath.Join(sub, "deep", "child.la"))
 if err != nil || node != "base/child" || w.Composer != filepath.Join(dir, "composer.json") {
 	t.Fatalf("child %v %q", err, node)
@@ -11625,7 +11972,7 @@ if _, _, err := FindArchive(filepath.Join(dir, "none.la")); err == nil || !strin
 @~ Go@/functions@/litar.FindArchive @~ Go@/functions@/litar.writeFile @
 
 Each check runs litar on a.la with one action.
-@<checks of running litar on 'a.la'@=
+@<Litar@/checks of running litar on 'a.la'@=
 code, out, errText = runOut(t, Options{File: "a.la", Print: "msg"})
 if code != 0 || errText != "" || out != "Hello" {
 	t.Fatalf("%d %q %q", code, out, errText)
@@ -11636,7 +11983,7 @@ if code != 0 || errText != "" || !strings.Contains(out, "@@<msg@@=") {
 }
 @~ Go@/functions@/litar.runOut @~ Go@/types@/litar.Options @
 
-@<checks of running litar on 'a.la'@+
+@<Litar@/checks of running litar on 'a.la'@+
 code, out, errText = runOut(t, Options{File: "a.la", Print: "missing"})
 if code == 0 || out != "" || !strings.Contains(errText, "chunk 'missing' is not defined") {
 	t.Fatalf("missing %d %q %q", code, out, errText)

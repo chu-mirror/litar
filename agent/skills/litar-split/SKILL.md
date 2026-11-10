@@ -11,7 +11,7 @@ Rules: Blocks and Naming chunks in [style.md](../references/style.md) (the full 
 ## Scripts
 
 Run them; do not rewrite them. They need `LITAR` (the binary) and `LITAR_LIBRARY` (the grounds),
-e.g. `LITAR=./litar LITAR_LIBRARY=grounds` in the litar repository.
+e.g. `LITAR=bin/litar LITAR_LIBRARY=grounds` in the litar repository.
 
 - `scripts/measure.py [-n NODE] [-l LIMIT] COMPOSITION_DIR` lists the node's own blocks longer
   than LIMIT tokens (default 150; estimated as characters / 4), longest first.
@@ -43,14 +43,14 @@ Optional new comment for the outline block.
 @<cli@:litar@:Go Structure@/functions@+
 func run(args []string) int {
 prog := "litar"
-@<print the usage of 'prog' if asked@>
+@<Litar@/print the usage of 'prog' if asked@>
 
-@<parse the options@>
+@<Litar@/parse the options@>
 }
 
 @~ Go@/functions@/litar.run @
 
-@<print the usage of 'prog' if asked@=
+@<Litar@/print the usage of 'prog' if asked@=
 ...
 @~ Go@/functions@/litar.usage @
 %%
@@ -63,6 +63,9 @@ The first block of a group must keep the header and first content line of the bl
 Follow it with the sub-chunk blocks in reading order (depth first). Shape the split:
 
 - Make the old block an outline tree: its steps become references, each on a line of its own.
+- Put the sub-chunks in the project's module (`Litar@/…`), or in a submodule of the module that
+  owns the outline when nothing outside it may refer to them; refer to them relatively from
+  blocks in that module (`@<.@/…@>`).
 - Name each step after its action, quoting the objects it works on. Declare every quoted object
   before the reference that quotes it, in the parent block.
 - Never use an object outside the chunk that declares it. Move the declaration up into the block

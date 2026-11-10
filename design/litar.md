@@ -425,7 +425,7 @@ litar calculates final files using lazy evaluation; the calculation happens just
 After the calculation, litar mounts a FUSE filesystem and runs the filter under the mountpoint.
 The FUSE filesystem has several characteristics:
 
-- it contains the files specified as above, all files are read-only;
+- it contains the files specified as above;
 - it behaves as an overlay filesystem, a filter might create files,
   litar creates a temporary directory in the host filesystem,
   and maps all writing to the temporary directory.
@@ -593,7 +593,6 @@ to the FUSE filesystem created when an invocation happens.
 
 The example above adds a file `data/samples.txt` to the node and attaches it to the fileset `data`;
 the content of the file is the same as `./samples.txt` relative to the composer file.
-The files created like this are read-only too.
 A child keeps its base's mappings and can add more.
 
 # Reserved Namespaces

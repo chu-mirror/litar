@@ -129,6 +129,35 @@ then the chunk name shall be `save the sum of 'number1' and 'number2' to 'number
 Other structures, such as a complicated data structure or a structured document, etc,
 shall be named with a noun phrase, **name a tree with a noun phrase if it's not an action**.
 
+# Encapsulate a chunk that shall not be referred outside the module into a submodule
+
+This rule is derived from the general rule: hide the unnecessary details.
+Here is an example that shows each case:
+
+```
+@<C Structure@/module@=
+@<.@/includes@>
+@<.@/definitions@>
+@
+
+@<C Structure@/definitions@+
+void print_hello()
+{
+    @<.@/Output@/print hello to stdout@>
+}
+@
+
+@<C Structure@/Output@/print hello to stdout@=
+printf("Hello\n");
+@
+```
+
+The chunk `includes` and `definitions` are in the same module as `module`,
+but `print hello to stdout` is in the submodule `Output`.
+Because the former two form a template, when another module use `module` to create
+a C module so it must access the two chunks directly, but `print hello to stdout`
+is used only by the function `print_hello`, it's not supposed to be accessed outside the module.
+
 # If a tree is big enough, divide it
 
 So how do we determine whether a tree is big enough?
@@ -250,4 +279,18 @@ void hello()
 }
 @~ function@/hello @
 ```
+
+# Encapsulate the build system in a wrapping composition
+
+When dealing with a code base, the code itself usually is not the final product,
+but the compiled binaries.  In principle, a binary file can be a chunk as well,
+and for powerful LLMs, a binary file is just as readable as source code.
+So why cannot we just evaluate an expression and print the value as the final produce?
+There's still another problem, we finally want to move the final product out of the internal filesystem,
+so where does it move to? We must answer the question, but where shall we put the answer.
+
+The best place is a new composition wrapping the code base; all the details related to the real world
+can be encapsulated to that composition.
+This wrapping composition works like traditional build system, like MakeFile, CMake etc.
+We may map build directory to the internal filesystem, gather build scripts, etc, in this composition.
 

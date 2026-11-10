@@ -33,20 +33,23 @@ Prerequisites:
 - FUSE (`/dev/fuse`) for the view tests.
   Those tests skip when it is absent.
 
-The `Makefile` at the root builds litar from `compos`:
+The `Makefile` at the root builds litar from `compos`.
+The build itself is the composition in `build`, whose ground is `compos`:
+its node maps `bin` and `src` of the repository into the filter views,
+and each target evaluates one of its chunks.
 
-- `make` evaluates the Go files of `compos` into `tmp/build` and compiles `./litar` and `./litar-web`.
-  With no `./litar` yet, it first compiles `tmp/boot/litar` from `src` to do the evaluation.
+- `make` compiles `bin/litar` and `bin/litar-web` from the Go files of `compos`.
+  With no `bin/litar` yet, it first compiles `tmp/boot/litar` from `src` to do the evaluation.
 - `make sync` writes every file of `compos` into `src`.
-- `make web` opens `compos` in `./litar-web` at <http://127.0.0.1:8080/> (`WEB_ADDR` changes it).
-- `make install` installs `./litar` and `./litar-web` into `$(PREFIX)/bin`
+- `make web` opens `compos` in `bin/litar-web` at <http://127.0.0.1:8080/> (`WEB_ADDR` changes it).
+- `make install` installs `bin/litar` and `bin/litar-web` into `$(PREFIX)/bin`
   and the grounds under `$(PREFIX)/share/litar`; `PREFIX` defaults to `/usr/local`.
   It does not build, so run `make && sudo make install`.
 - `make install-cursor` then sets up Cursor for every workspace, as the user and with the same `PREFIX`:
   it adds the `litar` MCP server, running the installed binary and grounds, to `~/.cursor/mcp.json`,
   keeping the other servers, and copies the skills of `agent/skills` into `~/.cursor/skills`.
   `install-mcp` and `install-skills` do each part; `CURSOR_DIR` changes `~/.cursor`.
-- `make clean` removes `tmp/build`, `tmp/boot`, `./litar`, and `./litar-web`.
+- `make clean` removes `bin` and `tmp/boot`.
 
 Edit `compos`, not `src`; `make sync` overwrites the files it lists.
 
@@ -58,7 +61,7 @@ and for a chunk its specializations, effective, applied, and dependent blocks, a
 References, filters, items, and file headers in blocks are links.
 
 ```
-LITAR_LIBRARY=grounds ./litar-web -litar ./litar -file examples/go/project-hello.la
+LITAR_LIBRARY=grounds bin/litar-web -litar bin/litar -file examples/go/project-hello.la
 ```
 
 It listens on `127.0.0.1:8080` by default (`-addr`).
@@ -81,5 +84,5 @@ litar looks for a ground in the current directory, then in each directory of `$L
 `/usr/local/share/litar`, and `/usr/share/litar`.
 
 ```
-LITAR_LIBRARY=grounds ./litar -f examples/c/hello.la -p hello.c
+LITAR_LIBRARY=grounds bin/litar -f examples/c/hello.la -p hello.c
 ```

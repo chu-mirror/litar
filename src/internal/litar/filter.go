@@ -15,7 +15,9 @@ type catFile struct {
 	executable bool
 	archive    bool
 	mapping    bool
-	origin     string
+	// dir is set for a mapping of a directory.
+	dir    bool
+	origin string
 }
 
 type catalog struct {
@@ -29,6 +31,7 @@ type viewFile struct {
 	executable bool
 	origin     string
 	archive    bool
+	dir        bool
 	body       []byte
 	// ino is assigned once for the mount. A fresh number on each
 	// lookup makes tools treat the file as replaced mid-invocation.
@@ -101,6 +104,7 @@ func (c *catalog) apply(ops []ViewOp) ([]viewFile, error) {
 			executable: f.executable && f.archive,
 			origin:     f.origin,
 			archive:    f.archive,
+			dir:        f.dir && !f.archive,
 		})
 	}
 	return out, nil
@@ -108,16 +112,23 @@ func (c *catalog) apply(ops []ViewOp) ([]viewFile, error) {
 
 // tangle writes each view file's bytes before the filter process starts.
 // An archive file is the root-module chunk named by its path.
-// A mapped file is the contents of origin.
+// A mapped file is the contents of origin. A mapped directory is created
+// when it is missing, so a build can write into a fresh tree.
 func (e *Evaluator) tangle(files []viewFile) error {
 	for i := range files {
 		var (
 			data []byte
 			err  error
 		)
-		if files[i].archive {
+		switch {
+		case files[i].archive:
 			data, err = e.readChunk(Name(files[i].path))
-		} else {
+		case files[i].dir:
+			if err = os.MkdirAll(files[i].origin, 0o755); err != nil {
+				err = fmt.Errorf("could not create '%s'", files[i].origin)
+				e.noteErr(err)
+			}
+		default:
 			data, err = os.ReadFile(files[i].origin)
 			if err != nil {
 				err = fmt.Errorf("could not read '%s'", files[i].origin)
@@ -158,11 +169,13 @@ func buildCatalog(chain []Block, mappings []Mapping) *catalog {
 		}
 	}
 	for _, m := range mappings {
-		f := touch(m.Path)
+		path, dir := strings.CutSuffix(m.Path, "/")
+		f := touch(path)
 		if f.archive {
-			c.conflicts[m.Path] = true
+			c.conflicts[path] = true
 		}
 		f.mapping = true
+		f.dir = dir
 		f.origin = m.Origin
 		for _, set := range m.FileSet {
 			f.sets[set] = struct{}{}

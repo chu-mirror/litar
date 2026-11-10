@@ -10,7 +10,7 @@
 @<.@/exported macros@>
 @<.@/exported data type declarations@>
 @<.@/exported data types@>
-@<.@/global declarations@>
+@<.@/Internals@/global declarations@>
 @<.@/exported static inline functions@>
 @|C Structure@/Filters@/wrap with included flag
 @|C Structure@/Filters@/format C code@,.clang-format@
@@ -20,11 +20,11 @@
 cproto -s
 @
 
-@<C Structure@/global declarations@+
-@<.@/macros@>
-@<.@/data type declarations@>
-@<.@/global variables@>
-@<.@/functions@>
+@<C Structure@/Internals@/global declarations@+
+@<..@/macros@>
+@<..@/data type declarations@>
+@<..@/global variables@>
+@<..@/functions@>
 @|C Structure@/Filters@/extract global declarations@
 
 @<C Structure@/Filters@/extract global declarations@=#!/bin/sh
@@ -128,7 +128,7 @@ class ModuleMeta(pydantic.BaseModel):
 
 
 meta = configuration(ModuleMeta, r'''
-@<..@/module meta information@>
+@<..@/Internals@/module meta information@>
 ''')
 flag = meta.included_flag_format % meta.name.upper()
 sys.stdout.write(f'#ifndef {flag}\n#define {flag}\n')
@@ -138,12 +138,12 @@ sys.stdout.write('#endif\n')
 The module meta information is a Jsonnet object.
 The module properties are the fields of a second object, which override these defaults;
 Jsonnet rejects a field given twice in the module properties.
-@<C Structure@/module meta information@=
+@<C Structure@/Internals@/module meta information@=
 {
     name: 'default',
     included_flag_format: '_MODULE_%s',
 } + {
-    @<.@/module properties@>
+    @<..@/module properties@>
 }
 @
 @<C Structure@/Invoke@/usage enumeration@=

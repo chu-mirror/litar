@@ -1,11 +1,18 @@
 package litar
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"strings"
 	"sync"
 )
+
+// fileCache holds the files evaluated in this process, by path.
+var fileCache = struct {
+	sync.Mutex
+	files map[string]cachedFile
+}{files: map[string]cachedFile{}}
 
 type cycleError struct {
 	chain []ChunkRef
@@ -19,13 +26,27 @@ type frame struct {
 // Evaluator expands chunk references on one node chain.
 // The mutex is held across in-memory expansion and released around
 // filter execution, which may mount a filesystem and block.
+// deps holds the dependencies of each file being expanded, innermost last.
 type Evaluator struct {
 	mu      sync.Mutex
 	chain   []Block
 	cat     *catalog
 	stack   []frame
+	deps    []map[string]dependency
 	fuseErr error
 	stderr  io.Writer
+}
+
+type cachedFile struct {
+	text string
+	deps map[string]dependency
+}
+
+type dependency struct {
+	ref    ChunkRef
+	view   []ViewOp
+	isView bool
+	sum    [sha256.Size]byte
 }
 
 func (e *cycleError) Error() string {
@@ -78,6 +99,35 @@ func (e *Evaluator) evalLocked(ref ChunkRef, filters []Filter) (string, error) {
 }
 
 func (e *Evaluator) expandLocked(ref ChunkRef, missingErr bool) (string, error) {
+	if !e.isArchiveFile(ref) {
+		return e.expandChunkLocked(ref, missingErr)
+	}
+	fileCache.Lock()
+	cached, ok := fileCache.files[string(ref.Chunk)]
+	fileCache.Unlock()
+	if ok && e.unchanged(cached.deps) {
+		e.addDeps(cached.deps)
+		return cached.text, nil
+	}
+	return e.expandFileLocked(ref, missingErr)
+}
+
+func (e *Evaluator) expandFileLocked(ref ChunkRef, missingErr bool) (string, error) {
+	e.deps = append(e.deps, map[string]dependency{})
+	text, err := e.expandChunkLocked(ref, missingErr)
+	deps := e.deps[len(e.deps)-1]
+	e.deps = e.deps[:len(e.deps)-1]
+	if err != nil {
+		return "", err
+	}
+	e.addDeps(deps)
+	fileCache.Lock()
+	fileCache.files[string(ref.Chunk)] = cachedFile{text: text, deps: deps}
+	fileCache.Unlock()
+	return text, nil
+}
+
+func (e *Evaluator) expandChunkLocked(ref ChunkRef, missingErr bool) (string, error) {
 	key := ref.key()
 	for i, fr := range e.stack {
 		if fr.key == key {
@@ -89,6 +139,7 @@ func (e *Evaluator) expandLocked(ref ChunkRef, missingErr bool) (string, error) 
 			return "", &cycleError{chain: chain}
 		}
 	}
+	e.recordChunk(key, ref)
 	e.stack = append(e.stack, frame{key: key, ref: ref})
 	defer func() { e.stack = e.stack[:len(e.stack)-1] }()
 
@@ -119,6 +170,95 @@ func (e *Evaluator) expandLocked(ref ChunkRef, missingErr bool) (string, error) 
 		return "", nil
 	}
 	return acc, nil
+}
+
+// isArchiveFile reports whether ref names a file of the archive:
+// a chunk of the root module, without labels, that a file block defines.
+func (e *Evaluator) isArchiveFile(ref ChunkRef) bool {
+	if len(ref.Labels) > 0 || len(ref.Module) > 0 {
+		return false
+	}
+	f := e.cat.files[string(ref.Chunk)]
+	return f != nil && f.archive
+}
+
+// recording is the dependencies of the innermost file being expanded,
+// or nil when no file is.
+func (e *Evaluator) recording() map[string]dependency {
+	if len(e.deps) == 0 {
+		return nil
+	}
+	return e.deps[len(e.deps)-1]
+}
+
+func (e *Evaluator) addDeps(deps map[string]dependency) {
+	into := e.recording()
+	if into == nil {
+		return
+	}
+	for key, dep := range deps {
+		into[key] = dep
+	}
+}
+
+func (e *Evaluator) recordChunk(key string, ref ChunkRef) {
+	if deps := e.recording(); deps != nil {
+		deps["chunk "+key] = dependency{ref: ref, sum: e.chunkSum(ref)}
+	}
+}
+
+func (e *Evaluator) recordView(view []ViewOp) {
+	deps := e.recording()
+	if deps == nil {
+		return
+	}
+	var key strings.Builder
+	key.WriteString("view")
+	for _, op := range view {
+		fmt.Fprintf(&key, " %d:%q", op.Kind, op.Name)
+	}
+	deps[key.String()] = dependency{view: view, isView: true, sum: e.viewSum(view)}
+}
+
+func (e *Evaluator) unchanged(deps map[string]dependency) bool {
+	for _, dep := range deps {
+		var sum [sha256.Size]byte
+		if dep.isView {
+			sum = e.viewSum(dep.view)
+		} else {
+			sum = e.chunkSum(dep.ref)
+		}
+		if sum != dep.sum {
+			return false
+		}
+	}
+	return true
+}
+
+func (e *Evaluator) chunkSum(ref ChunkRef) [sha256.Size]byte {
+	h := sha256.New()
+	for _, b := range e.chain {
+		if matchRef(b.Ref, ref) {
+			fmt.Fprintf(h, "%d:%s", len(b.Raw), b.Raw)
+		}
+	}
+	var sum [sha256.Size]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
+}
+
+func (e *Evaluator) viewSum(view []ViewOp) [sha256.Size]byte {
+	h := sha256.New()
+	files, err := e.cat.apply(view)
+	if err != nil {
+		fmt.Fprintf(h, "error %s\n", err)
+	}
+	for _, f := range files {
+		fmt.Fprintf(h, "%q %t %t %t %q\n", f.path, f.archive, f.executable, f.dir, f.origin)
+	}
+	var sum [sha256.Size]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
 }
 
 func (e *Evaluator) expandBlock(b Block, applied ChunkRef) (string, error) {
@@ -159,6 +299,7 @@ func (e *Evaluator) runFiltersLocked(text string, filters []Filter, attached Chu
 		if err != nil {
 			return "", err
 		}
+		e.recordView(f.View)
 		e.mu.Unlock()
 		out, runErr := executeFilter(e, script, text, resolved, f.View)
 		e.mu.Lock()

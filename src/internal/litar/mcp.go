@@ -1109,6 +1109,9 @@ func fileTree(blocks []Block, mappings []Mapping) (treeJSON, error) {
 	cat := buildCatalog(blocks, mappings)
 	root := newNest()
 	for _, path := range cat.order {
+		if cat.files[path].dir {
+			continue
+		}
 		parts := strings.Split(path, "/")
 		cur := root
 		for i, part := range parts {

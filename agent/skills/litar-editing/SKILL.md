@@ -52,6 +52,6 @@ it is often in a base node, not the leaf.
 
 ## Pitfalls
 
-- After `./litar` is rebuilt, the running MCP server is stale; ask the user to restart it
+- After `bin/litar` is rebuilt, the running MCP server is stale; ask the user to restart it
   before relying on its evaluation or compaction.
 - If a change cannot be expressed through the tools, ask the user before editing the file.

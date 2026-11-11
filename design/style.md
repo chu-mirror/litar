@@ -119,7 +119,7 @@ For imperative expressions, the rules are well established:
 - **quote the objects being operated on in the phrase**;
 - **all quoted objects shall be declared first before quoting**;
 - **omit the quotation if there are many chunks that refer to the same objects**;
-- **do not refer to a object declared inside a chunk outside the chunk**;
+- **do not refer to an object declared inside a chunk outside the chunk**;
 - **use concrete verbs, do not use verbs like 'perform', 'do'**.
 
 The quoting here means that if a block of code is meant to add two numbers,
@@ -129,7 +129,7 @@ then the chunk name shall be `save the sum of 'number1' and 'number2' to 'number
 Other structures, such as a complicated data structure or a structured document, etc,
 shall be named with a noun phrase, **name a tree with a noun phrase if it's not an action**.
 
-# Encapsulate a chunk that shall not be referred outside the module into a submodule
+# Encapsulate a chunk that shall not be referred to outside the module into a submodule
 
 This rule is derived from the general rule: hide the unnecessary details.
 Here is an example that shows each case:
@@ -241,7 +241,7 @@ The rule: **use filters to generate different forms of a single piece of informa
 # Build up cross-reference when possible
 
 A chunk of code always refers to other concepts, like, calling functions, modifying variables.
-Figure out whether the items is local; that is, whether the context of the item is limited to
+Figure out whether the item is local; that is, whether the context of the item is limited to
 current block. If not, build reference to that item using `@~`.
 
 There are some cases we want to avoid cross-reference:
@@ -285,12 +285,12 @@ void hello()
 When dealing with a code base, the code itself usually is not the final product,
 but the compiled binaries.  In principle, a binary file can be a chunk as well,
 and for powerful LLMs, a binary file is just as readable as source code.
-So why cannot we just evaluate an expression and print the value as the final produce?
+So why cannot we just evaluate an expression and print the value as the final product?
 There's still another problem, we finally want to move the final product out of the internal filesystem,
 so where does it move to? We must answer the question, but where shall we put the answer.
 
 The best place is a new composition wrapping the code base; all the details related to the real world
 can be encapsulated to that composition.
-This wrapping composition works like traditional build system, like MakeFile, CMake etc.
+This wrapping composition works like traditional build system, like Makefile, CMake etc.
 We may map build directory to the internal filesystem, gather build scripts, etc, in this composition.
 

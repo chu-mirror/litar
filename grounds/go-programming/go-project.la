@@ -14,11 +14,6 @@ go vet ./...
 echo 'go vet ./...: ok'
 @
 
-@<Go Project@/Filters@/test packages@=#!/bin/sh
-@<.@/go command settings@>
-go test ./...
-@
-
 @<Chunk@/Go Project@/Filters@=
 {"description": "Run the go command on the files of the project."}
 @
@@ -186,6 +181,19 @@ The command directory is bin, below the module root of the view.
 
 @<Chunk@/Go Project@/command directory@=
 {"description": "Directory of the view, below the module root, that receives the built commands."}
+@
+
+The go command reports a failed test on stdout, and the output of a failed filter is dropped,
+so the report is kept and written to stderr when a test fails.
+Declare every test file in the file set go tests as well as in go module,
+so a view that only needs the program can subtract the tests.
+@<Go Project@/Filters@/test packages@=#!/bin/sh
+@<.@/go command settings@>
+report=$(go test ./... 2>&1) || {
+	printf '%s\n' "$report" >&2
+	exit 1
+}
+printf '%s\n' "$report"
 @
 
 Each check runs the go command in a view of the file set go module,

@@ -6,7 +6,18 @@
             "name": "Litar",
             "archive": "litar.la",
             "description": "The litar tool: archive parser, composer, evaluator, filters, CLI, FUSE view, and MCP server, with its tests and build files.",
-            "mappings": [],
+            "mappings": [
+                {
+                    "path": "internal/litar/testdata/examples/",
+                    "fileset": ["test data"],
+                    "origin": "../examples"
+                },
+                {
+                    "path": "internal/litar/testdata/grounds/",
+                    "fileset": ["test data"],
+                    "origin": "../grounds"
+                }
+            ],
             "base": [
                 "Basic",
                 "Go Structure",

@@ -1,6 +1,6 @@
 # Build the litar binary and run the test set.
 #   make        compile ./litar
-#   make test   run go test, then tests/
+#   make test   run the acceptance cases of tests/
 #   make clean  remove the binary
 
 .PHONY: all test clean litar
@@ -11,7 +11,6 @@ litar:
 	go build -o litar ./cmd/litar
 
 test: litar
-	go test ./...
 	bash tests/run.sh $(abspath litar)
 
 clean:

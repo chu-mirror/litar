@@ -29,15 +29,16 @@ and `github.com/modelcontextprotocol/go-sdk` (for the MCP server).
 At the repository root, the `Makefile` evaluates the node `Litar Build` of `build/build.la`,
 a composition on the ground `compos` that maps `bin/` and `src/` of the repository into
 the filter views: `make` runs `go build` in a view of the go module that writes the binaries
-into `bin/`, and `make sync` writes all generated files into `src/`.
+into `bin/`, `make sync` writes the generated files, except the Go test files, into `src/`,
+and `make test` runs `go test ./...` in a view of the go module with the file set `test data`,
+which the node `Litar` maps from `examples/` and `grounds/` into `internal/litar/testdata/`.
 
 Each litar process keeps every file it evaluates, together with a digest of each chunk
 and filter view the evaluation used; the file is evaluated again only when one of them
 changes, so a file is evaluated once per process and the MCP server serves repeated reads
 from memory. A mapping whose path ends in `/` maps a host directory into the views of its
 file sets; the directory is created if missing, and filters read and write it in place.
-Inside `src/`, `make` builds `./litar` and `make test` runs `go test ./...` followed by
-`tests/run.sh`.
+Inside `src/`, `make` builds `./litar` and `make test` runs `tests/run.sh`.
 On any user error, `litar` prints the error to `stderr`, leaves `stdout` empty, and exits
 with status 1.
 
@@ -321,7 +322,7 @@ every concrete resource URI that existed before or after the change.
 
 # Tests
 
-- **Unit tests (`src/internal/litar/*_test.go`):** Table-driven tests covering scanning and
+- **Unit tests (`internal/litar/*_test.go` in `compos`, in the file set `go tests`, not synced into `src/`):** Table-driven tests covering scanning and
   parsing, suffix matching, label inheritance, `.` and `..` module resolution, effective
   blocks, listings, metadata chunks, filters, FUSE views, composer edits, compaction
   ordering, and MCP calls.

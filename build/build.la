@@ -11,15 +11,6 @@ the node maps bin of the repository into the view at the command directory of Go
 @<@|Go Project@/Filters@/build commands@+go module@+binaries@>
 @
 
-The source tree is every file of the composition, written into src of the repository,
-which the node maps into the view as the file set source tree;
-a file set added to the composition must be added to this view.
-The input of the filter names the directory to write to.
-@<Litar Build@/source files@=
-@<Litar Build@/Internals@/source directory@|Litar Build@/Filters@/write files@+go module@+build@+tests@+source tree@>
-@
-@<Litar Build@/Internals@/source directory@=src@
-
 Every file of the view outside the destination is written to a temporary name beside
 its place in the destination and renamed there, so a failed write keeps the old file;
 other files of the destination are left alone.
@@ -78,4 +69,26 @@ os.replace(path + '.litar-new', path)
 @
 @<Chunk@/Litar Build@/MCP configuration script@=
 {"description": "Python script that sets the litar entry of a Cursor MCP configuration."}
+@
+
+The source tree is the files of the composition that build litar and run its acceptance cases,
+written into src of the repository, which the node maps into the view as the file set source tree;
+a file set added to the composition must be added to this view.
+The Go test files are left out: src only has to boot the next build,
+and the tests run in an invocation, in the test report.
+The input of the filter names the directory to write to.
+@<Litar Build@/source files@=
+@<Litar Build@/Internals@/source directory@|Litar Build@/Filters@/write files@+go module@-go tests@+build@+tests@+source tree@>
+@
+@<Litar Build@/Internals@/source directory@=src@
+
+The Go tests run in a view of the go module with the file set test data,
+which the node Litar maps from examples and grounds of the repository.
+A mapped directory keeps the run out of the filter cache, so the tests run on every evaluation.
+@<Litar Build@/test report@=
+@<@|Go Project@/Filters@/test packages@+go module@+test data@>
+@
+
+@<Chunk@/Litar Build@/test report@=
+{"description": "Output of go test on the go module, tests included."}
 @

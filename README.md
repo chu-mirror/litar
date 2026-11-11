@@ -41,7 +41,8 @@ and each target evaluates one of its chunks.
 
 - `make` compiles `bin/litar` and `bin/litar-web` from the Go files of `compos`.
   With no `bin/litar` yet, it first compiles `tmp/boot/litar` from `src` to do the evaluation.
-- `make sync` writes every file of `compos` into `src`.
+- `make sync` writes the files of `compos`, except the Go test files, into `src`.
+- `make test` runs `go test` on `compos` in a filter view.
 - `make web` opens `compos` in `bin/litar-web` at <http://127.0.0.1:8080/> (`WEB_ADDR` changes it).
 - `make install` installs `bin/litar` and `bin/litar-web` into `$(PREFIX)/bin`
   and the grounds under `$(PREFIX)/share/litar`; `PREFIX` defaults to `/usr/local`.
@@ -81,10 +82,11 @@ but it cannot change an archive.
 
 # Test
 
-The tests run inside `src`:
-
+- `make test` runs `go test ./...` in a filter view of `compos`.
+  The Go test files live only in `compos`; `make sync` does not write them into `src`.
+  The view maps `examples` and `grounds` into `internal/litar/testdata` for the tests that read them.
 - `make -C src` builds `src/litar` with `go build`.
-- `make -C src test` runs `go test ./...`, then the cases under `src/tests/`.
+- `make -C src test` runs the cases under `src/tests/` with that binary.
 
 # Grounds
 

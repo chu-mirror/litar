@@ -1,6 +1,7 @@
 # Build litar from the composition in compos, sync src from it, and install.
 #   make                  compile litar and litar-web into $(BIN)
-#   make sync             write every file of the composition into $(SRC)
+#   make sync             write the files of the composition, except the Go tests, into $(SRC)
+#   make test             run go test on the composition in an invocation
 #   make boot             compile $(BOOT) from the Go sources in $(SRC)
 #   make web              browse $(ARCHIVE) with $(BIN)/litar-web on $(WEB_ADDR)
 #   make install          install $(BIN)/litar, $(BIN)/litar-web, and the grounds under $(PREFIX)
@@ -17,6 +18,8 @@
 # LITAR is the binary that evaluates it: $(BIN)/litar from an earlier build,
 # else $(BOOT), which is compiled from $(SRC) first. So a fresh checkout needs only go,
 # and `make sync` keeps $(SRC) able to boot the next build.
+# The Go test files are not synced: `make test` runs them in a filter view of the composition,
+# where the node Litar maps examples and $(GROUNDS) as their test data.
 # Evaluation reads the grounds from this repository, not from the installed ones.
 # sync overwrites the files the composition lists and leaves any other file.
 #
@@ -56,7 +59,7 @@ EVAL = LITAR_LIBRARY=$(abspath $(GROUNDS)):$(CURDIR) $(LITAR) -f $(abspath $(BUI
 # Build the bootstrap binary only when it is the one evaluating.
 EVALUATOR := $(filter $(abspath $(BOOT)),$(LITAR))
 
-.PHONY: all litar sync boot web install install-bin install-grounds
+.PHONY: all litar sync test boot web install install-bin install-grounds
 .PHONY: install-cursor install-mcp install-skills mcp clean
 
 all: litar
@@ -72,6 +75,9 @@ litar: $(EVALUATOR)
 
 sync: $(EVALUATOR)
 	$(EVAL) -p 'Litar Build@/source files'
+
+test: $(EVALUATOR)
+	$(EVAL) -p 'Litar Build@/test report'
 
 web:
 	@test -x $(BIN)/litar-web || { echo "$(BIN)/litar-web is missing; run make first" >&2; exit 1; }

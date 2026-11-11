@@ -34,7 +34,7 @@ var modeOrder = []string{
 @~ Go@/variables@/litar.modeOrder @
 
 Tests of cli.go.
-@[internal/litar/cli_test.go@`go module@=
+@[internal/litar/cli_test.go@`go module@`go tests@=
 @<cli test@:litar@:Go Structure@/file@>@
 
 @<cli test@:litar@:Go Structure@/import paths@+
@@ -1417,7 +1417,7 @@ for _, p := range all {
 @~ Go@/functions@/litar.writeFileKeepMode @
 
 Tests of compose.go.
-@[internal/litar/compose_test.go@`go module@=
+@[internal/litar/compose_test.go@`go module@`go tests@=
 @<compose test@:litar@:Go Structure@/file@>@
 
 @<compose test@:litar@:Go Structure@/import paths@+
@@ -2808,7 +2808,7 @@ func (e *Evaluator) readChunk(chunk Name) ([]byte, error) {
 @~ Go@/methods@/litar.Evaluator.expandLocked @~ Go@/methods@/litar.Evaluator.readChunk @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.Name @
 
 Tests of eval.go.
-@[internal/litar/eval_test.go@`go module@=
+@[internal/litar/eval_test.go@`go module@`go tests@=
 @<eval test@:litar@:Go Structure@/file@>@
 
 @<eval test@:litar@:Go Structure@/import paths@+
@@ -3409,7 +3409,7 @@ func (e *Evaluator) tangle(files []viewFile) error {
 @~ Go@/methods@/litar.Evaluator.noteErr @~ Go@/methods@/litar.Evaluator.readChunk @~ Go@/methods@/litar.Evaluator.tangle @~ Go@/types@/litar.Evaluator @~ Go@/types@/litar.Name @~ Go@/types@/litar.viewFile @
 
 Tests of filter.go.
-@[internal/litar/filter_test.go@`go module@=
+@[internal/litar/filter_test.go@`go module@`go tests@=
 @<filter test@:litar@:Go Structure@/file@>@
 
 @<filter test@:litar@:Go Structure@/import paths@+
@@ -3607,6 +3607,8 @@ if err == nil || !strings.Contains(err.Error(), "invalid file path '../x'") {
 }
 @~ Go@/functions@/litar.mustPrint @~ Go@/methods@/litar.Evaluator.Eval @
 
+The test may itself run in a filter view, which stays mounted for the whole test,
+so it counts the views mounted before the evaluation and accepts no more afterwards.
 @<filter test@:litar@:Go Structure@/functions@+
 func TestFUSEViewOutlivedByBackgroundProcess(t *testing.T) {
 if _, err := os.Stat("/dev/fuse"); err != nil {
@@ -3622,9 +3624,10 @@ src := "" +
 	"@@|leave@@\n"
 blocks := mustArch(t, src)
 ev := NewEvaluator(blocks, nil, nil)
+before, _ := os.ReadFile("/proc/self/mounts")
 @<Litar@/check that 'ev' returns msg before the background process ends@>
 mounts, err := os.ReadFile("/proc/self/mounts")
-if err == nil && strings.Contains(string(mounts), "fuse.litar") {
+if err == nil && strings.Count(string(mounts), "fuse.litar") > strings.Count(string(before), "fuse.litar") {
 	t.Fatalf("a filter view is still mounted:\n%s", mounts)
 }
 }
@@ -6874,7 +6877,7 @@ func specLabels(blocks []Block, maps []Mapping, chunk ChunkRef, id int) ([]Name,
 @~ Go@/functions@/litar.indexTree @~ Go@/functions@/litar.specLabels @~ Go@/functions@/litar.specializationTree @~ Go@/types@/litar.Block @~ Go@/types@/litar.ChunkRef @~ Go@/types@/litar.Mapping @~ Go@/types@/litar.Name @
 
 Tests of mcp.go.
-@[internal/litar/mcp_test.go@`go module@=
+@[internal/litar/mcp_test.go@`go module@`go tests@=
 @<mcp test@:litar@:Go Structure@/file@>@
 
 @<mcp test@:litar@:Go Structure@/import paths@+
@@ -7451,11 +7454,12 @@ func sameStrings(a, b []string) bool {
 @~ Go@/functions@/litar.sameStrings @
 
 Tests of meta.go.
-@[internal/litar/meta_test.go@`go module@=
+@[internal/litar/meta_test.go@`go module@`go tests@=
 @<meta test@:litar@:Go Structure@/file@>@
 
 @<meta test@:litar@:Go Structure@/import paths@+
 "encoding/json"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -7807,7 +7811,10 @@ t.Fatalf("%s column %d, want %d", name, gotCol, col)
 }
 @~ Go@/functions@/litar.Modules @~ Go@/functions@/litar.listedLine @~ Go@/functions@/litar.splitNamed @
 
-The C example is found from this source file, so the tests do not depend on the working directory.
+The C example and its grounds are read from testdata beside this source file,
+so the tests do not depend on the working directory.
+The node maps examples and grounds of the repository there, as the file set test data.
+A view without that file set has no testdata, and the tests of the example are skipped.
 @<meta test@:litar@:Go Structure@/functions@+
 func exampleChain(t *testing.T, np string) ([]Block, []Mapping) {
 t.Helper()
@@ -7815,7 +7822,10 @@ _, file, _, ok := runtime.Caller(0)
 if !ok {
 t.Fatal("caller")
 }
-root := filepath.Join(filepath.Dir(file), "..", "..", "..")
+root := filepath.Join(filepath.Dir(file), "testdata")
+if _, err := os.Stat(filepath.Join(root, "examples")); err != nil {
+t.Skip("no testdata/examples")
+}
 t.Setenv("LITAR_LIBRARY", filepath.Join(root, "grounds"))
 w, err := LoadComposer(filepath.Join(root, "examples", "c", "composer.json"))
 if err != nil {
@@ -8799,7 +8809,7 @@ return Item(names), err
 @~ Go@/functions@/litar.ParseItem @~ Go@/methods@/litar.parser.parseNames @~ Go@/types@/litar.Item @~ Go@/types@/litar.ParseError @~ Go@/types@/litar.parser @
 
 Tests of parse.go.
-@[internal/litar/parse_test.go@`go module@=
+@[internal/litar/parse_test.go@`go module@`go tests@=
 @<parse test@:litar@:Go Structure@/file@>@
 
 @<parse test@:litar@:Go Structure@/import paths@+
@@ -9614,11 +9624,13 @@ golang.org/x/tools v0.42.0/go.mod h1:Ma6lCIwGZvHK6XtgbswSoWroEkhugApmsXyrUmBhfr0
 
 @
 
-The Makefile builds the binary and runs both test suites.
+The Makefile builds the binary and runs the acceptance cases.
+The Go tests are not run here: the source tree is synced without the test files,
+and the build composition runs go test in an invocation.
 @[Makefile@`build@=
 # Build the litar binary and run the test set.
 #   make        compile ./litar
-#   make test   run go test, then tests/
+#   make test   run the acceptance cases of tests/
 #   make clean  remove the binary
 
 .PHONY: all test clean litar
@@ -9629,7 +9641,6 @@ litar:
 	go build -o litar ./cmd/litar
 
 test: litar
-	go test ./...
 	bash tests/run.sh $(abspath litar)
 
 clean:

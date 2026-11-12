@@ -3,16 +3,16 @@ Test cases for light.
 `test-light.c`: the source file for executable test.
 
 @<test-light.c@=
-@<test light@:light-single@:executable@:C Structure@/module@>
+@<test light@:light-single@:executable@:Language@/C@/Module@/module@>
 @
-@<test light@:light-single@:executable@:C Structure@/includes@+
+@<test light@:light-single@:executable@:Language@/C@/Module@/includes@+
 #include <assert.h>
 @
-@<test light@:light-single@:executable@:Light@/light options@=
+@<test light@:light-single@:executable@:Framework@/Light@/light options@=
 #define light_option_context_main_size (1<<23)
 #define light_option_logging_level INFO
 @
-@<test light@:light-single@:executable@:Light@/main body@=
+@<test light@:light-single@:executable@:Framework@/Light@/main body@=
 light_log(INFO, "Testing light");
 @<test cases@>
 light_log(INFO, "All test passed");
@@ -41,13 +41,13 @@ do {
     exit_frame();
 } while (0);
 @
-@<test light@:light-single@:executable@:C Structure@/data types@+
+@<test light@:light-single@:executable@:Language@/C@/Module@/data types@+
 struct id_card {
     const char *name;
     int age;
 } *card;
 @
-@<test light@:light-single@:executable@:C Structure@/functions@+
+@<test light@:light-single@:executable@:Language@/C@/Module@/functions@+
 void *id_card_serialize(const void *card, size_t *size, const void *base_addr)
 {
     size_t id_card_offset, name_offset;
@@ -338,7 +338,7 @@ do {
     exit_frame();
 } while (0);
 @
-@<test light@:light-single@:executable@:Invocation@/invocation syntax@=
+@<test light@:light-single@:executable@:UI@/Command Line@/invocation syntax@=
 {
     name: 'test-light',
     usages: [

@@ -1,27 +1,20 @@
 {
     "description": "Example Go programs.",
-    "ground": "go-programming",
+    "ground": "standard",
     "nodes": [
         {
             "name": "Program Hello",
             "archive": "hello.la",
             "description": "A classic example at the beginning of learning programming, written in Go.",
             "mappings": [],
-            "base": [
-                "Basic",
-                "Go Structure"
-            ]
+            "base": ["Standard"]
         },
         {
             "name": "Project Hello",
             "archive": "project-hello.la",
             "description": "A hello command split into a library package, its test, and a command, as one Go module.",
             "mappings": [],
-            "base": [
-                "Basic",
-                "Go Structure",
-                "Go Project"
-            ]
+            "base": ["Standard"]
         }
     ]
 }

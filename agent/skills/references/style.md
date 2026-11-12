@@ -21,7 +21,8 @@ a **sequence** (a series of same-kind parts: includes, functions) or a
 ## Modules
 
 - Hide what other modules need not see: a chunk that shall not be referred to outside its
-  module goes into a submodule (`Internals`, or a name for its purpose such as `Output`).
+  module goes into a submodule named after its subject, such as `Output` or `Meta`.
+  Other modules may still refer to it; the submodule only keeps it out of the way.
 - Keep in the module itself the chunks other modules use: the parts of a template
   (`includes`, `functions`), hooks they extend, and outputs they quote.
 - Refer to a submodule chunk relatively, `@<.@/Output@/print hello to stdout@>`;

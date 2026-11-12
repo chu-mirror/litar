@@ -332,12 +332,14 @@ every concrete resource URI that existed before or after the change.
 
 # Grounds and examples
 
-- `grounds/common`: defines `Basic` (including `Text Processing`).
-- `grounds/c-programming`: grounds on `common` and adds `C Structure` and `Light`.
-- `grounds/go-programming`: grounds on `common` and adds `Go Structure` and `Go Project`
-  (based on `Go Structure`).
-- `examples/c`: grounds on `c-programming` and adds `Program Hello` and `Test Light`.
-- `examples/go`: grounds on `go-programming` and adds `Program Hello` (on `Go Structure`)
-  and `Project Hello` (on `Go Project`).
+- `grounds/standard`: the standard library, one node `Standard` whose modules follow
+  `design/category.md`: `Tool` (shared filters, including `Tool@/Text Processing`),
+  `Language@/C@/Module`, `Language@/Go@/File`, `Language@/Go@/Module`,
+  `UI@/Command Line` (the invocation syntax and its generators for C and Go),
+  and `Framework@/Light`.
+- `compos`: grounds on `standard` and adds `Litar`, whose chunks live under `Project@/litar`.
+- `build`: grounds on `compos` and adds `Litar Build`, whose chunks live under `Project@/litar@/Build`.
+- `examples/c`: grounds on `standard` and adds `Program Hello` and `Test Light`.
+- `examples/go`: grounds on `standard` and adds `Program Hello` and `Project Hello`.
 
 Set `LITAR_LIBRARY=grounds` when evaluating compositions that depend on `grounds/`.

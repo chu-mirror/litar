@@ -1,0 +1,2687 @@
+@<Chunk@/Tool@=
+{
+    "description": "Some common structures and filters."
+}
+@
+
+Executes the input as a script, the input must have a shebang,
+use the output of that script as the output.
+
+@<Tool@/evaluate@=#!/bin/sh
+set -e
+temp_file=`mktemp`
+cat - > $temp_file
+chmod +x $temp_file
+$temp_file
+rm $temp_file
+@
+@<Chunk@/Tool@/Text Processing@=
+{
+    "description": "Text processing based on python."
+}
+@
+@<Tool@/Text Processing@/remove newlines@=
+@<.@/basic python settings@>
+lines = sys.stdin.buffer.read().split(b'\n')
+if lines[-1] == b'':
+    lines.pop()
+sys.stdout.buffer.write(b' '.join(lines))
+@
+Strip every newline at the end of the input, so the text joins the line after its reference.
+Carriage returns of CRLF endings are stripped too; other trailing whitespace is kept.
+
+@<Tool@/Text Processing@/remove ending newlines@=
+@<.@/basic python settings@>
+sys.stdout.buffer.write(sys.stdin.buffer.read().rstrip(b'\r\n'))
+@
+@<Chunk@/UI@/Command Line@=
+{
+    "description": "Command line syntax shared by the structures of every language."
+}
+@
+The manpage synopsis shows the usage lines in roff, one paragraph line per usage.
+@<UI@/Command Line@/manpage synopsis@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+@<.@/Manpage@/manpage helpers@>
+
+
+def usage_lines(usage):
+    lines = [f'.B {roff(syntax.name)}']
+    lines += [f'[{bold_option(opt)}]' for opt in usage.options if not opt.hide]
+    lines += [italic(placeholder(arg)) for arg in usage.arguments]
+    return lines
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print('\n.br\n'.join('\n'.join(usage_lines(usage)) for usage in syntax.usages))
+@|Tool@/evaluate
+@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/functions@/bold_option @~ Tool@/Python@/functions@/configuration @~ UI@/Command Line@/Python@/functions@/italic @~ UI@/Command Line@/Python@/functions@/placeholder @~ UI@/Command Line@/Python@/functions@/roff @
+The manpage options describe every option in a tagged paragraph, hidden ones included.
+@<UI@/Command Line@/manpage options@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+@<.@/Manpage@/manpage helpers@>
+
+
+def option_entry(opt):
+    value = '' if opt.type == 'bool' else ' ' + italic(metavar(opt))
+    tag = ', '.join(rf'\fB{roff(name)}\fR' for name in option_names(opt)) + value
+    return f'.TP\n{tag}\n{roff(opt.description)}\n'
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print(''.join(map(option_entry, all_options(syntax))), end='')
+@|Tool@/evaluate
+@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/functions@/all_options @~ Tool@/Python@/functions@/configuration @~ UI@/Command Line@/Python@/functions@/italic @~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_names @~ UI@/Command Line@/Python@/functions@/roff @
+roff escapes a backslash as \e and a hyphen as \-,
+so option names render with minus signs that can be copied into a shell.
+@<UI@/Command Line@/Manpage@/manpage helpers@=
+def roff(text):
+    return text.replace('\\', r'\e').replace('-', r'\-')
+
+
+def italic(text):
+    return rf'\fI{roff(text)}\fR'
+
+
+def bold_option(opt):
+    text = rf'\fB{roff(option_name(opt))}\fR'
+    return text if opt.type == 'bool' else text + ' ' + italic(metavar(opt))
+@~ UI@/Command Line@/Python@/functions@/bold_option @~ UI@/Command Line@/Python@/functions@/italic @~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_name @~ UI@/Command Line@/Python@/functions@/roff @
+@<Index@/Tool@/Python@=
+{"description": "Top-level names of the Python text processing scripts, shared by the blocks that build them."}
+@
+@<Index@/UI@/Command Line@/Python@/classes@=
+{"description": "Classes, mostly pydantic models of configuration."}
+@
+@<Index@/Tool@/Python@/functions@=
+{"description": "Top-level functions."}
+@
+@<Index@/UI@/Command Line@/Python@/variables@=
+{"description": "Top-level variables and constants."}
+@
+@<Index@/UI@/Command Line@/Python@/classes@/InvocationSyntax@=
+{"description": "pydantic model of the invocation syntax of a command: its name and its usages."}
+@
+@<Index@/Tool@/Python@/functions@/configuration@=
+{"description": "Evaluates a Jsonnet source and validates it with a pydantic model, failing the evaluation on an error."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/metavar@=
+{"description": "Placeholder of the value an option takes, from its argument name or its own name."}
+@
+@<Index@/UI@/Command Line@/Python@/variables@/LONG_PREFIX@=
+{"description": "Two hyphens, the prefix of a long option name in usage lines and the manpage."}
+@
+@<Chunk@/Language@/C@/Module@=
+{
+    "description": "Common structures in C programming"
+}
+@
+
+@<Language@/C@/Module@/Interface@/extract function declarations@=
+#!/bin/sh
+cproto -s
+@
+
+@<Language@/C@/Module@/Interface@/extract global declarations@=#!/bin/sh
+cproto -v -e @<-I flags@>
+@
+@<Language@/C@/Module@/Format@/format C code@=#!/bin/sh
+clang-format-19 -style=file
+@
+@<Language@/C@/Module@/Interface@/wrap with included flag@=
+@<Tool@/Text Processing@/basic python settings@>
+
+
+class ModuleMeta(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='allow')
+    name: str
+    included_flag_format: str
+
+
+meta = configuration(ModuleMeta, r'''
+@<..@/Meta@/module meta information@>
+''')
+flag = meta.included_flag_format % meta.name.upper()
+sys.stdout.write(f'#ifndef {flag}\n#define {flag}\n')
+sys.stdout.write(sys.stdin.read())
+sys.stdout.write('#endif\n')
+@
+The module meta information is a Jsonnet object.
+The module properties are the fields of a second object, which override these defaults;
+Jsonnet rejects a field given twice in the module properties.
+@<Language@/C@/Module@/Meta@/module meta information@=
+{
+    name: 'default',
+    included_flag_format: '_MODULE_%s',
+} + {
+    @<..@/module properties@>
+}
+@
+The command line usage is the shared usage lines escaped as the content of a C string literal.
+@<UI@/Command Line@/C@/command line usage@=
+@<Tool@/Text Processing@/basic python settings@>
+
+
+usage = r'''@<UI@/Command Line@/command line usage@>'''
+print(usage.replace('\\', r'\\').replace('"', r'\"').replace('\n', r'\n'), end='')
+@|Tool@/evaluate@
+Light reflects the author's preferences and customs,
+which includes how to format code,
+how to manage memory, how to handle exception, etc.
+It also supports some common data structures.
+
+- `light.h`: the generated header;
+- `light.c`: the generated implementation;
+- `light options`: compile-time options;
+- `light@@:executable@@:C Structure@@/module`: an executable using the framework;
+- `light-single@@:executable@@:C Structure@@/module`: a single-file executable using the framework.
+
+@<Chunk@/Framework@/Light@=
+{
+    "description": "Light is a framework mainly for C programming"
+}
+@
+@<Framework@/Light@/light.h@=
+@<lightlib@:Language@/C@/Module@/module interface@>
+@
+
+@<Language@/C@/Module@/module interface@=
+@<.@/interface required includes@>
+@<.@/interface specific macros@>
+@<.@/exported macros@>
+@<.@/exported data type declarations@>
+@<.@/exported data types@>
+@<.@/Interface@/global declarations@>
+@<.@/exported static inline functions@>
+@|Language@/C@/Module@/Interface@/wrap with included flag
+@|Language@/C@/Module@/Format@/format C code@,.clang-format@
+
+@<Language@/C@/Module@/Interface@/global declarations@+
+@<..@/macros@>
+@<..@/data type declarations@>
+@<..@/global variables@>
+@<..@/functions@>
+@|Language@/C@/Module@/Interface@/extract global declarations@
+@<Framework@/Light@/light.c@=
+@<lightlib@:Language@/C@/Module@/module@>
+@
+
+A C file ends with a line break, and clang-format keeps a file without one as it is.
+The empty line before the filter leaves that line break in the content.
+@<Language@/C@/Module@/module@=
+@<.@/include flags@>
+@<.@/includes@>
+@<.@/macros@>
+@<.@/data type declarations@>
+@<.@/data types@>
+@<.@/function declarations@>
+@<.@/global variables@>
+@<.@/static inline functions@>
+@<.@/functions@>
+
+@|Language@/C@/Module@/Format@/format C code@,.clang-format@
+@<Language@/C@/Module@/includes@+
+@<.@/interface required includes@>
+@
+@<Language@/C@/Module@/data types@+
+@<.@/exported data types@>
+@
+@<Language@/C@/Module@/static inline functions@+
+@<.@/exported static inline functions@>
+@
+
+@<Language@/C@/Module@/function declarations@+
+@<.@/exported macros@>
+@<.@/data type declarations@>
+@<.@/functions@>
+@|Language@/C@/Module@/Interface@/extract function declarations@
+@<executable@:Language@/C@/Module@/includes@+
+#include <getopt.h>
+@
+@<executable@:Language@/C@/Module@/includes@+
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+@
+@<lightlib@:Language@/C@/Module@/includes@+
+#include <stdio.h>
+#include <stdarg.h>
+@
+@<lightlib@:Language@/C@/Module@/data types@+
+struct heap {
+    size_t length;
+    size_t unit_size;
+    HEAP_LABEL_TYPE *labels;
+    int first_direct;
+    uint8_t *space;
+};
+@
+@<lightlib@:Language@/C@/Module@/data types@+
+struct segment {
+    struct list list;
+    uint8_t mem[];
+};
+struct segmented {
+    Heap heap;
+    struct segment *head, *tail;
+    size_t tail_size;
+};
+@
+@<lightlib@:Language@/C@/Module@/static inline functions@+
+static inline size_t segment_size(Segmented sg)
+{
+    return sg->heap->unit_size - offsetof(struct segment, mem);
+}
+
+static inline void segmented_init(Segmented sg, Heap hp)
+{
+    sg->heap = hp;
+    sg->head = heap_alloc(hp);
+    cons(&sg->head->list, NULL);
+    sg->tail = sg->head;
+    sg->tail_size = 0;
+}
+
+static inline Segmented segmented_attach_new_segment(Segmented sg)
+{
+    struct segment *nsg = heap_alloc(sg->heap);
+    if (!nsg) {
+        return NULL;
+    }
+    cons(&sg->tail->list, cons(&nsg->list, NULL));
+    sg->tail = nsg;
+    sg->tail_size = 0;
+    return sg;
+}
+@
+@<lightlib@:Language@/C@/Module@/data types@+
+struct segmented_random {
+    Segmented segmented;
+    void **segments;
+};
+@
+@<lightlib@:Language@/C@/Module@/data types@+
+struct hash_table_storage {
+    Heap heap;
+    struct list compose;
+    struct bi_list *records;
+    size_t number_slots;
+    struct bi_list *slots[];
+};
+struct hash_table {
+    uint32_t (*hash_func)(const void *key);
+    int (*equal_func)(const void *key1, const void *key2);
+    struct list *compose;
+};
+@
+@<lightlib@:Language@/C@/Module@/static inline functions@+
+static inline uint32_t calculate_index_for_key(
+    HashTable tbl,
+    struct hash_table_storage *st,
+    const void *key
+) {
+    return tbl->hash_func(key) & (st->number_slots-1);
+}
+@
+@<Language@/C@/Module@/macros@+
+@<.@/exported macros@>
+@
+@<Language@/C@/Module@/data type declarations@+
+@<.@/exported data type declarations@>
+@
+@<executable@:Language@/C@/Module@/global variables@+
+struct {
+    enum {@<UI@/Command Line@/C@/usage enumeration@>} usage;
+    struct {@<UI@/Command Line@/C@/command line options@>} options;
+    struct {@<UI@/Command Line@/C@/command line arguments@>} arguments;
+} command;
+@
+@<executable@:Language@/C@/Module@/global variables@+
+const struct option long_options[] = {
+    @<UI@/Command Line@/C@/getopt long options@>
+};
+@
+@<executable@:Language@/C@/Module@/functions@+
+int main(int argc, char *argv[])
+{
+    @<UI@/Command Line@/C@/parse command line arguments@>
+    int ret = 0;
+    @<.@/main body@>
+    return ret;
+}
+@
+@<UI@/Command Line@/C@/parse command line arguments@=
+do {
+    int opt, idx;
+    while ((opt = getopt_long(argc, argv, "@<.@/getopt string@>", long_options, &idx)) != -1) {
+        switch (opt) {
+        case 0:
+            @<.@/handle long option of index "idx"@>
+            break;
+        @<.@/cases for short options@>
+        case '?':
+            break;
+        default:
+            fprintf(stderr, "getopt return unexpected value %d", opt);
+            exit(1);
+        }
+    }
+    @<.@/choose usage and store arguments@>
+} while (0);
+@
+@<UI@/Command Line@/C@/usage enumeration@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+syntax = configuration(CSyntax, r'''
+@<UI@/Command Line@/invocation syntax@>
+''')
+print(','.join(map(enum_constant, syntax.usages)), end='')
+@|Tool@/evaluate@
+@<UI@/Command Line@/C@/command line options@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+syntax = configuration(CSyntax, r'''
+@<UI@/Command Line@/invocation syntax@>
+''')
+print('\n'.join(('const char *' if opt.type == 'string' else 'int ') + option_field(opt) + ';'
+                for opt in all_options(syntax)), end='')
+@|Tool@/evaluate@
+An argument shared by several usages is declared once, where it first appears.
+@<UI@/Command Line@/C@/command line arguments@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+syntax = configuration(CSyntax, r'''
+@<UI@/Command Line@/invocation syntax@>
+''')
+arguments = dict.fromkeys(arg for usage in syntax.usages for arg in usage.arguments)
+print(''.join(f'const char *{argument_field(arg)};' for arg in arguments), end='')
+@|Tool@/evaluate@
+getopt_long finds the end of the options at an entry of zeros.
+@<UI@/Command Line@/C@/getopt long options@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+
+
+def option_to_longopt(opt):
+    has_arg = 'required_argument' if opt.type == 'string' else 'no_argument'
+    val = f"'{opt.short}'" if opt.short else '0'
+    return f'{{"{opt.name}",{has_arg},NULL,{val}}},'
+
+
+syntax = configuration(CSyntax, r'''
+@<UI@/Command Line@/invocation syntax@>
+''')
+print(''.join(map(option_to_longopt, all_options(syntax))) + '{0,0,0,0},', end='')
+@|Tool@/evaluate@
+@<UI@/Command Line@/C@/getopt string@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+syntax = configuration(CSyntax, r'''
+@<UI@/Command Line@/invocation syntax@>
+''')
+print(''.join(opt.short + (':' if opt.type == 'string' else '')
+              for opt in all_options(syntax) if opt.short), end='')
+@|Tool@/evaluate@
+@<UI@/Command Line@/C@/handle long option of index "idx"@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+
+
+def long_option_handling(opt):
+    if opt.short:
+        return ''
+    value = 'optarg' if opt.type == 'string' else '1'
+    return f'''
+            if (strcmp(long_options[idx].name, "{opt.name}") == 0) {{
+                command.options.{option_field(opt)} = {value};
+            }}
+        '''
+
+
+syntax = configuration(CSyntax, r'''
+@<UI@/Command Line@/invocation syntax@>
+''')
+print(''.join(map(long_option_handling, all_options(syntax))), end='')
+@|Tool@/evaluate@
+@<UI@/Command Line@/C@/cases for short options@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+
+
+def short_opt_case(opt):
+    if not opt.short:
+        return ''
+    value = 'optarg' if opt.type == 'string' else '1'
+    return f'''
+            case '{opt.short}':
+                command.options.{option_field(opt)} = {value};
+                break;
+        '''
+
+
+syntax = configuration(CSyntax, r'''
+@<UI@/Command Line@/invocation syntax@>
+''')
+print(''.join(map(short_opt_case, all_options(syntax))), end='')
+@|Tool@/evaluate@
+@<UI@/Command Line@/C@/choose usage and store arguments@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+
+
+def look_option_of_usage(opt, usage):
+    constant = enum_constant(usage)
+    short_opt = f' -{opt.short}' if opt.short else ''
+    return f'''
+        if (command.options.{option_field(opt)}) {{
+            if (!found_usage) {{
+                found_usage = 1;
+                command.usage = {constant};
+            }} else if (command.usage != {constant}) {{
+                fprintf(stderr, "Conflict option: --{opt.name}{short_opt}\\n");
+                exit(1);
+            }}
+        }}
+    '''
+
+
+def look_usage_argument_number(usage):
+    return f'''
+        if (!found_usage && argc - optind == {len(usage.arguments)}) {{
+            found_usage = 1;
+            command.usage = {enum_constant(usage)};
+        }}
+    '''
+
+
+def store_arguments_for_usage(usage):
+    store = ''.join(f'command.arguments.{argument_field(arg)} = argv[optind + {idx}];'
+                    for idx, arg in enumerate(usage.arguments))
+    return f'''
+        case {enum_constant(usage)}:
+            if (argc - optind != {len(usage.arguments)}) {{
+                fprintf(stderr, "Unmatched argument number, see --help for usage\\n");
+                exit(1);
+            }}
+            {store}
+            break;
+    '''
+
+
+syntax = configuration(CSyntax, r'''
+@<UI@/Command Line@/invocation syntax@>
+''')
+text = 'do { int found_usage = 0;'
+text += ''.join(look_option_of_usage(opt, usage)
+                for usage in syntax.usages for opt in usage.options)
+text += '\n'.join(map(look_usage_argument_number, syntax.usages))
+text += '''
+    if (!found_usage) {
+        fprintf(stderr, "Invalid usage, see --help for usage\\n");
+        exit(1);
+    }
+'''
+text += 'switch (command.usage) {'
+text += '\n'.join(map(store_arguments_for_usage, syntax.usages))
+text += '}} while (0);'
+print(text, end='')
+@|Tool@/evaluate@
+The generators include this chunk as one fragment, on top of the shared models.
+getopt_long stores an option in a field of its own: an int for a switch and a string for a value,
+so an option is bool or string, and it has no default.
+@<UI@/Command Line@/C@/invocation syntax helpers@=
+@<UI@/Command Line@/invocation syntax helpers@>
+
+
+class CSyntax(InvocationSyntax):
+    @pydantic.model_validator(mode='after')
+    def check_c_options(self):
+        for opt in all_options(self):
+            if opt.type not in ('bool', 'string'):
+                raise ValueError(f'option {opt.name!r} has type {opt.type}; C takes bool or string')
+            if opt.default is not None:
+                raise ValueError(f'option {opt.name!r} has a default, which C does not take')
+        return self
+@
+Every generator names a field with these functions, so they agree on each field.
+@<UI@/Command Line@/C@/invocation syntax helpers@+
+def enum_constant(usage):
+    return 'COMMAND_USAGE_' + usage.name.replace(' ', '_').replace('-', '_').upper()
+
+
+def option_field(opt):
+    return opt.name.replace('-', '_').lower()
+
+
+def argument_field(arg):
+    return arg.replace(' ', '_').replace('-', '_').lower()
+@
+
+There are some idioms to make life a bit easier.
+
+@<lightlib@:Language@/C@/Module@/exported macros@+
+#define GLUE_TOKENS_INNER(a, b) a ## b
+#define GLUE_TOKENS(a, b) GLUE_TOKENS_INNER(a, b)
+
+#define ZEROFY(p, n) memset((p), 0, sizeof(*p) * (n))
+#define ZEROFY_SINGLE(p) ZEROFY(p, 1)
+
+#define COPY(dest, src) memcpy((dest), (src), sizeof(*(src)))
+
+#define SIGN(v) (((v) > 0) - ((v) < 0))
+#define ABS(v) ((v) * SIGN(v))
+#define BETWEEN(v, l, r)                                             \
+    ((((l) <= (v)) && ((v) < (r))) || (((r) <= (v)) && ((v) < (l))))
+#define SWAP(a, b)                             \
+    do {                                       \
+        typeof(a) *a_r = &(a), *b_r = &(b), t; \
+        t = *a_r;                              \
+        *a_r = *b_r;                           \
+        *b_r = t;                              \
+    } while (0)
+@
+
+Copied from linux kernel.
+
+@<lightlib@:Language@/C@/Module@/exported macros@+
+#define container_of(ptr, type, member) \
+    _Generic(ptr, \
+        const typeof(*(ptr)) *: ((const type *)((uint8_t *)(ptr) - offsetof(type, member))), \
+        default: ((type *)((uint8_t *)(ptr) - offsetof(type, member))) \
+    )
+@
+@<lightlib@:Language@/C@/Module@/exported data types@+
+struct list {
+    struct list *next;
+};
+@
+@<lightlib@:Language@/C@/Module@/exported static inline functions@+
+static inline struct list *
+cons(struct list *elm, struct list *l)
+{
+    elm->next = l;
+    return elm;
+}
+static inline struct list *
+cdr(const struct list *l)
+{
+    return l->next;
+}
+@
+@<lightlib@:Language@/C@/Module@/functions@+
+int list_length(const struct list *l)
+{
+    int n = 0;
+    while (l) {
+        l = cdr(l);
+        ++n;
+    }
+    return n;
+}
+
+void reverse(struct list **l_r)
+{
+    struct list *l, *ll;
+
+    l = *l_r;
+    ll = NULL;
+
+    while (l) {
+        struct list *l_t = l->next;
+        l->next = ll;
+        ll = l;
+        l = l_t;
+    }
+
+    *l_r = ll;
+}
+@
+@<lightlib@:Language@/C@/Module@/exported data types@+
+struct tail_list {
+    struct list *head;
+    struct list *tail;
+};
+@
+@<lightlib@:Language@/C@/Module@/exported static inline functions@+
+static inline void list_extend(struct tail_list *tl, struct list *l)
+{
+    if (tl->tail) {
+        tl->tail->next = l;
+    } else {
+        tl->head = l;
+        tl->tail = l;
+    }
+    while (tl->tail->next) {
+        tl->tail = tl->tail->next;
+    }
+}
+@
+@<lightlib@:Language@/C@/Module@/exported data types@+
+struct bi_list {
+    struct bi_list *previous;
+    struct bi_list *next;
+};
+@
+@<lightlib@:Language@/C@/Module@/exported static inline functions@+
+static inline void bi_list_init(struct bi_list *l)
+{
+    l->previous = l;
+    l->next = l;
+}
+
+static inline void bi_list_connect(struct bi_list *nd1, struct bi_list *nd2)
+{
+    nd1->next = nd2;
+    nd2->previous = nd1;
+}
+
+static inline struct bi_list *bi_list_insert(struct bi_list *nd1, struct bi_list *nd2)
+{
+    if (!nd2) {
+        bi_list_connect(nd1, nd1);
+    } else {
+        struct bi_list *pre_nd2 = nd2->previous;
+        bi_list_connect(pre_nd2, nd1);
+        bi_list_connect(nd1, nd2);
+    }
+    return nd1;
+}
+
+static inline struct bi_list *bi_list_remove(struct bi_list *nd)
+{
+    if (nd->next == nd && nd->previous == nd) {
+        return NULL;
+    }
+    bi_list_connect(nd->previous, nd->next);
+    return nd->next;
+}
+@
+@<lightlib@:Language@/C@/Module@/exported macros@+
+#define FOREACH(elm, lst) for (elm = lst; elm; elm = cdr(elm))
+#define FOREACH_BI(elm, lst) \
+    for (elm = NULL; (elm && (elm != lst)) || (!elm && (elm = lst)); elm = elm->next)
+#define FOREACH_BI_BACKWARDS(elm, lst) \
+    for (elm = NULL; (elm && (elm != lst)) || (!elm && (elm = lst)); elm = elm->previous)
+@
+@<lightlib@:Language@/C@/Module@/exported data types@+
+struct context {
+    const char *name;
+    struct context *parent;
+    const void *memory_end;
+    void *stack_top;
+    struct frame_header *stack_frame_start;
+};
+struct free_node {
+    void *ptr;
+    void *(*func)(void *ptr);
+    struct list free_list;
+};
+struct frame_header {
+    struct frame_header *last_frame_start;
+    struct list *free_list;
+    const void *returned;
+    size_t returned_size;
+};
+extern thread_local struct context *_light_top_context;
+@
+@<lightlib@:Language@/C@/Module@/exported static inline functions@+
+static inline void *_salloc(struct context *ctx, size_t size) {
+    uint8_t *stack_top = ctx->stack_top;
+    if (stack_top + size >= (const uint8_t *)ctx->memory_end) {
+        return NULL;
+    }
+    ctx->stack_top = stack_top + size;
+    return stack_top;
+}
+
+static inline void *_csalloc(struct context *ctx, size_t nmemb, size_t size) {
+    size_t tot = nmemb * size;
+    void *p = _salloc(ctx, tot);
+    memset(p, 0, tot);
+    return p;
+}
+
+static inline void *salloc(size_t size) {
+    return _salloc(_light_top_context, size);
+}
+
+static inline void *csalloc(size_t nmemb, size_t size) {
+    return _csalloc(_light_top_context, nmemb, size);
+}
+
+static inline size_t _remaining_memory(struct context *ctx) {
+    return (uint8_t *)ctx->memory_end - (uint8_t *)ctx->stack_top;
+}
+
+static inline size_t remaining_memory() {
+    return _remaining_memory(_light_top_context);
+}
+@
+@<lightlib@:Language@/C@/Module@/exported macros@+
+#define NEW(p) \
+    do { \
+        typeof(p) *__light_macro_local_p_r = &(p); \
+        (*__light_macro_local_p_r) = (typeof(p))salloc(sizeof *(p)); \
+    } while (0)
+#define CALLOC(p, len) \
+    do { \
+        typeof(p) *__light_macro_local_p_r = &(p); \
+        (*__light_macro_local_p_r) = (typeof(p))csalloc((len), sizeof *(p)); \
+    } while (0)
+#define NEW0(p) CALLOC(p, 1)
+@
+@<lightlib@:Language@/C@/Module@/exported static inline functions@+
+static inline char *sstrdup(const char *s)
+{
+    char *_s;
+    _s = salloc(strlen(s)+1);
+    if (_s) {
+        strcpy(_s, s);
+    }
+    return _s;
+}
+@
+@<lightlib@:Language@/C@/Module@/global variables@+
+thread_local struct context *_light_top_context;
+@
+@<lightlib@:Language@/C@/Module@/functions@+
+struct frame_header *enter_frame()
+{
+    struct frame_header *hd;
+    NEW(hd);
+    if (!hd) {
+        return NULL;
+    }
+    hd->last_frame_start = _light_top_context->stack_frame_start;
+    _light_top_context->stack_frame_start = hd;
+    hd->free_list = NULL;
+    hd->returned = NULL;
+    hd->returned_size = 0;
+    return hd;
+}
+
+void *frame_return(const void *p, size_t s)
+{
+    struct frame_header *hd = _light_top_context->stack_frame_start;
+    hd->returned = p;
+    hd->returned_size = s;
+    return _light_top_context->stack_frame_start;
+}
+
+void *frame_return_complex(
+    const void *obj,
+    void *serialize(const void *obj, size_t *size, const void *base_addr)
+) {
+    size_t size;
+    void *s_obj = serialize(obj, &size, _light_top_context->stack_frame_start);
+    if (!s_obj) {
+        return NULL;
+    }
+    return frame_return(s_obj, size);
+}
+
+const void *exit_frame() {
+    struct frame_header *hd = _light_top_context->stack_frame_start;
+
+    while (hd->free_list) {
+        struct free_node *nd = container_of(hd->free_list, struct free_node, free_list);
+        if (!nd->func(nd->ptr)) {
+            return NULL;
+        }
+        hd->free_list = cdr(hd->free_list);
+    }
+
+    const void *rp = hd->returned;
+    size_t rs = hd->returned_size;
+
+    _light_top_context->stack_top = _light_top_context->stack_frame_start;
+    _light_top_context->stack_frame_start = _light_top_context->stack_frame_start->last_frame_start;
+
+    if (rp) {
+        void *p = salloc(rs);
+        if (!p) {
+            return NULL;
+        }
+        for (int i = 0; i < rs; ++i) {
+            *(uint8_t *)(p++) = *(uint8_t *)(rp++);
+        }
+    }
+    return hd;
+}
+
+struct free_node *new_free_node(void *ptr, void *func(void *))
+{
+    struct free_node *nd;
+    NEW(nd);
+    if (!nd) {
+        return NULL;
+    }
+    nd->ptr = ptr;
+    nd->func = func;
+    _light_top_context->stack_frame_start->free_list =
+        cons(&nd->free_list, _light_top_context->stack_frame_start->free_list);
+    return nd;
+}
+@
+@<lightlib@:Language@/C@/Module@/exported static inline functions@+
+static inline char *frame_return_string(const char *s)
+{
+    return frame_return(s, strlen(s)+1);
+}
+
+static inline struct frame_header *enter_context(struct context *ctx)
+{
+    ctx->parent = _light_top_context;
+    _light_top_context = ctx;
+    return enter_frame();
+}
+
+static inline const void *exit_context()
+{
+    const void *ret = exit_frame();
+    _light_top_context = _light_top_context->parent;
+    return ret;
+}
+
+static inline struct context *switch_context(struct context *ctx)
+{
+    struct context *tmp = _light_top_context;
+    _light_top_context = ctx;
+    return tmp;
+}
+@
+@<lightlib@:Language@/C@/Module@/exported macros@+
+#define frame_return_struct(p) frame_return(p, sizeof(*p))
+@
+@<lightlib@:Language@/C@/Module@/exported data type declarations@+
+typedef enum {
+    LOG_LEVEL_INFO,
+    LOG_LEVEL_WARNING,
+    LOG_LEVEL_ERROR,
+} LogLevel;
+@
+@<lightlib@:Language@/C@/Module@/functions@+
+void _light_log(LogLevel base, LogLevel lv, const char *format, ...)
+{
+    if (lv < base) {
+        return;
+    }
+
+    switch (lv) {
+    case LOG_LEVEL_INFO:
+        fputs("INFO: ", stderr);
+        break;
+    case LOG_LEVEL_WARNING:
+        fputs("WARNING: ", stderr);
+        break;
+    case LOG_LEVEL_ERROR:
+        fputs("ERROR: ", stderr);
+        break;
+    default:
+        return;
+    }
+
+    va_list args;
+
+    va_start(args, format);
+    vfprintf(stderr, format, args);
+    va_end(args);
+
+    do {
+        struct context *ctx = _light_top_context;
+        fputs(" (", stderr);
+        fputs(ctx->name, stderr);
+        ctx = ctx->parent;
+        while (ctx) {
+            fputs(" -> ", stderr);
+            fputs(ctx->name, stderr);
+            ctx = ctx->parent;
+        }
+    } while (0);
+    fputs(")\n", stderr);
+}
+@
+@<lightlib@:Language@/C@/Module@/exported macros@+
+#ifdef light_option_logging_level
+#define light_log(lv, format, ...) \
+    _light_log(GLUE_TOKENS(LOG_LEVEL_, light_option_logging_level), LOG_LEVEL_##lv, (format) __VA_OPT__(,) __VA_ARGS__)
+#else
+#define light_log(lv, format, ...) ((void *) NULL);
+#endif
+@
+@<lightlib@:Language@/C@/Module@/exported data type declarations@+
+typedef struct heap *Heap;
+@
+@<lightlib@:Language@/C@/Module@/macros@+
+#define HEAP_LABEL_TYPE unsigned int
+#define HEAP_LABEL_SIZE (sizeof(HEAP_LABEL_TYPE) * 8)
+@
+@<lightlib@:Language@/C@/Module@/functions@+
+Heap new_heap(size_t len, size_t unit_size)
+{
+    Heap hp;
+    NEW(hp);
+    if (!hp) {
+        return NULL;
+    }
+    hp->length = len;
+    hp->unit_size = unit_size;
+    hp->space = salloc(len * unit_size);
+    if (!hp->space) {
+        return NULL;
+    }
+
+    int w_n = 1;
+    while (w_n < len) {
+        w_n *= HEAP_LABEL_SIZE;
+    }
+
+    hp->first_direct = (w_n-1)/(HEAP_LABEL_SIZE-1);
+    CALLOC(
+        hp->labels,
+        hp->first_direct + (len+HEAP_LABEL_SIZE-1)/HEAP_LABEL_SIZE
+    );
+
+    if (!hp->labels) {
+        return NULL;
+    }
+
+    return hp;
+}
+
+void *heap_alloc(Heap hp)
+{
+    int p = 0;
+    while (p < hp->first_direct) {
+        p = HEAP_LABEL_SIZE * p + 1 + __builtin_clzg(~hp->labels[p], (int)HEAP_LABEL_SIZE);
+    }
+
+    int n = __builtin_clzg(~hp->labels[p], (int)HEAP_LABEL_SIZE);
+    int idx = (p - hp->first_direct) * HEAP_LABEL_SIZE + n;
+
+    if (idx >= hp->length) {
+        return NULL;
+    }
+
+    hp->labels[p] |= (HEAP_LABEL_TYPE) 1 << (HEAP_LABEL_SIZE - n - 1);
+
+    while (__builtin_popcountg(hp->labels[p]) == HEAP_LABEL_SIZE) {
+        int _p = (p - 1) / HEAP_LABEL_SIZE;
+        hp->labels[_p] |=
+            (HEAP_LABEL_TYPE) 1 << (HEAP_LABEL_SIZE - 1 - (p - (_p * HEAP_LABEL_SIZE + 1)));
+        if (_p == 0) {
+            break;
+        }
+        p = _p;
+    }
+
+    return hp->space + (idx * hp->unit_size);
+}
+
+void heap_free(Heap hp, void *elm)
+{
+    uint8_t *_elm = elm;
+    if (_elm < hp->space || _elm >= hp->space + hp->length * hp->unit_size) {
+        return;
+    }
+    size_t idx = (_elm - hp->space) / hp->unit_size;
+    int p = hp->first_direct + idx/HEAP_LABEL_SIZE;
+    hp->labels[p] &= ~((HEAP_LABEL_TYPE) 1 << (HEAP_LABEL_SIZE - 1 - (idx % HEAP_LABEL_SIZE)));
+    do {
+        int _p = (p - 1) /HEAP_LABEL_SIZE;
+        hp->labels[_p] &= ~(
+            (HEAP_LABEL_TYPE) 1 << (HEAP_LABEL_SIZE - 1 - (p - (_p * HEAP_LABEL_SIZE + 1)))
+        );
+        if (__builtin_popcountg(hp->labels[_p]) < HEAP_LABEL_SIZE - 1) {
+            break;
+        }
+        p = _p;
+    } while (p);
+}
+@
+@<lightlib@:Language@/C@/Module@/exported macros@+
+#define SEGMENT_SIZE(elms) sizeof(struct {struct list list; elms;})
+@
+@<lightlib@:Language@/C@/Module@/exported data type declarations@+
+typedef struct segmented *Segmented;
+@
+@<lightlib@:Language@/C@/Module@/functions@+
+Segmented new_segmented(Heap hp)
+{
+    Segmented sg;
+    NEW(sg);
+    if (!sg) {
+        return NULL;
+    }
+    segmented_init(sg, hp);
+    return sg;
+}
+
+Segmented new_segmented_in_heap(Heap hp_s, Heap hp)
+{
+    if (hp_s->unit_size >= sizeof(struct segmented)) {
+        return NULL;
+    }
+    Segmented sg = heap_alloc(hp_s);
+    if (!sg) {
+        return NULL;
+    }
+    segmented_init(sg, hp);
+    return sg;
+}
+
+size_t segmented_size(Segmented sg)
+{
+    return (list_length(&sg->head->list)-1) * segment_size(sg) + sg->tail_size;
+}
+
+Segmented segmented_append(Segmented sg, const void *src, size_t n)
+{
+    const uint8_t *src_ = src;
+    while (n) {
+        size_t tail_usable, save_to_tail;
+
+        tail_usable = segment_size(sg) - sg->tail_size;
+        save_to_tail = n < tail_usable ? n : tail_usable;
+
+        memcpy(sg->tail->mem + sg->tail_size, src_, save_to_tail);
+        n -= save_to_tail;
+        src_ += save_to_tail;
+        sg->tail_size += save_to_tail;
+
+        if (sg->tail_size == segment_size(sg)) {
+            if (!segmented_attach_new_segment(sg)) {
+                return NULL;
+            }
+        }
+    }
+    return sg;
+}
+
+Segmented segmented_resize(Segmented sg, size_t size)
+{
+    struct list *segs = &sg->head->list;
+    size_t acc = 0;
+    while (acc < size) {
+        acc += segment_size(sg);
+        sg->tail = container_of(segs, struct segment, list);
+
+        segs = cdr(segs);
+        if (!segs) {
+            if (!segmented_attach_new_segment(sg)) {
+                return NULL;
+            }
+            segs = &sg->tail->list;
+        }
+    }
+    cons(&sg->tail->list, NULL);
+    while (segs) {
+        struct list *segs_ = segs;
+        segs = cdr(segs);
+        heap_free(sg->heap, segs_);
+    }
+    if (acc > size) {
+        sg->tail_size = size + segment_size(sg) - acc;
+    }
+    return sg;
+}
+
+void segmented_free(Heap hp_s, Segmented sg)
+{
+    struct list *segs = &sg->head->list, *segs_;
+    while (segs) {
+        segs_ = segs;
+        segs = cdr(segs);
+        heap_free(sg->heap, segs_);
+    }
+    heap_free(hp_s, sg);
+}
+@
+@<lightlib@:Language@/C@/Module@/exported data type declarations@+
+typedef struct segmented_random *SegmentedRandom;
+@
+@<lightlib@:Language@/C@/Module@/functions@+
+SegmentedRandom segmented_random(Segmented sg)
+{
+    SegmentedRandom sgr;
+    NEW(sgr);
+    if (!sgr) {
+        return NULL;
+    }
+    sgr->segmented = sg;
+
+    struct list *segs = &sg->head->list;
+    sgr->segments = csalloc(list_length(segs), sizeof(*sgr->segments));
+    if (!sgr->segments) {
+        return NULL;
+    }
+
+    int i = 0;
+    while (segs) {
+        sgr->segments[i] = container_of(segs, struct segment, list)->mem;
+        segs = cdr(segs);
+        ++i;
+    }
+    return sgr;
+}
+
+void *segmented_pointer(SegmentedRandom sgr, int addr)
+{
+    return (uint8_t *)sgr->segments[addr/segment_size(sgr->segmented)]
+        + addr % segment_size(sgr->segmented);
+}
+
+void segmented_copy_to(Segmented sg, void *buf)
+{
+    struct list *segs = &sg->head->list;
+    int addr = 0;
+    while (segs != &sg->tail->list) {
+        memcpy(buf + addr, container_of(segs, struct segment, list)->mem, segment_size(sg));
+        addr += segment_size(sg);
+        segs = cdr(segs);
+    }
+    memcpy(buf + addr, container_of(segs, struct segment, list)->mem, sg->tail_size);
+}
+
+void *segmented_continuous(Segmented sg)
+{
+    uint8_t *cont;
+
+    cont = salloc(segmented_size(sg));
+    if (!cont) {
+        return NULL;
+    }
+    segmented_copy_to(sg, cont);
+
+    return cont;
+}
+@
+@<lightlib@:Language@/C@/Module@/exported macros@+
+#define segmented_pushback(sg, mem) segmented_append((sg), &mem, sizeof(mem))
+#define point_to_segmented(ptr, sgr, idx) do { \
+        typeof(ptr) __light_macro_local_ptr = NULL; \
+        (ptr) = segmented_pointer( \
+            (sgr), (idx) * (&_light_macro_local_ptr[1] - &_light_macro_local_ptr[0]) \
+        ); \
+    } while (0)
+@
+@<lightlib@:Language@/C@/Module@/exported data type declarations@+
+typedef Segmented String;
+@
+@<lightlib@:Language@/C@/Module@/exported macros@+
+#define string_free segmented_free
+@
+@<lightlib@:Language@/C@/Module@/functions@+
+String string(Heap hp, const char *s)
+{
+    Segmented sg = new_segmented(hp);
+    sg = segmented_append(sg, s, strlen(s));
+    return sg;
+}
+
+const char *cstring(String str)
+{
+    size_t l = segmented_size(str);
+    char *s = salloc(l+1);
+    if (!s) {
+        return NULL;
+    }
+    segmented_copy_to(str, s);
+    s[l] = '\0';
+    return s;
+}
+
+String string_append(String str, const char *s)
+{
+    return segmented_append(str, s, strlen(s));
+}
+@
+@<lightlib@:Language@/C@/Module@/exported data types@+
+struct hash_table_record {
+    const void *key;
+    const void *value;
+    struct bi_list slot, table;
+};
+@
+@<lightlib@:Language@/C@/Module@/exported data type declarations@+
+typedef struct hash_table *HashTable;
+@
+@<lightlib@:Language@/C@/Module@/functions@+
+HashTable new_hash_table(uint32_t hf(const void *), int eq(const void *, const void *))
+{
+    HashTable tbl;
+    NEW(tbl);
+    if (!tbl) {
+        return NULL;
+    }
+
+    tbl->hash_func = hf;
+    tbl->equal_func = eq;
+    tbl->compose = NULL;
+
+    return tbl;
+}
+
+static void *hash_table_remove_storage(void *tbl)
+{
+    HashTable tbl_ = tbl;
+    tbl_->compose = cdr(tbl_->compose);
+    return tbl;
+}
+
+HashTable hash_table_init(HashTable tbl, size_t size)
+{
+    size_t ns = 1;
+    while (ns < size) {
+        ns <<= 1;
+    }
+    struct hash_table_storage *st;
+    st = salloc(offsetof(struct hash_table_storage, slots) + ns * sizeof(st->slots[0]));
+    if (!st) {
+        return NULL;
+    }
+
+    st->number_slots = ns;
+    ZEROFY(st->slots, ns);
+
+    st->heap = new_heap(size, sizeof(struct hash_table_record));
+    if (!st->heap) {
+        return NULL;
+    }
+
+    st->records = NULL;
+    tbl->compose = cons(&st->compose, tbl->compose);
+    new_free_node(tbl, hash_table_remove_storage);
+    return tbl;
+}
+
+static struct hash_table_record *
+hash_table_storage_find_record(
+    HashTable tbl,
+    struct hash_table_storage *st,
+    const void *key
+) {
+    uint32_t idx = calculate_index_for_key(tbl, st, key);
+    struct bi_list *rcds = st->slots[idx], *rcd = rcds;
+    FOREACH_BI (rcd, rcds) {
+        struct hash_table_record *rcd_r = container_of(rcd, struct hash_table_record, slot);
+        if (tbl->equal_func(key, rcd_r->key)) {
+            return rcd_r;
+        }
+    }
+    return NULL;
+}
+
+static struct hash_table_record *
+hash_table_find_record(HashTable tbl, const void *key)
+{
+    struct list *cp = tbl->compose;
+    FOREACH (cp, tbl->compose) {
+        struct hash_table_storage *st = container_of(cp, struct hash_table_storage, compose);
+        struct hash_table_record *rcd = hash_table_storage_find_record(tbl, st, key);
+        if (rcd) {
+            return rcd;
+        }
+    }
+    return NULL;
+}
+
+HashTable hash_table_map(HashTable tbl, const void *key, const void *value)
+{
+    struct hash_table_storage *st = container_of(tbl->compose, struct hash_table_storage, compose);
+    struct hash_table_record *rcd_r = hash_table_storage_find_record(tbl, st, key);
+    if (rcd_r) {
+        rcd_r->value = value;
+        return tbl;
+    }
+    rcd_r = heap_alloc(st->heap);
+    if (!rcd_r) {
+        return NULL;
+    }
+
+    uint32_t idx = calculate_index_for_key(tbl, st, key);
+    rcd_r->key = key;
+    rcd_r->value = value;
+    st->slots[idx] = bi_list_insert(&rcd_r->slot, st->slots[idx]);
+    st->records = bi_list_insert(&rcd_r->table, st->records);
+    return tbl;
+}
+
+HashTable hash_table_unmap(HashTable tbl, const void *key)
+{
+    struct hash_table_storage *st = container_of(tbl->compose, struct hash_table_storage, compose);
+    struct hash_table_record *rcd_r = hash_table_storage_find_record(tbl, st, key);
+    if (!rcd_r) {
+        rcd_r = hash_table_find_record(tbl, key);
+        if (rcd_r) {
+            return hash_table_map(tbl, key, NULL);
+        }
+        return tbl;
+    }
+
+    uint32_t idx = calculate_index_for_key(tbl, st, key);
+    st->slots[idx] = bi_list_remove(&rcd_r->slot);
+    st->records = bi_list_remove(&rcd_r->table);
+    heap_free(st->heap, rcd_r);
+
+    return tbl;
+}
+
+const void *hash_table_get(HashTable tbl, const void *key)
+{
+    struct hash_table_record *rcd_r = hash_table_find_record(tbl, key);
+    if (rcd_r) {
+        return rcd_r->value;
+    } else {
+        return NULL;
+    }
+}
+@
+
+Light chooses FNV-1a as the default hash algorithm, the main usage is to calculate a key
+from a small value.
+
+@<lightlib@:Language@/C@/Module@/exported static inline functions@+
+static inline uint32_t hash(const uint8_t *value, size_t len)
+{
+    uint32_t result;
+
+    int i;
+    for (i = 0, result = 2166136261U; i < len; ++i) {
+        result ^= value[i];
+        result *= 16777619U;
+    }
+
+    return result;
+}
+
+static inline uint32_t hash_str(const char *str)
+{
+    return hash((const uint8_t *)str, strlen(str));
+}
+@
+@<lightlib@:Language@/C@/Module@/functions@+
+static uint32_t hash_func_str(const void *s)
+{
+    return hash_str(s);
+}
+
+static int equal_func_str(const void *s1, const void *s2)
+{
+    return strcmp(s1, s2) == 0;
+}
+
+HashTable new_string_hash_table()
+{
+    return new_hash_table(hash_func_str, equal_func_str);
+}
+@
+@<lightlib@:Language@/C@/Module@/functions@+
+static uint32_t hash_func_ptr(const void *p)
+{
+    return hash((uint8_t *)&p, sizeof(p));
+}
+
+static int equal_func_ptr(const void *p1, const void *p2)
+{
+    return p1 == p2;
+}
+
+HashTable new_pointer_hash_table()
+{
+    return new_hash_table(hash_func_ptr, equal_func_ptr);
+}
+@
+
+Some useful data structures.
+
+@<lightlib@:Language@/C@/Module@/exported data type declarations@+
+typedef HashTable Set;
+@
+@<lightlib@:Language@/C@/Module@/exported macros@+
+#define new_set new_hash_table
+#define new_string_set new_string_hash_table
+#define set_init hash_table_init
+@
+@<lightlib@:Language@/C@/Module@/exported static inline functions@+
+static inline Set set_include(Set set, const void *elm)
+{
+    return hash_table_map(set, elm, elm);
+}
+static inline const void *set_in(const void *elm, Set set)
+{
+    return hash_table_get(set, elm);
+}
+static inline Set set_not_include(Set set, const void *elm)
+{
+    return hash_table_unmap(set, elm);
+}
+@
+@<lightlib@:Language@/C@/Module@/exported data types@+
+struct deque {
+    struct bi_list *head;
+};
+@
+@<lightlib@:Language@/C@/Module@/exported data type declarations@+
+typedef struct deque *Deque;
+@
+@<lightlib@:Language@/C@/Module@/exported static inline functions@+
+static inline void deque_init(Deque q)
+{
+    q->head = NULL;
+}
+
+static inline struct bi_list *deque_pop_front(Deque q)
+{
+    struct bi_list *ret;
+    ret = q->head;
+    q->head = bi_list_remove(q->head);
+    return ret;
+}
+
+static inline struct bi_list *deque_pop_back(Deque q)
+{
+    struct bi_list *ret;
+    ret = q->head->previous;
+    q->head = bi_list_remove(q->head->previous);
+    return ret;
+}
+
+static inline void deque_push_front(Deque q, struct bi_list *elm)
+{
+    q->head = bi_list_insert(elm, q->head);
+}
+
+static inline void deque_push_back(Deque q, struct bi_list *elm)
+{
+    
+    q->head = bi_list_insert(elm, q->head)->next;
+}
+@
+@<lightlib@:Language@/C@/Module@/exported data type declarations@+
+typedef Deque Stack;
+typedef Deque Queue;
+@
+@<lightlib@:Language@/C@/Module@/exported macros@+
+#define stack_init deque_init
+#define stack_pop deque_pop_front
+#define stack_push deque_push_front
+
+#define queue_init deque_init
+#define queue_put deque_push_back
+#define queue_get deque_pop_front
+@
+@<lightlib@:Language@/C@/Module@/interface required includes@+
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include <threads.h>
+@
+@<light@:executable@:Language@/C@/Module@/include flags@+
+@<Framework@/Light@/light options@>
+@
+@<light@:executable@:Language@/C@/Module@/global variables@+
+static uint8_t context_main_memory[light_option_context_main_size];
+struct context context_main = {
+    .name = "main",
+    .parent = NULL,
+    .memory_end = context_main_memory + sizeof(context_main_memory),
+    .stack_top = context_main_memory,
+};
+@
+@<light@:executable@:Language@/C@/Module@/includes@+
+#include "light.h"
+@
+@<light-single@:executable@:Language@/C@/Module@/include flags@+
+@<Framework@/Light@/light options@>
+@
+@<Framework@/Light@/light options@+
+#ifndef light_option_context_main_size
+#define light_option_context_main_size (1 << 20)  /* 1 MB */
+#endif
+
+#ifndef light_option_logging_level
+/* #define light_option_logging_level ERROR */
+#endif
+@
+@<light-single@:executable@:Language@/C@/Module@/includes@+
+@<lightlib@:Language@/C@/Module@/includes@>
+@
+@<light-single@:executable@:Language@/C@/Module@/macros@+
+@<lightlib@:Language@/C@/Module@/macros@>
+@
+@<light-single@:executable@:Language@/C@/Module@/data type declarations@+
+@<lightlib@:Language@/C@/Module@/data type declarations@>
+@
+@<light-single@:executable@:Language@/C@/Module@/data types@+
+@<lightlib@:Language@/C@/Module@/data types@>
+@
+@<light-single@:executable@:Language@/C@/Module@/function declarations@+
+@<lightlib@:Language@/C@/Module@/function declarations@>
+@
+@<light-single@:executable@:Language@/C@/Module@/global variables@+
+@<lightlib@:Language@/C@/Module@/global variables@>
+
+static uint8_t context_main_memory[light_option_context_main_size];
+struct context context_main = {
+    .name = "main",
+    .parent = NULL,
+    .memory_end = context_main_memory + sizeof(context_main_memory),
+    .stack_top = context_main_memory,
+};
+@
+@<light-single@:executable@:Language@/C@/Module@/static inline functions@+
+@<lightlib@:Language@/C@/Module@/static inline functions@>
+@
+@<light-single@:executable@:Language@/C@/Module@/functions@+
+@<lightlib@:Language@/C@/Module@/functions@>
+@
+@<light@:executable@:Language@/C@/Module@/main body@=
+do {
+    enter_context(&context_main);
+    @<Framework@/Light@/main body@>
+    exit_context();
+} while (0);
+@
+@<light-single@:executable@:Language@/C@/Module@/main body@=
+do {
+    enter_context(&context_main);
+    @<Framework@/Light@/main body@>
+    exit_context();
+} while (0);
+@
+@<lightlib@:Language@/C@/Module@/module properties@+
+name: 'light',
+@
+@<Chunk@/Language@/Go@/File@=
+{"description": "Common structures in Go programming"}
+@
+
+gofmt reads a Go source file on stdin and writes the formatted file on stdout.
+The Go toolchain fixes the format, so this filter has no style file.
+@<Language@/Go@/File@/Format@/format Go code@=#!/bin/sh
+gofmt
+@
+
+@<Chunk@/Language@/Go@/File@/Format@=
+{"description": "Format a Go source file."}
+@
+
+@<Chunk@/UI@/Command Line@/Go@=
+{"description": "Flags and positional arguments of a command."}
+@
+
+@<Chunk@/Language@/Go@/File@/file@=
+{"description": "One Go source file."}
+@
+
+@<Chunk@/Language@/Go@/File@/Header@/package clause@=
+{"description": "Package comment followed by the package clause."}
+@
+
+@<Chunk@/Language@/Go@/File@/Meta@/package name@=
+{"description": "Package identifier from the module meta information."}
+@
+
+@<Chunk@/Language@/Go@/File@/package comment@=
+{"description": "Comment lines immediately above the package clause."}
+@
+
+@<Chunk@/Language@/Go@/File@/build constraints@=
+{"description": "go:build lines before the package clause."}
+@
+
+@<Chunk@/Language@/Go@/File@/Header@/imports@=
+{"description": "Import declaration, omitted when there are no paths."}
+@
+
+@<Chunk@/Language@/Go@/File@/import paths@=
+{"description": "Lines of the import declaration."}
+@
+
+@<Chunk@/Language@/Go@/File@/constants@=
+{"description": "Constant declarations."}
+@
+
+@<Chunk@/Language@/Go@/File@/variables@=
+{"description": "Variable declarations."}
+@
+
+@<Chunk@/Language@/Go@/File@/types@=
+{"description": "Type declarations."}
+@
+
+@<Chunk@/Language@/Go@/File@/methods@=
+{"description": "Method declarations."}
+@
+
+@<Chunk@/Language@/Go@/File@/functions@=
+{"description": "Function declarations."}
+@
+
+@<Chunk@/Language@/Go@/File@/main body@=
+{"description": "Statements of func main in a command."}
+@
+
+@<Chunk@/Language@/Go@/File@/Format@/format Go code@=
+{"description": "Format stdin as Go and write it to stdout."}
+@
+
+@<Chunk@/UI@/Command Line@/Go@/command variables@=
+{"description": "Variable command, when the command has flags or arguments."}
+@
+
+@<Chunk@/UI@/Command Line@/Go@/register flags@=
+{"description": "flag.Var calls for the invocation syntax."}
+@
+
+@<Chunk@/UI@/Command Line@/Go@/store arguments@=
+{"description": "Statements that check and store positional arguments."}
+@
+
+@<Chunk@/UI@/Command Line@/Go@/parse command line arguments@=
+{"description": "Register flags, parse the command line, and store arguments."}
+@
+
+A Go source file is one tree.  Build constraints come first,
+because the go command reads them only before the package clause.
+The package clause is next, then the import declaration,
+then constants, variables, types, methods, and functions.
+Methods follow types, and free functions follow methods,
+so a reader can list either sequence on its own.
+A type that must stay beside its methods belongs in one block.
+Extend a sequence by adding a block.
+One package may contain several files.
+A block with no label is part of every file.
+Put a shared label to the right of a more specific one:
+blocks labeled lib are part of a reference impl@@:lib.
+A block that belongs to one file carries that file's whole label list.
+The line break before the closing control of a block is not content,
+so a file block may close on the line after its reference.
+@<Language@/Go@/File@/file@=
+@<.@/build constraints@>
+@<.@/Header@/package clause@>
+@<.@/Header@/imports@>
+@<.@/constants@>
+@<.@/variables@>
+@<.@/types@>
+@<.@/methods@>
+@<.@/functions@>
+@|Language@/Go@/File@/Format@/format Go code@
+
+go doc attaches the comment that ends immediately above the package clause.
+Leave no blank line between that comment and the clause.
+@<Language@/Go@/File@/Header@/package clause@=
+@<..@/package comment@|Tool@/Text Processing@/remove ending newlines@>
+package @<..@/Meta@/package name@>
+@
+
+@<command@:Language@/Go@/File@/variables@+
+@<UI@/Command Line@/Go@/command variables@>
+@
+
+@<command@:Language@/Go@/File@/functions@+
+func main() {
+    @<UI@/Command Line@/Go@/parse command line arguments@>
+    @<.@/main body@>
+}
+@
+@<Chunk@/Language@/Go@/File@/Meta@/module meta information@=
+{"description": "Package name and other properties, as a Jsonnet object."}
+@
+@<Chunk@/Language@/Go@/File@/module properties@=
+{"description": "Jsonnet fields that override the module meta information."}
+@
+@<Language@/Go@/File@/Meta@/package name@=
+@<Tool@/Text Processing@/basic python settings@>
+
+
+class ModuleMeta(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='allow')
+    name: str = pydantic.Field(pattern=r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+meta = configuration(ModuleMeta, r'''
+@<.@/module meta information@>
+''')
+print(meta.name, end='')
+@|Tool@/evaluate@
+The name field is the package identifier.
+pkg stands in until a file sets its own name.
+A command does not read this name; its package clause says main.
+The module properties are the fields of a second Jsonnet object, which override these defaults;
+further fields belong there too, and Jsonnet rejects a field given twice.
+@<Language@/Go@/File@/Meta@/module meta information@=
+{
+    name: 'pkg',
+} + {
+    @<..@/module properties@>
+}
+@
+No import declaration is emitted when the path list is empty
+or contains only whitespace.
+A blank line between paths starts another group,
+and gofmt keeps that group.
+@<Language@/Go@/File@/Header@/imports@=
+@<Tool@/Text Processing@/basic python settings@>
+paths = r'''
+@<..@/import paths@>
+'''.strip(' \t\n\r\f\v')
+if paths:
+    print(f'import (\n{paths}\n)')
+@|Tool@/evaluate@
+
+@<command@:Language@/Go@/File@/import paths@+
+    "flag"
+    "fmt"
+    "os"
+@
+@<UI@/Command Line@/Go@/command variables@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/flag syntax helpers@>
+
+
+syntax = configuration(GoSyntax, r'''
+@<UI@/Command Line@/invocation syntax@>
+''')
+usage = syntax.usages[0]
+if usage.options or usage.arguments:
+    print('var command struct {')
+    if usage.options:
+        print('flags struct {')
+        for opt in usage.options:
+            print(f'{take_field(opt.name)} {opt.type}')
+        print('}')
+    if usage.arguments:
+        print('arguments struct {')
+        for arg in usage.arguments:
+            print(f'{take_field(arg)} string')
+        print('}')
+    print('}')
+@|Tool@/evaluate@
+@<Chunk@/UI@/Command Line@/Go@/flag syntax helpers@=
+{"description": "Go field names, Go literals, and the Go limits on the shared invocation syntax."}
+@
+@<Chunk@/UI@/Command Line@/Go@/usage literal@=
+{"description": "Go string literal of the shared usage lines."}
+@
+Help that is asked for goes to stdout and exits 0;
+a parse error goes to stderr, followed by the usage, and exits 2.
+The usage of flag.CommandLine is silenced while parsing,
+so the usage is printed once, after the stream is known.
+No variable is declared here, so the main body may declare any name.
+@<UI@/Command Line@/Go@/parse command line arguments@=
+@<.@/register flags@>flag.Usage = func() {
+fmt.Fprint(flag.CommandLine.Output(), @<.@/usage literal@>)
+}
+flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
+flag.CommandLine.Usage = func() {}
+if err := flag.CommandLine.Parse(os.Args[1:]); err == flag.ErrHelp {
+flag.CommandLine.SetOutput(os.Stdout)
+flag.Usage()
+os.Exit(0)
+} else if err != nil {
+flag.Usage()
+os.Exit(2)
+}
+@<.@/store arguments@>@
+@<UI@/Command Line@/Go@/store arguments@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/flag syntax helpers@>
+
+
+syntax = configuration(GoSyntax, r'''
+@<UI@/Command Line@/invocation syntax@>
+''')
+arguments = syntax.usages[0].arguments
+print(f'if len(flag.Args()) != {len(arguments)} {{')
+print('flag.Usage()')
+print('os.Exit(1)')
+print('}')
+for i, arg in enumerate(arguments):
+    print(f'command.arguments.{take_field(arg)} = flag.Args()[{i}]')
+@|Tool@/evaluate@
+A short name is registered as a second flag of the same variable.
+@<UI@/Command Line@/Go@/register flags@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/flag syntax helpers@>
+
+
+syntax = configuration(GoSyntax, r'''
+@<UI@/Command Line@/invocation syntax@>
+''')
+for opt in syntax.usages[0].options:
+    field = take_field(opt.name)
+    for name in [opt.name] + ([opt.short] if opt.short else []):
+        print(f'flag.{FLAG_FUNCS[opt.type]}(&command.flags.{field}, {go_string(name)}, '
+              f'{go_literal(opt)}, {go_string(opt.description)})')
+@|Tool@/evaluate@
+flag.Usage prints the shared usage lines, a blank line,
+the help flag that the flag package defines, then the shared option summary.
+@<UI@/Command Line@/Go@/usage literal@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/flag syntax helpers@>
+
+
+usage = r'''@<UI@/Command Line@/command line usage@>'''
+summary = f'-h, {LONG_PREFIX}help: print the usage\n' + r'''@<UI@/Command Line@/option summary@>'''
+print(go_string(usage + '\n' + summary), end='')
+@|Tool@/evaluate@
+The option summary describes every option on one line:
+its names, the value it takes, its description, then its default unless that is empty, false, or zero.
+@<UI@/Command Line@/option summary@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+
+
+def default_note(opt):
+    if opt.default in (None, '', False, 0):
+        return ''
+    if opt.type == 'string':
+        return ' (default "' + opt.default + '")'
+    return ' (default ' + ('true' if opt.default is True else str(opt.default)) + ')'
+
+
+def summary_line(opt):
+    value = '' if opt.type == 'bool' else f' {metavar(opt)}'
+    return ', '.join(option_names(opt)) + value + f': {opt.description}' + default_note(opt) + '\n'
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print(''.join(map(summary_line, all_options(syntax))), end='')
+@|Tool@/evaluate
+@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/functions@/all_options @~ Tool@/Python@/functions@/configuration @~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_names @
+The usage lines list every usage of the command, one per line, after "Usage: ".
+@<UI@/Command Line@/command line usage@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/invocation syntax helpers@>
+
+
+def usage_line(usage):
+    words = [syntax.name]
+    words += [f'[{option_with_value(opt)}]' for opt in usage.options if not opt.hide]
+    words += map(placeholder, usage.arguments)
+    return ' '.join(words)
+
+
+syntax = configuration(InvocationSyntax, r'''
+@<.@/invocation syntax@>
+''')
+print('Usage: ' + '\n       '.join(map(usage_line, syntax.usages)))
+@|Tool@/evaluate
+@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ Tool@/Python@/functions@/configuration @~ UI@/Command Line@/Python@/functions@/option_with_value @~ UI@/Command Line@/Python@/functions@/placeholder @
+The invocation syntax of a command is one Jsonnet object.
+The usage lines and the manpage of the command are generated from it here,
+and a structure turns it into the parser of its language,
+so every form of the command line comes from this one chunk.
+A usage is one way to call the command: its options and its positional arguments.
+A command with one usage may give its options and arguments at the top level instead.
+An option is a switch when its type is bool; any other type takes a value,
+shown by its argument name, or by its own name, in upper case.
+The type is bool, string, int, int64, uint, uint64, or float64,
+and a default must suit it. A hidden option is left out of usage lines.
+A structure rejects the features its language does not support.
+
+{
+    name: COMMAND_NAME,
+    usages: [
+        {
+            name: USAGE_NAME,
+            options: [
+                {
+                    name: LONG_NAME,
+                    short: SHORT_NAME (optional),
+                    type: TYPE (optional, bool by default),
+                    argument: ARGUMENT_NAME (optional),
+                    default: DEFAULT (optional),
+                    description: DESCRIPTION (optional),
+                    hide: HIDDEN_FROM_USAGE (optional),
+                },
+                ...
+            ],
+            arguments: [
+                ARGUMENT,
+                ...
+            ],
+        },
+        ...
+    ],
+}
+
+@<UI@/Command Line@/invocation syntax@=
+{}
+@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @
+The generators include this chunk as one fragment, on top of the shared models,
+so an option name becomes the same Go field in each of them.
+The Go field is the name in camel case; hyphens and spaces separate words.
+@<UI@/Command Line@/Go@/flag syntax helpers@=
+@<UI@/Command Line@/invocation syntax helpers@>
+
+GO_KEYWORDS = {
+    'break', 'default', 'func', 'interface', 'select',
+    'case', 'defer', 'go', 'map', 'struct',
+    'chan', 'else', 'goto', 'package', 'switch',
+    'const', 'fallthrough', 'if', 'range', 'type',
+    'continue', 'for', 'import', 'return', 'var',
+}
+
+
+def field_name(name):
+    parts = [part for part in re.split(r'[-_]+', re.sub(r'\s+', '-', name)) if part]
+    if not parts:
+        return ''
+    return parts[0].lower() + ''.join(part.capitalize() for part in parts[1:])
+
+
+def take_field(name):
+    field = field_name(name)
+    if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', field):
+        raise ValueError(f"name '{name}' is not a Go field")
+    if field in GO_KEYWORDS:
+        raise ValueError(f"name '{name}' is a Go keyword")
+    return field
+@
+The structures include this chunk in their generators,
+so every generator validates the invocation syntax the same way.
+A short name is one letter or digit.
+@<UI@/Command Line@/invocation syntax helpers@=
+class Option(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str = pydantic.Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+    short: str | None = pydantic.Field(None, pattern=r'^[0-9A-Za-z]$')
+    type: Literal['bool', 'string', 'int', 'int64', 'uint', 'uint64', 'float64'] = 'bool'
+    argument: str | None = None
+    default: bool | int | float | str | None = None
+    description: str = ''
+    hide: bool = False
+
+    @pydantic.model_validator(mode='after')
+    def check_default(self):
+        value = self.default
+        if value is None:
+            return self
+        if self.type == 'bool':
+            suits = isinstance(value, bool)
+        elif self.type == 'string':
+            suits = isinstance(value, str)
+        elif self.type == 'float64':
+            suits = isinstance(value, (int, float)) and not isinstance(value, bool)
+        else:
+            suits = (isinstance(value, int) and not isinstance(value, bool)
+                     and (value >= 0 or not self.type.startswith('u')))
+        if not suits:
+            raise ValueError(f'default {value!r} does not suit type {self.type}')
+        return self
+@~ UI@/Command Line@/Python@/classes@/Option @
+Options and arguments at the top level become one usage named after the command.
+Usage names, option names, and short names are each unique in the whole command,
+because its parser reads the options of every usage.
+@<UI@/Command Line@/invocation syntax helpers@+
+class Usage(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str
+    options: list[Option] = []
+    arguments: list[str] = []
+
+
+class InvocationSyntax(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str = 'command'
+    usages: list[Usage] = pydantic.Field(min_length=1)
+
+    @pydantic.model_validator(mode='before')
+    @classmethod
+    def gather_single_usage(cls, data):
+        if isinstance(data, dict) and 'usages' not in data:
+            data = dict(data)
+            usage = {'name': data.get('name', 'command')}
+            for key in ('options', 'arguments'):
+                if key in data:
+                    usage[key] = data.pop(key)
+            data['usages'] = [usage]
+        return data
+
+    @pydantic.model_validator(mode='after')
+    def check_unique_names(self):
+        options = all_options(self)
+        for kind, names in (
+            ('usage', [usage.name for usage in self.usages]),
+            ('option', [opt.name for opt in options]),
+            ('short option', [opt.short for opt in options if opt.short]),
+        ):
+            for name in names:
+                if names.count(name) > 1:
+                    raise ValueError(f'{kind} {name!r} is given twice')
+        return self
+@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/classes@/Option @~ UI@/Command Line@/Python@/classes@/Usage @~ UI@/Command Line@/Python@/functions@/all_options @
+A placeholder stands for a value in a usage line: upper case, with underscores between words.
+@<UI@/Command Line@/invocation syntax helpers@+
+def all_options(syntax):
+    return [opt for usage in syntax.usages for opt in usage.options]
+
+
+def placeholder(name):
+    return name.upper().replace('-', '_').replace(' ', '_')
+
+
+def metavar(opt):
+    return placeholder(opt.argument or opt.name)
+@~ UI@/Command Line@/Python@/functions@/all_options @~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/placeholder @
+An option is shown by its short name if it has one, otherwise by its long name.
+A long name follows two hyphens in the usage lines and the manpage of every structure.
+@<UI@/Command Line@/invocation syntax helpers@+
+LONG_PREFIX = '--'
+
+
+def option_name(opt):
+    return f'-{opt.short}' if opt.short else LONG_PREFIX + opt.name
+
+
+def option_with_value(opt):
+    return option_name(opt) + ('' if opt.type == 'bool' else f' {metavar(opt)}')
+@~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_name @~ UI@/Command Line@/Python@/functions@/option_with_value @~ UI@/Command Line@/Python@/variables@/LONG_PREFIX @
+A description of an option names it both ways, the short name first.
+@<UI@/Command Line@/invocation syntax helpers@+
+def option_names(opt):
+    return ([f'-{opt.short}'] if opt.short else []) + [LONG_PREFIX + opt.name]
+@~ UI@/Command Line@/Python@/functions@/option_names @~ UI@/Command Line@/Python@/variables@/LONG_PREFIX @
+@<UI@/Command Line@/Go@/flag syntax helpers@+
+FLAG_FUNCS = {
+    'bool': 'BoolVar',
+    'string': 'StringVar',
+    'int': 'IntVar',
+    'int64': 'Int64Var',
+    'uint': 'UintVar',
+    'uint64': 'Uint64Var',
+    'float64': 'Float64Var',
+}
+
+
+def go_string(text):
+    for raw, escaped in (('\\', '\\\\'), ('"', '\\"'), ('\n', '\\n'), ('\r', '\\r'), ('\t', '\\t')):
+        text = text.replace(raw, escaped)
+    return f'"{text}"'
+
+
+def go_literal(opt):
+    if opt.default is None:
+        return {'bool': 'false', 'string': '""'}.get(opt.type, '0')
+    if opt.type == 'bool':
+        return 'true' if opt.default else 'false'
+    if opt.type == 'string':
+        return go_string(opt.default)
+    return str(opt.default)
+@
+The flag package parses one usage, so a command has one usage; its positional arguments are an exact list.
+A short name is a second flag, so no name may be both a short and a long name,
+and h and help stay the help flags of the flag package.
+Options, and separately arguments, must become distinct Go fields.
+@<UI@/Command Line@/Go@/flag syntax helpers@+
+class GoSyntax(InvocationSyntax):
+    @pydantic.model_validator(mode='after')
+    def check_go_usage(self):
+        if len(self.usages) != 1:
+            raise ValueError('the flag package parses one usage')
+        usage = self.usages[0]
+        flags = [opt.name for opt in usage.options] + [opt.short for opt in usage.options if opt.short]
+        for name in flags:
+            if name in ('h', 'help'):
+                raise ValueError(f'flag {name!r} is the help flag of the flag package')
+            if flags.count(name) > 1:
+                raise ValueError(f'flag {name!r} is both a short name and a long name')
+        for names in ([opt.name for opt in usage.options], usage.arguments):
+            seen = set()
+            for name in names:
+                field = take_field(name)
+                if field in seen:
+                    raise ValueError(f"name '{name}' repeats field {field}")
+                seen.add(field)
+        return self
+@
+command is the rightmost label of a package main program.
+These blocks set the package name to main,
+add the flag, fmt, and os imports,
+add the command variable when the invocation syntax needs one,
+and add func main.
+func main parses the command line and then runs the main body.
+Parsing always uses the flag, fmt, and os packages,
+so those three imports stay used when the command has no flags.
+Replace module meta information to name the other files in the node.
+That replacement does not rename the command.
+@<command@:Language@/Go@/File@/Meta@/package name@=main@
+@<Chunk@/Language@/Go@/Module@=
+{"description": "Structures of a whole Go module"}
+@
+
+@<Language@/Go@/Module@/Go Command@/build packages@=#!/bin/sh
+@<.@/go command settings@>
+go build ./...
+echo 'go build ./...: ok'
+@
+
+@<Language@/Go@/Module@/Go Command@/vet packages@=#!/bin/sh
+@<.@/go command settings@>
+go vet ./...
+echo 'go vet ./...: ok'
+@
+
+@<Chunk@/Language@/Go@/Module@/Go Command@=
+{"description": "Run the go command on the files of the project."}
+@
+
+@<Chunk@/Language@/Go@/Module@/Meta@/module path@=
+{"description": "Module path from the project meta information."}
+@
+
+@<Chunk@/Language@/Go@/Module@/requirements@=
+{"description": "Lines of the require block of go.mod."}
+@
+
+@<Chunk@/Language@/Go@/Module@/go.mod@=
+{"description": "Contents of go.mod for the project."}
+@
+
+@<Chunk@/Language@/Go@/Module@/package directory@=
+{"description": "Directory of a package below the module root."}
+@
+
+@<Chunk@/Language@/Go@/Module@/import path@=
+{"description": "Import path of a package, without quotes."}
+@
+
+@<Chunk@/Language@/Go@/Module@/check report@=
+{"description": "Output of go build, go vet, and go test on the file set go module."}
+@
+
+@<Chunk@/Language@/Go@/Module@/Go Command@/go command settings@=
+{"description": "Shell lines that pin the environment of the go command."}
+@
+
+@<Chunk@/Language@/Go@/Module@/Go Command@/build packages@=
+{"description": "Build every package of the project."}
+@
+
+@<Chunk@/Language@/Go@/Module@/Go Command@/vet packages@=
+{"description": "Vet every package of the project."}
+@
+
+@<Chunk@/Language@/Go@/Module@/Go Command@/test packages@=
+{"description": "Test every package of the project."}
+@
+
+The check report runs every check in turn and stops at the first failure.
+The output of a check ends with a line break; it is removed,
+so the line break after each reference separates the checks.
+@<Language@/Go@/Module@/check report@=
+@<@|Language@/Go@/Module@/Go Command@/build packages@+go module@|Tool@/Text Processing@/remove ending newlines@>
+@<@|Language@/Go@/Module@/Go Command@/vet packages@+go module@|Tool@/Text Processing@/remove ending newlines@>
+@<@|Language@/Go@/Module@/Go Command@/test packages@+go module@|Tool@/Text Processing@/remove ending newlines@>
+@
+The import path of a package is the module path joined with its directory.
+Reference it with the package label, inside quotes in import paths.
+A command needs no directory here, because no package imports a command.
+@<Language@/Go@/Module@/import path@=
+@<Tool@/Text Processing@/basic python settings@>
+directory = r'''
+@<.@/package directory@>
+'''.strip(' \t\n\r\f\v')
+if (re.search(r'^/|/$|//|\s', directory)
+        or any(part in ('.', '..') for part in directory.split('/'))):
+    fail(f"package directory '{directory}' is not valid")
+module = '@<.@/Meta@/module path@>'
+print(f'{module}/{directory}' if directory else module, end='')
+@|Tool@/evaluate@
+
+The package directory is the path of a package below the module root, without a leading slash.
+A package sets it under the package label.
+The package at the module root keeps the empty directory.
+@<Language@/Go@/Module@/package directory@=@
+A requirement is one line of the require block: a module path and a version.
+No require block is emitted when the list is empty or contains only whitespace.
+Only blank lines are removed before the first requirement,
+so every requirement keeps its indentation.
+A project with requirements also declares go.sum in the file set go module,
+because the checks never rewrite go.mod or go.sum.
+@<Language@/Go@/Module@/go.mod@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/Meta@/project meta model@>
+
+
+meta = configuration(ProjectMeta, r'''
+@<.@/Meta@/project meta information@>
+''')
+requirements = re.sub(r'\A\s*\n', '', r'''
+@<.@/requirements@>
+''').rstrip(' \t\n\r\f\v')
+print(f'module {meta.module}\n\ngo {meta.go}')
+if requirements:
+    print(f'\nrequire (\n{requirements}\n)')
+@|Tool@/evaluate@
+@<Language@/Go@/Module@/Meta@/module path@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/project meta model@>
+
+
+meta = configuration(ProjectMeta, r'''
+@<.@/project meta information@>
+''')
+print(meta.module, end='')
+@|Tool@/evaluate@
+A text processing script is a Python script that declares its dependencies:
+jsonnet evaluates configuration, and pydantic validates it.
+Its interpreter runs it in a background process that has loaded them already.
+@<Tool@/Text Processing@/basic python settings@=
+#!@<.@/Runtime@/path to python interpreter@>
+@<.@/Runtime@/python dependencies@>
+import os
+import re
+import sys
+from typing import Literal
+
+@<.@/Runtime@/import dependencies@>
+
+@<.@/Runtime@/configuration helpers@>
+@
+The interpreter of a script is the client of a background Python process.
+The client and the server are written to a directory named by their checksum,
+private to the user, so a changed client, server, or python3 gets its own server.
+The directory is moved into place whole, so a concurrent evaluation never sees it half written.
+It lies in the filter cache of litar when there is one, because the cache keeps the output
+of this chunk, the path of the client, and both must go away together.
+@<Tool@/Text Processing@/Runtime@/path to python interpreter@=
+#!/bin/sh
+set -e
+if [ -n "$LITAR_CACHE" ]; then
+    base=$LITAR_CACHE/python
+else
+    base=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/litar-python-`id -u`
+fi
+mkdir -p -m 700 "$base"
+if [ ! -O "$base" ]; then
+    echo "$base is not owned by the user" >&2
+    exit 1
+fi
+temp=`mktemp -d "$base/new.XXXXXX"`
+trap 'rm -rf "$temp"' EXIT
+printf '#!%s -S\n' "`which python3`" > "$temp/client"
+cat >> "$temp/client" <<'LITAR_PYTHON_CLIENT'
+@<.@/python client@>
+LITAR_PYTHON_CLIENT
+cat > "$temp/server" <<'LITAR_PYTHON_SERVER'
+@<.@/python server@>
+LITAR_PYTHON_SERVER
+chmod +x "$temp/client"
+dir=$base/`cat "$temp/client" "$temp/server" | cksum | tr ' ' -`
+if [ ! -x "$dir/client" ]; then
+    mv -T "$temp" "$dir" 2>/dev/null || [ -x "$dir/client" ]
+fi
+echo "$dir/client"
+@|Tool@/evaluate@
+The client is the interpreter of a script.
+It passes its standard streams, arguments, directory and environment to the server,
+then exits with the status the server reports.
+When no server listens, it starts one in the background and runs this script itself,
+so only the first script pays for loading the dependencies.
+The server leaves the working directory, a view that is unmounted after the script,
+and closes the standard streams, which the evaluation reads until they close.
+@<Tool@/Text Processing@/Runtime@/python client@=
+import json
+import os
+import socket
+import sys
+
+here = os.path.dirname(os.path.abspath(__file__))
+
+
+def start_server():
+    if os.fork() == 0:
+        os.setsid()
+        os.chdir('/')
+        null = os.open(os.devnull, os.O_RDWR)
+        for fd in range(3):
+            os.dup2(null, fd)
+        server = os.path.join(here, 'server')
+        os.execv(sys.executable, [sys.executable, server])
+
+
+try:
+    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    connection.connect(os.path.join(here, 'socket'))
+except OSError:
+    start_server()
+    os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
+request = {
+    'argv': [os.path.abspath(sys.argv[1]), *sys.argv[2:]],
+    'cwd': os.getcwd(),
+    'env': dict(os.environ),
+}
+socket.send_fds(connection, [b'\0'], [0, 1, 2])
+connection.sendall(json.dumps(request).encode())
+connection.shutdown(socket.SHUT_WR)
+status = b''
+while chunk := connection.recv(64):
+    status += chunk
+sys.exit(int(status) if status else 1)
+@
+The server loads the dependencies once, then forks a fresh child for every connection,
+so each script starts from the same state and none sees what another changed.
+A lock keeps one server per directory; a second one exits at once.
+After ten idle minutes the server removes its socket, so clients start a new server,
+serves the connections already waiting, and exits.
+@<Tool@/Text Processing@/Runtime@/python server@=
+@<.@/python dependencies@>
+import fcntl
+import hashlib
+import json
+import os
+import re
+import runpy
+import signal
+import socket
+import sys
+import traceback
+from typing import Literal
+
+@<.@/import dependencies@>
+
+@<.@/preload pydantic@>
+
+here = os.path.dirname(os.path.abspath(__file__))
+
+@<.@/cache jsonnet@>
+
+@<.@/run a script@>
+
+@<.@/serve a connection@>
+
+
+def accept_all():
+    while True:
+        try:
+            connection, _ = listener.accept()
+        except (TimeoutError, BlockingIOError):
+            return
+        if os.fork() == 0:
+            serve(connection)
+        connection.close()
+
+
+lock = open(os.path.join(here, 'lock'), 'w')
+try:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except OSError:
+    sys.exit()
+path = os.path.join(here, 'socket')
+if os.path.lexists(path):
+    os.unlink(path)
+listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+listener.bind(path)
+listener.listen(64)
+listener.settimeout(600)
+signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+accept_all()
+os.unlink(path)
+listener.setblocking(False)
+accept_all()
+@
+The inline script metadata tells uv what a script, or the background process, depends on.
+@<Tool@/Text Processing@/Runtime@/python dependencies@=
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["jsonnet>=0.20", "pydantic>=2"]
+# ///
+@
+When python3 cannot import the dependencies, the script runs itself again through uv,
+which provides them from its cache, downloading them on the first run.
+The marker variable stops a second attempt, and is removed so nested scripts start afresh.
+In the background process the imports already succeeded, so a script never reaches uv there.
+@<Tool@/Text Processing@/Runtime@/import dependencies@=
+try:
+    import _jsonnet
+    import pydantic
+except ImportError:
+    if os.environ.pop('LITAR_UV_RUN', None):
+        raise
+    os.environ['LITAR_UV_RUN'] = '1'
+    os.execvp('uv', ['uv', 'run', '--quiet', '--script', *sys.argv])
+os.environ.pop('LITAR_UV_RUN', None)
+@
+The child of a connection takes the client's standard streams, arguments, directory
+and environment, restores the default handling of exited children for the script,
+and reports its status. When the child fails before that, the client exits with 1.
+@<Tool@/Text Processing@/Runtime@/serve a connection@=
+def serve(connection):
+    try:
+        connection.setblocking(True)
+        signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+        lock.close()
+        listener.close()
+        _, fds, _, _ = socket.recv_fds(connection, 1, 3)
+        data = b''
+        while chunk := connection.recv(65536):
+            data += chunk
+        request = json.loads(data)
+        for target, fd in enumerate(fds):
+            os.dup2(fd, target)
+            os.close(fd)
+        os.chdir(request['cwd'])
+        os.environ.clear()
+        os.environ.update(request['env'])
+        sys.argv = request['argv']
+        connection.sendall(str(run(sys.argv[0])).encode())
+    except BaseException:
+        traceback.print_exc()
+    os._exit(0)
+@
+A script ends as it would in its own interpreter:
+sys.exit with a message prints it and gives 1, an uncaught exception prints its traceback,
+and the output is flushed before the status is known.
+@<Tool@/Text Processing@/Runtime@/run a script@=
+def run(script):
+    try:
+        runpy.run_path(script, run_name='__main__')
+        status = 0
+    except SystemExit as error:
+        status = error.code
+        if status is None:
+            status = 0
+        elif not isinstance(status, int):
+            print(status, file=sys.stderr)
+            status = 1
+    except BaseException:
+        traceback.print_exc()
+        status = 1
+    for stream in sys.stdout, sys.stderr:
+        try:
+            stream.flush()
+        except OSError:
+            status = status or 120
+    return status
+@
+pydantic imports its parts on first use and builds its validators on the first model,
+so the server does both once, before forking, instead of every script doing them.
+@<Tool@/Text Processing@/Runtime@/preload pydantic@=
+class Preload(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='allow')
+    name: str = pydantic.Field('', pattern=r'^$')
+
+
+Preload.model_validate_json('{}')
+@
+jsonnet parses its standard library again on every evaluation, which costs more than most scripts.
+The server replaces evaluate_snippet, so its scripts keep each result in a file
+named by the hash of the source, shared by later scripts and later builds.
+A source that may import a file, or an evaluation with options, is never cached,
+because its result depends on more than the source; a failed evaluation is not cached either.
+The result is written aside and renamed, so a concurrent script never reads it half written.
+@<Tool@/Text Processing@/Runtime@/cache jsonnet@=
+def cached(evaluate):
+    cache = os.path.join(here, 'jsonnet')
+    os.makedirs(cache, exist_ok=True)
+
+    def evaluate_snippet(filename, source, **options):
+        if options or 'import' in source:
+            return evaluate(filename, source, **options)
+        key = hashlib.sha256(f'{filename}\0{source}'.encode()).hexdigest()
+        path = os.path.join(cache, key)
+        try:
+            with open(path, encoding='utf-8') as file:
+                return file.read()
+        except FileNotFoundError:
+            pass
+        value = evaluate(filename, source)
+        temp = f'{path}.{os.getpid()}'
+        with open(temp, 'w', encoding='utf-8') as file:
+            file.write(value)
+        os.replace(temp, path)
+        return value
+
+    return evaluate_snippet
+
+
+_jsonnet.evaluate_snippet = cached(_jsonnet.evaluate_snippet)
+@
+Configuration is a Jsonnet expression, so a block can extend an object of a base node with +.
+A pydantic model validates the evaluated value.
+An invalid configuration, like any fail, prints a message and fails the evaluation.
+@<Tool@/Text Processing@/Runtime@/configuration helpers@=
+def fail(message):
+    sys.exit(message)
+
+
+def configuration(model, source):
+    try:
+        value = _jsonnet.evaluate_snippet('configuration', source)
+    except RuntimeError as error:
+        fail(str(error))
+    try:
+        return model.model_validate_json(value)
+    except pydantic.ValidationError as error:
+        fail(str(error))
+@~ Tool@/Python@/functions@/configuration @~ Tool@/Python@/functions@/fail @
+A module path has no blank and does not start with a slash;
+a Go version is 1.N or 1.N.P.
+Further fields are kept for other generators.
+@<Language@/Go@/Module@/Meta@/project meta model@=
+class ProjectMeta(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='allow')
+    module: str = pydantic.Field(pattern=r'^[^\s/]\S*$')
+    go: str = pydantic.Field(pattern=r'^1\.\d+(\.\d+)?$')
+@
+A Go project is one Go module: a go.mod file at the root of the module,
+and packages in directories below it.
+One node holds one project, so the blocks of this module carry no label,
+and every file of the node sees the same module.
+A package is a label, as in the Go file structure,
+and each file of a package carries that label with a label of its own.
+A command is a package whose rightmost label is command;
+by convention its files live in cmd, in a directory named after the command.
+A test file is one more file of its package, named after the file it tests with _test,
+and it adds testing to its own import paths.
+Declare go.mod and every Go file in the file set go module,
+so the project checks below see the whole project.
+
+The module field is the module path, and the go field is the minimum Go version.
+example.com/project stands in until a project sets its own path.
+A project sets its fields in project properties, the fields of a second Jsonnet object,
+which override these defaults; Jsonnet rejects a field given twice.
+@<Language@/Go@/Module@/Meta@/project meta information@=
+{
+    module: 'example.com/project',
+    go: '1.24',
+} + {
+    @<..@/project properties@>
+}
+@
+@<Chunk@/Language@/Go@/Module@/Meta@/project meta information@=
+{"description": "Module path, Go version, and other properties, as a Jsonnet object."}
+@
+@<Chunk@/Language@/Go@/Module@/project properties@=
+{"description": "Jsonnet fields that override the project meta information."}
+@
+@<Chunk@/Language@/Go@/Module@/Meta@/project meta model@=
+{"description": "Pydantic model that validates the project meta information."}
+@
+
+The commands are built in a view of the file set go module, like the checks.
+The view must also hold the command directory; a composition wrapping the project
+maps it to a directory of the host, so the binaries leave the view.
+Each binary is named after the directory of its command;
+the go command replaces an existing binary instead of writing into it.
+@<Language@/Go@/Module@/Go Command@/build commands@=#!/bin/sh
+@<.@/go command settings@>
+go build -o '@<..@/command directory@>/' ./cmd/...
+echo 'go build -o @<..@/command directory@>/ ./cmd/...: ok'
+@
+
+The command directory is bin, below the module root of the view.
+@<Language@/Go@/Module@/command directory@=bin@
+
+
+@<Chunk@/Language@/Go@/Module@/Go Command@/build commands@=
+{"description": "Build every command of the project into the command directory."}
+@
+
+@<Chunk@/Language@/Go@/Module@/command directory@=
+{"description": "Directory of the view, below the module root, that receives the built commands."}
+@
+
+The go command reports a failed test on stdout, and the output of a failed filter is dropped,
+so the report is kept and written to stderr when a test fails.
+Declare every test file in the file set go tests as well as in go module,
+so a view that only needs the program can subtract the tests.
+@<Language@/Go@/Module@/Go Command@/test packages@=#!/bin/sh
+@<.@/go command settings@>
+report=$(go test ./... 2>&1) || {
+	printf '%s\n' "$report" >&2
+	exit 1
+}
+printf '%s\n' "$report"
+@
+
+Each check runs the go command in a view of the file set go module,
+so the module root is the working directory.
+GOTOOLCHAIN=local keeps the go command from downloading another toolchain,
+and GOWORK=off ignores a workspace file outside the view.
+The build cache and the module cache stay at their host locations.
+A failed check fails the evaluation, and the go command reports on stderr.
+@<Language@/Go@/Module@/Go Command@/go command settings@=
+set -e
+export GOTOOLCHAIN=local
+export GOWORK=off
+@
+@<Chunk@/Language@=
+{"description": "Common structures found in languages."}
+@
+@<Chunk@/Language@/C@=
+{"description": "Structures of C programming."}
+@
+@<Chunk@/Language@/Go@=
+{"description": "Structures of Go programming."}
+@
+@<Chunk@/UI@=
+{"description": "Shared schemas and generators of user interfaces."}
+@
+@<Chunk@/UI@/Command Line@/C@=
+{"description": "Parse the command line of a C program with getopt, from the invocation syntax."}
+@
+@<Chunk@/Framework@=
+{"description": "Frameworks an application chooses to adopt."}
+@
+@<Chunk@/Project@=
+{"description": "Concrete projects."}
+@
+@<Index@/UI@/Command Line@/Python@=
+{"description": "Top-level names of the Python scripts that read the invocation syntax."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@=
+{"description": "Top-level functions."}
+@

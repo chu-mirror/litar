@@ -47,7 +47,7 @@ Read `blocks://node` of the task node. For each block, decide the target:
 
 - **Base node:** the block improves what the base provides. For example: a generic filter,
   a reusable structure chunk, a fix to a framework chunk, a meta description of a base chunk.
-  Pick the lowest node where it makes sense (e.g. common filters belong in Basic).
+  Pick the lowest node where it makes sense (e.g. common filters belong under `Tool` in the ground `standard`).
 - **Stays:** the block is specific to this task (the application, its files, its tests).
 
 Ask the user when the target is unclear.

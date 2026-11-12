@@ -2,14 +2,14 @@ A classic example at the beginning of learning programming.
 `hello.c` is the source file.
 
 @[hello.c@=
-@<hello@:executable@:C Structure@/module@>
+@<hello@:executable@:Language@/C@/Module@/module@>
 @
 
-@<hello@:executable@:C Structure@/main body@=
+@<hello@:executable@:Language@/C@/Module@/main body@=
 printf("Hello World!\n");
-@~ output @
+@~ Project@/hello@/topics@/output @
 The command has a single usage without options or arguments.
-@<hello@:executable@:Invocation@/invocation syntax@=
+@<hello@:executable@:UI@/Command Line@/invocation syntax@=
 {
     name: 'hello',
 }

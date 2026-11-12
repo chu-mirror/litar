@@ -21,13 +21,18 @@ A chunks tree might like the following:
     - Module: go.mod unit
   - (other languages)
 - UI: the shared schema and generators
-  - Command Line
+  - Command Line: the invocation syntax and the documents generated from it
+    - C: generators of command line parsing in C
+    - Go: generators of command line parsing in Go
   - Terminal
   - Graphical
 - Framework: something an application chooses to adopt
   - (frameworks for building applications)
 - Project
   - (concrete projects)
+    - Build: the wrapping composition that builds the project
+    - Tests
+    - Documents
 
 Every chunk is free to refer to any other chunk.
 

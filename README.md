@@ -5,6 +5,7 @@ which is defined in [litar.md](design/litar.md).
 [style.md](design/style.md) explains the construction of a litar archive.
 [ui.md](design/ui.md) defines a command line tool for handling litar archives,
 including the MCP server it opens for agents.
+[category.md](design/category.md) gives the strategy to classify chunks and items.
 
 # Directories
 
@@ -16,7 +17,7 @@ including the MCP server it opens for agents.
   - src/cmd/litar-web: the `litar-web` command, a browser interface for compositions;
   - src/internal/litar: the Go implementation;
   - src/tests: acceptance tests;
-- grounds: library compositions that other compositions ground on;
+- grounds: the standard library, a composition that other compositions ground on;
 - examples: example programs, composed by `examples/composer.json`;
 - agent: skills and references for agents editing litar compositions,
   linked from `.cursor/skills`.
@@ -92,6 +93,9 @@ but it cannot change an archive.
 
 `grounds/` is a library of compositions.
 Each subdirectory holds `composer.json`.
+`grounds/standard` is the standard library of litar, a single node whose modules follow
+[category.md](design/category.md): shared filters under `Tool`, the structures of C and Go under `Language`,
+the command line generators under `UI@/Command Line`, and the framework Light under `Framework`.
 litar looks for a ground in the current directory, then in each directory of `$LITAR_LIBRARY`
 (a `$PATH`-style list), then in `~/.litar`, `~/.local/share/litar`,
 `/usr/local/share/litar`, and `/usr/share/litar`.

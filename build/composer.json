@@ -18,12 +18,7 @@
                     "origin": "../src"
                 }
             ],
-            "base": [
-                "Basic",
-                "Go Structure",
-                "Go Project",
-                "Litar"
-            ]
+            "base": ["Standard", "Litar"]
         }
     ]
 }

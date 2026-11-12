@@ -36,12 +36,12 @@ Separate the files to port (text source, scripts, build files, docs) from those 
 outside (binary assets, generated files, vendored code). Group the files into file sets
 by role, e.g. `sources`, `tests`, `build`.
 
-**1. Set up.** Ask the user where the composition goes. Choose a ground whose structure node
-fits the language: import the ground compositions on `LITAR_LIBRARY` and read their
-`tree://node` (for example, `go-programming` offers Go Structure and Go Project,
-`c-programming` offers C Structure, and `common` offers Basic filters). Use `create_composition`
-with that ground, then `create_node` for the project with `base` = the structure node.
-If no ground fits, ground on `common` and base the node on Basic.
+**1. Set up.** Ask the user where the composition goes. Ground on `standard`, the standard library
+of litar: import it from `LITAR_LIBRARY` and read `tree://chunk` of its node Standard
+(`Language@/Go@/File` and `Language@/Go@/Module` hold the Go structures, `Language@/C@/Module`
+the C ones, `Tool` the shared filters, `UI@/Command Line` the command line generators).
+Use `create_composition` with that ground, then `create_node` for the project with `base` = Standard.
+Put the project's own chunks under `Project@/<project>`.
 
 **2. Stage 1: verbatim.** For each file, or a few at a time:
 
@@ -62,9 +62,9 @@ Do not continue until it reports `different 0`, apart from files that stay outsi
 **3. Stage 2: structure.** Take one file at a time, starting with the most central:
 
 1. Read how the ground builds that kind of file. Find its file or module chunk in
-   `tree://chunk` of the structure node, then read its blocks.
+   `tree://chunk` of the node Standard, then read its blocks.
 2. Re-apply the file block as a tree that references the ground's structure,
-   for example `@<prog@:executable@:C Structure@/module@>` or `@<cmd@:command@:Go Structure@/file@>`.
+   for example `@<prog@:executable@:Language@/C@/Module@/module@>` or `@<cmd@:command@:Language@/Go@/File@/file@>`.
 3. Move the code into chunks that extend the ground's sequences (includes, types, functions)
    and into named trees for big bodies, following the style rules. Name the trees in a module
    named after the project (`Project@/…`), leaving the root module to the file chunks.

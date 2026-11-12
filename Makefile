@@ -71,13 +71,13 @@ $(abspath $(BOOT)): $(BOOT_SOURCES)
 	cd $(SRC) && GOWORK=off go build -o $@ ./cmd/litar
 
 litar: $(EVALUATOR)
-	$(EVAL) -p 'Litar Build@/commands'
+	$(EVAL) -p 'Project@/litar@/Build@/commands'
 
 sync: $(EVALUATOR)
-	$(EVAL) -p 'Litar Build@/source files'
+	$(EVAL) -p 'Project@/litar@/Build@/source files'
 
 test: $(EVALUATOR)
-	$(EVAL) -p 'Litar Build@/test report'
+	$(EVAL) -p 'Project@/litar@/Build@/test report'
 
 web:
 	@test -x $(BIN)/litar-web || { echo "$(BIN)/litar-web is missing; run make first" >&2; exit 1; }
@@ -101,7 +101,7 @@ install-cursor: install-mcp install-skills
 
 install-mcp: $(EVALUATOR)
 	@test -x "$(abspath $(BINDIR))/litar" || { echo "$(abspath $(BINDIR))/litar is missing; run make install first" >&2; exit 1; }
-	script=$$($(EVAL) -p 'Litar Build@/MCP configuration script') && \
+	script=$$($(EVAL) -p 'Project@/litar@/Build@/MCP configuration script') && \
 	python3 -c "$$script" "$(MCP_CONFIG)" "$(abspath $(BINDIR))/litar" "$(abspath $(GROUNDDIR))"
 
 install-skills:

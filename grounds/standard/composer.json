@@ -1,0 +1,19 @@
+{
+    "description": "The standard library of litar: tools, language structures, user interface generators, and frameworks.",
+    "ground": null,
+    "nodes": [
+        {
+            "name": "Standard",
+            "archive": "standard.la",
+            "description": "Shared filters, the structures of C and Go, the command line generators, and the framework Light.",
+            "mappings": [
+                {
+                    "path": ".clang-format",
+                    "fileset": [],
+                    "origin": ".clang-format"
+                }
+            ],
+            "base": []
+        }
+    ]
+}

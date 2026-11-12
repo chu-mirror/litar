@@ -1,14 +1,14 @@
 The Makefile of the repository evaluates this node, so the evaluation stands in for
 running the go command by hand: the go command may switch to the toolchain
 that go.mod asks for, as it does outside litar.
-@<Go Project@/Filters@/go command settings@+
+@<Language@/Go@/Module@/Go Command@/go command settings@+
 export GOTOOLCHAIN=auto
 @
 
 The commands are built in a view that adds the file set binaries to the go module;
-the node maps bin of the repository into the view at the command directory of Go Project.
-@<Litar Build@/commands@=
-@<@|Go Project@/Filters@/build commands@+go module@+binaries@>
+the node maps bin of the repository into the view at the command directory of the Go module structure.
+@<Project@/litar@/Build@/commands@=
+@<@|Language@/Go@/Module@/Go Command@/build commands@+go module@+binaries@>
 @
 
 Every file of the view outside the destination is written to a temporary name beside
@@ -16,7 +16,7 @@ its place in the destination and renamed there, so a failed write keeps the old 
 other files of the destination are left alone.
 An executable file gets mode 755 and any other file 644.
 The filter prints each written path, in sorted order.
-@<Litar Build@/Filters@/write files@=#!/bin/sh
+@<Project@/litar@/Build@/Sync@/write files@=#!/bin/sh
 set -e
 dest=$(cat)
 find . -path "./$dest" -prune -o -type f -printf '%P\n' | LC_ALL=C sort |
@@ -34,7 +34,7 @@ The Makefile installs the MCP server for Cursor by piping this script to python3
 with the configuration file, the litar binary, and the directory of the grounds.
 Only the litar entry is set, so other servers stay,
 and the file is replaced at once, so an interrupted run keeps the old file.
-@<Litar Build@/MCP configuration script@=
+@<Project@/litar@/Build@/MCP configuration script@=
 import json, os, sys
 path, litar, grounds = sys.argv[1:]
 try:
@@ -52,22 +52,22 @@ with open(path + '.litar-new', 'w') as f:
 os.replace(path + '.litar-new', path)
 @
 
-@<Chunk@/Litar Build@=
+@<Chunk@/Project@/litar@/Build@=
 {"description": "What the Makefile of the repository evaluates to build, sync, and install litar."}
 @
-@<Chunk@/Litar Build@/commands@=
+@<Chunk@/Project@/litar@/Build@/commands@=
 {"description": "Build litar and litar-web into bin of the repository."}
 @
-@<Chunk@/Litar Build@/source files@=
+@<Chunk@/Project@/litar@/Build@/source files@=
 {"description": "Write every file of the composition into src of the repository."}
 @
-@<Chunk@/Litar Build@/Internals@/source directory@=
+@<Chunk@/Project@/litar@/Build@/Sync@/source directory@=
 {"description": "Directory of the view that receives the source tree."}
 @
-@<Chunk@/Litar Build@/Filters@/write files@=
+@<Chunk@/Project@/litar@/Build@/Sync@/write files@=
 {"description": "Write every file of the view into the directory named on stdin."}
 @
-@<Chunk@/Litar Build@/MCP configuration script@=
+@<Chunk@/Project@/litar@/Build@/MCP configuration script@=
 {"description": "Python script that sets the litar entry of a Cursor MCP configuration."}
 @
 
@@ -77,18 +77,18 @@ a file set added to the composition must be added to this view.
 The Go test files are left out: src only has to boot the next build,
 and the tests run in an invocation, in the test report.
 The input of the filter names the directory to write to.
-@<Litar Build@/source files@=
-@<Litar Build@/Internals@/source directory@|Litar Build@/Filters@/write files@+go module@-go tests@+build@+tests@+source tree@>
+@<Project@/litar@/Build@/source files@=
+@<Project@/litar@/Build@/Sync@/source directory@|Project@/litar@/Build@/Sync@/write files@+go module@-go tests@+build@+tests@+source tree@>
 @
-@<Litar Build@/Internals@/source directory@=src@
+@<Project@/litar@/Build@/Sync@/source directory@=src@
 
 The Go tests run in a view of the go module with the file set test data,
 which the node Litar maps from examples and grounds of the repository.
 A mapped directory keeps the run out of the filter cache, so the tests run on every evaluation.
-@<Litar Build@/test report@=
-@<@|Go Project@/Filters@/test packages@+go module@+test data@>
+@<Project@/litar@/Build@/test report@=
+@<@|Language@/Go@/Module@/Go Command@/test packages@+go module@+test data@>
 @
 
-@<Chunk@/Litar Build@/test report@=
+@<Chunk@/Project@/litar@/Build@/test report@=
 {"description": "Output of go test on the go module, tests included."}
 @

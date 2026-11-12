@@ -35,10 +35,14 @@ command-line options, configuration keys, files, protocols.
 **3. Filter.** Apply the cross-reference rules of the style reference:
 keep only items whose context reaches beyond the block.
 
-**4. Name.** `language@/kind@/name`, kinds as plural nouns, names exactly as in code:
-- `C@/functions@/heap_alloc`, `C@/types@/struct context`, `C@/variables@/context_main`, `C@/macros@/NEW`;
-- `Go@/functions@/greet.Hello`, `Go@/types@/greet.Options` (qualified by package);
-- non-code domains when useful: `CLI@/options@/--no-log`.
+**4. Name.** `owner@/kind@/name`, as `design/category.md` defines:
+- the owner is the module path of the context that defines the name:
+  `Project@/<project>`, `Framework@/<framework>`, `Language@/<language>`, `UI@/Command Line`, or `Tool`;
+- code kinds are `language@/kind`, plural nouns, with names exactly as in code:
+  `Project@/heap@/C@/functions@/heap_alloc`, `Project@/heap@/C@/types@/struct context`,
+  `Project@/heap@/C@/macros@/NEW`, `Project@/greet@/Go@/functions@/greet.Hello` (qualified by package);
+- knowledge kinds have no language: `concepts`, `terms`, `topics`, `options`,
+  such as `Project@/heap@/options@/--no-log` or `Project@/heap@/concepts@/memory region`.
 
 Reuse the domains already in `tree://item`; never add a synonym for an existing kind.
 
@@ -50,10 +54,10 @@ Rewriting an existing `@+` block follows "Change or remove one `@+` block" in li
 for items whose meaning is not obvious from the name:
 
 ```
-@<Index@/C@/functions@=
+@<Index@/Project@/heap@/C@/functions@=
 {"description": "Functions defined in this project."}
 @
-@<Index@/C@/variables@/context_main@=
+@<Index@/Project@/heap@/C@/variables@/context_main@=
 {"description": "The context of the main thread; owns the main memory region."}
 @
 ```

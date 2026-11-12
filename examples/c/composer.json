@@ -1,20 +1,20 @@
 {
     "description": "Example programs.",
-    "ground": "c-programming",
+    "ground": "standard",
     "nodes": [
         {
             "name": "Program Hello",
             "archive": "hello.la",
             "description": "A classic example at the beginning of learning programming.",
             "mappings": [],
-            "base": ["Basic", "C Structure"]
+            "base": ["Standard"]
         },
         {
             "name": "Test Light",
             "archive": "test-light.la",
             "description": "Test cases for light.",
             "mappings": [],
-            "base": ["Basic", "C Structure", "Light"]
+            "base": ["Standard"]
         }
     ]
 }

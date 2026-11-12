@@ -40,21 +40,21 @@ groups are separated by lines of `%%`:
 
 ```
 Optional new comment for the outline block.
-@<cli@:litar@:Go Structure@/functions@+
+@<cli@:litar@:Language@/Go@/File@/functions@+
 func run(args []string) int {
 prog := "litar"
-@<Litar@/print the usage of 'prog' if asked@>
+@<Project@/litar@/print the usage of 'prog' if asked@>
 
-@<Litar@/parse the options@>
+@<Project@/litar@/parse the options@>
 }
 
-@~ Go@/functions@/litar.run @
+@~ Project@/litar@/Go@/functions@/litar.run @
 
-@<Litar@/print the usage of 'prog' if asked@=
+@<Project@/litar@/print the usage of 'prog' if asked@=
 ...
-@~ Go@/functions@/litar.usage @
+@~ Project@/litar@/Go@/functions@/litar.usage @
 %%
-@<cli@:litar@:Go Structure@/functions@+
+@<cli@:litar@:Language@/Go@/File@/functions@+
 func dispatch(mode string) (string, error) {
 ...
 ```
@@ -63,7 +63,7 @@ The first block of a group must keep the header and first content line of the bl
 Follow it with the sub-chunk blocks in reading order (depth first). Shape the split:
 
 - Make the old block an outline tree: its steps become references, each on a line of its own.
-- Put the sub-chunks in the project's module (`Litar@/…`), or in a submodule of the module that
+- Put the sub-chunks in the project's module (`Project@/litar@/…`), or in a submodule of the module that
   owns the outline when nothing outside it may refer to them; refer to them relatively from
   blocks in that module (`@<.@/…@>`).
 - Name each step after its action, quoting the objects it works on. Declare every quoted object

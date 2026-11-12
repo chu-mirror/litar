@@ -3,5 +3,5 @@ command = "./bin/litar"
 args = ["-a"]
 enabled = true
 env = {
-  LITAR_LIBRARY: "grounds:."
+  LITAR_LIBRARY: "."
 }

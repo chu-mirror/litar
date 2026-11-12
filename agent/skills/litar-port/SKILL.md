@@ -54,7 +54,7 @@ output may be appended directly to the new, still empty archive instead; re-impo
 Then:
 
 ```bash
-LITAR=bin/litar LITAR_LIBRARY=grounds scripts/port-check.sh path/to/project.la "$PROJECT"
+LITAR=bin/litar LITAR_LIBRARY=. scripts/port-check.sh path/to/project.la "$PROJECT"
 ```
 
 Do not continue until it reports `different 0`, apart from files that stay outside.

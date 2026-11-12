@@ -17,7 +17,7 @@ including the MCP server it opens for agents.
   - src/cmd/litar-web: the `litar-web` command, a browser interface for compositions;
   - src/internal/litar: the Go implementation;
   - src/tests: acceptance tests;
-- grounds: the standard library, a composition that other compositions ground on;
+- standard: the standard library, a composition that other compositions ground on;
 - examples: example programs, composed by `examples/composer.json`;
 - agent: skills and references for agents editing litar compositions,
   linked from `.cursor/skills`.
@@ -74,7 +74,7 @@ and for a chunk its specializations, effective, applied, and dependent blocks, a
 References, filters, items, and file headers in blocks are links.
 
 ```
-LITAR_LIBRARY=grounds bin/litar-web -litar bin/litar -file examples/go/project-hello.la
+bin/litar-web -litar bin/litar -file examples/go/project-hello.la
 ```
 
 It listens on `127.0.0.1:8080` by default (`-addr`).
@@ -85,15 +85,14 @@ but it cannot change an archive.
 
 - `make test` runs `go test ./...` in a filter view of `compos`.
   The Go test files live only in `compos`; `make sync` does not write them into `src`.
-  The view maps `examples` and `grounds` into `internal/litar/testdata` for the tests that read them.
+  The view maps `examples` and `standard` into `internal/litar/testdata` for the tests that read them.
 - `make -C src` builds `src/litar` with `go build`.
 - `make -C src test` runs the cases under `src/tests/` with that binary.
 
 # Grounds
 
-`grounds/` is a library of compositions.
-Each subdirectory holds `composer.json`.
-`grounds/standard` is the standard library of litar, a single node whose modules follow
+`standard/` is the standard library of litar, the ground of the other compositions here.
+It is a single node whose modules follow
 [category.md](design/category.md): shared filters under `Tool`, the structures of C and Go under `Language`,
 the command line generators under `UI@/Command Line`, and the framework Light under `Framework`.
 litar looks for a ground in the current directory, then in each directory of `$LITAR_LIBRARY`
@@ -101,5 +100,5 @@ litar looks for a ground in the current directory, then in each directory of `$L
 `/usr/local/share/litar`, and `/usr/share/litar`.
 
 ```
-LITAR_LIBRARY=grounds bin/litar -f examples/c/hello.la -p hello.c
+bin/litar -f examples/c/hello.la -p hello.c
 ```

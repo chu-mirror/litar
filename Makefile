@@ -19,8 +19,8 @@
 # else $(BOOT), which is compiled from $(SRC) first. So a fresh checkout needs only go,
 # and `make sync` keeps $(SRC) able to boot the next build.
 # The Go test files are not synced: `make test` runs them in a filter view of the composition,
-# where the node Litar maps examples and $(GROUNDS) as their test data.
-# Evaluation reads the grounds from this repository, not from the installed ones.
+# where the node Litar maps examples and the ground standard as their test data.
+# Evaluation reads the ground standard from this repository, not the installed one.
 # sync overwrites the files the composition lists and leaves any other file.
 #
 # PREFIX defaults to /usr/local; DESTDIR is prepended to every installed path.
@@ -39,7 +39,8 @@ GROUNDDIR ?= $(PREFIX)/share/litar
 
 ARCHIVE := compos/litar.la
 BUILD_ARCHIVE := build/build.la
-GROUNDS := grounds
+# The ground compositions of the repository, each a directory at its root.
+GROUND_NAMES := standard
 # The mappings in build/composer.json name these directories.
 BIN := bin
 SRC := src
@@ -52,10 +53,9 @@ SKILLS := agent/skills
 
 LITAR ?= $(or $(wildcard $(CURDIR)/$(BIN)/litar),$(abspath $(BOOT)))
 
-GROUND_NAMES := $(notdir $(patsubst %/composer.json,%,$(wildcard $(GROUNDS)/*/composer.json)))
 SKILL_NAMES := $(notdir $(wildcard $(SKILLS)/*))
 BOOT_SOURCES := $(SRC)/go.mod $(SRC)/go.sum $(shell find $(SRC)/cmd $(SRC)/internal -name '*.go' 2>/dev/null)
-EVAL = LITAR_LIBRARY=$(abspath $(GROUNDS)):$(CURDIR) $(LITAR) -f $(abspath $(BUILD_ARCHIVE))
+EVAL = LITAR_LIBRARY=$(CURDIR) $(LITAR) -f $(abspath $(BUILD_ARCHIVE))
 # Build the bootstrap binary only when it is the one evaluating.
 EVALUATOR := $(filter $(abspath $(BOOT)),$(LITAR))
 
@@ -81,7 +81,7 @@ test: $(EVALUATOR)
 
 web:
 	@test -x $(BIN)/litar-web || { echo "$(BIN)/litar-web is missing; run make first" >&2; exit 1; }
-	LITAR_LIBRARY=$(abspath $(GROUNDS)) $(BIN)/litar-web -addr $(WEB_ADDR) -litar $(abspath $(BIN))/litar -file $(ARCHIVE)
+	LITAR_LIBRARY=$(CURDIR) $(BIN)/litar-web -addr $(WEB_ADDR) -litar $(abspath $(BIN))/litar -file $(ARCHIVE)
 
 install: install-bin install-grounds
 
@@ -94,7 +94,7 @@ install-grounds:
 	for g in $(GROUND_NAMES); do \
 		rm -rf "$(DESTDIR)$(GROUNDDIR)/$$g" && \
 		install -d "$(DESTDIR)$(GROUNDDIR)/$$g" && \
-		cp -R "$(GROUNDS)/$$g/." "$(DESTDIR)$(GROUNDDIR)/$$g/" || exit 1; \
+		cp -R "$$g/." "$(DESTDIR)$(GROUNDDIR)/$$g/" || exit 1; \
 	done
 
 install-cursor: install-mcp install-skills

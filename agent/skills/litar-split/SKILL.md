@@ -11,7 +11,7 @@ Rules: Blocks and Naming chunks in [style.md](../references/style.md) (the full 
 ## Scripts
 
 Run them; do not rewrite them. They need `LITAR` (the binary) and `LITAR_LIBRARY` (the grounds),
-e.g. `LITAR=bin/litar LITAR_LIBRARY=grounds` in the litar repository.
+e.g. `LITAR=bin/litar LITAR_LIBRARY=.` in the litar repository.
 
 - `scripts/measure.py [-n NODE] [-l LIMIT] COMPOSITION_DIR` lists the node's own blocks longer
   than LIMIT tokens (default 150; estimated as characters / 4), longest first.

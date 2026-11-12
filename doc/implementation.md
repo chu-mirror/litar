@@ -31,7 +31,7 @@ a composition on the ground `compos` that maps `bin/` and `src/` of the reposito
 the filter views: `make` runs `go build` in a view of the go module that writes the binaries
 into `bin/`, `make sync` writes the generated files, except the Go test files, into `src/`,
 and `make test` runs `go test ./...` in a view of the go module with the file set `test data`,
-which the node `Litar` maps from `examples/` and `grounds/` into `internal/litar/testdata/`.
+which the node `Litar` maps from `examples/` and `standard/` into `internal/litar/testdata/`.
 
 Each litar process keeps every file it evaluates, together with a digest of each chunk
 and filter view the evaluation used; the file is evaluated again only when one of them
@@ -332,7 +332,7 @@ every concrete resource URI that existed before or after the change.
 
 # Grounds and examples
 
-- `grounds/standard`: the standard library, one node `Standard` whose modules follow
+- `standard`: the standard library, one node `Standard` whose modules follow
   `design/category.md`: `Tool` (shared filters, including `Tool@/Text Processing`),
   `Language@/C@/Module`, `Language@/Go@/File`, `Language@/Go@/Module`,
   `UI@/Command Line` (the invocation syntax and its generators for C and Go),
@@ -342,4 +342,5 @@ every concrete resource URI that existed before or after the change.
 - `examples/c`: grounds on `standard` and adds `Program Hello` and `Test Light`.
 - `examples/go`: grounds on `standard` and adds `Program Hello` and `Project Hello`.
 
-Set `LITAR_LIBRARY=grounds` when evaluating compositions that depend on `grounds/`.
+The ground `standard` sits at the repository root, so litar finds it when run from there;
+elsewhere, put the repository root in `LITAR_LIBRARY`.

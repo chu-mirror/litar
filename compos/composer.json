@@ -13,9 +13,9 @@
                     "origin": "../examples"
                 },
                 {
-                    "path": "internal/litar/testdata/grounds/",
+                    "path": "internal/litar/testdata/grounds/standard/",
                     "fileset": ["test data"],
-                    "origin": "../grounds"
+                    "origin": "../standard"
                 }
             ],
             "base": ["Standard"]

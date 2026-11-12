@@ -16,7 +16,7 @@ including the MCP server it opens for agents.
   - src/cmd/litar: the `litar` command;
   - src/cmd/litar-web: the `litar-web` command, a browser interface for compositions;
   - src/internal/litar: the Go implementation;
-  - src/tests: acceptance tests;
+- build: the composition that builds and tests litar, grounded on `compos`;
 - standard: the standard library, a composition that other compositions ground on;
 - examples: example programs, composed by `examples/composer.json`;
 - agent: skills for agents working on litar compositions (`litar-task` for editing,
@@ -44,7 +44,7 @@ and each target evaluates one of its chunks.
 - `make` compiles `bin/litar` and `bin/litar-web` from the Go files of `compos`.
   With no `bin/litar` yet, it first compiles `tmp/boot/litar` from `src` to do the evaluation.
 - `make sync` writes the files of `compos`, except the Go test files, into `src`.
-- `make test` runs `go test` on `compos` in a filter view.
+- `make test` runs the Go tests and the acceptance cases, each in a filter view.
 - `make web` opens `compos` in `bin/litar-web` at <http://127.0.0.1:8080/> (`WEB_ADDR` changes it).
 - `make install` installs `bin/litar` and `bin/litar-web` into `$(PREFIX)/bin`
   and the grounds under `$(PREFIX)/share/litar`; `PREFIX` defaults to `/usr/local`.
@@ -87,7 +87,13 @@ but it cannot change an archive.
 - `make test` runs `go test ./...` in a filter view of `compos`.
   The Go test files live only in `compos`; `make sync` does not write them into `src`.
   The view maps `examples` and `standard` into `internal/litar/testdata` for the tests that read them.
-- `make -C src/tests` runs the cases under `src/tests/` with `bin/litar`.
+- `make test` then runs the acceptance cases on `bin/litar`, which it builds first.
+  A case is a chunk of `build` under `Project@/litar@/Tests@/Cases`: its content is a script of checks,
+  and the filter `UI@/Command Line@/Test@/run case` of the ground `standard` turns it into its result,
+  so evaluating the chunk runs the case.
+  `Project@/litar@/Tests@/acceptance report` lists every result and fails when a case failed.
+  One case runs alone with
+  `LITAR_LIBRARY=. bin/litar -f build/build.la -p 'Project@/litar@/Tests@/Cases@/print'`.
 
 # Grounds
 

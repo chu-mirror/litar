@@ -1,11 +1,11 @@
 {
-    "description": "The build of litar: compiles the commands and syncs the source tree from compos.",
+    "description": "The build of litar: compiles the commands, syncs the source tree from compos, and tests the result.",
     "ground": "compos",
     "nodes": [
         {
             "name": "Litar Build",
             "archive": "build.la",
-            "description": "Map the build directories of the repository and write the binaries and the source tree into them.",
+            "description": "Map the build directories of the repository, write the binaries and the source tree into them, and run the tests on them.",
             "mappings": [
                 {
                     "path": "bin/",

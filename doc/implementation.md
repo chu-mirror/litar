@@ -33,14 +33,14 @@ a composition on the ground `compos` that maps `bin/` and `src/` of the reposito
 the filter views: `make` runs `go build` in a view of the go module that writes the binaries
 into `bin/`, `make sync` writes the generated files, except the Go test files, into `src/`,
 and `make test` runs `go test ./...` in a view of the go module with the file set `test data`,
-which the node `Litar` maps from `examples/` and `standard/` into `internal/litar/testdata/`.
+which the node `Litar` maps from `examples/` and `standard/` into `internal/litar/testdata/`,
+then the acceptance cases in views of `bin/` and their fixtures.
 
 Each litar process keeps every file it evaluates, together with a digest of each chunk
 and filter view the evaluation used; the file is evaluated again only when one of them
 changes, so a file is evaluated once per process and the MCP server serves repeated reads
 from memory. A mapping whose path ends in `/` maps a host directory into the views of its
 file sets; the directory is created if missing, and filters read and write it in place.
-Inside `src/tests/`, `make` runs `run.sh` with `bin/litar`.
 On any user error, `litar` prints the error to `stderr`, leaves `stdout` empty, and exits
 with status 1.
 
@@ -366,16 +366,30 @@ every concrete resource URI that existed before or after the change.
   parsing, suffix matching, label inheritance, `.` and `..` module resolution, effective
   blocks, listings, metadata chunks, filters, FUSE views, composer edits, compaction
   ordering, and MCP calls.
-- **Acceptance tests (`src/tests/`):** CLI test cases driven by `run.sh`. Each case
-  directory contains either a custom `driver.sh` or an `argv` file (one CLI argument per
-  line, including `-f`) paired with expected `out`, `err`, and `status` files.
+- **Acceptance tests (`Project@/litar@/Tests` in `build`):** each case is a chunk under
+  `Project@/litar@/Tests@/Cases` whose content is a bash script of checks, filtered by
+  `litar command@:UI@/Command Line@/Test@/run case` in a view of the file sets `binaries`
+  and `test fixtures`; the value of the chunk is the result of the case
+  (`ok NAME COUNT`, `skip NAME: REASON`, or `FAIL NAME` followed by the failed checks),
+  so a failed case still evaluates. `Project@/litar@/Tests@/case results` lists the cases,
+  and `Project@/litar@/Tests@/acceptance report` pipes them through
+  `UI@/Command Line@/Test@/summarize results`, which fails when a case failed or none passed.
+  The fixtures are the files under `tests/cases/` of `build`; they are not synced into `src/`.
+  `Project@/litar@/Tests@/go test report` is the report of the unit tests.
+- **The engine (`UI@/Command Line@/Test` in `standard`)** is shared by every command.
+  A project sets `command` (the path of the command in the view) and `environment`
+  (shell lines) under a label, and passes that label to `run case`.
+  A case script calls `test_case NAME [DIRECTORY]`, then the checks
+  `prints CHECK TEXT ARGUMENT...`, `prints_file CHECK FILE ARGUMENT...`, and
+  `fails CHECK NEEDLE ARGUMENT...`, or `skip REASON`; `run ARGUMENT...` runs the command
+  for a check of the project's own, added to the chunk `checks`.
 
 # Grounds and examples
 
 - `standard`: the standard library, one node `Standard` whose modules follow
   `design/category.md`: `Tool` (shared filters, including `Tool@/Text Processing`),
   `Language@/C@/Module`, `Language@/Go@/File`, `Language@/Go@/Module`,
-  `UI@/Command Line` (the invocation syntax and its generators for C and Go),
+  `UI@/Command Line` (the invocation syntax, its generators for C and Go, and the acceptance test engine `Test`),
   and `Framework@/Light`.
 - `compos`: grounds on `standard` and adds `Litar`, whose chunks live under `Project@/litar`.
 - `build`: grounds on `compos` and adds `Litar Build`, whose chunks live under `Project@/litar@/Build`.

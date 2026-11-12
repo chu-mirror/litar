@@ -1,7 +1,7 @@
 # Build litar from the composition in compos, sync src from it, and install.
 #   make                  compile litar and litar-web into $(BIN)
 #   make sync             write the files of the composition, except the Go tests, into $(SRC)
-#   make test             run go test on the composition in an invocation
+#   make test             build, then run the Go tests and the acceptance cases in invocations
 #   make boot             compile $(BOOT) from the Go sources in $(SRC)
 #   make web              browse $(ARCHIVE) with $(BIN)/litar-web on $(WEB_ADDR)
 #   make install          install $(BIN)/litar, $(BIN)/litar-web, and the grounds under $(PREFIX)
@@ -19,7 +19,8 @@
 # else $(BOOT), which is compiled from $(SRC) first. So a fresh checkout needs only go,
 # and `make sync` keeps $(SRC) able to boot the next build.
 # The Go test files are not synced: `make test` runs them in a filter view of the composition,
-# where the node Litar maps examples and the ground standard as their test data.
+# where the node Litar maps examples and the ground standard as their test data,
+# and then the acceptance cases on the commands in $(BIN).
 # Evaluation reads the ground standard from this repository, not the installed one.
 # sync overwrites the files the composition lists and leaves any other file.
 #
@@ -76,8 +77,9 @@ litar: $(EVALUATOR)
 sync: $(EVALUATOR)
 	$(EVAL) -p 'Project@/litar@/Build@/source files'
 
-test: $(EVALUATOR)
-	$(EVAL) -p 'Project@/litar@/Build@/test report'
+test: litar
+	$(EVAL) -p 'Project@/litar@/Tests@/go test report'
+	$(EVAL) -p 'Project@/litar@/Tests@/acceptance report'
 
 web:
 	@test -x $(BIN)/litar-web || { echo "$(BIN)/litar-web is missing; run make first" >&2; exit 1; }

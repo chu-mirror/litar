@@ -71,24 +71,540 @@ os.replace(path + '.litar-new', path)
 {"description": "Python script that sets the litar entry of a Cursor MCP configuration."}
 @
 
-The source tree is the files of the composition that build litar and run its acceptance cases,
+The source tree is the files of the composition that build litar,
 written into src of the repository, which the node maps into the view as the file set source tree;
 a file set added to the composition must be added to this view.
-The Go test files are left out: src only has to boot the next build,
-and the tests run in an invocation, in the test report.
+The Go test files and the fixtures of the acceptance cases are left out:
+src only has to boot the next build, and the tests run in invocations, in the reports of Tests.
 The input of the filter names the directory to write to.
 @<Project@/litar@/Build@/source files@=
-@<Project@/litar@/Build@/Sync@/source directory@|Project@/litar@/Build@/Sync@/write files@+go module@-go tests@+build@+tests@+source tree@>
+@<Project@/litar@/Build@/Sync@/source directory@|Project@/litar@/Build@/Sync@/write files@+go module@-go tests@+build@+source tree@>
 @
 @<Project@/litar@/Build@/Sync@/source directory@=src@
 
 The Go tests run in a view of the go module with the file set test data,
 which the node Litar maps from examples and grounds of the repository.
 A mapped directory keeps the run out of the filter cache, so the tests run on every evaluation.
-@<Project@/litar@/Build@/test report@=
+@<Project@/litar@/Tests@/go test report@=
 @<@|Language@/Go@/Module@/Go Command@/test packages@+go module@+test data@>
 @
 
-@<Chunk@/Project@/litar@/Build@/test report@=
+@<Chunk@/Project@/litar@/Tests@/go test report@=
 {"description": "Output of go test on the go module, tests included."}
 @
+The command under test is the binary that the build wrote into the command directory,
+which this node maps from bin of the repository.
+@<litar command@:UI@/Command Line@/Test@/command@=@<Language@/Go@/Module@/command directory@>/litar@
+The filter cache is off, so every case runs the filters of its fixtures.
+@<litar command@:UI@/Command Line@/Test@/environment@=
+export LITAR_CACHE=off
+@
+Evaluating the report runs every case: each line of the case results is a case chunk,
+filtered into its result in a view of the binaries and the fixtures.
+The mapped directory of the binaries keeps the cases out of the filter cache,
+so they run on every evaluation.
+@<Project@/litar@/Tests@/acceptance report@=
+@<.@/case results@|UI@/Command Line@/Test@/summarize results@>
+@
+@<Chunk@/Project@/litar@/Tests@=
+{"description": "The tests of litar: the acceptance cases of the command, and the reports the Makefile evaluates."}
+@
+@<Chunk@/Project@/litar@/Tests@/Cases@=
+{"description": "Acceptance cases of the litar command; each chunk evaluates to the result of its case."}
+@
+@<Chunk@/Project@/litar@/Tests@/case results@=
+{"description": "Results of the acceptance cases, one case on each line."}
+@
+@<Chunk@/Project@/litar@/Tests@/acceptance report@=
+{"description": "Results of the acceptance cases with their count; fails when a case failed."}
+@
+@<File@/tests@=
+{"description": "Fixtures of the acceptance cases."}
+@
+The fixtures of the acceptance cases: small compositions and expected outputs, kept verbatim.
+They are not written into src: the cases run in an invocation.
+@[tests/cases/blocks/archive.la@`test fixtures@=
+@@<msg@@=
+Hello
+@@
+@@<line@@=Hi@@
+@@<inner@@=
+!
+@@
+@@<base@@=
+@@<inner@@>
+@@
+
+@
+@[tests/cases/blocks/composer.json@`test fixtures@=
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "root",
+            "archive": "./archive.la",
+            "description": "",
+            "mappings": [],
+            "base": []
+        }
+    ]
+}
+
+@
+@[tests/cases/compose/base.la@`test fixtures@=
+@@<msg@@=base@@
+
+@
+@[tests/cases/compose/child.la@`test fixtures@=
+@@<msg@@+child@@
+
+@
+@[tests/cases/compose/composer.json@`test fixtures@=
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "base",
+            "archive": "./base.la",
+            "description": "base",
+            "mappings": [],
+            "base": []
+        },
+        {
+            "name": "child",
+            "archive": "./child.la",
+            "description": "child",
+            "mappings": [],
+            "base": ["base"]
+        }
+    ]
+}
+
+@
+@[tests/cases/errors/archive.la@`test fixtures@=
+@@<msg@@=
+Hello
+@@
+
+@
+@[tests/cases/errors/composer.json@`test fixtures@=
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "root",
+            "archive": "./archive.la",
+            "description": "",
+            "mappings": [],
+            "base": []
+        }
+    ]
+}
+
+@
+@[tests/cases/filter/archive.la@`test fixtures@=
+@@<upper@@=
+#!/bin/sh
+tr '[:lower:]' '[:upper:]'
+@@
+@@<msg@@=
+hello
+@@|upper@@
+@@<bad@@=
+echo hi
+@@
+@@<use@@=
+hi
+@@|bad@@
+@@<die@@=
+#!/bin/sh
+exit 3
+@@
+@@<use2@@=
+hi
+@@|die@@
+
+@
+@[tests/cases/filter/composer.json@`test fixtures@=
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "root",
+            "archive": "./archive.la",
+            "description": "",
+            "mappings": [],
+            "base": []
+        }
+    ]
+}
+
+@
+@[tests/cases/fuse/archive.la@`test fixtures@=
+@@[hello.txt@@`docs@@=
+hello world
+@@
+@@(run.sh@@`docs@@=
+echo run
+@@
+@@<show@@=
+#!/bin/sh
+cat hello.txt
+@@
+@@<msg@@=
+@@|show@@+docs@@
+@@<exe@@=
+#!/bin/sh
+if test -x run.sh; then echo yes; else echo no; fi
+@@
+@@<ask@@=
+@@|exe@@+docs@@
+@@<make@@=
+#!/bin/sh
+printf overlay > created.txt
+cat created.txt
+@@
+@@<made@@=
+@@|make@@
+@@<ro@@=
+#!/bin/sh
+echo x > hello.txt
+@@
+@@<row@@=
+@@|ro@@,hello.txt@@
+
+@
+@[tests/cases/fuse/composer.json@`test fixtures@=
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "root",
+            "archive": "./archive.la",
+            "description": "",
+            "mappings": [],
+            "base": []
+        }
+    ]
+}
+
+@
+@[tests/cases/list/depend-1.out@`test fixtures@=
+
+@@<chunk 2@@=
+@@<label 1@@:chunk 1@@>
+@@
+
+@
+@[tests/cases/list/depend-2.out@`test fixtures@=
+
+@@<chunk 3@@=
+content
+@@|label 2@@:chunk 2@@
+
+@
+@[tests/cases/list/depend/composer.json@`test fixtures@=
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "root",
+            "archive": "./depend.la",
+            "description": "",
+            "mappings": [],
+            "base": []
+        }
+    ]
+}
+
+@
+@[tests/cases/list/depend/depend.la@`test fixtures@=
+@@<chunk 1@@=
+content
+@@
+
+@@<chunk 2@@=
+@@<label 1@@:chunk 1@@>
+@@
+
+@@<chunk 3@@=
+content
+@@|label 2@@:chunk 2@@
+
+@
+@[tests/cases/list/literal/composer.json@`test fixtures@=
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "root",
+            "archive": "./literal.la",
+            "description": "",
+            "mappings": [],
+            "base": []
+        }
+    ]
+}
+
+@
+@[tests/cases/list/literal/literal.la@`test fixtures@=
+@@<module@@/chunk1@@=
+@@<substructure 1@@>
+@@
+
+@@<module@@/chunk2@@=
+@@<substructure 2@@>
+@@
+
+Extend chunk through label.
+@@<label@@:module@@/chunk1@@=
+@@<substructure 3@@>
+@@
+
+@
+@[tests/cases/list/literal.out@`test fixtures@=
+@@<module@@/chunk1@@=
+@@<substructure 1@@>
+@@
+
+Extend chunk through label.
+@@<label@@:module@@/chunk1@@=
+@@<substructure 3@@>
+@@
+
+@
+@[tests/cases/missing-chunk/archive.la@`test fixtures@=
+@@<msg@@=
+Hello
+@@
+
+@
+@[tests/cases/missing-chunk/composer.json@`test fixtures@=
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "root",
+            "archive": "./archive.la",
+            "description": "",
+            "mappings": [],
+            "base": []
+        }
+    ]
+}
+
+@
+@[tests/cases/modules/archive.la@`test fixtures@=
+@@<a@@/b@@/c@@=
+x
+@@
+@@<a@@/d@@=
+y
+@@
+@@<z@@=
+q
+@@~C@@/variables@@/times@@~C@@/functions@@/main@@~only@@
+@@[hello.c@@`docs@@=
+file
+@@
+
+@
+@[tests/cases/modules/composer.json@`test fixtures@=
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "root",
+            "archive": "./archive.la",
+            "description": "",
+            "mappings": [],
+            "base": []
+        }
+    ]
+}
+
+@
+@[tests/cases/print/archive.la@`test fixtures@=
+@@<msg@@=
+Hello
+@@
+
+@
+@[tests/cases/print/composer.json@`test fixtures@=
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "root",
+            "archive": "./archive.la",
+            "description": "",
+            "mappings": [],
+            "base": []
+        }
+    ]
+}
+
+@
+@[tests/cases/spec/archive.la@`test fixtures@=
+@@<c@@+A@@
+@@<s1@@:c@@+B@@
+@@<s2@@:s1@@:c@@+C@@
+@@<s2@@:s1@@:c@@=Z@@
+@@<s2@@:c@@+D@@
+
+@
+@[tests/cases/spec/composer.json@`test fixtures@=
+{
+    "ground": null,
+    "nodes": [
+        {
+            "name": "root",
+            "archive": "./archive.la",
+            "description": "",
+            "mappings": [],
+            "base": []
+        }
+    ]
+}
+
+@
+@<Project@/litar@/Tests@/case results@+
+@<.@/Cases@/blocks@>
+@
+The file and print options, in their short, long, and = forms; an option value must be a separate word or follow =.
+@<Project@/litar@/Tests@/Cases@/blocks@=
+test_case blocks tests/cases/blocks
+prints msg Hello --file=archive.la -p msg
+prints line Hi -f archive.la -p line
+prints nest '!' -f archive.la -p base
+prints separate Hello -f=archive.la -p=msg
+fails attached "flag provided but not defined: -farchive.la" -farchive.la -pmsg
+@| litar command@:UI@/Command Line@/Test@/run case@+binaries@+test fixtures @
+@<Project@/litar@/Tests@/case results@+
+@<.@/Cases@/compose@>
+@
+A node evaluates the blocks of its base before its own, and an archive outside every composition is refused.
+@<Project@/litar@/Tests@/Cases@/compose@=
+test_case compose tests/cases/compose
+prints root base -f base.la -p msg
+prints child basechild -f child.la -p msg
+fails unknown "could not find archive 'nope.la'" -f nope.la -p msg
+@| litar command@:UI@/Command Line@/Test@/run case@+binaries@+test fixtures @
+@<Project@/litar@/Tests@/case results@+
+@<.@/Cases@/errors@>
+@
+Every misuse of the command line fails with its message on stderr and nothing on stdout.
+@<Project@/litar@/Tests@/Cases@/errors@=
+test_case errors tests/cases/errors
+fails none "missing -p, --print, -l, --literal, -e, --effective, -d, --depend, -r, --reference, or -a, --agent"
+fails combine "cannot combine print and literal" -p a -l a
+fails combine-rev "cannot combine print and literal" -l a -p b
+fails nofile "missing -f, --file" -p msg
+fails unknown "flag provided but not defined: -t" -t . -p msg
+fails cluster "flag provided but not defined: -al" -al
+fails positional "Usage: litar " archive.la
+fails missing "chunk 'missing' is not defined" -f archive.la -p missing
+fails long "chunk 'missing' is not defined" --file archive.la --print missing
+fails long-eq "chunk 'missing' is not defined" --file=archive.la -print=missing
+prints depend-empty '' -f archive.la -d nope
+fails effective "chunk 'missing' is not defined" -f archive.la -e missing
+@| litar command@:UI@/Command Line@/Test@/run case@+binaries@+test fixtures @
+@<Project@/litar@/Tests@/case results@+
+@<.@/Cases@/filter@>
+@
+A filter transforms its input; one without a shebang or with a failing exit status fails the evaluation.
+@<Project@/litar@/Tests@/Cases@/filter@=
+test_case filter tests/cases/filter
+prints upper HELLO -f archive.la -p msg
+fails noshebang "filter 'bad' has no shebang" -f archive.la -p use
+fails status "filter 'die' exited with status 3" -f archive.la -p use2
+@| litar command@:UI@/Command Line@/Test@/run case@+binaries@+test fixtures @
+@<Project@/litar@/Tests@/case results@+
+@<.@/Cases@/fuse@>
+@
+A filter sees the files of its view, read-only below an overlay; the case needs /dev/fuse.
+@<Project@/litar@/Tests@/Cases@/fuse@=
+test_case fuse tests/cases/fuse
+[ -e /dev/fuse ] || skip "no /dev/fuse"
+prints cat 'hello world' -f archive.la -p msg
+prints exe $'yes\n' -f archive.la -p ask
+prints overlay overlay -f archive.la -p made
+fails readonly "exited with status" -f archive.la -p row
+fails missing "file 'missing' is not defined" -f archive.la -p '@@|show@@,missing'
+fails badpath "invalid file path '../x'" -f archive.la -p '@@|show@@,../x'
+@| litar command@:UI@/Command Line@/Test@/run case@+binaries@+test fixtures @
+@<Project@/litar@/Tests@/case results@+
+@<.@/Cases@/help@>
+@
+The usage is printed for -h and --help wherever they stand, unless they are the value of another option.
+@<Project@/litar@/Tests@/Cases@/help@=
+test_case help
+usage=$(cat <<'END'
+Usage: litar [-a] [-f ARCHIVE] [-l CHUNK_REFERENCE] [-e CHUNK_REFERENCE] [-d CHUNK_REFERENCE] [-r ITEM] [-p EXPRESSION]
+
+-h, --help: print the usage
+-a, --agent: open an MCP server to handle the requests from agents
+-f, --file ARCHIVE: specify the archive file, find the composition and the node corresponding
+-l, --literal CHUNK_REFERENCE: print the blocks applied to CHUNK_REFERENCE literally
+-e, --effective CHUNK_REFERENCE: print the effective blocks of CHUNK_REFERENCE
+-d, --depend CHUNK_REFERENCE: list all blocks that depend on CHUNK_REFERENCE
+-r, --reference ITEM: list all blocks that refer to ITEM
+-p, --print EXPRESSION: evaluate EXPRESSION, and print it
+END
+)
+prints help "$usage"$'\n' --help
+prints short-h "$usage"$'\n' -h
+prints help-after-other "$usage"$'\n' -p x --help
+fails help-as-value "missing -f, --file" -p --help
+@| litar command@:UI@/Command Line@/Test@/run case@+binaries@+test fixtures @
+@<Project@/litar@/Tests@/case results@+
+@<.@/Cases@/list@>
+@
+The literal and dependent listings print blocks as written; a specialized reference lists the blocks of what it specializes.
+@<Project@/litar@/Tests@/Cases@/list@=
+test_case list tests/cases/list
+prints_file literal literal.out -f literal/literal.la -l 'label@@:module@@/chunk1'
+prints_file depend-1 depend-1.out -f depend/depend.la -d 'chunk 1'
+prints_file depend-1b depend-1.out -f depend/depend.la -d 'label 1@@:chunk 1'
+prints_file depend-2 depend-2.out -f depend/depend.la -d 'chunk 2'
+prints_file depend-2b depend-2.out -f depend/depend.la -d 'label 2@@:chunk 2'
+prints none '' -f depend/depend.la -d nope
+@| litar command@:UI@/Command Line@/Test@/run case@+binaries@+test fixtures @
+@<Project@/litar@/Tests@/case results@+
+@<.@/Cases@/missing chunk@>
+@
+Printing a chunk that no block defines fails.
+@<Project@/litar@/Tests@/Cases@/missing chunk@=
+test_case 'missing chunk' tests/cases/missing-chunk
+fails missing "Error: chunk 'missing' is not defined" -f archive.la -p missing
+@| litar command@:UI@/Command Line@/Test@/run case@+binaries@+test fixtures @
+@<Project@/litar@/Tests@/case results@+
+@<.@/Cases@/modules@>
+@
+The reference listing prints the blocks that carry an item, and nothing for an unknown item.
+@<Project@/litar@/Tests@/Cases@/modules@=
+test_case modules tests/cases/modules
+prints refer $'@@<z@@=\nq\n@@~C@@/variables@@/times@@~C@@/functions@@/main@@~only@@\n' -f archive.la -r 'C@@/functions@@/main'
+prints no-item '' -f archive.la -r missing
+@| litar command@:UI@/Command Line@/Test@/run case@+binaries@+test fixtures @
+@<Project@/litar@/Tests@/case results@+
+@<.@/Cases@/print@>
+@
+Printing a chunk writes its content without a final line break.
+@<Project@/litar@/Tests@/Cases@/print@=
+test_case print tests/cases/print
+prints msg Hello -f archive.la -p msg
+@| litar command@:UI@/Command Line@/Test@/run case@+binaries@+test fixtures @
+@<Project@/litar@/Tests@/case results@+
+@<.@/Cases@/spec@>
+@
+A specialized reference takes the blocks whose labels end its own; the effective and literal listings follow the same rule.
+@<Project@/litar@/Tests@/Cases@/spec@=
+test_case spec tests/cases/spec
+prints plain A -f archive.la -p c
+prints mid AB -f archive.la -p 's1@@:c'
+prints full Z -f archive.la -p 's2@@:s1@@:c'
+prints other AD -f archive.la -p 's2@@:c'
+prints effective $'@@<s2@@:s1@@:c@@=Z@@\n' -f archive.la -e 's2@@:s1@@:c'
+prints literal $'@@<c@@+A@@\n@@<s1@@:c@@+B@@\n@@<s2@@:s1@@:c@@+C@@\n@@<s2@@:s1@@:c@@=Z@@\n' -f archive.la -l 's2@@:s1@@:c'
+@| litar command@:UI@/Command Line@/Test@/run case@+binaries@+test fixtures @

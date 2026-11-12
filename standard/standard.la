@@ -2685,3 +2685,163 @@ export GOWORK=off
 @<Index@/UI@/Command Line@/Python@/functions@=
 {"description": "Top-level functions."}
 @
+One case of an acceptance test is a chunk: its content is a script of checks, and this filter
+turns the script into the result of the case, so evaluating the chunk runs the test.
+The view of the filter holds the command and the fixtures of the case.
+A case that fails still evaluates: its result says what failed, and the report decides.
+@<UI@/Command Line@/Test@/run case@=#!/bin/bash
+set -u
+command=$PWD/@<.@/command@>
+@<.@/environment@>
+@<.@/Runner@/state of the case@>
+@<.@/Runner@/result@>
+@<.@/checks@>
+@<.@/Runner@/run the script on stdin@>
+finish
+@
+The project names its command with a labelled block, and passes the labels to the filter:
+the labels reach every reference of the filter.
+@<Chunk@/UI@/Command Line@/Test@/command@=
+{"description": "Path of the command under test in the view; set it under the label of the command."}
+@
+@<Chunk@/UI@/Command Line@/Test@/environment@=
+{"description": "Shell lines that prepare the environment of the command under test; set them under the label of the command."}
+@
+@<Chunk@/UI@/Command Line@/Test@=
+{"description": "Acceptance tests of a command: a case is a chunk filtered into its result."}
+@
+@<Chunk@/UI@/Command Line@/Test@/run case@=
+{"description": "Filter that runs the script of one case and prints its result: ok NAME COUNT, skip NAME: REASON, or FAIL NAME with the failed checks."}
+@
+@<Chunk@/UI@/Command Line@/Test@/summarize results@=
+{"description": "Filter that counts the results of the cases, and fails when a case failed or none passed."}
+@
+@<Chunk@/UI@/Command Line@/Test@/checks@=
+{"description": "Shell functions a case script calls; a project may add its own."}
+@
+The work directory is outside the view, because the view only shows files of the composition.
+@<UI@/Command Line@/Test@/Runner@/state of the case@=
+name=unnamed
+checks=0
+failed=
+skipped=
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+@
+The result has no final line break, so a report can list one case on each line.
+A case without a check fails: a script that ended early must not look like a success.
+@<UI@/Command Line@/Test@/Runner@/result@=
+# finish: print the result of the case and end the filter.
+finish() {
+	if [ -n "$skipped" ]; then
+		printf 'skip %s: %s' "$name" "$skipped"
+	elif [ -n "$failed" ]; then
+		printf 'FAIL %s\n%s' "$name" "${failed%$'\n'}"
+	elif [ "$checks" -eq 0 ]; then
+		printf 'FAIL %s\n  no check ran' "$name"
+	else
+		printf 'ok %s %s' "$name" "$checks"
+	fi
+	exit 0
+}
+
+# miss CHECK WHAT [FILE]: record a failed check, with the file that explains it.
+miss() {
+	failed+="  $1: $2"$'\n'
+	if [ $# -gt 2 ] && [ -s "$3" ]; then
+		failed+=$(sed 's/^/    /' "$3")$'\n'
+	fi
+}
+@~ UI@/Command Line@/Bash@/functions@/finish @~ UI@/Command Line@/Bash@/functions@/miss @
+The script is checked before it runs: a syntax error would otherwise stop it halfway,
+after checks that passed.
+@<UI@/Command Line@/Test@/Runner@/run the script on stdin@=
+cat >"$work/case"
+if bash -n "$work/case" 2>"$work/syntax"; then
+	. "$work/case"
+else
+	miss script "syntax error" "$work/syntax"
+fi
+@~ UI@/Command Line@/Bash@/functions@/miss @
+@<UI@/Command Line@/Test@/checks@+
+# test_case NAME [DIRECTORY]: name the case, and enter the directory of its fixtures.
+test_case() {
+	name=$1
+	if [ $# -gt 1 ] && ! cd "$2" 2>/dev/null; then
+		miss fixtures "no directory $2"
+		finish
+	fi
+}
+
+# skip REASON: end the case without a verdict.
+skip() {
+	skipped=$1
+	finish
+}
+@~ UI@/Command Line@/Bash@/functions@/finish @~ UI@/Command Line@/Bash@/functions@/miss @
+@<UI@/Command Line@/Test@/checks@+
+# run ARGUMENT...: run the command; its output goes to $work/out and $work/err,
+# its exit status to $status.
+run() {
+	checks=$((checks + 1))
+	"$command" "$@@" >"$work/out" 2>"$work/err"
+	status=$?
+}
+@~ UI@/Command Line@/Bash@/functions@/run @
+A passing command must leave stderr empty.
+@<UI@/Command Line@/Test@/checks@+
+# prints_file CHECK FILE ARGUMENT...: the command succeeds and prints exactly FILE.
+prints_file() {
+	local check=$1 want=$2
+	shift 2
+	run "$@@"
+	if [ "$status" -ne 0 ]; then
+		miss "$check" "exit $status" "$work/err"
+	elif [ -s "$work/err" ]; then
+		miss "$check" "unexpected stderr" "$work/err"
+	elif ! diff -u --label expected --label printed "$want" "$work/out" >"$work/diff"; then
+		miss "$check" stdout "$work/diff"
+	fi
+}
+
+# prints CHECK TEXT ARGUMENT...: the command succeeds and prints exactly TEXT.
+prints() {
+	local check=$1
+	printf '%s' "$2" >"$work/want"
+	shift 2
+	prints_file "$check" "$work/want" "$@@"
+}
+@~ UI@/Command Line@/Bash@/functions@/miss @~ UI@/Command Line@/Bash@/functions@/run @
+A failing command must leave stdout empty, and its stderr only has to contain the needle.
+@<UI@/Command Line@/Test@/checks@+
+# fails CHECK NEEDLE ARGUMENT...: the command fails and reports NEEDLE.
+fails() {
+	local check=$1 needle=$2
+	shift 2
+	run "$@@"
+	if [ "$status" -eq 0 ]; then
+		miss "$check" "expected failure"
+	elif ! grep -F -q -e "$needle" "$work/err"; then
+		miss "$check" "stderr misses [$needle]" "$work/err"
+	elif [ -s "$work/out" ]; then
+		miss "$check" "stdout not empty" "$work/out"
+	fi
+}
+@~ UI@/Command Line@/Bash@/functions@/miss @~ UI@/Command Line@/Bash@/functions@/run @
+The output of a failed filter is dropped, so a failing report goes to stderr.
+A report in which no case passed fails too: the cases may all have been lost.
+@<UI@/Command Line@/Test@/summarize results@=#!/bin/sh
+results=$(cat)
+count() {
+	printf '%s\n' "$results" | grep -c "^$1 "
+}
+report=$(printf '%s\npassed %s failed %s skipped %s' "$results" "$(count ok)" "$(count FAIL)" "$(count skip)")
+if [ "$(count FAIL)" -ne 0 ] || [ "$(count ok)" -eq 0 ]; then
+	printf '%s\n' "$report" >&2
+	exit 1
+fi
+printf '%s\n' "$report"
+@
+@<Index@/UI@/Command Line@/Bash@/functions@=
+{"description": "Shell functions of the acceptance test runner."}
+@

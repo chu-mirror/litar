@@ -19,7 +19,8 @@ including the MCP server it opens for agents.
   - src/tests: acceptance tests;
 - standard: the standard library, a composition that other compositions ground on;
 - examples: example programs, composed by `examples/composer.json`;
-- agent: skills and references for agents editing litar compositions,
+- agent: skills for agents working on litar compositions (`litar-task` for editing,
+  `litar-port` for porting a project, `litar-explain` for explaining), with their references,
   linked from `.cursor/skills`.
 
 # Build and install

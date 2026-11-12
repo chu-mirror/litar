@@ -110,6 +110,7 @@ install-skills:
 		install -d "$(CURSOR_DIR)/skills/$$s" && \
 		cp -R "$(SKILLS)/$$s/." "$(CURSOR_DIR)/skills/$$s/" || exit 1; \
 	done
+	find "$(CURSOR_DIR)/skills" -name __pycache__ -prune -exec rm -rf {} +
 
 mcp:
 	npx @modelcontextprotocol/inspector

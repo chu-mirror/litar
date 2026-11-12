@@ -102,7 +102,7 @@ Resource templates:
 - items, `tree://item/{composition}/{node}`, the item tree under the node;
 - files, `tree://file/{composition}/{node}`, the file tree under the node;
 - node blocks, `blocks://node/{composition}/{node}`, the blocks in the node;
-- specializations, `tree://specialization/{composition}/{node}/{chunk}`, the specializations on the chunk;
+- specializations, `tree://specialization/{composition}/{node}`, the specializations tree under the node;
 - applied blocks, `blocks://apply/{composition}/{node}/{chunk}/{specialization}`,
   the blocks applied to the chunk reference;
 - effective blocks, `blocks://effective/{composition}/{node}/{chunk}/{specialization}`,
@@ -110,18 +110,25 @@ Resource templates:
 - dependent blocks, `blocks://depend/{composition}/{node}/{chunk}/{specialization}`,
   the blocks depending on a chunk reference;
 - related blocks, `blocks://refer/{composition}/{node}/{item}`, the blocks referring to the item;
+- derived blocks, `blocks://specialization/{composition}/{node}/{labels}`, the blocks written under exactly the label path;
 - file, `file://{composition}/{node}/{path}`, the file of the path.
 
 Tools:
 
 - import an existing composition;
 - create a new composition, and import it;
-- create a new node, the corresponding archive file must be newly created;
+- create a new node, the corresponding archive file must be newly created, mappings can be specified;
+- map a file, create a mapping in a node;
 - delete a node, all nodes based on that node will be deleted too, all related archive files will be deleted;
 - delete a chunk, all applied blocks will be deleted;
 - delete a file, all applied blocks will be deleted;
+- rename a chunk, module, item, or subdomain;
+- operate files, interpret `rm` and `mv` shell commands for files in the archive;
 - evaluate the content of an expression;
-- apply a block to a node, cannot apply a block to a node in the ground archive.
+- apply a block to a node, cannot apply a block to a node in the ground archive,
+  can specify a block applied to same chunk reference the new block overrides;
+- delete a block;
+- move a block to a node.
 
 `list://` returns a list of json objects:
 
@@ -130,7 +137,7 @@ Tools:
     {
         "name": "<the name of the object>",
         "description": "<a short description of the object>",
-        "id": <automatically generated unique id>
+        "ref": "<automatically generated unique hash value>"
     },
     <other objects>
 ]
@@ -144,50 +151,14 @@ The name for a composition is its absolute path.
 {
     "name": "<the name of the object>",
     "description": "<a short description of the object>",
-    "id": <automatically generated unique id>,
+    "ref": "<automatically generated unique hash value>",
     "sub-trees": [
         <sub-trees>
     ]
 }
 ```
 
-The generated id is a number counting from 0,
-and must be consistent among requests if the returned list and tree do not change.
-The arguments passed to tools and resource templates are these ids.
-
-`blocks://` returns a list of blocks just as the output of option `-l`.
-
-A particular block is removed by overriding through `@=`.
-For example, an `@+` block is deleted by creating a single overriding `@=` and a new list of `@+`.
-Remove a block when it is no longer an effective block of the same chunk reference in that same node.
-
-An example for deleting:
-
-```
-@<includes@+
-#include <stdio.h>
-@
-
-@<includes@+
-#include <stdlib.h>
-@
-
-@<includes@+
-#include <unistd.h>
-@
-```
-
-Now we want to remove `#include <stdlib.h>`, the proper way:
-
-```
-@<includes@=
-#include <stdio.h>
-@
-
-@<includes@+
-#include <unistd.h>
-@
-```
+`blocks://` returns a list of blocks, the format is a json array.
 
 # Environment
 

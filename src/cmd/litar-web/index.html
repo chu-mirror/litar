@@ -91,10 +91,11 @@ async function tool(name, args) {
     body: JSON.stringify({name, arguments: args}),
   }));
 }
-// Ids stay valid while nothing changes the composition, so trees are cached per node.
+// A ref is a hash of the kind and names of its object, so trees are cached per node
+// and a location stays valid until its object is renamed.
 const cache = new Map();
-async function tree(kind, c, n, extra) {
-  const uri = 'tree://' + kind + '/' + [c, n, extra].filter(x => x !== undefined).join('/');
+async function tree(kind, c, n) {
+  const uri = 'tree://' + kind + '/' + c + '/' + n;
   if (!cache.has(uri)) cache.set(uri, resource(uri).then(JSON.parse));
   return cache.get(uri);
 }
@@ -111,11 +112,11 @@ function walk(t, fn, path = []) {
   }
 }
 function leafIndex(t) {
-  const byPath = new Map(), byId = new Map();
+  const byPath = new Map(), byRef = new Map();
   walk(t, (s, p) => {
-    if (subs(s).length === 0) { byPath.set(JSON.stringify(p), s.id); byId.set(s.id, p); }
+    if (subs(s).length === 0) { byPath.set(JSON.stringify(p), s.ref); byRef.set(s.ref, p); }
   });
-  return {byPath, byId};
+  return {byPath, byRef};
 }
 // A subtree is shown when the filter matches its path or one of its leaves.
 const folds = new Map();
@@ -130,8 +131,8 @@ function treeHTML(t, href, selected, filter, kind, path = []) {
     const desc = s.description ? '<span class="desc">' + esc(s.description) + '</span>' : '';
     if (subs(s).length === 0) {
       if (filter && !p.join('/').toLowerCase().includes(filter)) continue;
-      holds = holds || s.id === selected;
-      items.push('<li class="leaf"><a href="' + href(s, p) + '"' + (s.id === selected ? ' class="sel"' : '') + '>'
+      holds = holds || s.ref === selected;
+      items.push('<li class="leaf"><a href="' + href(s, p) + '"' + (s.ref === selected ? ' class="sel"' : '') + '>'
         + esc(s.name) + '</a>' + desc + '</li>');
     } else {
       const inner = treeHTML(s, href, selected, filter, kind, p);
@@ -228,7 +229,9 @@ function pathRef(path, labels) {
 // Blocks apply with labels, the labels of the reference being viewed, or else with the labels of their headers.
 const isLetter = c => /[A-Za-z]/.test(c) || c > '\x7f';
 const isSpace = c => c === undefined || c === ' ' || c === '\t' || c === '\r' || c === '\n';
-function renderBlocks(text, base, labels) {
+// A blocks:// resource is a list of blocks; the scanner reads them as the text of an archive.
+function renderBlocks(json, base, labels) {
+  const text = JSON.parse(json).map(b => (b.comment ? b.comment + '\n' : '') + b.text + '\n').join('\n');
   let i = 0, html = '', comment = '';
   const link = (kind, target, label) =>
     '<a href="' + base + '/' + kind + '/' + encodeURIComponent(JSON.stringify(target)) + '">' + esc(label) + '</a>';
@@ -309,12 +312,12 @@ const state = {c: null, n: null};
 async function showCompositions() {
   const list = JSON.parse(await resource('list://composition'));
   $('composition').innerHTML = list.map(w =>
-    '<option value="' + w.id + '"' + (w.id === state.c ? ' selected' : '') + '>' + esc(w.name) + '</option>').join('');
+    '<option value="' + w.ref + '"' + (w.ref === state.c ? ' selected' : '') + '>' + esc(w.name) + '</option>').join('');
   return list;
 }
 async function showNodes() {
   const root = JSON.parse(await resource('tree://node/' + state.c));
-  const item = t => '<li><a href="#/' + state.c + '/' + t.id + '/chunks"' + (t.id === state.n ? ' class="sel"' : '')
+  const item = t => '<li><a href="#/' + state.c + '/' + t.ref + '/chunks"' + (t.ref === state.n ? ' class="sel"' : '')
     + ' title="' + esc(t.description) + '">' + esc(t.name) + '</a>'
     + (subs(t).length ? '<ul class="tree">' + subs(t).map(item).join('') + '</ul>' : '') + '</li>';
   $('sidebar').innerHTML = '<ul class="tree top">' + item(root) + '</ul>';
@@ -332,22 +335,25 @@ const nodeBase = () => '#/' + state.c + '/' + state.n;
 const labelsPart = (labels, spec) => labels.length > spec.length ? '/' + encodeURIComponent(JSON.stringify(labels)) : '';
 const isSuffix = (spec, labels) => spec.every((l, k) => l === labels[labels.length - spec.length + k]);
 
+// The specialization tree belongs to the node, so a chunk offers every label path of the node;
+// a path the chunk has no block for shows the blocks of the paths it ends with.
 async function chunkView(chunkId, specId, view, refLabels) {
   const chunks = await tree('chunk', state.c, state.n);
   const index = leafIndex(chunks);
-  showTree(chunks, s => nodeBase() + '/chunks/' + s.id + '/0/effective', chunkId, 'chunks');
+  showTree(chunks, s => nodeBase() + '/chunks/' + s.ref + '/-/effective', chunkId, 'chunks');
   if (chunkId === undefined) return detail('<p class="note">Choose a chunk.</p>');
-  const path = index.byId.get(chunkId);
-  const specs = await tree('specialization', state.c, state.n, chunkId);
-  const options = [{id: specs.id, labels: []}];
-  walk(specs, (s, p) => options.push({id: s.id, labels: p.slice().reverse()}));
-  const spec = options.find(o => o.id === specId) || options[0];
+  const path = index.byRef.get(chunkId);
+  if (!path) return detail('<p class="error">No such chunk in this node.</p>');
+  const specs = await tree('specialization', state.c, state.n);
+  const options = [{ref: specs.ref, labels: []}];
+  walk(specs, (s, p) => options.push({ref: s.ref, labels: p.slice().reverse()}));
+  const spec = options.find(o => o.ref === specId) || options[0];
   const labels = refLabels && isSuffix(spec.labels, refLabels) ? refLabels : spec.labels;
   const ref = pathRef(path, labels);
   const here = nodeBase() + '/chunks/' + chunkId;
   let html = '<h2>' + esc(refText(ref)) + '</h2>';
   if (options.length > 1) {
-    html += '<select class="spec">' + options.map(o => '<option value="' + o.id + '"' + (o === spec ? ' selected' : '') + '>'
+    html += '<select class="spec">' + options.map(o => '<option value="' + o.ref + '"' + (o === spec ? ' selected' : '') + '>'
       + esc(o.labels.length ? o.labels.join('@:') : '(no label)') + '</option>').join('') + '</select>';
   }
   if (labels.length > spec.labels.length) {
@@ -355,7 +361,7 @@ async function chunkView(chunkId, specId, view, refLabels) {
       + ' apply; their references take the labels ' + esc(labels.join('@:')) + '.</p>';
   }
   const views = {effective: 'Effective', apply: 'Applied', depend: 'Dependents', result: 'Result'};
-  html += '<nav class="subtabs">' + Object.keys(views).map(v => '<a href="' + here + '/' + spec.id + '/' + v
+  html += '<nav class="subtabs">' + Object.keys(views).map(v => '<a href="' + here + '/' + spec.ref + '/' + v
     + labelsPart(labels, spec.labels) + '"' + (v === view ? ' class="on"' : '') + '>' + views[v] + '</a>').join('')
     + '</nav><div id="view"><p class="note">Loading…</p></div>';
   detail(html);
@@ -365,7 +371,7 @@ async function chunkView(chunkId, specId, view, refLabels) {
   try {
     out = view === 'result'
       ? linesHTML(await tool('evaluate_expression', {composition: state.c, node: state.n, expression: refText(ref)}))
-      : renderBlocks(await resource('blocks://' + view + '/' + state.c + '/' + state.n + '/' + chunkId + '/' + spec.id),
+      : renderBlocks(await resource('blocks://' + view + '/' + state.c + '/' + state.n + '/' + chunkId + '/' + spec.ref),
         nodeBase(), view === 'depend' ? undefined : labels);
   } catch (e) {
     out = '<p class="error">' + esc(e.message) + '</p>'
@@ -375,9 +381,9 @@ async function chunkView(chunkId, specId, view, refLabels) {
 }
 async function fileView(fileId) {
   const files = await tree('file', state.c, state.n);
-  showTree(files, s => nodeBase() + '/files/' + s.id, fileId, 'files');
+  showTree(files, s => nodeBase() + '/files/' + s.ref, fileId, 'files');
   if (fileId === undefined) return detail('<p class="note">Choose a file.</p>');
-  const path = leafIndex(files).byId.get(fileId) || [];
+  const path = leafIndex(files).byRef.get(fileId) || [];
   detail('<h2>' + esc(path.join('/')) + '</h2><div id="view"><p class="note">Loading…</p></div>');
   const response = await fetch('/api/resource?uri=' + encodeURIComponent('file://' + state.c + '/' + state.n + '/' + fileId));
   const type = response.headers.get('Content-Type') || '';
@@ -387,9 +393,9 @@ async function fileView(fileId) {
 }
 async function itemView(itemId) {
   const items = await tree('item', state.c, state.n);
-  showTree(items, s => nodeBase() + '/items/' + s.id, itemId, 'items');
+  showTree(items, s => nodeBase() + '/items/' + s.ref, itemId, 'items');
   if (itemId === undefined) return detail('<p class="note">Choose an item.</p>');
-  const path = leafIndex(items).byId.get(itemId) || [];
+  const path = leafIndex(items).byRef.get(itemId) || [];
   detail('<h2>' + esc(path.map(encode).join('@/')) + '</h2><div id="view"><p class="note">Loading…</p></div>');
   $('view').innerHTML = renderBlocks(await resource('blocks://refer/' + state.c + '/' + state.n + '/' + itemId), nodeBase());
 }
@@ -404,7 +410,7 @@ async function evalView(expression) {
     $('view').innerHTML = linesHTML(await tool('evaluate_expression', {composition: state.c, node: state.n, expression}));
   } catch (e) { $('view').innerHTML = '<p class="error">' + esc(e.message) + '</p>'; }
 }
-// Links in blocks name their target; find its id, then replace the location with its page.
+// Links in blocks name their target; find its ref, then replace the location with its page.
 // A chunk opens at its deepest specialization whose labels end the target's labels.
 async function resolveLink(kind, target) {
   if (kind === 'ref') {
@@ -417,11 +423,11 @@ async function resolveLink(kind, target) {
       return detail('<p class="error">No block of this node defines ' + esc(refText(target)) + '.</p>'
         + '<p class="note">A node based on this one may define it.</p>');
     }
-    const specs = await tree('specialization', state.c, state.n, id);
+    const specs = await tree('specialization', state.c, state.n);
     const want = target.labels.slice().reverse();
-    let best = specs.id, depth = 0;
+    let best = specs.ref, depth = 0;
     walk(specs, (s, p) => {
-      if (p.length > depth && p.every((l, k) => l === want[k])) { best = s.id; depth = p.length; }
+      if (p.length > depth && p.every((l, k) => l === want[k])) { best = s.ref; depth = p.length; }
     });
     location.replace(nodeBase() + '/chunks/' + id + '/' + best + '/effective' + labelsPart(target.labels, want.slice(0, depth)));
   } else {
@@ -442,23 +448,22 @@ async function route() {
       $('sidebar').innerHTML = $('tabs').innerHTML = $('list').innerHTML = '';
       return detail('<p class="note">No composition is imported. Import a composition directory above.</p>');
     }
-    state.c = parts.length ? Number(parts[0]) : compositions[0].id;
+    state.c = parts.length ? parts[0] : compositions[0].ref;
     $('composition').value = state.c;
     const root = await showNodes();
     if (parts.length < 2) {
       let last = root;
       walk(root, s => { last = s; });
-      return location.replace('#/' + state.c + '/' + last.id + '/chunks');
+      return location.replace('#/' + state.c + '/' + last.ref + '/chunks');
     }
-    state.n = Number(parts[1]);
+    state.n = parts[1];
     await showNodes();
     const [tab = 'chunks', a, b, c, d] = parts.slice(2);
-    const num = x => x === undefined ? undefined : Number(x);
     showTabs(tab === 'ref' ? 'chunks' : tab === 'file' || tab === 'item' ? tab + 's' : tab);
     $('body').classList.toggle('wide', tab === 'blocks' || tab === 'eval');
-    if (tab === 'chunks') await chunkView(num(a), num(b), c || 'effective', d && JSON.parse(d));
-    else if (tab === 'files') await fileView(num(a));
-    else if (tab === 'items') await itemView(num(a));
+    if (tab === 'chunks') await chunkView(a, b, c || 'effective', d && JSON.parse(d));
+    else if (tab === 'files') await fileView(a);
+    else if (tab === 'items') await itemView(a);
     else if (tab === 'blocks') await blocksView();
     else if (tab === 'eval') await evalView(a || '');
     else if (tab === 'ref' || tab === 'file' || tab === 'item') await resolveLink(tab, JSON.parse(a));

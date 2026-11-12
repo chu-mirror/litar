@@ -49,13 +49,14 @@ a suffix of the reference's labels. Matching blocks apply in node order
 
 ```
 @[hello.c@`sources@=
-@<C Structure@/module@>
+@<Language@/C@/Module@/module@>
 @
 ```
 
 - `@[path@=` regular file, `@(path@=` executable; `@+` is not allowed on files.
   A file's chunk is its path in the root module; it has no labels or module.
   `tree://chunk` lists it under `File`, one branch per directory (`File` → `cmd` → `main.go`).
+  Move or remove files with the `operate_files` tool.
 - `` @`set `` adds the file to a file set (repeatable).
 - A filter sees no archive files unless given a view after its name:
   `@+set` add a set, `@-set` remove a set, `@,path` add a file, `@!path` remove a file.
@@ -65,6 +66,7 @@ a suffix of the reference's labels. Matching blocks apply in node order
 
 A filter is a chunk whose content is a script starting with a shebang.
 stdin is the text, stdout replaces it, a non-zero exit fails evaluation.
+A failed filter's stdout is dropped; write what explains the failure to stderr.
 Files in the view are visible, read-only, in the working directory.
 
 ## Items
@@ -73,11 +75,11 @@ Files in the view are visible, read-only, in the working directory.
 @<chunk@=
 int times;
 @|filter
-@~ C@/variables@/times @~ C@/functions@/main @
+@~ Project@/hello@/C@/variables@/times @~ Project@/hello@/C@/functions@/main @
 ```
 
 - `@~` at the top level of the body, after the pipeline, lists items; the end control closes the last.
-- An item is `domain@/classification@/…@/name`. Items are not content.
+- An item is a path of names, `owner@/kind@/name` by convention ([style.md](style.md)). Items are not content.
 - Blocks carrying the same item are connected (`blocks://refer`).
 
 ## Meta chunks
@@ -91,12 +93,21 @@ Reserved modules hold JSON `{"description": "…"}` for descriptions shown in th
 | `File@/{dir}@/{file}` | a file or directory (path parts separated by `@/`) |
 | `Index@/{item path}` | an item domain or item |
 
+Describe a new module, domain, or non-obvious item when you create it:
+
+```
+@<Index@/Project@/heap@/C@/variables@/context_main@=
+{"description": "The context of the main thread; owns the main memory region."}
+@
+```
+
 ## Compositions
 
 A composition is a directory with `composer.json`:
 `description`, `ground` (another composition's name, or null), and `nodes`.
 Each node has `name`, `archive` (relative path), `description`, `mappings`, and `base`
 (the node names from the root to its parent; `[]` for the root).
+A mapping (`path`, `origin`, `fileset`) shows a file or directory outside the archives in the node.
 A node's blocks are its base's blocks followed by its own archive's.
 A ground's nodes come first; grounds are searched in the current directory,
 then `$LITAR_LIBRARY`.

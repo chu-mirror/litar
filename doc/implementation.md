@@ -22,6 +22,8 @@ from the litar composition in `compos/`:
   - `fuse.go`: FUSE filesystem for filter views
   - `cli.go`: command-line flag parsing and dispatch
   - `mcp.go`: MCP stdio server, resources, tools, and metadata evaluation
+  - `rewrite.go`: renaming chunks, modules, items, and domains, the `rm` and `mv` of files, mappings,
+    and the override, deletion, and move of single blocks
 
 External dependencies are limited to `github.com/hanwen/go-fuse/v2` (for filter view mounts)
 and `github.com/modelcontextprotocol/go-sdk` (for the MCP server).
@@ -241,66 +243,104 @@ All resources, resource templates, and tools are registered at startup.
 | `tree://chunk/{composition}/{node}` | `application/json` | chunk tree organized by module, file chunks under `File` |
 | `tree://item/{composition}/{node}` | `application/json` | item tree organized by domain |
 | `tree://file/{composition}/{node}` | `application/json` | file tree organized by directory |
-| `tree://specialization/{composition}/{node}/{chunk}` | `application/json` | specialization tree of a chunk |
-| `blocks://node/{composition}/{node}` | `text/plain` | the node's own blocks (`Own`) |
-| `blocks://apply/{composition}/{node}/{chunk}/{specialization}` | `text/plain` | `-l` output for that chunk reference |
-| `blocks://effective/{composition}/{node}/{chunk}/{specialization}` | `text/plain` | `-e` output for that chunk reference |
-| `blocks://depend/{composition}/{node}/{chunk}/{specialization}` | `text/plain` | `-d` output for that chunk reference |
-| `blocks://refer/{composition}/{node}/{item}` | `text/plain` | `-r` output for that item |
+| `tree://specialization/{composition}/{node}` | `application/json` | specialization tree of the node |
+| `blocks://node/{composition}/{node}` | `application/json` | the node's own blocks (`Own`) |
+| `blocks://apply/{composition}/{node}/{chunk}/{specialization}` | `application/json` | the blocks `-l` prints for that chunk reference |
+| `blocks://effective/{composition}/{node}/{chunk}/{specialization}` | `application/json` | the blocks `-e` prints |
+| `blocks://depend/{composition}/{node}/{chunk}/{specialization}` | `application/json` | the blocks `-d` prints |
+| `blocks://refer/{composition}/{node}/{item}` | `application/json` | the blocks `-r` prints for that item |
+| `blocks://specialization/{composition}/{node}/{labels}` | `application/json` | the blocks of the chain written under exactly that label path |
 | `file://{composition}/{node}/{path}` | `text/plain` or `application/octet-stream` | evaluated bytes of that file |
 
-- `list://composition` returns a JSON array of `{"name", "description", "id"}` objects,
+- `list://composition` returns a JSON array of `{"name", "description", "ref"}` objects,
   where `name` is the composition directory's absolute path.
-- `tree://` resources return recursive `{"name", "description", "id", "sub-trees"}` JSON
+- `tree://` resources return recursive `{"name", "description", "ref", "sub-trees"}` JSON
   objects. Descriptions come from `composer.json` (for nodes) and from the reserved metadata
   chunks (for modules, chunks, specializations, files, directories, domains, and items).
 - `tree://chunk` lists the chunk of a file block under `File`, one branch for each directory
-  of its path (`File` → `cmd` → `main.go` for `cmd/main.go`). A `{chunk}` id of such a leaf
+  of its path (`File` → `cmd` → `main.go` for `cmd/main.go`). A `{chunk}` ref of such a leaf
   names the file's root-module chunk, so `blocks://` reads and `delete_chunk` act on the file's blocks.
-- `blocks://` resources return blocks formatted identically to `-l`.
+- `blocks://` resources return a JSON array of `{"ref", "node", "comment", "text"}` objects.
+  `text` is the block as written, without the blank after its end control; `comment` is the
+  text before it, trimmed, and is left out when empty. `node` is the ref of the node that owns
+  the block, and is left out when that is the node of the URI.
+  A chunk reference with no matching block gives an empty array.
 - Multiple compositions can be imported into one server. A ground composition appears in
   `list://composition` only if imported directly; its nodes inside a dependent composition
   can be inspected, evaluated, and used as bases, but attempting to edit them fails with
   `node '…' is defined in the ground`.
 
-## IDs and tree structure
+## Refs and tree structure
 
-All `{composition}`, `{node}`, `{chunk}`, `{item}`, `{path}`, and `{specialization}`
-parameters in URIs and tool calls are integer IDs counting from `0`:
+All `{composition}`, `{node}`, `{chunk}`, `{item}`, `{path}`, `{specialization}`, and `{labels}`
+parameters in URIs, and the matching tool arguments, are refs.
+A ref is the first ten hex digits of the SHA-256 of the object's kind and names,
+separated by zero bytes, so it depends on nothing but what the object is called:
 
-- **Composition ID:** Index in import order (`list://composition`).
-- **Tree IDs:** Assigned by a preorder walk of the corresponding tree starting at `0`.
-- **Leaves vs. branches:** In `tree://chunk`, `tree://item`, and `tree://file`, only leaf
-  entries (actual chunks, items, and files—not intermediate module, domain, or directory
-  nodes) are valid IDs for tools and `blocks://` / `file://` reads. In `tree://node` and
-  `tree://specialization`, every node in the tree is addressable.
+| Object | Kind | Names |
+| --- | --- | --- |
+| composition | `composition` | absolute path of its directory |
+| node | `node` | names from the root to the node |
+| module, chunk | `module`, `chunk` | path in the chunk tree |
+| domain, item | `domain`, `item` | path in the item tree |
+| directory, file | `directory`, `file` | path in the file tree |
+| label path | `labels` | labels from general to specific |
+| block | `block` | its text, without the blank after its end control |
+
+- **Stability:** A ref stays the same across reads, mutations, and restarts, and changes only
+  when the object is renamed; a block's ref changes when its text does. Two identical blocks
+  of one node share a ref, and a tool takes the first.
+- **Leaves vs. branches:** A branch and a leaf of the same path have different refs.
+  `blocks://` and `file://` reads and the delete tools take leaves (chunks, items, files);
+  `rename` takes either. In `tree://node` and `tree://specialization`, every entry is addressable.
 - **Root wrappers:** The root of `tree://node` is the root node itself. The other trees
   (`chunk`, `item`, `file`, `specialization`) use a wrapper root object named `"/"`.
-- **Specialization tree:** In `tree://specialization/{composition}/{node}/{chunk}`, the
-  root `"/"` (ID `0`) represents the unspecialized chunk. Each level below adds one label
+- **Specialization tree:** The root `"/"` represents no label. Each level below adds one label
   from general to specific, so the tree path `label1/label2` represents `label2@:label1`.
-  A label path appears in the tree whenever a block is applied to, or a reference resolves
-  to, that chunk with those labels.
-- **Unknown IDs:** Passing an out-of-range or non-leaf ID fails with `unknown composition N`
-  (or `node`, `chunk`, `file`, `item`, `specialization`).
+  A label path appears whenever a block header or a reference of the node's chain carries it.
+  Any label path is accepted with any chunk; the blocks that match are those whose labels
+  end the path.
+- **Unknown refs:** A ref that names nothing fails with `unknown composition '…'`
+  (or `node`, `chunk`, `file`, `item`, `specialization`, `block`, `object`).
 
 ## Tools
 
 | Tool | Arguments | Effect |
 | --- | --- | --- |
-| `import_composition` | `path` | Load an existing `composer.json` (or its directory) and return its composition ID. |
-| `create_composition` | `path`, `ground` (required: name or `null`), `description` (optional) | Create `path/composer.json` if absent, import it, and return its composition ID. Removes the created file if `ground` cannot be loaded. |
-| `create_node` | `composition`, `name`, `archive`, `description`, `base` (required: parent node ID or `null` for root) | Create a new empty archive file (fails with `archive '…' already exists` if present), add the node to `composer.json`, and return the new node ID. |
+| `import_composition` | `path` | Load an existing `composer.json` (or its directory), again if already imported, and return its composition ref. |
+| `create_composition` | `path`, `ground` (required: name or `null`), `description` (optional) | Create `path/composer.json` if absent, import it, and return its composition ref. Removes the created file if `ground` cannot be loaded. |
+| `create_node` | `composition`, `name`, `archive`, `description`, `base` (required: parent node ref or `null` for root), `mappings` (optional: `path`, `origin`, `fileset` each) | Create a new empty archive file (fails with `archive '…' already exists` if present), add the node with its mappings to `composer.json`, and return the new node ref. A mapping that fails removes the node again. |
+| `map_file` | `composition`, `node`, `path`, `origin`, `fileset` (optional) | Add a mapping to the node: the file or directory `origin`, relative to the composition directory, appears at `path` (a directory when `path` ends with `/`). Fails with `mapping '…' already exists`. |
 | `delete_node` | `composition`, `node` | Delete the node, all descendant nodes based on it, and their archive files. Missing archive files are ignored; unremovable files are reported after saving `composer.json`. |
 | `delete_chunk` | `composition`, `node`, `chunk` | Remove all of the node's own blocks for that module and chunk (across all label specializations) and compact the archive. |
-| `delete_file` | `composition`, `node`, `path` | Remove the node's own file block and root-module blocks for that path and compact the archive. |
+| `delete_file` | `composition`, `node`, `file` | Remove the node's own file block and root-module blocks for that path and compact the archive. |
+| `rename` | `composition`, `node`, `object` (ref of an entry of the chunk tree or the item tree), `to` (new path, such as `Module@/chunk`) | Move a chunk, every chunk of a module, an item, or every item of a domain to another path; the kind of the ref says which. Block headers, references, filters, items, and the descriptions under `Chunk@/` or `Index@/` follow, in the node and in the local nodes based on it; all labels are kept. A relative reference stays as written while it still leads to the same chunk, and is written from the root otherwise. |
+| `operate_files` | `composition`, `node`, `command` | Interpret one shell command on the node's files and return a line per file changed. `rm [-r] [-f] PATH...` removes the own blocks of each file, the blocks of its root-module chunk, and its `File@/` description; a directory needs `-r`; a path that one of the node's mappings holds removes that mapping. `mv [-f] SOURCE... TARGET` moves files or directories: file headers, references to the file, file operands of views (`@,` and `@!`), and `File@/` descriptions follow, in the node and in the local nodes based on it. |
 | `evaluate_expression` | `composition`, `node`, `expression` | Evaluate a `-p` expression at that node and return the resulting text. |
-| `apply_block` | `composition`, `node`, `text` | Append `text` to the node's archive, reparse, and compact the archive. |
+| `apply_block` | `composition`, `node`, `text`, `overrides` (optional block ref) | Append `text` to the node's archive, reparse, and compact the archive. With `overrides`, the blocks of `text` take the place of that block instead; each must have its header reference, or the call fails with `block '…' is not applied to '…'`. The comment of the overridden block goes with it, and the new text starts after the same blank lines. Returns the refs of the blocks of `text`, one per line. |
+| `delete_block` | `composition`, `node`, `block` | Remove one of the node's own blocks and compact the archive. |
+| `move_block` | `composition`, `node`, `block`, `to` (node ref) | Take one own block, with its comment, to the end of another local node, and compact both archives; neither is written unless both can be. |
+
+`rename` and `operate_files` change names in place, so each block keeps its content and comment.
+They refuse a change that would lose or split something, and then leave every archive untouched:
+
+- **`rename`:** `unknown chunk '…'` (or `module`, `item`, `domain`) when the node itself has no such block;
+  `chunk '…' is defined in node '…'` when a base node holds it, since a base keeps its blocks,
+  and likewise `item '…' is used in node '…'`;
+  `chunk '…' already exists` when another chunk holds a new path (items may merge);
+  `'…' is reserved` for the namespaces `Chunk`, `Specialization`, `File`, and `Index`;
+  `'…' is a file` for a file chunk, which `operate_files` moves.
+- **`operate_files`:** `'…' comes from node '…'` or `'…' comes from a mapping` when the node does not
+  hold the file itself; `file '…' already exists` when `mv` would land on another file
+  (unlike a shell, it never replaces one); `'…' is a directory` for `rm` without `-r`;
+  `no such file '…'` (ignored by `rm -f`); `target '…' is not a directory`;
+  `cannot move '…' into itself`; `invalid path '…'` for a path that is absolute or leaves the root.
+  Words are split as a shell splits them, with quotes and backslashes; patterns are not expanded.
 
 ## Compaction and notifications
 
-Every archive edit (`apply_block`, `delete_chunk`, `delete_file`) compacts the edited node's
-archive before writing it back:
+Every archive edit (`apply_block`, `delete_block`, `move_block`, `delete_chunk`, `delete_file`, `rename`,
+`operate_files`) compacts the edited node's archive before writing it back:
 
 1. **Drop overridden blocks:** Any block in `Own` that is no longer an effective block of
    its own chunk reference within `Own` (because a later `@=` in the same node replaced it)

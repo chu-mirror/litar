@@ -40,7 +40,7 @@ and filter view the evaluation used; the file is evaluated again only when one o
 changes, so a file is evaluated once per process and the MCP server serves repeated reads
 from memory. A mapping whose path ends in `/` maps a host directory into the views of its
 file sets; the directory is created if missing, and filters read and write it in place.
-Inside `src/`, `make` builds `./litar` and `make test` runs `tests/run.sh`.
+Inside `src/tests/`, `make` runs `run.sh` with `bin/litar`.
 On any user error, `litar` prints the error to `stderr`, leaves `stdout` empty, and exits
 with status 1.
 

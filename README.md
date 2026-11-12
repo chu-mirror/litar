@@ -87,8 +87,7 @@ but it cannot change an archive.
 - `make test` runs `go test ./...` in a filter view of `compos`.
   The Go test files live only in `compos`; `make sync` does not write them into `src`.
   The view maps `examples` and `standard` into `internal/litar/testdata` for the tests that read them.
-- `make -C src` builds `src/litar` with `go build`.
-- `make -C src test` runs the cases under `src/tests/` with that binary.
+- `make -C src/tests` runs the cases under `src/tests/` with `bin/litar`.
 
 # Grounds
 

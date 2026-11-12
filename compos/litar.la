@@ -9112,35 +9112,6 @@ golang.org/x/tools v0.42.0/go.mod h1:Ma6lCIwGZvHK6XtgbswSoWroEkhugApmsXyrUmBhfr0
 
 @
 
-The Makefile builds the binary and runs the acceptance cases.
-The Go tests are not run here: the source tree is synced without the test files,
-and the build composition runs go test in an invocation.
-@[Makefile@`build@=
-# Build the litar binary and run the test set.
-#   make        compile ./litar
-#   make test   run the acceptance cases of tests/
-#   make clean  remove the binary
-
-.PHONY: all test clean litar
-
-all: litar
-
-litar:
-	go build -o litar ./cmd/litar
-
-test: litar
-	bash tests/run.sh $(abspath litar)
-
-clean:
-	rm -f litar
-	$(MAKE) -C tests clean
-
-mcp:
-	npx @modelcontextprotocol/inspector
-
-
-@
-
 The acceptance tests run the binary on the case directories; they stay verbatim.
 @[tests/assert.sh@`tests@=
 # Helpers for tests/cases/*/driver.sh. Source this file; do not execute it.
@@ -9681,17 +9652,15 @@ assert_text literal $'@@<c@@+A@@\n@@<s1@@:c@@+B@@\n@@<s2@@:s1@@:c@@+C@@\n@@<s2@@
 
 @
 @[tests/Makefile@`tests@=
-# Run the acceptance cases. From the repo root, `make test` builds first.
+# Run the acceptance cases with the binary that `make` builds at the repo root.
 
-ROOT := ..
-LITAR ?= $(ROOT)/litar
+LITAR ?= ../../bin/litar
 
 .PHONY: all test clean
 
 all: test
 
 test:
-	$(MAKE) -C $(ROOT) litar
 	bash run.sh $(abspath $(LITAR))
 
 clean:

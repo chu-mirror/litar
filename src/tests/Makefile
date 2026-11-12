@@ -1,14 +1,12 @@
-# Run the acceptance cases. From the repo root, `make test` builds first.
+# Run the acceptance cases with the binary that `make` builds at the repo root.
 
-ROOT := ..
-LITAR ?= $(ROOT)/litar
+LITAR ?= ../../bin/litar
 
 .PHONY: all test clean
 
 all: test
 
 test:
-	$(MAKE) -C $(ROOT) litar
 	bash run.sh $(abspath $(LITAR))
 
 clean:

@@ -186,6 +186,7 @@ So an acceptable answer to the question at the opening is that the tree is long
 enough that those actions take a skilled engineer several minutes.
 Token count is a good measure of length;
 150 tokens is a comfortable length for human beings, at least for the author.
+The size of a block is the content of the block. Comments and items are not counted.
 
 In practice, the length of a tree usually equals the length of a block.
 Here's a more practical guideline: **control the length of a block at or below about 150 tokens**.

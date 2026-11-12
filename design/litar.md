@@ -566,6 +566,12 @@ Some limitations:
 - the archive name is relative to the composer file;
 - two nodes cannot share one archive.
 
+The example above is a bad one. Nodes are derived from a common base
+because they contain contradictory blocks, for example, a modification
+to the C structures that other C programs must not share. The two C programs here
+can coexist in one node. litar permits the temporary use of a node while the placement
+of its blocks is undecided.
+
 The `mappings` field maps the files outside the archives
 to the FUSE filesystem created when an invocation happens.
 
@@ -594,6 +600,10 @@ to the FUSE filesystem created when an invocation happens.
 The example above adds a file `data/samples.txt` to the node and attaches it to the fileset `data`;
 the content of the file is the same as `./samples.txt` relative to the composer file.
 A child keeps its base's mappings and can add more.
+
+The organization of compositions can mimic branching like nodes, but the purpose of using
+several compositions rather than one big composition is to control who may modify which nodes.
+Applying a block to a node in the ground composition is forbidden.
 
 # Reserved Namespaces
 

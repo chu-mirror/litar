@@ -1,7 +1,0 @@
-[mcp_servers.litar]
-command = "./bin/litar"
-args = ["-a"]
-enabled = true
-env = {
-  LITAR_LIBRARY: "."
-}

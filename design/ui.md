@@ -61,6 +61,7 @@ Extend chunk through label.
 
 A block depends on a chunk reference when its content contains, or is filtered by,
 the chunk reference or a chunk reference specialized from the chunk reference.
+A reference without labels counts under the labels of its block and under every specialization of them.
 
 ```
 @<chunk 1@=

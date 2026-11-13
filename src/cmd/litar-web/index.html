@@ -311,11 +311,11 @@ function treeList(t, path, q, shown) {
   const order = (a, b) => (subs(b).length > 0) - (subs(a).length > 0) || a.name.localeCompare(b.name);
   for (const s of [...subs(t)].sort(order)) {
     const p = [...path, s.name];
+    if (kind === 'chunk' && p.length === 1 && s.name === 'File') continue;
     const hit = shown || !q || (s.name + '\n' + (s.description || '')).toLowerCase().includes(q);
     const kids = subs(s).length ? treeList(s, p, q, hit) : null;
     if (!hit && !kids) continue;
-    const fixed = kind === 'specialization' || (kind === 'chunk' && p[0] === 'File');
-    const pen = fixed ? null : h('button', {type: 'button', class: 'pen', title: 'Rename', 'aria-label': 'Rename', onclick: e => {
+    const pen = kind === 'specialization' ? null : h('button', {type: 'button', class: 'pen', title: 'Rename', 'aria-label': 'Rename', onclick: e => {
       e.preventDefault();
       renameEntry(kind, s.ref, p, kids !== null);
     }}, '✎');

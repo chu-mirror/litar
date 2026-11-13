@@ -1,4 +1,4 @@
-# Build litar from the composition in compos, sync src from it, and install.
+# Build litar from the composition in litar, sync src from it, and install.
 #   make                  compile litar and litar-web into $(BIN)
 #   make sync             write the files of the composition, except the Go tests, into $(SRC)
 #   make test             build, then run the Go tests and the acceptance cases in invocations
@@ -12,7 +12,7 @@
 #   make install-skills   copy each directory of $(SKILLS) into $(CURSOR_DIR)/skills
 #   make clean            remove $(BIN) and $(BOOT)
 #
-# The build itself is the node Litar Build of the composition in build, whose ground is compos;
+# The build itself is the node Litar Build of that composition, based on the node Litar;
 # its mappings put $(BIN) and $(SRC) into the filter views, so each target here evaluates one chunk
 # in one litar process, and every file is evaluated once.
 # LITAR is the binary that evaluates it: $(BIN)/litar from an earlier build,
@@ -38,11 +38,11 @@ PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 GROUNDDIR ?= $(PREFIX)/share/litar
 
-ARCHIVE := compos/litar.la
-BUILD_ARCHIVE := build/build.la
+ARCHIVE := litar/litar.la
+BUILD_ARCHIVE := litar/build.la
 # The ground compositions of the repository, each a directory at its root.
 GROUND_NAMES := standard
-# The mappings in build/composer.json name these directories.
+# The mappings in litar/composer.json name these directories.
 BIN := bin
 SRC := src
 BOOT ?= tmp/boot/litar

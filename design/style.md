@@ -281,17 +281,20 @@ void hello()
 @~ function@/hello @
 ```
 
-# Encapsulate the build system in a wrapping composition
+# Encapsulate the build system in a new node
 
 When dealing with a code base, the code itself usually is not the final product,
 but the compiled binaries.  In principle, a binary file can be a chunk as well,
-and for powerful LLMs, a binary file is just as readable as source code.
-So why cannot we just evaluate an expression and print the value as the final product?
-There's still another problem, we finally want to move the final product out of the internal filesystem,
-so where does it move to? We must answer the question, but where shall we put the answer.
+and for powerful LLMs, a binary file is just as readable as source code,
+but that's not what litar is built for. The single and most important mission of litar
+is to build a bridge between AI and human, what's the point if a litar archive contains
+something nobody can read.
+So we cannot just evaluate an expression and print the value as the final product.
+Here's the problem, we finally want to move the final product out of the internal filesystem,
+so where does it move to? We must answer the question, then where shall we put the answer.
 
-The best place is a new composition wrapping the code base; all the details related to the real world
-can be encapsulated to that composition.
-This wrapping composition works like traditional build system, like Makefile, CMake etc.
-We may map build directory to the internal filesystem, gather build scripts, etc, in this composition.
+The best place is a new node inheriting the code base;
+all the details related to the real world can be encapsulated in that node.
+This node works like a traditional build system, like Makefile, CMake etc.
+We may map build directory to the internal filesystem, gather build scripts, etc, in this node.
 

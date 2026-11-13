@@ -1,6 +1,6 @@
 ---
 name: litar-port
-description: Port an existing project (source tree, scripts, build files) into a litar composition in stages — first every file as one exact block, then divided into structured chunks on the standard ground, then cross-referenced, then given a build composition — checking after each step that the evaluated files still match the original project. Use when the user asks to port, convert, import, or migrate a project or codebase into litar form, or to divide long blocks or add cross-references in a ported one.
+description: Port an existing project (source tree, scripts, build files) into a litar composition in stages — first every file as one exact block, then divided into structured chunks on the standard ground, then cross-referenced, then given a build node — checking after each step that the evaluated files still match the original project. Use when the user asks to port, convert, import, or migrate a project or codebase into litar form, or to divide long blocks or add cross-references in a ported one.
 ---
 
 # Porting a project to litar
@@ -30,7 +30,7 @@ Run them; do not rewrite them. They need `LITAR` (the binary) and `LITAR_LIBRARY
 - [ ] 2. Stage 1: files verbatim
 - [ ] 3. Stage 2: structure, one file at a time
 - [ ] 4. Stage 3: cross-references
-- [ ] 5. Stage 4: build composition
+- [ ] 5. Stage 4: build node
 ```
 
 **0. Survey.** List the files (`git ls-files`), languages, and the build and test commands.
@@ -95,8 +95,8 @@ Restructure with `rename` and `operate_files`, not by applying blocks again unde
 5. Check: `port-check.sh` still passes, and `blocks://refer` of a few items lists
    the definition and all users.
 
-**5. Stage 4: build.** Create a second composition grounded on the project's,
-with one node holding `Project@/<project>@/Build`: the commands that write the files out,
+**5. Stage 4: build.** Create a second node based on the project's,
+holding `Project@/<project>@/Build`: the commands that write the files out,
 build, and test, and mappings for the directories they need.
 Until it exists, `port-check.sh -o /tmp/port-out ARCHIVE PROJECT` writes the tree;
 run the project's build and tests there. Report any files left outside the composition.

@@ -1,0 +1,55 @@
+{
+    "description": "The litar tool itself: the Go module and its build files, and the node that builds, syncs, and tests it.",
+    "ground": "standard",
+    "nodes": [
+        {
+            "name": "Litar",
+            "archive": "litar.la",
+            "description": "The litar tool: archive parser, composer, evaluator, filters, CLI, FUSE view, and MCP server, with its unit tests and build files.",
+            "mappings": [
+                {
+                    "path": "internal/litar/testdata/examples/",
+                    "fileset": [
+                        "test data"
+                    ],
+                    "origin": "../examples"
+                },
+                {
+                    "path": "internal/litar/testdata/grounds/standard/",
+                    "fileset": [
+                        "test data"
+                    ],
+                    "origin": "../standard"
+                }
+            ],
+            "base": [
+                "Standard"
+            ]
+        },
+        {
+            "name": "Litar Build",
+            "archive": "build.la",
+            "description": "Map the build directories of the repository, write the binaries and the source tree into them, and run the tests on them.",
+            "mappings": [
+                {
+                    "path": "bin/",
+                    "fileset": [
+                        "binaries"
+                    ],
+                    "origin": "../bin"
+                },
+                {
+                    "path": "src/",
+                    "fileset": [
+                        "source tree"
+                    ],
+                    "origin": "../src"
+                }
+            ],
+            "base": [
+                "Standard",
+                "Litar"
+            ]
+        }
+    ]
+}

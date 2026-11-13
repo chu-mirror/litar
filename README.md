@@ -11,12 +11,12 @@ including the MCP server it opens for agents.
 
 - design: design files describing what litar should be from a human's view;
 - doc: references for the language and the implementation plan;
-- compos: the composition of litar itself, the source of everything in `src`;
-- src: the Go module of `litar`, synced from `compos`:
+- litar: the composition of litar itself: the node `Litar` is the source of everything in `src`,
+  and the node `Litar Build`, based on it, builds and tests litar;
+- src: the Go module of `litar`, synced from the composition `litar`:
   - src/cmd/litar: the `litar` command;
   - src/cmd/litar-web: the `litar-web` command, a browser interface for compositions;
   - src/internal/litar: the Go implementation;
-- build: the composition that builds and tests litar, grounded on `compos`;
 - standard: the standard library, a composition that other compositions ground on;
 - examples: example programs, composed by `examples/composer.json`;
 - agent: skills for agents working on litar compositions (`litar-task` for editing,
@@ -36,16 +36,16 @@ Prerequisites:
 - FUSE (`/dev/fuse`) for the view tests.
   Those tests skip when it is absent.
 
-The `Makefile` at the root builds litar from `compos`.
-The build itself is the composition in `build`, whose ground is `compos`:
-its node maps `bin` and `src` of the repository into the filter views,
+The `Makefile` at the root builds litar from the composition `litar`.
+The build itself is the node `Litar Build` of that composition, based on the node `Litar`:
+it maps `bin` and `src` of the repository into the filter views,
 and each target evaluates one of its chunks.
 
-- `make` compiles `bin/litar` and `bin/litar-web` from the Go files of `compos`.
+- `make` compiles `bin/litar` and `bin/litar-web` from the Go files of the composition.
   With no `bin/litar` yet, it first compiles `tmp/boot/litar` from `src` to do the evaluation.
-- `make sync` writes the files of `compos`, except the Go test files, into `src`.
+- `make sync` writes the files of the node `Litar`, except the Go test files, into `src`.
 - `make test` runs the Go tests and the acceptance cases, each in a filter view.
-- `make web` opens `compos` in `bin/litar-web` at <http://127.0.0.1:8080/> (`WEB_ADDR` changes it).
+- `make web` opens the node `Litar` in `bin/litar-web` at <http://127.0.0.1:8080/> (`WEB_ADDR` changes it).
 - `make install` installs `bin/litar` and `bin/litar-web` into `$(PREFIX)/bin`
   and the grounds under `$(PREFIX)/share/litar`; `PREFIX` defaults to `/usr/local`.
   It does not build, so run `make && sudo make install`.
@@ -55,7 +55,7 @@ and each target evaluates one of its chunks.
   `install-mcp` and `install-skills` do each part; `CURSOR_DIR` changes `~/.cursor`.
 - `make clean` removes `bin` and `tmp/boot`.
 
-Edit `compos`, not `src`; `make sync` overwrites the files it lists.
+Edit the composition `litar`, not `src`; `make sync` overwrites the files it lists.
 
 # Filter cache
 
@@ -84,16 +84,16 @@ but it cannot change an archive.
 
 # Test
 
-- `make test` runs `go test ./...` in a filter view of `compos`.
-  The Go test files live only in `compos`; `make sync` does not write them into `src`.
+- `make test` runs `go test ./...` in a filter view of the composition.
+  The Go test files live only in the composition; `make sync` does not write them into `src`.
   The view maps `examples` and `standard` into `internal/litar/testdata` for the tests that read them.
 - `make test` then runs the acceptance cases on `bin/litar`, which it builds first.
-  A case is a chunk of `build` under `Project@/litar@/Tests@/Cases`: its content is a script of checks,
+  A case is a chunk of the node `Litar Build` under `Project@/litar@/Tests@/Cases`: its content is a script of checks,
   and the filter `UI@/Command Line@/Test@/run case` of the ground `standard` turns it into its result,
   so evaluating the chunk runs the case.
   `Project@/litar@/Tests@/acceptance report` lists every result and fails when a case failed.
   One case runs alone with
-  `LITAR_LIBRARY=. bin/litar -f build/build.la -p 'Project@/litar@/Tests@/Cases@/print'`.
+  `LITAR_LIBRARY=. bin/litar -f litar/build.la -p 'Project@/litar@/Tests@/Cases@/print'`.
 
 # Grounds
 

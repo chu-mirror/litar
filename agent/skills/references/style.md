@@ -50,7 +50,7 @@ Modules form one tree; every chunk may refer to any other.
   (an if-else chain), gather those parts into one block, even if it gets long.
 - Generate several forms of one piece of information (help text, parser, manpage)
   from one declarative chunk through filters instead of keeping copies.
-- Put the build of a project in a wrapping composition, `Project@/<project>@/Build`:
+- Put the build of a project in a node based on the project's, `Project@/<project>@/Build`:
   mappings to the real directories, build scripts, and what leaves the archive.
 
 ## Dividing a long block

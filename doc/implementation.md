@@ -7,7 +7,7 @@ See [syntax.md](syntax.md) for the archive language and `composer.json` specific
 # Layout
 
 The Go module `litar` (Go 1.25, formatted with `gofmt`) lives under `src/` and is generated
-from the litar composition in `compos/`:
+from the composition in `litar/`:
 
 - `cmd/litar/main.go`: entry point that passes `os.Args` to `litar.Main`.
 - `cmd/litar-web/main.go`: read-only web UI that spawns `litar -a` and serves its MCP
@@ -28,8 +28,8 @@ from the litar composition in `compos/`:
 External dependencies are limited to `github.com/hanwen/go-fuse/v2` (for filter view mounts)
 and `github.com/modelcontextprotocol/go-sdk` (for the MCP server).
 
-At the repository root, the `Makefile` evaluates the node `Litar Build` of `build/build.la`,
-a composition on the ground `compos` that maps `bin/` and `src/` of the repository into
+At the repository root, the `Makefile` evaluates the node `Litar Build` (`litar/build.la`),
+based on the node `Litar`; it maps `bin/` and `src/` of the repository into
 the filter views: `make` runs `go build` in a view of the go module that writes the binaries
 into `bin/`, `make sync` writes the generated files, except the Go test files, into `src/`,
 and `make test` runs `go test ./...` in a view of the go module with the file set `test data`,
@@ -362,11 +362,11 @@ every concrete resource URI that existed before or after the change.
 
 # Tests
 
-- **Unit tests (`internal/litar/*_test.go` in `compos`, in the file set `go tests`, not synced into `src/`):** Table-driven tests covering scanning and
+- **Unit tests (`internal/litar/*_test.go` in the node `Litar`, in the file set `go tests`, not synced into `src/`):** Table-driven tests covering scanning and
   parsing, suffix matching, label inheritance, `.` and `..` module resolution, effective
   blocks, listings, metadata chunks, filters, FUSE views, composer edits, compaction
   ordering, and MCP calls.
-- **Acceptance tests (`Project@/litar@/Tests` in `build`):** each case is a chunk under
+- **Acceptance tests (`Project@/litar@/Tests` in the node `Litar Build`):** each case is a chunk under
   `Project@/litar@/Tests@/Cases` whose content is a bash script of checks, filtered by
   `litar command@:UI@/Command Line@/Test@/run case` in a view of the file sets `binaries`
   and `test fixtures`; the value of the chunk is the result of the case
@@ -374,7 +374,7 @@ every concrete resource URI that existed before or after the change.
   so a failed case still evaluates. `Project@/litar@/Tests@/case results` lists the cases,
   and `Project@/litar@/Tests@/acceptance report` pipes them through
   `UI@/Command Line@/Test@/summarize results`, which fails when a case failed or none passed.
-  The fixtures are the files under `tests/cases/` of `build`; they are not synced into `src/`.
+  The fixtures are the files under `tests/cases/` of the node `Litar Build`; they are not synced into `src/`.
   `Project@/litar@/Tests@/go test report` is the report of the unit tests.
 - **The engine (`UI@/Command Line@/Test` in `standard`)** is shared by every command.
   A project sets `command` (the path of the command in the view) and `environment`
@@ -391,8 +391,8 @@ every concrete resource URI that existed before or after the change.
   `Language@/C@/Module`, `Language@/Go@/File`, `Language@/Go@/Module`,
   `UI@/Command Line` (the invocation syntax, its generators for C and Go, and the acceptance test engine `Test`),
   and `Framework@/Light`.
-- `compos`: grounds on `standard` and adds `Litar`, whose chunks live under `Project@/litar`.
-- `build`: grounds on `compos` and adds `Litar Build`, whose chunks live under `Project@/litar@/Build`.
+- `litar`: grounds on `standard` and adds `Litar`, whose chunks live under `Project@/litar`,
+  and `Litar Build`, based on `Litar`, whose chunks live under `Project@/litar@/Build`.
 - `examples/c`: grounds on `standard` and adds `Program Hello` and `Test Light`.
 - `examples/go`: grounds on `standard` and adds `Program Hello` and `Project Hello`.
 

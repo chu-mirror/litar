@@ -83,7 +83,7 @@ The input of the filter names the directory to write to.
 @<Project@/litar@/Build@/Sync@/source directory@=src@
 
 The Go tests run in a view of the go module with the file set test data,
-which the node Litar maps from examples and grounds of the repository.
+which the node Litar maps from examples and standard of the repository.
 A mapped directory keeps the run out of the filter cache, so the tests run on every evaluation.
 @<Project@/litar@/Tests@/go test report@=
 @<@|Language@/Go@/Module@/Go Command@/test packages@+go module@+test data@>

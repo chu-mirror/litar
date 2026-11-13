@@ -17,6 +17,9 @@ import (
 	"unicode/utf8"
 )
 
+// searchLimit is the largest number of blocks a search answers.
+const searchLimit = 100
+
 var fixedResources = []struct {
 	name, desc, uri, mime string
 }{
@@ -188,6 +191,18 @@ type blockJSON struct {
 	Node    string `json:"node,omitempty"`
 	Comment string `json:"comment,omitempty"`
 	Text    string `json:"text"`
+}
+
+type describeIn struct {
+	Composition string `json:"composition" jsonschema:"ref of the composition"`
+	Node        string `json:"node,omitempty" jsonschema:"ref of the node; leave it out to describe the composition"`
+	Description string `json:"description" jsonschema:"new description"`
+}
+
+type searchIn struct {
+	Composition string `json:"composition" jsonschema:"ref of the composition"`
+	Node        string `json:"node" jsonschema:"ref of the node"`
+	Text        string `json:"text" jsonschema:"string to find in the comments and texts of the blocks"`
 }
 
 func (a *agent) serve(ctx context.Context) error {
@@ -836,6 +851,57 @@ func (a *agent) renameLocked(in renameIn, to ModulePath) (string, error) {
 	return "", fmt.Errorf("unknown object '%s'", in.Object)
 }
 
+func (a *agent) describe(ctx context.Context, _ *mcp.CallToolRequest, in describeIn) (*mcp.CallToolResult, any, error) {
+	a.mu.Lock()
+	w, err := a.compositionByRef(in.Composition)
+	name, described := "", in.Composition
+	if err == nil && in.Node != "" {
+		var n *Node
+		if n, err = nodeByRef(w, in.Node); err == nil {
+			name, described = formatNodePath(nodePath(*n)), in.Node
+		}
+	}
+	if err == nil {
+		err = w.Describe(name, in.Description)
+	}
+	a.mu.Unlock()
+	if err != nil {
+		return toolErr(err)
+	}
+	a.refresh()
+	return toolText(described)
+}
+
+func (a *agent) searchBlocks(ctx context.Context, _ *mcp.CallToolRequest, in searchIn) (*mcp.CallToolResult, any, error) {
+	if in.Text == "" {
+		return toolErr(errString("the text to search for is empty"))
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	w, n, err := a.worldNode(in.Composition, in.Node)
+	if err != nil {
+		return toolErr(err)
+	}
+	chain, _, err := a.nodeChain(w, in.Node)
+	if err != nil {
+		return toolErr(err)
+	}
+	got := []Block{}
+	for _, b := range chain {
+		if strings.Contains(b.Comment, in.Text) || strings.Contains(b.Raw, in.Text) {
+			got = append(got, b)
+		}
+	}
+	if len(got) > searchLimit {
+		return toolErr(fmt.Errorf("%d blocks contain '%s'; search for a longer string", len(got), in.Text))
+	}
+	raw, err := json.Marshal(blockList(w, n, got))
+	if err != nil {
+		return toolErr(err)
+	}
+	return toolText(string(raw))
+}
+
 func newAgent() *agent {
 	a := &agent{
 		worlds: map[string]*World{},
@@ -907,6 +973,14 @@ func newAgent() *agent {
 		Name:        "operate_files",
 		Description: "Operate files of a node with one shell command: rm [-r] [-f] PATH..., or mv SOURCE... TARGET.",
 	}, a.operateFiles)
+	mcp.AddTool(a.server, &mcp.Tool{
+		Name:        "describe",
+		Description: "Replace the description of a node, or of the composition when no node is given.",
+	}, a.describe)
+	mcp.AddTool(a.server, &mcp.Tool{
+		Name:        "search_blocks",
+		Description: "List the blocks of a node and its bases whose comment or text contains a string, as a blocks:// resource does.",
+	}, a.searchBlocks)
 	for _, r := range fixedResources {
 		a.server.AddResource(&mcp.Resource{
 			URI:         r.uri,

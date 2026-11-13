@@ -10,7 +10,7 @@ The Go module `litar` (Go 1.25, formatted with `gofmt`) lives under `src/` and i
 from the composition in `litar/`:
 
 - `cmd/litar/main.go`: entry point that passes `os.Args` to `litar.Main`.
-- `cmd/litar-web/main.go`: read-only web UI that spawns `litar -a` and serves its MCP
+- `cmd/litar-web/main.go`: web UI for browsing and editing that spawns `litar -a` and serves its MCP
   resources over HTTP.
 - `internal/litar/`: single package containing the implementation, split by concern:
   - `types.go`: core data structures and path/reference helpers
@@ -320,6 +320,8 @@ separated by zero bytes, so it depends on nothing but what the object is called:
 | `apply_block` | `composition`, `node`, `text`, `overrides` (optional block ref) | Append `text` to the node's archive, reparse, and compact the archive. With `overrides`, the blocks of `text` take the place of that block instead; each must have its header reference, or the call fails with `block '…' is not applied to '…'`. The comment of the overridden block goes with it, and the new text starts after the same blank lines. Returns the refs of the blocks of `text`, one per line. |
 | `delete_block` | `composition`, `node`, `block` | Remove one of the node's own blocks and compact the archive. |
 | `move_block` | `composition`, `node`, `block`, `to` (node ref) | Take one own block, with its comment, to the end of another local node, and compact both archives; neither is written unless both can be. |
+| `describe` | `composition`, `node` (optional), `description` | Replace the description of the node, or of the composition when no node is given, and rewrite the composer file. Returns the ref of what was described. |
+| `search_blocks` | `composition`, `node`, `text` | Return, as a `blocks://` array, the blocks of the node's chain whose comment or text contains `text`. More than 100 matches is an error. |
 
 `rename` and `operate_files` change names in place, so each block keeps its content and comment.
 They refuse a change that would lose or split something, and then leave every archive untouched:

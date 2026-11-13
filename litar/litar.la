@@ -9176,16 +9176,6 @@ var indexHTML []byte
 
 @~ Project@/litar@/Go@/variables@/litar-web.indexHTML @
 
-The browser may call only the tools that leave archives untouched:
-importing reads a composition, and evaluating runs the filters it already holds.
-@<litar-web@:command@:Language@/Go@/File@/variables@+
-var readOnlyTools = map[string]bool{
-	"import_composition":  true,
-	"evaluate_expression": true,
-}
-
-@~ Project@/litar@/Go@/variables@/litar-web.readOnlyTools @
-
 The stderr of litar passes through, so its errors reach the terminal of litar-web.
 @<litar-web@:command@:Language@/Go@/File@/functions@+
 func connect(litar, file string) (*mcp.ClientSession, error) {
@@ -9263,7 +9253,7 @@ return
 
 @~ Project@/litar@/Go@/functions@/litar-web.toolHandler @
 
-Only the read-only tools may be called from the page.
+The page may call every tool, as an agent may: the guard decides who reaches this handler.
 @<Project@/litar@/read into 'call' the JSON tool call of 'r', answering 'w' when it is refused@=
 if r.Header.Get("Content-Type") != "application/json" {
 http.Error(w, "the request must be application/json", http.StatusUnsupportedMediaType)
@@ -9273,11 +9263,7 @@ if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
 http.Error(w, err.Error(), http.StatusBadRequest)
 return
 }
-if !readOnlyTools[call.Name] {
-http.Error(w, "tool '"+call.Name+"' is not available", http.StatusForbidden)
-return
-}
-@~ Project@/litar@/Go@/variables@/litar-web.readOnlyTools @
+@
 
 @<Project@/litar@/write to 'w' the text of the tool result 'res', as an error when it is one@=
 var text strings.Builder
@@ -9294,7 +9280,7 @@ w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 io.WriteString(w, text.String())
 @
 
-The page is served at the root, resources and tools below /api.
+The page is served at the root, resources and tools below /api, all behind the guard.
 @<litar-web@:command@:Language@/Go@/File@/main body@=
 session, err := connect(command.flags.litar, command.flags.file)
 if err != nil {
@@ -9304,664 +9290,16 @@ if err != nil {
 defer session.Close()
 http.HandleFunc("GET /{$}", serveIndex)
 http.HandleFunc("GET /api/resource", resourceHandler(session))
+http.HandleFunc("GET /api/tools", toolsHandler(session))
 http.HandleFunc("POST /api/tool", toolHandler(session))
 fmt.Fprintf(os.Stderr, "litar-web: serving on http://%s/\n", command.flags.addr)
-if err := http.ListenAndServe(command.flags.addr, nil); err != nil {
+if err := http.ListenAndServe(command.flags.addr, guard(http.DefaultServeMux)); err != nil {
 	fmt.Fprintln(os.Stderr, "litar-web:", err)
 	os.Exit(1)
 }
-@~ Project@/litar@/Go@/functions@/litar-web.connect @~ Project@/litar@/Go@/functions@/litar-web.serveIndex @~ Project@/litar@/Go@/functions@/litar-web.resourceHandler @~ Project@/litar@/Go@/functions@/litar-web.toolHandler @
+@~ Project@/litar@/Go@/functions@/litar-web.connect @~ Project@/litar@/Go@/functions@/litar-web.serveIndex @~ Project@/litar@/Go@/functions@/litar-web.resourceHandler @~ Project@/litar@/Go@/functions@/litar-web.toolsHandler @~ Project@/litar@/Go@/functions@/litar-web.toolHandler @~ Project@/litar@/Go@/functions@/litar-web.guard @
 @<Chunk@/Project@/litar@/Web@=
 {"description": "The page that litar-web serves: markup, style, and script."}
-@
-
-The page is one HTML file with its style and script inline,
-so litar-web embeds a single file and needs no other assets.
-@<Project@/litar@/Web@/page@=
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>litar</title>
-<style>
-@<.@/style rules@>
-</style>
-</head>
-<body>
-@<.@/page layout@>
-<script>
-'use strict';
-
-@<.@/resource access@>
-
-@<.@/trees@>
-
-@<.@/names@>
-
-@<.@/block rendering@>
-
-@<.@/views@>
-
-@<.@/routing@>
-</script>
-</body>
-</html>
-@
-
-Colors are custom properties, one per kind of name in a block,
-so the highlighting of blocks can be changed in one place.
-@<Project@/litar@/Web@/style rules@=
-:root {
-  --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --bg: #ffffff; --panel: #f6f8fa;
-  --accent: #0969da; --ref: #8250df; --item: #1a7f37; --header: #cf222e; --pipe: #953800;
-}
-* { box-sizing: border-box; }
-body { margin: 0; font: 14px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg);
-  display: grid; grid-template-rows: auto 1fr; grid-template-columns: 260px 1fr; height: 100vh; }
-header { grid-column: 1 / 3; display: flex; gap: 8px; align-items: center; padding: 8px 12px;
-  border-bottom: 1px solid var(--line); background: var(--panel); }
-header h1 { font-size: 16px; margin: 0 8px 0 0; }
-header input, header select, header button { font: inherit; padding: 3px 6px; }
-header .grow { flex: 1; min-width: 120px; }
-@
-
-The class wide hides the list, for the views that need no tree.
-@<Project@/litar@/Web@/style rules@+
-#sidebar { overflow: auto; border-right: 1px solid var(--line); padding: 8px; }
-#main { display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
-#tabs, .subtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); padding: 0 8px; }
-#tabs a, .subtabs a { padding: 6px 12px; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; }
-#tabs a.on, .subtabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
-#body { display: grid; grid-template-columns: 340px 1fr; overflow: hidden; }
-#list { overflow: auto; border-right: 1px solid var(--line); padding: 8px; }
-#detail { overflow: auto; padding: 12px 16px; }
-#body.wide { grid-template-columns: 1fr; }
-#body.wide #list { display: none; }
-@
-
-@<Project@/litar@/Web@/style rules@+
-ul.tree { list-style: none; margin: 0; padding-left: 14px; }
-ul.tree.top { padding-left: 0; }
-ul.tree li { margin: 1px 0; }
-.desc { color: var(--muted); font-size: 12px; margin-left: 6px; }
-a { color: var(--accent); }
-a.sel { font-weight: 600; }
-.mod { font-weight: 600; }
-ul.tree li.leaf { padding-left: 14px; }
-summary { cursor: pointer; }
-.filter { width: 100%; margin-bottom: 8px; padding: 3px 6px; font: inherit; }
-.tools { display: flex; gap: 4px; margin-bottom: 8px; }
-.tools .filter { flex: 1; width: auto; margin: 0; }
-.tools button { font: inherit; padding: 0 6px; }
-h2 { font-size: 16px; margin: 0 0 8px; word-break: break-all; }
-@
-
-The names in a block take the color of their kind, and links inside them keep it.
-@<Project@/litar@/Web@/style rules@+
-.block { border: 1px solid var(--line); border-radius: 6px; margin: 0 0 12px; overflow: hidden; }
-.block .comment { padding: 6px 10px; background: var(--panel); white-space: pre-wrap; color: var(--muted); }
-pre { margin: 0; padding: 8px 10px; font: 13px/1.45 ui-monospace, monospace; overflow: auto; }
-pre a { text-decoration: none; }
-.h { color: var(--header); font-weight: 600; } .h a { color: inherit; }
-.r { color: var(--ref); } .r a { color: inherit; }
-.p { color: var(--pipe); } .p a { color: inherit; }
-.i { color: var(--item); } .i a { color: inherit; }
-.ctl { color: var(--muted); }
-@
-
-Line numbers are generated by a CSS counter, so copied text has none.
-@<Project@/litar@/Web@/style rules@+
-pre.lines { counter-reset: line; padding-left: 0; }
-pre.lines span { display: block; padding-left: 4.5em; text-indent: -4.5em; }
-pre.lines span::before { counter-increment: line; content: counter(line);
-  display: inline-block; width: 3.5em; margin-right: 1em; text-align: right; color: var(--muted); }
-.error { color: var(--header); white-space: pre-wrap; }
-.note { color: var(--muted); }
-select.spec { font: inherit; margin: 0 0 8px; }
-@
-
-A header holds the composition picker and the expression box;
-below it the sidebar lists nodes, and the main area shows the tabs of a node,
-a tree of chunks, files, or items, and the detail of one entry.
-@<Project@/litar@/Web@/page layout@=
-<header>
-  <h1>litar</h1>
-  <select id="composition" title="composition"></select>
-  <input id="import-path" placeholder="composition directory to import">
-  <button id="import">Import</button>
-  <input id="expression" class="grow" placeholder="expression to evaluate in this node, e.g. hello.c">
-  <button id="evaluate">Evaluate</button>
-</header>
-<nav id="sidebar"></nav>
-<section id="main">
-  <nav id="tabs"></nav>
-  <div id="body"><div id="list"></div><div id="detail"></div></div>
-</section>
-@
-@<Project@/litar@/Web@/resource access@=
-// Resource access: the server forwards these to the MCP server of litar.
-async function answer(response) {
-  const text = await response.text();
-  if (!response.ok) throw new Error(text.trim().replace(/^calling "[^"]*": /, ''));
-  return text;
-}
-async function resource(uri) {
-  return answer(await fetch('/api/resource?uri=' + encodeURIComponent(uri)));
-}
-async function tool(name, args) {
-  return answer(await fetch('/api/tool', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({name, arguments: args}),
-  }));
-}
-@
-
-@<Project@/litar@/Web@/resource access@+
-// A ref is a hash of the kind and names of its object, so trees are cached per node
-// and a location stays valid until its object is renamed.
-const cache = new Map();
-async function tree(kind, c, n) {
-  const uri = 'tree://' + kind + '/' + c + '/' + n;
-  if (!cache.has(uri)) cache.set(uri, resource(uri).then(JSON.parse));
-  return cache.get(uri);
-}
-@
-
-@<Project@/litar@/Web@/trees@=
-// Trees: every tree has a root; the leaves are the chunks, files, or items.
-const $ = id => document.getElementById(id);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
-const subs = t => t['sub-trees'];
-function walk(t, fn, path = []) {
-  for (const s of subs(t)) {
-    const p = path.concat(s.name);
-    fn(s, p);
-    walk(s, fn, p);
-  }
-}
-function leafIndex(t) {
-  const byPath = new Map(), byRef = new Map();
-  walk(t, (s, p) => {
-    if (subs(s).length === 0) { byPath.set(JSON.stringify(p), s.ref); byRef.set(s.ref, p); }
-  });
-  return {byPath, byRef};
-}
-@
-
-A branch folds. While filtering, every branch is open. Otherwise a branch the reader opened or folded
-keeps that state, for each node and kind of tree, and any other branch is open when it holds the selected leaf.
-A tree lists its sub-trees before its leaves, each group in name order.
-@<Project@/litar@/Web@/trees@+
-// A subtree is shown when the filter matches its path or one of its leaves.
-const folds = new Map();
-const foldKey = (kind, path) => state.c + '/' + state.n + '/' + kind + '/' + JSON.stringify(path);
-const bySubTreesThenName = (a, b) =>
-  (subs(b).length > 0) - (subs(a).length > 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-function treeHTML(t, href, selected, filter, kind, path = []) {
-  const items = [];
-  let holds = false;
-  for (const s of subs(t).slice().sort(bySubTreesThenName)) {
-    const p = path.concat(s.name);
-    const desc = s.description ? '<span class="desc">' + esc(s.description) + '</span>' : '';
-    if (subs(s).length === 0) {
-      if (filter && !p.join('/').toLowerCase().includes(filter)) continue;
-      holds = holds || s.ref === selected;
-      items.push('<li class="leaf"><a href="' + href(s, p) + '"' + (s.ref === selected ? ' class="sel"' : '') + '>'
-        + esc(s.name) + '</a>' + desc + '</li>');
-    } else {
-      const inner = treeHTML(s, href, selected, filter, kind, p);
-      if (!inner.html) continue;
-      holds = holds || inner.holds;
-      const key = foldKey(kind, p);
-      const open = filter || (folds.has(key) ? folds.get(key) : inner.holds);
-      items.push('<li><details data-fold="' + esc(key) + '"' + (open ? ' open' : '') + '><summary><span class="mod">'
-        + esc(s.name) + '</span>' + desc + '</summary>' + inner.html + '</details></li>');
-    }
-  }
-  return {html: items.length ? '<ul class="tree">' + items.join('') + '</ul>' : '', holds};
-}
-@
-
-The filter box redraws the tree on every keystroke, without fetching it again.
-Folding while filtering is not remembered, since the filter opens every branch.
-@<Project@/litar@/Web@/trees@+
-function showTree(t, href, selected, kind) {
-  const list = $('list');
-  list.innerHTML = '<div class="tools"><input class="filter" placeholder="filter ' + esc(kind) + '">'
-    + '<button data-open="1" title="unfold every branch">Unfold all</button>'
-    + '<button data-open="" title="fold every branch">Fold all</button></div>'
-    + '<div class="items"></div>';
-  const input = list.querySelector('input'), items = list.querySelector('.items');
-  const filter = () => input.value.trim().toLowerCase();
-  const draw = () => {
-    items.innerHTML = treeHTML(t, href, selected, filter(), kind).html
-      || '<p class="note">Nothing here.</p>';
-  };
-  input.addEventListener('input', draw);
-  items.addEventListener('toggle', e => {
-    if (!filter()) folds.set(e.target.dataset.fold, e.target.open);
-  }, true);
-  for (const button of list.querySelectorAll('button')) {
-    button.addEventListener('click', () => {
-      walk(t, (s, p) => { if (subs(s).length) folds.set(foldKey(kind, p), Boolean(button.dataset.open)); });
-      input.value = '';
-      draw();
-    });
-  }
-  draw();
-}
-@
-@<Project@/litar@/Web@/names@=
-// Names: '@@@@' is a literal '@@', so a separator is a control not preceded by another '@@'.
-function splitControl(raw, c) {
-  const parts = [];
-  let cur = '';
-  for (let i = 0; i < raw.length; i++) {
-    if (raw[i] === '@@' && raw[i + 1] === '@@') { cur += '@@@@'; i++; }
-    else if (raw[i] === '@@' && raw[i + 1] === c) { parts.push(cur); cur = ''; i++; }
-    else cur += raw[i];
-  }
-  parts.push(cur);
-  return parts;
-}
-const decode = s => s.replace(/@@@@/g, '@@').trim();
-const encode = s => s.replace(/@@/g, '@@@@');
-@
-
-@<Project@/litar@/Web@/names@+
-// A reference without labels takes the labels of scope, the reference that applies its block,
-// and a module path starting with . or .. is relative to the module of scope, its block's header.
-function parseRef(raw, scope) {
-  const parts = splitControl(raw, ':');
-  const path = splitControl(parts.pop(), '/').map(decode);
-  const chunk = path.pop();
-  let labels = parts.map(decode);
-  let mods = path;
-  if (scope && scope.mods && (mods[0] === '.' || mods[0] === '..')) {
-    mods = scope.mods.slice();
-    for (const m of path) {
-      if (m === '..') mods.pop(); else if (m !== '.') mods.push(m);
-    }
-  }
-  if (scope && labels.length === 0) labels = scope.labels;
-  return {labels, mods, chunk};
-}
-function refText(ref) {
-  return ref.labels.map(l => encode(l) + '@@:').join('') + ref.mods.map(m => encode(m) + '@@/').join('')
-    + encode(ref.chunk);
-}
-
-@
-
-@<Project@/litar@/Web@/names@+
-// Meta chunks live in reserved modules that the chunk tree leaves out.
-// Chunk, File, and Index blocks link to what they describe; the others stay plain.
-const reserved = ['Chunk', 'Specialization', 'File', 'Index'];
-function metaLink(ref, raw, link) {
-  if (ref.labels.length || !reserved.includes(ref.mods[0])) return link('ref', ref, raw);
-  const path = ref.mods.slice(1).concat(ref.chunk);
-  if (ref.mods[0] === 'Index') return link('item', path, raw);
-  if (ref.mods[0] === 'File') return link('file', path.join('/'), raw);
-  if (ref.mods[0] === 'Chunk') return link('ref', {labels: [], mods: path.slice(0, -1), chunk: path[path.length - 1]}, raw);
-  return esc(raw);
-}
-// The chunk tree lists a file chunk below File, one name for each part of its path.
-function pathRef(path, labels) {
-  if (path[0] === 'File' && path.length > 1) return {labels, mods: [], chunk: path.slice(1).join('/')};
-  return {labels, mods: path.slice(0, -1), chunk: path[path.length - 1]};
-}
-@
-
-@<Project@/litar@/Web@/block rendering@=
-// Block rendering: a small scanner of the archive syntax that links names to their pages.
-// Blocks apply with labels, the labels of the reference being viewed, or else with the labels of their headers.
-const isLetter = c => /[A-Za-z]/.test(c) || c > '\x7f';
-const isSpace = c => c === undefined || c === ' ' || c === '\t' || c === '\r' || c === '\n';
-// A blocks:// resource is a list of blocks; the scanner reads them as the text of an archive.
-function renderBlocks(json, base, labels) {
-  const text = JSON.parse(json).map(b => (b.comment ? b.comment + '\n' : '') + b.text + '\n').join('\n');
-  let i = 0, html = '', comment = '';
-  const link = (kind, target, label) =>
-    '<a href="' + base + '/' + kind + '/' + encodeURIComponent(JSON.stringify(target)) + '">' + esc(label) + '</a>';
-@<.@/scanners 'name' and 'ctl' of the names and controls of 'text' at 'i'@>
-  const blocks = [];
-  while (i < text.length) {
-    const open = text[i] === '@@' ? text[i + 1] : null;
-    if (open !== '<' && open !== '[' && open !== '(') { comment += text[i++]; continue; }
-@<.@/render into 'blocks' the block opened by 'open', after its 'comment'@>
-  }
-  return blocks.join('') || '<p class="note">No blocks.</p>';
-}
-function linesHTML(text) {
-  if (text.endsWith('\n')) text = text.slice(0, -1);
-  return '<pre class="lines">' + text.split('\n').map(l => '<span>' + esc(l) + '</span>').join('') + '</pre>';
-}
-@
-
-The text before a block is its comment, shown above it.
-@<Project@/litar@/Web@/render into 'blocks' the block opened by 'open', after its 'comment'@=
-    i += 2;
-    let head = '', header = null;
-@<.@/render into 'head' the header of the block opened by 'open', and parse it into 'header'@>
-    const scope = {labels: labels || header.labels, mods: header.mods};
-    i += 2;
-    let body = '';
-@<.@/render into 'body' the content of the block, resolving its references in 'scope'@>
-    blocks.push('<div class="block">' + (comment.trim() ? '<div class="comment">' + esc(comment.trim()) + '</div>' : '')
-      + '<pre>' + head + body + '</pre></div>');
-    comment = '';
-@
-
-A stop of ' ' stands for any white space, and so for the end of the text.
-@<Project@/litar@/Web@/scanners 'name' and 'ctl' of the names and controls of 'text' at 'i'@=
-  // Read a name up to a control in stops; '@@@@', '@@:' and '@@/' belong to names.
-  const name = stops => {
-    const start = i;
-    while (i < text.length) {
-      if (text[i] === '@@') {
-        const c = text[i + 1];
-        if (c === '@@' || c === ':' || c === '/') { i += 2; continue; }
-        if (stops.includes(c) || (stops.includes(' ') && isSpace(c))) break;
-      }
-      i++;
-    }
-    return text.slice(start, i);
-  };
-  const ctl = s => '<span class="ctl">' + esc(s) + '</span>';
-@
-
-A file header links its path, and its sets stay plain.
-@<Project@/litar@/Web@/render into 'head' the header of the block opened by 'open', and parse it into 'header'@=
-    if (open === '<') {
-      const raw = name('=+');
-      header = parseRef(raw, null);
-      head = '<span class="h">' + ctl('@@<') + metaLink(header, raw, link) + ctl(text.slice(i, i + 2)) + '</span>';
-    } else {
-      const raw = name('`=');
-      header = {labels: [], mods: [], chunk: decode(raw)};
-      head = '<span class="h">' + ctl('@@' + open) + link('file', decode(raw), raw);
-      while (text[i] === '@@' && text[i + 1] === '`') { i += 2; head += ctl('@@`') + esc(name('`=')); }
-      head += ctl(text.slice(i, i + 2)) + '</span>';
-    }
-@
-
-The end control is a '@@' before white space or the end of the text.
-@<Project@/litar@/Web@/render into 'body' the content of the block, resolving its references in 'scope'@=
-    while (i < text.length) {
-      if (text[i] !== '@@') { body += esc(text[i++]); continue; }
-      const c = text[i + 1];
-      if (c === '@@') { body += '@@@@'; i += 2; }
-      else if (c === '<') {
-@<.@/render into 'body' the reference at 'i' and its filters, in 'scope'@>
-      } else if (c === '|') {
-        i += 2;
-        const raw = name('|~ ');
-        body += '<span class="p">' + ctl('@@|') + link('ref', parseRef(raw, {labels: scope.labels}), raw) + '</span>';
-      } else if (c === '~') {
-        i += 2;
-        const raw = name('~ ');
-        const path = splitControl(raw, '/').map(decode);
-        body += '<span class="i">' + ctl('@@~') + link('item', path, raw) + '</span>';
-      } else if (isSpace(c)) { body += ctl('@@'); i++; break; }
-      else { body += esc('@@' + c); i += 2; }
-    }
-@
-
-@<Project@/litar@/Web@/render into 'body' the reference at 'i' and its filters, in 'scope'@=
-        i += 2;
-        const raw = name('>');
-        i += 2;
-        const pipes = splitControl(raw, '|');
-        const target = pipes.shift();
-        // Filters of a reference take the labels of the reference.
-        const ref = parseRef(splitControl(target, '+')[0], scope);
-        let inner = target ? link('ref', ref, target) : '';
-        for (const p of pipes) inner += ctl('@@|') + link('ref', parseRef(p.split(/@@[-+,!]/)[0], {labels: ref.labels}), p);
-        body += '<span class="r">' + ctl('@@<') + inner + ctl('@@>') + '</span>';
-@
-
-@<Project@/litar@/Web@/views@=
-// Views: the sidebar shows the nodes, the list shows a tree of the node, the detail one entry.
-const state = {c: null, n: null};
-async function showCompositions() {
-  const list = JSON.parse(await resource('list://composition'));
-  $('composition').innerHTML = list.map(w =>
-    '<option value="' + w.ref + '"' + (w.ref === state.c ? ' selected' : '') + '>' + esc(w.name) + '</option>').join('');
-  return list;
-}
-async function showNodes() {
-  const root = JSON.parse(await resource('tree://node/' + state.c));
-  const item = t => '<li><a href="#/' + state.c + '/' + t.ref + '/chunks"' + (t.ref === state.n ? ' class="sel"' : '')
-    + ' title="' + esc(t.description) + '">' + esc(t.name) + '</a>'
-    + (subs(t).length ? '<ul class="tree">' + subs(t).map(item).join('') + '</ul>' : '') + '</li>';
-  $('sidebar').innerHTML = '<ul class="tree top">' + item(root) + '</ul>';
-  return root;
-}
-@
-
-@<Project@/litar@/Web@/views@+
-function showTabs(tab) {
-  const base = '#/' + state.c + '/' + state.n;
-  $('tabs').innerHTML = ['chunks', 'files', 'items', 'blocks'].map(t =>
-    '<a href="' + base + '/' + t + '"' + (t === tab ? ' class="on"' : '') + '>' + t[0].toUpperCase() + t.slice(1) + '</a>').join('');
-}
-const detail = html => { $('detail').innerHTML = html; };
-const nodeBase = () => '#/' + state.c + '/' + state.n;
-// A reference may carry more labels than the specialization whose blocks apply to it;
-// they follow the specialization in the location, and its blocks pass them on to their references.
-const labelsPart = (labels, spec) => labels.length > spec.length ? '/' + encodeURIComponent(JSON.stringify(labels)) : '';
-const isSuffix = (spec, labels) => spec.every((l, k) => l === labels[labels.length - spec.length + k]);
-
-// The specialization tree belongs to the node, so a chunk offers every label path of the node;
-// a path the chunk has no block for shows the blocks of the paths it ends with.
-@
-
-The labels of the reference followed to the chunk stay when its specialization applies to them.
-@<Project@/litar@/Web@/views@+
-async function chunkView(chunkId, specId, view, refLabels) {
-  const chunks = await tree('chunk', state.c, state.n);
-  const index = leafIndex(chunks);
-  showTree(chunks, s => nodeBase() + '/chunks/' + s.ref + '/-/effective', chunkId, 'chunks');
-  if (chunkId === undefined) return detail('<p class="note">Choose a chunk.</p>');
-  const path = index.byRef.get(chunkId);
-  if (!path) return detail('<p class="error">No such chunk in this node.</p>');
-  const specs = await tree('specialization', state.c, state.n);
-  const options = [{ref: specs.ref, labels: []}];
-  walk(specs, (s, p) => options.push({ref: s.ref, labels: p.slice().reverse()}));
-  const spec = options.find(o => o.ref === specId) || options[0];
-  const labels = refLabels && isSuffix(spec.labels, refLabels) ? refLabels : spec.labels;
-  const ref = pathRef(path, labels);
-  const here = nodeBase() + '/chunks/' + chunkId;
-@<.@/show in the detail 'ref', the specializations 'options', and the subtabs of 'view' at 'here'@>
-@<.@/show the 'view' of 'ref' through the specialization 'spec' with 'labels'@>
-}
-@
-
-@<Project@/litar@/Web@/show in the detail 'ref', the specializations 'options', and the subtabs of 'view' at 'here'@=
-  let html = '<h2>' + esc(refText(ref)) + '</h2>';
-@<.@/add to 'html' the picker of 'options', and a note on the 'labels' beyond 'spec'@>
-  const views = {effective: 'Effective', apply: 'Applied', depend: 'Dependents', result: 'Result'};
-  html += '<nav class="subtabs">' + Object.keys(views).map(v => '<a href="' + here + '/' + spec.ref + '/' + v
-    + labelsPart(labels, spec.labels) + '"' + (v === view ? ' class="on"' : '') + '>' + views[v] + '</a>').join('')
-    + '</nav><div id="view"><p class="note">Loading…</p></div>';
-  detail(html);
-  const select = $('detail').querySelector('select.spec');
-  if (select) select.addEventListener('change', () => { location.hash = here + '/' + select.value + '/' + view; });
-@
-
-@<Project@/litar@/Web@/add to 'html' the picker of 'options', and a note on the 'labels' beyond 'spec'@=
-  if (options.length > 1) {
-    html += '<select class="spec">' + options.map(o => '<option value="' + o.ref + '"' + (o === spec ? ' selected' : '') + '>'
-      + esc(o.labels.length ? o.labels.join('@@:') : '(no label)') + '</option>').join('') + '</select>';
-  }
-  if (labels.length > spec.labels.length) {
-    html += '<p class="note">Blocks of ' + esc(spec.labels.length ? spec.labels.join('@@:') : 'no label')
-      + ' apply; their references take the labels ' + esc(labels.join('@@:')) + '.</p>';
-  }
-@
-
-Dependents are shown with the labels of their own headers, since they apply elsewhere.
-@<Project@/litar@/Web@/show the 'view' of 'ref' through the specialization 'spec' with 'labels'@=
-  let out;
-  try {
-    out = view === 'result'
-      ? linesHTML(await tool('evaluate_expression', {composition: state.c, node: state.n, expression: refText(ref)}))
-      : renderBlocks(await resource('blocks://' + view + '/' + state.c + '/' + state.n + '/' + chunkId + '/' + spec.ref),
-        nodeBase(), view === 'depend' ? undefined : labels);
-  } catch (e) {
-    out = '<p class="error">' + esc(e.message) + '</p>'
-      + (options.length > 1 ? '<p class="note">This chunk has labelled blocks; choose a specialization above.</p>' : '');
-  }
-  $('view').innerHTML = out;
-@
-
-A file is fetched directly, so its Content-Type tells text from a binary file.
-@<Project@/litar@/Web@/views@+
-async function fileView(fileId) {
-  const files = await tree('file', state.c, state.n);
-  showTree(files, s => nodeBase() + '/files/' + s.ref, fileId, 'files');
-  if (fileId === undefined) return detail('<p class="note">Choose a file.</p>');
-  const path = leafIndex(files).byRef.get(fileId) || [];
-  detail('<h2>' + esc(path.join('/')) + '</h2><div id="view"><p class="note">Loading…</p></div>');
-  const response = await fetch('/api/resource?uri=' + encodeURIComponent('file://' + state.c + '/' + state.n + '/' + fileId));
-  const type = response.headers.get('Content-Type') || '';
-  if (!response.ok) $('view').innerHTML = '<p class="error">' + esc((await response.text()).trim()) + '</p>';
-  else if (/^text\/|json/.test(type)) $('view').innerHTML = linesHTML(await response.text());
-  else $('view').innerHTML = '<p class="note">Binary file, ' + (await response.blob()).size + ' bytes.</p>';
-}
-@
-
-@<Project@/litar@/Web@/views@+
-async function itemView(itemId) {
-  const items = await tree('item', state.c, state.n);
-  showTree(items, s => nodeBase() + '/items/' + s.ref, itemId, 'items');
-  if (itemId === undefined) return detail('<p class="note">Choose an item.</p>');
-  const path = leafIndex(items).byRef.get(itemId) || [];
-  detail('<h2>' + esc(path.map(encode).join('@@/')) + '</h2><div id="view"><p class="note">Loading…</p></div>');
-  $('view').innerHTML = renderBlocks(await resource('blocks://refer/' + state.c + '/' + state.n + '/' + itemId), nodeBase());
-}
-@
-
-@<Project@/litar@/Web@/views@+
-async function blocksView() {
-  detail('<h2>Own blocks</h2><div id="view"><p class="note">Loading…</p></div>');
-  $('view').innerHTML = renderBlocks(await resource('blocks://node/' + state.c + '/' + state.n), nodeBase());
-}
-async function evalView(expression) {
-  $('expression').value = expression;
-  detail('<h2>' + esc(expression) + '</h2><div id="view"><p class="note">Evaluating…</p></div>');
-  try {
-    $('view').innerHTML = linesHTML(await tool('evaluate_expression', {composition: state.c, node: state.n, expression}));
-  } catch (e) { $('view').innerHTML = '<p class="error">' + esc(e.message) + '</p>'; }
-}
-@
-
-@<Project@/litar@/Web@/views@+
-// Links in blocks name their target; find its ref, then replace the location with its page.
-// A chunk opens at its deepest specialization whose labels end the target's labels.
-async function resolveLink(kind, target) {
-  if (kind === 'ref') {
-@<.@/go to the chunk of the reference 'target', at its deepest matching specialization@>
-  } else {
-    const kindTree = kind === 'file' ? 'file' : 'item';
-    const path = kind === 'file' ? target.split('/') : target;
-    const id = leafIndex(await tree(kindTree, state.c, state.n)).byPath.get(JSON.stringify(path));
-    if (id === undefined) return detail('<p class="error">No ' + kind + ' ' + esc(path.join('/')) + ' in this node.</p>');
-    location.replace(nodeBase() + '/' + kindTree + 's/' + id);
-  }
-}
-@
-
-The labels of a specialization path run from the innermost, so the target's labels are reversed to match.
-@<Project@/litar@/Web@/go to the chunk of the reference 'target', at its deepest matching specialization@=
-    const chunks = await tree('chunk', state.c, state.n);
-    // A root chunk that is a file is listed below File.
-    const byPath = leafIndex(chunks).byPath;
-    const id = byPath.get(JSON.stringify(target.mods.concat(target.chunk)))
-      ?? (target.mods.length ? undefined : byPath.get(JSON.stringify(['File'].concat(target.chunk.split('/')))));
-    if (id === undefined) {
-      return detail('<p class="error">No block of this node defines ' + esc(refText(target)) + '.</p>'
-        + '<p class="note">A node based on this one may define it.</p>');
-    }
-    const specs = await tree('specialization', state.c, state.n);
-    const want = target.labels.slice().reverse();
-    let best = specs.ref, depth = 0;
-    walk(specs, (s, p) => {
-      if (p.length > depth && p.every((l, k) => l === want[k])) { best = s.ref; depth = p.length; }
-    });
-    location.replace(nodeBase() + '/chunks/' + id + '/' + best + '/effective' + labelsPart(target.labels, want.slice(0, depth)));
-@
-
-@<Project@/litar@/Web@/routing@=
-// Routing: #/composition/node/tab/..., so every page has a link and history works.
-async function route() {
-  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(p => p !== '').map(decodeURIComponent);
-  try {
-    const compositions = await showCompositions();
-    if (compositions.length === 0) {
-      $('sidebar').innerHTML = $('tabs').innerHTML = $('list').innerHTML = '';
-      return detail('<p class="note">No composition is imported. Import a composition directory above.</p>');
-    }
-    state.c = parts.length ? parts[0] : compositions[0].ref;
-    $('composition').value = state.c;
-    const root = await showNodes();
-@<.@/go to the last node of 'root' when 'parts' names no node@>
-    state.n = parts[1];
-    await showNodes();
-@<.@/show the tab of the node that 'parts' names@>
-  } catch (e) {
-    detail('<p class="error">' + esc(e.message) + '</p>');
-  }
-}
-
-@
-
-@<Project@/litar@/Web@/go to the last node of 'root' when 'parts' names no node@=
-    if (parts.length < 2) {
-      let last = root;
-      walk(root, s => { last = s; });
-      return location.replace('#/' + state.c + '/' + last.ref + '/chunks');
-    }
-@
-
-The singular tabs ref, file, and item resolve a link from a block, under the tab of their kind.
-@<Project@/litar@/Web@/show the tab of the node that 'parts' names@=
-    const [tab = 'chunks', a, b, c, d] = parts.slice(2);
-    showTabs(tab === 'ref' ? 'chunks' : tab === 'file' || tab === 'item' ? tab + 's' : tab);
-    $('body').classList.toggle('wide', tab === 'blocks' || tab === 'eval');
-    if (tab === 'chunks') await chunkView(a, b, c || 'effective', d && JSON.parse(d));
-    else if (tab === 'files') await fileView(a);
-    else if (tab === 'items') await itemView(a);
-    else if (tab === 'blocks') await blocksView();
-    else if (tab === 'eval') await evalView(a || '');
-    else if (tab === 'ref' || tab === 'file' || tab === 'item') await resolveLink(tab, JSON.parse(a));
-@
-
-Importing clears the cache of trees, since ids of other compositions may change.
-@<Project@/litar@/Web@/routing@+
-$('composition').addEventListener('change', e => { location.hash = '#/' + e.target.value; });
-$('import').addEventListener('click', async () => {
-  const path = $('import-path').value.trim();
-  if (!path) return;
-  try {
-    const id = (await tool('import_composition', {path})).trim();
-    cache.clear();
-    $('import-path').value = '';
-    location.hash = '#/' + id;
-  } catch (e) { detail('<p class="error">' + esc(e.message) + '</p>'); }
-});
-@
-
-@<Project@/litar@/Web@/routing@+
-const evaluate = () => {
-  const expression = $('expression').value.trim();
-  if (expression && state.n !== null) location.hash = nodeBase() + '/eval/' + encodeURIComponent(expression);
-};
-$('evaluate').addEventListener('click', evaluate);
-$('expression').addEventListener('keydown', e => { if (e.key === 'Enter') evaluate(); });
-window.addEventListener('hashchange', route);
-route();
 @
 The litar tool: its Go module and build files.
 
@@ -12411,6 +11749,8 @@ var wantTools = []string{
 	"apply_block",
 	"delete_block",
 	"move_block",
+	"describe",
+	"search_blocks",
 }
 
 @~ Project@/litar@/Go@/variables@/litar.wantTools @
@@ -13495,3 +12835,1376 @@ func TestMCPMappings(t *testing.T) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.TestMCPMappings @~ Project@/litar@/Go@/functions@/litar.callTool @~ Project@/litar@/Go@/functions@/litar.newMCPFixture @~ Project@/litar@/Go@/functions@/litar.readResource @~ Project@/litar@/Go@/functions@/litar.refOf @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/methods@/litar.mcpFixture.archive @~ Project@/litar@/Go@/methods@/litar.mcpFixture.tool @
+@<mcp@:litar@:Language@/Go@/File@/types@+
+type describeIn struct {
+	Composition string `json:"composition" jsonschema:"ref of the composition"`
+	Node        string `json:"node,omitempty" jsonschema:"ref of the node; leave it out to describe the composition"`
+	Description string `json:"description" jsonschema:"new description"`
+}
+
+type searchIn struct {
+	Composition string `json:"composition" jsonschema:"ref of the composition"`
+	Node        string `json:"node" jsonschema:"ref of the node"`
+	Text        string `json:"text" jsonschema:"string to find in the comments and texts of the blocks"`
+}
+
+@~ Project@/litar@/Go@/types@/litar.describeIn @~ Project@/litar@/Go@/types@/litar.searchIn @
+
+The description lives in the composer file, so only that file is written.
+@<compose@:litar@:Language@/Go@/File@/methods@+
+// Describe replaces the description of a node, or of the composition when nodeName is empty.
+func (w *World) Describe(nodeName, description string) error {
+	if nodeName == "" {
+		w.Description = description
+		return w.save()
+	}
+	n, err := w.requireLocal(nodeName)
+	if err != nil {
+		return err
+	}
+	n.Description = description
+	return w.save()
+}
+
+@~ Project@/litar@/Go@/methods@/litar.World.Describe @~ Project@/litar@/Go@/methods@/litar.World.requireLocal @~ Project@/litar@/Go@/methods@/litar.World.save @~ Project@/litar@/Go@/types@/litar.World @
+
+The answer is the ref of what was described, the node or else the composition.
+@<mcp@:litar@:Language@/Go@/File@/methods@+
+func (a *agent) describe(ctx context.Context, _ *mcp.CallToolRequest, in describeIn) (*mcp.CallToolResult, any, error) {
+	a.mu.Lock()
+	w, err := a.compositionByRef(in.Composition)
+	name, described := "", in.Composition
+	if err == nil && in.Node != "" {
+		var n *Node
+		if n, err = nodeByRef(w, in.Node); err == nil {
+			name, described = formatNodePath(nodePath(*n)), in.Node
+		}
+	}
+	if err == nil {
+		err = w.Describe(name, in.Description)
+	}
+	a.mu.Unlock()
+	if err != nil {
+		return toolErr(err)
+	}
+	a.refresh()
+	return toolText(described)
+}
+
+@~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.nodeByRef @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/functions@/litar.toolErr @~ Project@/litar@/Go@/functions@/litar.toolText @~ Project@/litar@/Go@/methods@/litar.World.Describe @~ Project@/litar@/Go@/methods@/litar.agent.compositionByRef @~ Project@/litar@/Go@/methods@/litar.agent.describe @~ Project@/litar@/Go@/methods@/litar.agent.refresh @~ Project@/litar@/Go@/types@/litar.describeIn @
+
+A search is a plain substring match on the comment and the text of each block.
+More than searchLimit matches is an error rather than a long answer:
+the caller narrows the string, and the answer stays small enough to hold in context.
+@<mcp@:litar@:Language@/Go@/File@/methods@+
+func (a *agent) searchBlocks(ctx context.Context, _ *mcp.CallToolRequest, in searchIn) (*mcp.CallToolResult, any, error) {
+	if in.Text == "" {
+		return toolErr(errString("the text to search for is empty"))
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	w, n, err := a.worldNode(in.Composition, in.Node)
+	if err != nil {
+		return toolErr(err)
+	}
+	chain, _, err := a.nodeChain(w, in.Node)
+	if err != nil {
+		return toolErr(err)
+	}
+	got := []Block{}
+	for _, b := range chain {
+		if strings.Contains(b.Comment, in.Text) || strings.Contains(b.Raw, in.Text) {
+			got = append(got, b)
+		}
+	}
+	if len(got) > searchLimit {
+		return toolErr(fmt.Errorf("%d blocks contain '%s'; search for a longer string", len(got), in.Text))
+	}
+	raw, err := json.Marshal(blockList(w, n, got))
+	if err != nil {
+		return toolErr(err)
+	}
+	return toolText(string(raw))
+}
+
+@~ Project@/litar@/Go@/constants@/litar.searchLimit @~ Project@/litar@/Go@/functions@/litar.blockList @~ Project@/litar@/Go@/functions@/litar.toolErr @~ Project@/litar@/Go@/functions@/litar.toolText @~ Project@/litar@/Go@/methods@/litar.agent.nodeChain @~ Project@/litar@/Go@/methods@/litar.agent.searchBlocks @~ Project@/litar@/Go@/methods@/litar.agent.worldNode @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.errString @~ Project@/litar@/Go@/types@/litar.searchIn @
+
+@<mcp@:litar@:Language@/Go@/File@/constants@+
+// searchLimit is the largest number of blocks a search answers.
+const searchLimit = 100
+
+@~ Project@/litar@/Go@/constants@/litar.searchLimit @
+
+@<Project@/litar@/tools of the MCP server of 'a'@+
+mcp.AddTool(a.server, &mcp.Tool{
+	Name:        "describe",
+	Description: "Replace the description of a node, or of the composition when no node is given.",
+}, a.describe)
+mcp.AddTool(a.server, &mcp.Tool{
+	Name:        "search_blocks",
+	Description: "List the blocks of a node and its bases whose comment or text contains a string, as a blocks:// resource does.",
+}, a.searchBlocks)
+@~ Project@/litar@/Go@/methods@/litar.agent.describe @~ Project@/litar@/Go@/methods@/litar.agent.searchBlocks @
+
+@<mcp test@:litar@:Language@/Go@/File@/functions@+
+func TestMCPDescribeSearch(t *testing.T) {
+	f := newMCPFixture(t, blocksArchive)
+	if got := f.tool("describe", "description", "the root"); got != f.n {
+		t.Fatalf("describe answered %q", got)
+	}
+	args := map[string]any{"composition": f.c, "description": "a composition"}
+	if got := callTool(t, f.ctx, f.session, "describe", args); got != f.c {
+		t.Fatalf("describe answered %q", got)
+	}
+	raw, _ := os.ReadFile(filepath.Join(f.dir, "composer.json"))
+	if !strings.Contains(string(raw), `"the root"`) || !strings.Contains(string(raw), `"a composition"`) {
+		t.Fatalf("composer %s", raw)
+	}
+	f.fail("describe", "node", "none", "description", "x")
+	var found []blockJSON
+	if err := json.Unmarshal([]byte(f.tool("search_blocks", "text", "Second")), &found); err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0].Comment != "Second." || found[0].Ref != refOf("block", "@@<seq@@+\ntwo\n@@") {
+		t.Fatalf("found %+v", found)
+	}
+	if got := f.tool("search_blocks", "text", "no such text"); got != "[]" {
+		t.Fatalf("nothing found answered %q", got)
+	}
+	f.fail("search_blocks", "text", "")
+}
+
+@~ Project@/litar@/Go@/functions@/litar.TestMCPDescribeSearch @~ Project@/litar@/Go@/functions@/litar.callTool @~ Project@/litar@/Go@/functions@/litar.newMCPFixture @~ Project@/litar@/Go@/functions@/litar.refOf @~ Project@/litar@/Go@/methods@/litar.mcpFixture.fail @~ Project@/litar@/Go@/methods@/litar.mcpFixture.tool @~ Project@/litar@/Go@/types@/litar.blockJSON @~ Project@/litar@/Go@/types@/litar.mcpFixture @
+@<litar-web@:command@:Language@/Go@/File@/import paths@+
+    "net"
+    "net/url"
+@
+
+The page builds a form for each tool from this list, so a tool added to litar
+appears in the page without a change here.
+@<litar-web@:command@:Language@/Go@/File@/functions@+
+func toolsHandler(session *mcp.ClientSession) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		res, err := session.ListTools(r.Context(), nil)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(res.Tools)
+	}
+}
+
+@~ Project@/litar@/Go@/functions@/litar-web.toolsHandler @
+
+The page writes archives and runs filters, so a request must come from the page itself.
+A host that is a name other than localhost may be another site's name resolved to this
+server (DNS rebinding), and an origin other than the host is another site's page.
+@<litar-web@:command@:Language@/Go@/File@/functions@+
+func guard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !localHost(r.Host) {
+			http.Error(w, "host '"+r.Host+"' is not an address of this server", http.StatusForbidden)
+			return
+		}
+		if origin := r.Header.Get("Origin"); origin != "" {
+			if u, err := url.Parse(origin); err != nil || u.Host != r.Host {
+				http.Error(w, "origin '"+origin+"' is not this server", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// localHost tells whether the host of a request is localhost or an IP address.
+func localHost(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	return host == "localhost" || net.ParseIP(strings.Trim(host, "[]")) != nil
+}
+
+@~ Project@/litar@/Go@/functions@/litar-web.guard @~ Project@/litar@/Go@/functions@/litar-web.localHost @
+The page is one HTML file with its style and script inline,
+so litar-web embeds a single file and needs no other assets.
+The script is plain JavaScript without a build step; its chunks are in the order they load.
+@<Project@/litar@/Web@/page@=
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>litar</title>
+<style>
+@<.@/style rules@>
+</style>
+</head>
+<body>
+@<.@/page layout@>
+<script>
+'use strict';
+
+@<.@/elements@>
+
+@<.@/resource access@>
+
+@<.@/dialogs@>
+
+@<.@/trees@>
+
+@<.@/navigator@>
+
+@<.@/block syntax@>
+
+@<.@/block rendering@>
+
+@<.@/block actions@>
+
+@<.@/views@>
+
+@<.@/tool forms@>
+
+@<.@/routing@>
+</script>
+</body>
+</html>
+@
+
+A bar for where you are, a navigator for the trees of the node, and one column of content.
+@<Project@/litar@/Web@/page layout@=
+<header id="bar">
+  <button id="menu" type="button" title="Show or hide the navigator" aria-label="Navigator">☰</button>
+  <a id="brand" href="#/">litar</a>
+  <select id="composition" title="Composition" aria-label="Composition"></select>
+  <select id="node" title="Node" aria-label="Node"></select>
+  <form id="search" role="search">
+    <input name="q" type="search" placeholder="Search the blocks of this node…" autocomplete="off" aria-label="Search blocks">
+  </form>
+  <nav id="pages"></nav>
+  <button id="reload" type="button" title="Load the compositions again from disk">⟳ Reload</button>
+</header>
+<aside id="side">
+  <nav id="kinds"></nav>
+  <input id="filter" type="search" placeholder="Filter…" aria-label="Filter the tree">
+  <div id="tree"></div>
+  <div id="grip" title="Drag to resize"></div>
+</aside>
+<main id="main"><div id="content"></div></main>
+<div id="toasts" aria-live="polite"></div>
+@
+
+Every color is a variable, so the dark scheme only replaces the variables.
+@<Project@/litar@/Web@/style rules@+
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff; --panel: #f6f7f9; --raised: #ffffff; --code: #f8f9fb; --fg: #1c2024; --muted: #68717d; --line: #e1e4e8;
+  --accent: #4f46e5; --accent-bg: #eef0fe; --label: #92400e; --label-bg: #fef3c7; --item: #166534; --item-bg: #dcfce7;
+  --filter: #86198f; --filter-bg: #fae8ff; --danger: #b91c1c; --side: 300px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115; --panel: #161920; --raised: #1b1f27; --code: #12151b; --fg: #e4e7ec; --muted: #8b95a3; --line: #2a2f3a;
+    --accent: #a5b4fc; --accent-bg: #252a4a; --label: #fcd34d; --label-bg: #3b2f12; --item: #86efac; --item-bg: #143222;
+    --filter: #f0abfc; --filter-bg: #3a1840; --danger: #fca5a5;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg);
+  display: grid; grid-template: auto minmax(0, 1fr) / var(--side) minmax(0, 1fr); }
+a { color: var(--accent); text-decoration: none; }
+a[href]:hover { text-decoration: underline; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { border: 1px solid var(--line); background: var(--raised); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+button.danger { color: var(--danger); }
+input, select, textarea { border: 1px solid var(--line); background: var(--raised); border-radius: 6px; padding: 4px 8px; min-width: 0; }
+textarea { width: 100%; font: 13px/1.5 var(--mono); tab-size: 4; resize: vertical; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.note { color: var(--muted); }
+.error { color: var(--danger); }
+
+@
+
+The bar wraps instead of overflowing, and the content column has a readable maximum width.
+@<Project@/litar@/Web@/style rules@+
+#bar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+#brand { font-weight: 700; font-size: 16px; color: var(--fg); }
+#bar select { max-width: 24ch; text-overflow: ellipsis; }
+#search { flex: 1 1 160px; display: flex; }
+#search input { width: 100%; max-width: 420px; }
+#pages { display: flex; gap: 4px; }
+#pages a { padding: 3px 10px; border-radius: 6px; color: var(--muted); }
+#pages a.on, #pages a:hover { background: var(--accent-bg); color: var(--accent); text-decoration: none; }
+#menu { display: none; }
+#side { position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-right: 1px solid var(--line); }
+#kinds { display: flex; gap: 2px; padding: 8px 8px 0; }
+#kinds button { flex: 1; border: 0; background: none; padding: 4px 0; color: var(--muted); }
+#kinds button.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+#filter { margin: 8px; }
+#tree { flex: 1; overflow: auto; padding: 0 8px 16px; }
+#grip { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; }
+#main { overflow: auto; min-width: 0; }
+#content { max-width: 1040px; margin: 0 auto; padding: 20px 24px 64px; }
+
+@
+
+A long name wraps inside its row, so the navigator never scrolls sideways.
+@<Project@/litar@/Web@/style rules@+
+ul.tree { list-style: none; margin: 0; padding: 0; }
+ul.tree ul.tree { margin-left: 9px; padding-left: 8px; border-left: 1px solid var(--line); }
+.tree summary, .tree .leaf { display: flex; gap: 4px; align-items: baseline; padding: 2px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+.tree summary { cursor: pointer; font-weight: 600; list-style: none; }
+.tree summary::-webkit-details-marker { display: none; }
+.tree summary::before { content: '▸'; color: var(--muted); width: 1em; flex: none; }
+.tree details[open] > summary::before { content: '▾'; }
+.tree .name, .tree .leaf a { flex: 1; min-width: 0; }
+.tree .leaf a { color: var(--fg); }
+.tree .leaf:hover, .tree summary:hover { background: var(--accent-bg); }
+.tree .leaf.sel { background: var(--accent-bg); }
+.tree .leaf.sel a { color: var(--accent); font-weight: 600; }
+.tree .pen { visibility: hidden; border: 0; background: none; padding: 0 2px; color: var(--muted); }
+.tree .leaf:hover .pen, .tree summary:hover .pen, .tree .pen:focus-visible { visibility: visible; }
+
+@
+
+@<Project@/litar@/Web@/style rules@+
+h1 { font-size: 20px; line-height: 1.35; margin: 0 0 4px; overflow-wrap: anywhere; }
+h1 .mod { color: var(--muted); font-weight: 400; }
+h2 { font-size: 15px; margin: 28px 0 8px; }
+.kind { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; color: var(--muted); }
+.desc { color: var(--muted); margin: 0 0 12px; max-width: 80ch; overflow-wrap: anywhere; }
+.actions, .buttons, .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 12px 0; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin: 16px 0; }
+.tabs a { padding: 6px 12px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs a:hover { text-decoration: none; color: var(--fg); }
+.tabs a.on { color: var(--fg); border-color: var(--accent); font-weight: 600; }
+.lab, .set, .item, .owner, .view, .more { display: inline-block; border-radius: 999px; padding: 0 8px; font: 12px/20px system-ui, sans-serif; overflow-wrap: anywhere; }
+.lab { background: var(--label-bg); color: var(--label); }
+.lab.on { outline: 2px solid var(--label); }
+.item { background: var(--item-bg); color: var(--item); }
+.item.on { outline: 2px solid var(--item); }
+.set, .view { background: var(--filter-bg); color: var(--filter); }
+.owner { border: 1px solid var(--line); color: var(--muted); }
+
+@
+
+A block is a card: its comment as prose, its header, its content, then its filters and items.
+References are marked inside the content, and the items wrap below it as chips,
+so neither stretches the card.
+A reference that no block defines is dimmed with a dashed line, not alarmed:
+an unused extension point of a structure is the common case.
+@<Project@/litar@/Web@/style rules@+
+.block { border: 1px solid var(--line); border-radius: 10px; margin: 12px 0; background: var(--raised); overflow: hidden; }
+.block > .comment { padding: 10px 14px; white-space: pre-wrap; overflow-wrap: anywhere; border-bottom: 1px solid var(--line); }
+.block > header { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.block .op { font: 600 13px/20px var(--mono); width: 20px; text-align: center; border-radius: 6px; background: var(--accent-bg); color: var(--accent); flex: none; }
+.block .title { font-weight: 600; color: var(--fg); overflow-wrap: anywhere; min-width: 0; }
+.title .mod, .ref .mod, .filter .mod { color: var(--muted); font-weight: 400; }
+.block .tools { margin-left: auto; display: flex; gap: 4px; opacity: 0; }
+.block:hover > header .tools, .block:focus-within > header .tools { opacity: 1; }
+.tools button, .tools select { padding: 0 8px; font-size: 12px; }
+.code { font: 13px/1.55 var(--mono); padding: 10px 14px; background: var(--code); tab-size: 4; }
+.line { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.55em; }
+.ref { background: var(--accent-bg); border-radius: 6px; padding: 1px 6px 1px 3px; font-family: system-ui, sans-serif; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.ref .lab, .filter .lab, .title .lab { margin-right: 4px; }
+a.missing { color: var(--muted); text-decoration: underline dashed; cursor: help; }
+.fold { border: 0; background: none; padding: 0 3px; color: var(--accent); }
+.nested { margin: 4px 0 8px 6px; padding-left: 12px; border-left: 2px solid var(--accent-bg); font: 14px/1.5 system-ui, sans-serif; }
+.nested .block { margin: 6px 0; }
+.pipe, .items { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 14px; border-top: 1px solid var(--line); }
+.pipe::before { content: 'filtered by'; color: var(--muted); font-size: 12px; }
+.filter { color: var(--muted); }
+.more { cursor: pointer; }
+@media (hover: none) { .block .tools { opacity: 1; } .tree .pen { visibility: visible; } }
+
+@
+
+@<Project@/litar@/Web@/style rules@+
+.editor { padding: 10px 14px; }
+.veil { position: fixed; inset: 0; background: rgb(0 0 0 / .4); display: grid; place-items: center; padding: 16px; z-index: 10; }
+.dialog { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 20px; width: min(520px, 100%); box-shadow: 0 16px 48px rgb(0 0 0 / .25); }
+.dialog h2 { margin: 0 0 12px; overflow-wrap: anywhere; }
+label { display: block; margin: 10px 0; }
+label > span { display: block; font-weight: 600; margin-bottom: 2px; }
+label input, label textarea { width: 100%; }
+label small { color: var(--muted); font-weight: 400; }
+pre.out { font: 13px/1.55 var(--mono); background: var(--code); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; margin: 12px 0; }
+pre.numbered { counter-reset: n; padding-left: 0; }
+.numbered .line { position: relative; padding-left: 4.5em; }
+.numbered .line::before { counter-increment: n; content: counter(n); position: absolute; left: 0; width: 3.5em; text-align: right; color: var(--muted); }
+#toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 20; max-width: min(480px, 90vw); }
+.toast { background: var(--fg); color: var(--bg); padding: 8px 12px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.toast.bad { background: var(--danger); }
+.split { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; }
+.split nav a { display: block; padding: 3px 8px; border-radius: 6px; color: var(--fg); overflow-wrap: anywhere; }
+.split nav a.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+
+@
+
+Below 820px the navigator leaves the grid and slides over the content from the menu button.
+@<Project@/litar@/Web@/style rules@+
+@media (max-width: 820px) {
+  body { grid-template-columns: minmax(0, 1fr); }
+  #menu { display: block; }
+  #grip { display: none; }
+  #side { position: fixed; z-index: 5; top: 0; bottom: 0; left: 0; width: min(320px, 85vw); transform: translateX(-100%); transition: transform .15s; }
+  body.nav #side { transform: none; box-shadow: 0 0 40px rgb(0 0 0 / .3); }
+  #content { padding: 16px 12px 48px; }
+  .split { grid-template-columns: minmax(0, 1fr); }
+}
+
+@
+The script never writes the control character of litar literally: AT stands for it,
+so the text of the page needs no escaping in an archive.
+Elements are built as DOM nodes, never as HTML text, so names and contents need no escaping either.
+@<Project@/litar@/Web@/elements@+
+const AT = '\x40';
+const ctl = c => AT + c;
+const $ = id => document.getElementById(id);
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === false || v === null || v === undefined) continue;
+    if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k === 'class') e.className = v;
+    else if (k in e) e[k] = v;
+    else e.setAttribute(k, v);
+  }
+  e.append(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false));
+  return e;
+}
+const button = (text, onclick, cls) => h('button', {type: 'button', class: cls || '', onclick}, text);
+const note = text => h('p', {class: 'note'}, text);
+const show = (...kids) => $('content').replaceChildren(...kids.flat(Infinity).filter(Boolean));
+function toast(text, bad) {
+  const t = h('div', {class: 'toast' + (bad ? ' bad' : '')}, text);
+  $('toasts').append(t);
+  setTimeout(() => t.remove(), bad ? 8000 : 2500);
+}
+
+@
+
+Resources are read once and kept until something changes: every tool that edits
+goes through act, which drops all of them and shows the page again.
+A failed read is not kept, so the next visit tries again.
+@<Project@/litar@/Web@/resource access@+
+const state = {c: null, n: null, compositions: [], flat: [], sel: null, tools: null};
+const cache = new Map();
+async function answer(response) {
+  const text = await response.text();
+  if (!response.ok) throw new Error(text.trim() || response.statusText);
+  return text;
+}
+const resourceURL = uri => '/api/resource?uri=' + encodeURIComponent(uri);
+const resource = uri => fetch(resourceURL(uri)).then(answer);
+const tool = (name, args) => fetch('/api/tool', {
+  method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name, arguments: args}),
+}).then(answer);
+function json(uri) {
+  if (!cache.has(uri)) {
+    const read = resource(uri).then(JSON.parse);
+    read.catch(() => cache.delete(uri));
+    cache.set(uri, read);
+  }
+  return cache.get(uri);
+}
+const uri = (scheme, ...parts) => scheme + '://' + parts.join('/');
+const tree = kind => json(uri('tree', kind, state.c, state.n));
+const blocks = (kind, ...refs) => json(uri('blocks', kind, state.c, state.n, ...refs));
+const here = (...parts) => '#/' + [state.c, state.n || '-', ...parts].map(encodeURIComponent).join('/');
+
+@
+
+@<Project@/litar@/Web@/resource access@+
+// act calls an editing tool on the current node, unless args name another; done receives its answer.
+async function act(name, args, done) {
+  try {
+    const out = await tool(name, {composition: state.c, node: state.n, ...args});
+    cache.clear();
+    await (done ? done(out) : route());
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+@
+
+One dialog serves every question: without fields it is a confirmation.
+It answers the values by field name, or null when cancelled.
+@<Project@/litar@/Web@/dialogs@+
+function ask(title, fields, ok = 'Save') {
+  return new Promise(done => {
+    const inputs = fields.map(f => {
+      const input = h(f.multiline ? 'textarea' : 'input', {name: f.name, rows: 4, spellcheck: false});
+      input.value = f.value || '';
+      return input;
+    });
+    const close = value => { veil.remove(); done(value); };
+    const form = h('form', {class: 'dialog', onsubmit: e => {
+      e.preventDefault();
+      close(Object.fromEntries(inputs.map(i => [i.name, i.value])));
+    }}, h('h2', {}, title),
+      fields.map((f, k) => h('label', {}, h('span', {}, f.label), inputs[k], f.hint ? h('small', {}, f.hint) : null)),
+      h('div', {class: 'buttons'}, h('button', {class: 'primary'}, ok), button('Cancel', () => close(null))));
+    const veil = h('div', {class: 'veil', onkeydown: e => { if (e.key === 'Escape') close(null); }}, form);
+    document.body.append(veil);
+    (inputs[0] || form.querySelector('button')).focus();
+  });
+}
+const sure = (question, ok = 'Delete') => ask(question, [], ok);
+
+@
+
+A tree is indexed three ways: leaves by path, branches by path, and every entry by ref.
+A branch and a leaf may share a path (a module and a chunk), so they are kept apart.
+@<Project@/litar@/Web@/trees@+
+const subs = t => t['sub-trees'] || [];
+const key = names => names.join('\0');
+function index(t) {
+  const ix = {at: new Map(), mod: new Map(), byRef: new Map()};
+  (function walk(t, path) {
+    for (const s of subs(t)) {
+      const p = [...path, s.name], branch = subs(s).length > 0;
+      (branch ? ix.mod : ix.at).set(key(p), s.ref);
+      ix.byRef.set(s.ref, {path: p, branch, description: s.description || ''});
+      walk(s, p);
+    }
+  })(t, []);
+  return ix;
+}
+async function indexes() {
+  const [chunk, file, item, spec] = await Promise.all(['chunk', 'file', 'item', 'specialization'].map(tree));
+  return {chunk: index(chunk), file: index(file), item: index(item), spec: index(spec), specRoot: spec.ref};
+}
+
+@
+
+A reference to a file names its path as one chunk of the root module; the chunk tree
+lists that chunk below File, one branch per directory.
+A label path is written with the most specific label first, and the specialization tree
+holds it the other way round; no labels is the root of that tree.
+@<Project@/litar@/Web@/trees@+
+const findChunk = (ix, path) => ix.chunk.at.get(key(path))
+  || (path.length === 1 ? ix.chunk.at.get(key(['File', ...path[0].split('/')])) : undefined);
+function findSpec(ix, labels) {
+  if (labels.length === 0) return ix.specRoot;
+  const k = key([...labels].reverse());
+  return ix.spec.at.get(k) || ix.spec.mod.get(k) || ix.specRoot;
+}
+function flatten(t, path, depth) {
+  const p = [...path, t.name];
+  state.flat.push({ref: t.ref, name: t.name, description: t.description || '', path: p, depth});
+  for (const s of subs(t)) flatten(s, p, depth + 1);
+}
+
+@
+
+The navigator shows one tree of the node at a time. A branch stays open once opened,
+and the branches above the selected entry are opened for it.
+While a filter is typed every match is shown open, without changing what is remembered.
+@<Project@/litar@/Web@/navigator@+
+const kinds = {chunk: 'Chunks', file: 'Files', item: 'Items', specialization: 'Labels'};
+const links = {chunk: 'chunk', file: 'file', item: 'item', specialization: 'label'};
+const side = {kind: 'chunk', open: new Set()};
+function select(kind, ref, path) {
+  state.sel = ref;
+  side.kind = kind;
+  for (let k = 1; k < path.length; k++) side.open.add(kind + '\0' + key(path.slice(0, k)));
+}
+async function showSide() {
+  $('kinds').replaceChildren(...Object.keys(kinds).map(k =>
+    button(kinds[k], () => { side.kind = k; showSide(); }, k === side.kind ? 'on' : '')));
+  let list;
+  try {
+    list = treeList(await tree(side.kind), [], $('filter').value.trim().toLowerCase(), false);
+  } catch (e) {
+    list = h('p', {class: 'error'}, e.message);
+  }
+  $('tree').replaceChildren(list || note('Nothing here.'));
+  const sel = $('tree').querySelector('.sel');
+  if (sel && sel.scrollIntoView) sel.scrollIntoView({block: 'nearest'});
+}
+
+@
+
+Branches come first, then names in order. An entry is listed when the filter matches it,
+its description, a branch above it, or an entry below it.
+In the specialization tree every entry is a label path of its own, so branches are links too.
+@<Project@/litar@/Web@/navigator@+
+function treeList(t, path, q, shown) {
+  const kind = side.kind, rows = [];
+  const order = (a, b) => (subs(b).length > 0) - (subs(a).length > 0) || a.name.localeCompare(b.name);
+  for (const s of [...subs(t)].sort(order)) {
+    const p = [...path, s.name];
+    const hit = shown || !q || (s.name + '\n' + (s.description || '')).toLowerCase().includes(q);
+    const kids = subs(s).length ? treeList(s, p, q, hit) : null;
+    if (!hit && !kids) continue;
+    const fixed = kind === 'specialization' || (kind === 'chunk' && p[0] === 'File');
+    const pen = fixed ? null : h('button', {type: 'button', class: 'pen', title: 'Rename', 'aria-label': 'Rename', onclick: e => {
+      e.preventDefault();
+      renameEntry(kind, s.ref, p, kids !== null);
+    }}, '✎');
+    const leaf = () => h('div', {class: 'leaf' + (s.ref === state.sel ? ' sel' : ''), title: s.description || ''},
+      h('a', {href: here(links[kind], s.ref)}, s.name), pen);
+    if (!kids) rows.push(h('li', {}, leaf()));
+    else if (kind === 'specialization') rows.push(h('li', {}, leaf(), kids));
+    else {
+      const id = kind + '\0' + key(p);
+      const d = h('details', {open: Boolean(q) || side.open.has(id), ontoggle: () => {
+        if (!q) d.open ? side.open.add(id) : side.open.delete(id);
+      }}, h('summary', {title: s.description || ''}, h('span', {class: 'name'}, s.name), pen), kids);
+      rows.push(h('li', {}, d));
+    }
+  }
+  return rows.length ? h('ul', {class: 'tree'}, rows) : null;
+}
+
+@
+
+Chunks, modules, items, and domains are renamed by the rename tool; files and directories
+are moved by the mv of operate_files. When the entry on show was renamed, the page follows it to its new ref.
+@<Project@/litar@/Web@/navigator@+
+const quote = s => /^[\w.\/-]+$/.test(s) ? s : "'" + s.replaceAll("'", "'\\''") + "'";
+async function renameEntry(kind, ref, path, branch) {
+  const file = kind === 'file', old = path.join(file ? '/' : ctl('/'));
+  const v = await ask(file ? 'Move ' + old : 'Rename ' + old, [{name: 'to', label: 'New path', value: old,
+    hint: file ? 'A path in the node.' : 'Names separated by ' + ctl('/') + '; references, filters, and descriptions follow.'}], file ? 'Move' : 'Rename');
+  if (!v || v.to.trim() === old) return;
+  const to = v.to.trim();
+  const follow = async () => {
+    const names = to.split(file ? '/' : ctl('/')).map(s => s.trim());
+    const next = branch ? undefined : index(await tree(kind)).at.get(key(names));
+    if (next && state.sel === ref) location.hash = here(links[kind], next);
+    else await route();
+  };
+  if (file) await act('operate_files', {command: 'mv ' + quote(old) + ' ' + quote(to)}, follow);
+  else await act('rename', {object: ref, to}, follow);
+}
+
+@
+The control character before a letter is text, twice it is itself, and before a blank
+or at the end of the text it closes the expression; anything else is a control.
+@<Project@/litar@/Web@/block syntax@+
+function scan(text) {
+  const out = [];
+  let buf = '';
+  const flush = () => { if (buf !== '') out.push({text: buf}); buf = ''; };
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], d = text[i + 1];
+    if (c !== AT || (d !== undefined && /[A-Za-z]/.test(d))) { buf += c; continue; }
+    if (d === AT) { buf += AT; i++; continue; }
+    flush();
+    if (d === undefined || /\s/.test(d)) { out.push({ctl: ''}); return out; }
+    out.push({ctl: d});
+    i++;
+  }
+  flush();
+  return out;
+}
+const qualify = (labels, path) => labels.map(l => l + ctl(':')).join('') + path.join(ctl('/'));
+// resolve gives the module path of a reference written in a block of the module base.
+function resolve(base, path) {
+  if (path[0] !== '.' && path[0] !== '..') return path;
+  const out = [...base];
+  for (const name of path) {
+    if (name === '..') out.pop();
+    else if (name !== '.') out.push(name);
+  }
+  return out;
+}
+
+@
+
+A parsed block has the labels and the path of its header (a file has its path as the only name),
+its file sets and operation, the body as texts and references, then its filters and its items.
+The page shows a block that it cannot parse as plain text, so parsing never throws.
+@<Project@/litar@/Web@/block syntax@+
+function parseBlock(text) {
+  const toks = scan(text);
+  let i = 0;
+  const b = {file: false, exec: false, labels: [], path: [], sets: [], op: '', body: [], filters: [], items: []};
+  const at = () => toks[i] ? toks[i].ctl : undefined;
+  const name = () => (toks[i] && toks[i].text !== undefined ? toks[i++].text : '').trim();
+  @<.@/operand: the names and the view of a reference or a filter@>
+  @<.@/read the header of 'b'@>
+  @<.@/read the body, the filters, and the items of 'b'@>
+  return b;
+}
+
+@
+
+@<Project@/litar@/Web@/operand: the names and the view of a reference or a filter@=
+const operand = () => {
+  const r = {labels: [], path: [], view: [], filters: []};
+  let op = '';
+  for (;;) {
+    const n = name(), c = at();
+    if (op) r.view.push({op, name: n});
+    else if (c === ':') r.labels.push(n);
+    else if (n !== '') r.path.push(n);
+    if (!op && (c === ':' || c === '/')) i++;
+    else if (c && '+-,!'.includes(c)) { op = c; i++; }
+    else return r;
+  }
+};
+@
+
+A file header has its path, then a file set after each backquote control.
+@<Project@/litar@/Web@/read the header of 'b'@=
+const open = toks[i++];
+b.file = Boolean(open) && open.ctl !== '<';
+b.exec = Boolean(open) && open.ctl === '(';
+for (let inSet = false; ;) {
+  const n = name(), c = at();
+  i++;
+  if (c === undefined || c === '') return b;
+  if (inSet) b.sets.push(n);
+  else if (c === ':') b.labels.push(n);
+  else b.path.push(n);
+  if (c === '`') inSet = true;
+  else if (c === '=' || c === '+') { b.op = c; break; }
+  else if (c !== ':' && c !== '/') return b;
+}
+@
+
+After the first filter or item of the block, the text between the controls is layout, not content.
+@<Project@/litar@/Web@/read the body, the filters, and the items of 'b'@=
+for (let tail = false; ;) {
+  const t = toks[i++];
+  if (!t || t.ctl === '') break;
+  if (t.text !== undefined) { if (!tail) b.body.push(t.text); }
+  else if (t.ctl === '<') {
+    const r = operand();
+    while (at() === '|') { i++; r.filters.push(operand()); }
+    if (at() === '>') i++;
+    b.body.push(r);
+  } else if (t.ctl === '|') { tail = true; b.filters.push(operand()); }
+  else if (t.ctl === '~') {
+    tail = true;
+    const item = [name()];
+    while (at() === '/') { i++; item.push(name()); }
+    b.items.push(item);
+  } else if (!tail) b.body.push(ctl(t.ctl));
+}
+@
+
+A reference without labels inherits the labels under which its block is read: those of the
+page when it shows one chunk reference, else the labels of the block itself.
+A reference that no block defines expands to nothing when evaluated, so the page marks it.
+@<Project@/litar@/Web@/block rendering@+
+function target(b, r, ctx) {
+  const labels = r.labels.length ? r.labels : ctx.labels || b.labels;
+  const path = resolve(b.file ? [] : b.path.slice(0, -1), r.path);
+  return {labels, path, chunk: findChunk(ctx.ix, path), spec: findSpec(ctx.ix, labels)};
+}
+const nameParts = (labels, names) => [
+  labels.map(l => h('span', {class: 'lab'}, l)),
+  names.length > 1 ? h('span', {class: 'mod'}, names.slice(0, -1).join(' / ') + ' / ') : null,
+  names[names.length - 1] || '',
+];
+function chunkLink(r, t) {
+  const full = qualify(t.labels, t.path);
+  return t.chunk
+    ? h('a', {href: here('chunk', t.chunk, t.spec), title: full}, nameParts(r.labels, r.path))
+    : h('a', {class: 'missing', title: 'No block defines ' + full}, nameParts(r.labels, r.path));
+}
+const viewOps = {'+': 'adds a file set to the view', '-': 'removes a file set from the view',
+  ',': 'adds a file to the view', '!': 'removes a file from the view'};
+const filterSpan = (b, f, ctx) => h('span', {class: 'filter'}, ' | ', chunkLink(f, target(b, f, ctx)),
+  f.view.map(v => [' ', h('span', {class: 'view', title: viewOps[v.op]}, v.op + v.name)]));
+
+@
+
+A reference can be opened where it stands: the effective blocks of its chunk are shown
+below its line, read under the labels the reference has there, and they open the same way.
+So a structure is read top down without leaving the page.
+@<Project@/litar@/Web@/block rendering@+
+function refSpan(b, r, ctx, line) {
+  const t = target(b, r, ctx), span = h('span', {class: 'ref'});
+  if (r.path.length === 0) return h('span', {class: 'ref'}, r.filters.map(f => filterSpan(b, f, ctx)));
+  if (t.chunk) span.append(h('button', {type: 'button', class: 'fold', title: 'Show the blocks of this chunk here', onclick: e => expand(e.currentTarget, line(), t, ctx)}, '▸'));
+  span.append(chunkLink(r, t), ...r.filters.map(f => filterSpan(b, f, ctx)));
+  return span;
+}
+async function expand(fold, line, t, ctx) {
+  if (fold.nest) {
+    fold.nest.remove();
+    fold.nest = null;
+    fold.textContent = '▸';
+    return;
+  }
+  fold.textContent = '▾';
+  fold.nest = h('div', {class: 'nested'}, note('Loading…'));
+  line.after(fold.nest);
+  try {
+    fold.nest.replaceChildren(blockList(await blocks('effective', t.chunk, t.spec), {...ctx, labels: t.labels, item: null}));
+  } catch (e) {
+    fold.nest.replaceChildren(h('p', {class: 'error'}, e.message));
+  }
+}
+
+@
+
+The content is laid out as lines, so the blocks of an opened reference fit below its line.
+The line break after the operation and the one before the end are layout, as in the language.
+@<Project@/litar@/Web@/block rendering@+
+function codeLines(b, ctx) {
+  let line = h('div', {class: 'line'});
+  const code = h('div', {class: 'code'}, line), segs = [...b.body], last = segs.length - 1;
+  if (typeof segs[0] === 'string') segs[0] = segs[0].replace(/^\r?\n/, '');
+  if (typeof segs[last] === 'string') segs[last] = segs[last].replace(/\r?\n$/, '');
+  for (const s of segs) {
+    if (typeof s !== 'string') { const mine = line; line.append(refSpan(b, s, ctx, () => mine)); continue; }
+    s.split('\n').forEach((part, k) => {
+      if (k > 0) code.append(line = h('div', {class: 'line'}));
+      line.append(part);
+    });
+  }
+  return code;
+}
+
+@
+
+The items of a block are chips with the last name of each; the title has the whole path.
+Past eight they fold, since a block may carry dozens. On the page of an item, that item comes first.
+@<Project@/litar@/Web@/block rendering@+
+function itemChips(items, ctx) {
+  const mine = it => key(it) === ctx.item;
+  const chip = it => {
+    const ref = ctx.ix.item.at.get(key(it));
+    return h('a', {class: 'item' + (mine(it) ? ' on' : ''), href: ref ? here('item', ref) : null, title: it.join(' / ')}, it[it.length - 1]);
+  };
+  const sorted = [...items].sort((a, b) => mine(b) - mine(a));
+  const box = h('div', {class: 'items'}, sorted.slice(0, 8).map(chip));
+  if (sorted.length > 8) box.append(h('button', {type: 'button', class: 'more', title: 'Show every item', onclick: e => e.currentTarget.replaceWith(...sorted.slice(8).map(chip))}, '+' + (sorted.length - 8)));
+  return box;
+}
+function headName(b, ctx) {
+  let href = null;
+  if (b.file) {
+    const f = ctx.ix.file.at.get(key((b.path[0] || '').split('/')));
+    href = f ? here('file', f, 'effective') : null;
+  } else {
+    const c = findChunk(ctx.ix, b.path);
+    href = c ? here('chunk', c, findSpec(ctx.ix, b.labels)) : null;
+  }
+  return h('a', {class: 'title', href, title: qualify(b.labels, b.path)}, nameParts(b.labels, b.file ? [b.path[0] || ''] : b.path));
+}
+
+@
+
+A block of a base node says which node owns it, and its actions go to that node.
+@<Project@/litar@/Web@/block rendering@+
+function blockCard(j, ctx) {
+  const card = h('article', {class: 'block'}), owner = j.node || state.n;
+  let b;
+  try { b = parseBlock(j.text); } catch (e) { b = null; }
+  const render = () => card.replaceChildren(...[
+    j.comment ? h('div', {class: 'comment'}, j.comment) : null,
+    h('header', {},
+      b && b.op ? h('span', {class: 'op', title: b.op === '=' ? 'Sets the chunk' : 'Extends the chunk'}, b.op) : null,
+      b ? headName(b, ctx) : null,
+      b && b.exec ? h('span', {class: 'set', title: 'An executable file'}, 'executable') : null,
+      b ? b.sets.map(s => h('span', {class: 'set', title: 'File set'}, s)) : null,
+      j.node ? h('a', {class: 'owner', href: '#/' + state.c + '/' + j.node, title: 'The node this block belongs to'}, nodeName(j.node)) : null,
+      blockTools(card, j, b, owner, render)),
+    b && b.op ? codeLines(b, ctx) : h('div', {class: 'code'}, h('div', {class: 'line'}, j.text)),
+    b && b.filters.length ? h('div', {class: 'pipe'}, b.filters.map(f => filterSpan(b, f, ctx))) : null,
+    b && b.items.length ? itemChips(b.items, ctx) : null,
+  ].filter(Boolean));
+  render();
+  return card;
+}
+const nodeName = ref => (state.flat.find(n => n.ref === ref) || {name: ref}).name;
+
+@
+
+A long list is shown forty blocks at a time: the own blocks of a node may be thousands.
+@<Project@/litar@/Web@/block rendering@+
+function blockList(list, ctx) {
+  const box = h('div', {class: 'blocks'});
+  if (list.length === 0) return h('div', {class: 'blocks'}, note('No block.'));
+  let shown = 0;
+  const more = button('', () => add());
+  const add = () => {
+    more.remove();
+    for (const j of list.slice(shown, shown + 40)) box.append(blockCard(j, ctx));
+    shown += 40;
+    if (shown < list.length) {
+      more.textContent = 'Show more (' + (list.length - shown) + ' left)';
+      box.append(more);
+    }
+  };
+  add();
+  return box;
+}
+
+@
+
+The editor holds a block as the archive does: its comment, then its text.
+Ctrl+Enter saves and Escape cancels; Tab types a tab, since code is indented with it.
+@<Project@/litar@/Web@/block actions@+
+function editor(text, save, cancel) {
+  const area = h('textarea', {spellcheck: false, rows: Math.min(40, Math.max(6, text.split('\n').length + 1))});
+  area.value = text;
+  const done = () => save(area.value.endsWith('\n') ? area.value : area.value + '\n');
+  area.addEventListener('keydown', e => {
+    if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); area.setRangeText('\t', area.selectionStart, area.selectionEnd, 'end'); }
+    else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); done(); }
+    else if (e.key === 'Escape') cancel();
+  });
+  return h('div', {class: 'editor'}, area, h('div', {class: 'buttons'},
+    button('Save', done, 'primary'), button('Cancel', cancel),
+    h('span', {class: 'note'}, 'The comment goes before the block. Ctrl+Enter saves, Esc cancels.')));
+}
+function newBlock(where, header) {
+  const box = h('article', {class: 'block'});
+  box.append(editor(header ? header + '\n\n' + AT + '\n' : '', text => act('apply_block', {text}), () => box.remove()));
+  where.prepend(box);
+  box.querySelector('textarea').focus();
+}
+
+@
+
+Saving an edited block overrides the old one, so it keeps its place among the blocks of its chunk.
+@<Project@/litar@/Web@/block actions@+
+function blockTools(card, j, b, owner, render) {
+  const name = b ? qualify(b.labels, b.path) : 'this block';
+  const edit = () => {
+    card.replaceChildren(editor((j.comment ? j.comment + '\n' : '') + j.text + '\n',
+      text => act('apply_block', {node: owner, text, overrides: j.ref}), render));
+    card.querySelector('textarea').focus();
+  };
+  const move = e => {
+    const pick = h('select', {onchange: () => { if (pick.value) act('move_block', {node: owner, block: j.ref, to: pick.value}); }},
+      h('option', {value: ''}, 'Move to…'),
+      state.flat.filter(n => n.ref !== owner).map(n => h('option', {value: n.ref}, n.path.join(' / '))));
+    e.currentTarget.replaceWith(pick);
+    pick.focus();
+  };
+  const remove = async () => {
+    if (await sure('Delete this block of ' + name + '?')) act('delete_block', {node: owner, block: j.ref});
+  };
+  return h('span', {class: 'tools'}, button('Edit', edit), button('Move', move), button('Delete', remove, 'danger'));
+}
+
+@
+Every view starts with the same heading: the kind of object, its path with the modules
+dimmed, and its description.
+@<Project@/litar@/Web@/views@+
+const title = (kind, path, labels, description) => [
+  h('div', {class: 'kind'}, kind),
+  h('h1', {}, nameParts(labels || [], path)),
+  description ? h('p', {class: 'desc'}, description) : null,
+];
+const tabBar = (tabs, on, link) => h('nav', {class: 'tabs'},
+  Object.keys(tabs).map(t => h('a', {href: link(t), class: t === on ? 'on' : ''}, tabs[t])));
+const output = (text, bad) => h('pre', {class: 'out' + (bad ? ' error' : '')}, text === '' ? h('span', {class: 'note'}, '(empty)') : text);
+const numbered = text => h('pre', {class: 'out numbered'}, text.replace(/\n$/, '').split('\n').map(l => h('div', {class: 'line'}, l)));
+// A description is the JSON of a meta chunk: Chunk, File, Index, or Specialization, then the path.
+async function describeMeta(meta, current) {
+  const v = await ask('Describe ' + meta.slice(1).join(' / '), [{name: 'd', label: 'Description', value: current, multiline: true}]);
+  if (!v) return;
+  const body = JSON.stringify({description: v.d.trim()}).replaceAll(AT, AT + AT);
+  await act('apply_block', {text: ctl('<') + meta.join(ctl('/')) + ctl('=') + '\n' + body + '\n' + AT + '\n'});
+}
+
+@
+
+A chunk is shown under one label path. Its tabs are the questions asked of a chunk:
+which blocks make it, which were ever applied, which blocks use it, and what it evaluates to.
+The chunk of a file belongs to the view of that file.
+@<Project@/litar@/Web@/views@+
+async function chunkView(chunkRef, specRef, tab = 'effective') {
+  const ix = await indexes(), e = ix.chunk.byRef.get(chunkRef);
+  if (!e || e.branch) return show(note('This node has no such chunk; it may have been renamed or deleted.'));
+  if (e.path[0] === 'File') {
+    const f = ix.file.at.get(key(e.path.slice(1)));
+    if (f) return fileView(f, tab);
+  }
+  select('chunk', chunkRef, e.path);
+  const spec = ix.spec.byRef.get(specRef), labels = spec ? [...spec.path].reverse() : [];
+  if (!spec) specRef = ix.specRoot;
+  const name = qualify(labels, e.path), body = h('div', {}, note('Loading…'));
+  show(title('Chunk', e.path, labels, e.description),
+    h('div', {class: 'actions'},
+      button('New block', () => newBlock(body, ctl('<') + name + ctl('+')), 'primary'),
+      button('Describe', () => describeMeta(['Chunk', ...e.path], e.description)),
+      button('Rename', () => renameEntry('chunk', chunkRef, e.path, false)),
+      button('Delete', async () => {
+        if (await sure('Delete the chunk ' + qualify([], e.path) + ' with every block applied to it in this node?'))
+          act('delete_chunk', {chunk: chunkRef}, () => { location.hash = here(); });
+      }, 'danger')),
+    specBar(ix, e.path, chunkRef, specRef, labels, tab),
+    tabBar({effective: 'Effective', apply: 'Applied', depend: 'Used by', result: 'Result'}, tab, t => here('chunk', chunkRef, specRef, t)),
+    body);
+  await fill(body, async () => tab === 'result'
+    ? output(await tool('evaluate_expression', {composition: state.c, node: state.n, expression: name}))
+    : blockList(await blocks(tab, chunkRef, specRef), {ix, labels: tab === 'depend' ? null : labels}));
+}
+// fill puts what make answers, an element or several, into body; a failure is shown there.
+async function fill(body, make) {
+  try {
+    body.replaceChildren(...[await make()].flat());
+  } catch (e) {
+    body.replaceChildren(output(e.message, true));
+  }
+}
+
+@
+
+A chunk without labels may have nothing but labelled blocks, so the bar offers the label paths
+that blocks of this chunk are written under. They are found by searching for the chunk name
+after a label control; when the search has too many matches, the list of every label path
+of the node still leads there.
+@<Project@/litar@/Web@/views@+
+function specBar(ix, path, chunkRef, specRef, labels, tab) {
+  if (ix.spec.byRef.size === 0) return null;
+  const chip = (ref, ls) => h('a', {class: 'lab' + (ref === specRef ? ' on' : ''), href: here('chunk', chunkRef, ref, tab)},
+    ls.length ? ls.join(ctl(':')) : 'no label');
+  const pick = h('select', {'aria-label': 'Label path', onchange: () => { if (pick.value) location.hash = here('chunk', chunkRef, pick.value, tab); }},
+    h('option', {value: ''}, 'Other label path…'),
+    [...ix.spec.byRef].map(([ref, s]) => h('option', {value: ref}, [...s.path].reverse().join(ctl(':')))));
+  const bar = h('div', {class: 'chips'}, h('span', {class: 'note'}, 'Read under'), chip(ix.specRoot, []),
+    specRef === ix.specRoot ? null : chip(specRef, labels), pick);
+  tool('search_blocks', {composition: state.c, node: state.n, text: ctl(':') + path.join(ctl('/')) + AT}).then(found => {
+    const seen = new Set([ix.specRoot, specRef]);
+    for (const j of JSON.parse(found)) {
+      const b = parseBlock(j.text), ref = findSpec(ix, b.labels);
+      if (b.file || key(b.path) !== key(path) || seen.has(ref)) continue;
+      seen.add(ref);
+      pick.before(chip(ref, b.labels));
+    }
+  }).catch(() => {});
+  return bar;
+}
+
+@
+
+A file shows what it evaluates to, with line numbers, and the blocks of its chunk.
+A file mapped from outside the archives has content only, and is removed by rm.
+@<Project@/litar@/Web@/views@+
+async function fileView(fileRef, tab = 'content') {
+  const ix = await indexes(), e = ix.file.byRef.get(fileRef);
+  if (!e || e.branch) return show(note('This node has no such file; it may have been moved or deleted.'));
+  select('file', fileRef, e.path);
+  const path = e.path.join('/'), chunk = ix.chunk.at.get(key(['File', ...e.path]));
+  const body = h('div', {}, note('Loading…'));
+  if (!chunk || !['effective', 'apply', 'depend'].includes(tab)) tab = 'content';
+  show(title('File', [path], [], e.description),
+    h('div', {class: 'actions'},
+      button('Describe', () => describeMeta(['File', ...e.path], e.description)),
+      button('Move', () => renameEntry('file', fileRef, e.path, false)),
+      button('Delete', async () => {
+        if (!await sure('Delete the file ' + path + (chunk ? ' with its blocks in this node?' : ' from the mappings of this node?'))) return;
+        const gone = () => { location.hash = here(); };
+        if (chunk) act('delete_file', {file: fileRef}, gone);
+        else act('operate_files', {command: 'rm ' + quote(path)}, gone);
+      }, 'danger')),
+    tabBar(chunk ? {content: 'Content', effective: 'Blocks', apply: 'Applied', depend: 'Used by'} : {content: 'Content'}, tab, t => here('file', fileRef, t)),
+    body);
+  await fill(body, async () => {
+    if (tab !== 'content') return blockList(await blocks(tab, chunk, ix.specRoot), {ix, labels: tab === 'depend' ? null : []});
+    const response = await fetch(resourceURL(uri('file', state.c, state.n, fileRef)));
+    if (!response.ok) throw new Error((await response.text()).trim());
+    if (/^text\/|json/.test(response.headers.get('Content-Type') || '')) return numbered(await response.text());
+    const size = (await response.arrayBuffer()).byteLength;
+    return h('p', {}, 'A binary file of ' + size + ' bytes. ', h('a', {href: resourceURL(uri('file', state.c, state.n, fileRef)), download: e.path[e.path.length - 1]}, 'Download'));
+  });
+}
+
+@
+
+An item connects the blocks that carry it; a label path lists the blocks written under exactly it,
+which is often one source file.
+@<Project@/litar@/Web@/views@+
+async function itemView(itemRef) {
+  const ix = await indexes(), e = ix.item.byRef.get(itemRef);
+  if (!e) return show(note('This node has no such item; it may have been renamed.'));
+  select('item', itemRef, e.path);
+  const body = h('div', {}, note('Loading…'));
+  show(title(e.branch ? 'Domain' : 'Item', e.path, [], e.description),
+    h('div', {class: 'actions'},
+      button('Describe', () => describeMeta(['Index', ...e.path], e.description)),
+      button('Rename', () => renameEntry('item', itemRef, e.path, e.branch))),
+    h('h2', {}, 'Blocks carrying this item'), body);
+  await fill(body, async () => blockList(await blocks('refer', itemRef), {ix, labels: null, item: key(e.path)}));
+}
+async function labelView(specRef) {
+  const ix = await indexes(), e = ix.spec.byRef.get(specRef);
+  if (!e) return show(note('This node has no such label path.'));
+  select('specialization', specRef, e.path);
+  const labels = [...e.path].reverse(), body = h('div', {}, note('Loading…'));
+  show(title('Label path', [labels.join(ctl(':'))], [], e.description),
+    h('div', {class: 'actions'}, button('Describe', () => describeMeta(['Specialization', ...e.path], e.description))),
+    h('h2', {}, 'Blocks written under exactly this label path'), body);
+  await fill(body, async () => blockList(await blocks('specialization', specRef), {ix, labels}));
+}
+
+@
+
+@<Project@/litar@/Web@/views@+
+async function searchView(text = '') {
+  $('search').elements.q.value = text;
+  const body = h('div', {}, note(text ? 'Searching…' : 'Type a string to find in the comments and texts of the blocks.'));
+  show(title('Search', [text || 'Blocks']), body);
+  if (!text) return;
+  const ix = await indexes();
+  await fill(body, async () => {
+    const found = JSON.parse(await tool('search_blocks', {composition: state.c, node: state.n, text}));
+    return [h('p', {class: 'desc'}, found.length + (found.length === 1 ? ' block contains it.' : ' blocks contain it.')), blockList(found, {ix, labels: null})];
+  });
+}
+async function evalView(expression = '') {
+  const input = h('input', {value: expression, placeholder: 'A chunk reference, a file path, or a pipeline', 'aria-label': 'Expression', spellcheck: false});
+  const body = h('div', {});
+  const run = () => fill(body, async () => output(await tool('evaluate_expression', {composition: state.c, node: state.n, expression: input.value.trim()})));
+  show(title('Evaluate', ['Expression']),
+    h('p', {class: 'desc'}, 'Evaluating runs the filters of the expression on this machine.'),
+    h('form', {class: 'actions', onsubmit: e => {
+      e.preventDefault();
+      const next = here('eval', input.value.trim());
+      if (location.hash === next) run(); else location.hash = next;
+    }}, input, h('button', {class: 'primary'}, 'Evaluate')), body);
+  input.style.flex = '1 1 320px';
+  if (expression) await run();
+}
+
+@
+
+The page of a node is where the node and its composition are described, extended, and deleted;
+its own blocks below are what a task node is reviewed by before it is digested.
+@<Project@/litar@/Web@/views@+
+async function nodeView() {
+  const ix = await indexes(), me = state.flat.find(n => n.ref === state.n);
+  const comp = state.compositions.find(c => c.ref === state.c), body = h('div', {}, note('Loading…'));
+  show(title('Node', me.path, [], me.description),
+    h('div', {class: 'actions'},
+      button('New block', () => newBlock(body, ''), 'primary'),
+      button('Describe', async () => {
+        const v = await ask('Describe ' + me.name, [{name: 'd', label: 'Description', value: me.description, multiline: true}]);
+        if (v) act('describe', {description: v.d.trim()});
+      }),
+      button('New node on this', newNode),
+      h('a', {href: here('tools', 'map_file')}, 'Map a file'),
+      button('Delete node', async () => {
+        if (await sure('Delete the node ' + me.name + ', every node based on it, and their archive files?'))
+          act('delete_node', {}, () => { location.hash = '#/' + state.c; });
+      }, 'danger')),
+    h('h2', {}, 'Composition'),
+    h('p', {class: 'desc'}, comp.name, h('br'), comp.description || 'No description.'),
+    h('div', {class: 'actions'},
+      button('Describe', async () => {
+        const v = await ask('Describe the composition', [{name: 'd', label: 'Description', value: comp.description, multiline: true}]);
+        if (v) act('describe', {node: undefined, description: v.d.trim()});
+      }),
+      button('Import a composition', importComposition),
+      h('a', {href: here('tools', 'create_composition')}, 'New composition')),
+    h('h2', {}, 'Own blocks'), body);
+  await fill(body, async () => blockList(await blocks('node'), {ix, labels: null}));
+}
+
+@
+
+Creating a node takes its base, not a node of its own, so the node that act would add is left out.
+@<Project@/litar@/Web@/views@+
+async function newNode() {
+  const v = await ask('New node on ' + nodeName(state.n), [
+    {name: 'name', label: 'Name'},
+    {name: 'archive', label: 'Archive', hint: 'A new file, relative to the composition directory, such as task.la.'},
+    {name: 'description', label: 'Description', multiline: true},
+  ], 'Create');
+  if (v) act('create_node', {node: undefined, name: v.name.trim(), archive: v.archive.trim(), description: v.description.trim(), base: state.n},
+    ref => { location.hash = '#/' + state.c + '/' + ref; });
+}
+async function importComposition() {
+  const v = await ask('Import a composition', [{name: 'path', label: 'Path', hint: 'The composition directory or its composer.json.'}], 'Import');
+  if (!v) return;
+  try {
+    const ref = await tool('import_composition', {path: v.path.trim()});
+    cache.clear();
+    location.hash = '#/' + ref;
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+@
+
+The form of a tool is built from its input schema, so every tool of the server can be called
+from the page, and a new tool needs no change here. A string is sent as typed; an array or
+an object is typed as JSON; an empty required field is null where the schema allows it.
+@<Project@/litar@/Web@/tool forms@+
+let toolResult = null;
+function toolForm(t) {
+  const schema = t.inputSchema || {}, need = new Set(schema.required || []);
+  const fields = Object.entries(schema.properties || {}).map(([k, s]) => {
+    const structured = s.type === 'array' || s.type === 'object', nullable = Array.isArray(s.anyOf);
+    const input = h(structured || k === 'text' ? 'textarea' : 'input',
+      {name: k, rows: structured ? 3 : 8, spellcheck: false, placeholder: structured ? 'JSON' : nullable ? 'Leave empty for null' : ''});
+    input.value = k === 'composition' ? state.c || '' : k === 'node' ? state.n || '' : '';
+    const row = h('label', {}, h('span', {}, k, need.has(k) ? null : h('small', {}, ' (optional)')), input, h('small', {}, s.description || ''));
+    return {k, structured, nullable, input, row};
+  });
+  const out = h('div', {}, toolResult && toolResult.name === t.name ? output(toolResult.text) : null);
+  toolResult = null;
+  return h('form', {onsubmit: async e => {
+    e.preventDefault();
+    try {
+      const args = {};
+      for (const f of fields) {
+        if (f.input.value !== '') args[f.k] = f.structured ? JSON.parse(f.input.value) : f.input.value;
+        else if (need.has(f.k)) args[f.k] = f.nullable ? null : '';
+      }
+      toolResult = {name: t.name, text: await tool(t.name, args)};
+      cache.clear();
+      await route();
+    } catch (err) {
+      out.replaceChildren(output(err.message, true));
+    }
+  }}, h('p', {class: 'desc'}, t.description || ''), fields.map(f => f.row),
+    h('div', {class: 'buttons'}, h('button', {class: 'primary'}, 'Run ' + t.name)), out);
+}
+
+@
+
+@<Project@/litar@/Web@/tool forms@+
+async function toolsView(name, hint) {
+  if (!state.tools) state.tools = JSON.parse(await fetch('/api/tools').then(answer));
+  const t = state.tools.find(t => t.name === name) || state.tools[0];
+  show(title('Tool', [t.name]),
+    hint ? h('p', {}, hint) : null,
+    h('div', {class: 'split'},
+      h('nav', {}, state.tools.map(x => h('a', {href: here('tools', x.name), class: x === t ? 'on' : ''}, x.name))),
+      toolForm(t)));
+}
+
+@
+
+A location is #/composition/node/view/..., so every view has a link and history works.
+The composition and the node fall back to the first composition and its last node.
+With nothing to browse yet, the page offers the tool that makes the missing thing,
+unless the location names a tool for that very state.
+Showing the same location again, after an edit, keeps the scroll position.
+Locations are shown one after another: a second request waits for the first,
+so two of them never fill the page at once.
+@<Project@/litar@/Web@/routing@+
+const views = {chunk: chunkView, file: fileView, item: itemView, label: labelView, search: searchView, eval: evalView, tools: toolsView};
+let lastHash = null, routing = Promise.resolve();
+function route() {
+  return routing = routing.then(showLocation, showLocation);
+}
+async function showLocation() {
+  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
+  const keep = lastHash === location.hash ? $('main').scrollTop : 0;
+  lastHash = location.hash;
+  document.body.classList.remove('nav');
+  try {
+    state.compositions = JSON.parse(await resource('list://composition'));
+    state.c = (state.compositions.find(c => c.ref === parts[0]) || state.compositions[0] || {}).ref || null;
+    state.flat = [];
+    if (state.c) try { flatten(await json(uri('tree', 'node', state.c)), [], 0); } catch (e) { state.flat = []; }
+    state.n = (state.flat.find(n => n.ref === parts[1]) || state.flat[state.flat.length - 1] || {}).ref || null;
+    state.sel = null;
+    const [view, ...args] = parts.slice(2);
+    const asked = view === 'tools' && parts[0] === (state.c || '-') ? args[0] : undefined;
+    showBar(view || '');
+    if (state.n) await (views[view] || nodeView)(...args);
+    else if (state.c) await toolsView(asked || 'create_node', 'This composition has no node yet. Create its root node: leave the base empty.');
+    else await toolsView(asked || 'import_composition', 'No composition is imported. Import one, or make one with create_composition.');
+    $('main').scrollTop = keep;
+    if (state.n) await showSide(); else $('tree').replaceChildren();
+  } catch (e) {
+    show(h('p', {class: 'error'}, e.message));
+  }
+}
+
+@
+
+Changing the node keeps the rest of the location: refs are hashed from names,
+so the same chunk, file, or item is shown in the other node.
+@<Project@/litar@/Web@/routing@+
+function showBar(view) {
+  $('composition').replaceChildren(...state.compositions.map(c =>
+    h('option', {value: c.ref, selected: c.ref === state.c, title: c.description}, c.name.split('/').slice(-2).join('/'))));
+  $('node').replaceChildren(...state.flat.map(n =>
+    h('option', {value: n.ref, selected: n.ref === state.n, title: n.description}, '  '.repeat(n.depth) + n.name)));
+  $('pages').replaceChildren(...[['', 'Node'], ['eval', 'Evaluate'], ['tools', 'Tools']].map(([v, name]) =>
+    h('a', {href: v ? here(v) : here(), class: view === v ? 'on' : ''}, name)));
+}
+$('composition').addEventListener('change', e => { location.hash = '#/' + e.target.value; });
+$('node').addEventListener('change', e => {
+  location.hash = '#/' + [state.c, e.target.value, ...location.hash.split('/').slice(3)].join('/');
+});
+$('search').addEventListener('submit', e => {
+  e.preventDefault();
+  location.hash = here('search', e.target.elements.q.value.trim());
+});
+$('filter').addEventListener('input', () => showSide());
+$('menu').addEventListener('click', () => document.body.classList.toggle('nav'));
+
+@
+
+The page has its own litar process, so it does not see what an agent or an editor writes
+to the archives. Importing a composition again reads it from disk: the page does that when
+its window gets the focus, at most every five seconds and never under an open editor or dialog,
+and on the reload button.
+@<Project@/litar@/Web@/routing@+
+let loadedAt = Date.now();
+async function reload(asked) {
+  if (!asked && (Date.now() - loadedAt < 5000 || document.querySelector('.editor, .veil'))) return;
+  loadedAt = Date.now();
+  try {
+    for (const c of state.compositions) await tool('import_composition', {path: c.name});
+    if (asked) toast('Loaded again from disk.');
+  } catch (e) {
+    toast(e.message, true);
+  }
+  cache.clear();
+  await route();
+}
+$('reload').addEventListener('click', () => reload(true));
+window.addEventListener('focus', () => reload(false));
+
+@
+
+The width of the navigator is dragged at its edge and remembered by the browser.
+@<Project@/litar@/Web@/routing@+
+const setSide = w => document.documentElement.style.setProperty('--side', w + 'px');
+$('grip').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const move = m => {
+    const w = Math.max(180, Math.min(m.clientX, window.innerWidth - 320));
+    setSide(w);
+    try { localStorage.setItem('side', w); } catch (err) {}
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', () => window.removeEventListener('pointermove', move), {once: true});
+});
+try { if (localStorage.getItem('side')) setSide(localStorage.getItem('side')); } catch (err) {}
+window.addEventListener('hashchange', route);
+route();
+
+@
+
+@<Chunk@/Project@/litar@/Web@/page@={"description": "The whole page: markup, style rules, and the script in loading order."}@
+@<Chunk@/Project@/litar@/Web@/page layout@={"description": "Markup of the bar, the navigator, the content column, and the toasts."}@
+@<Chunk@/Project@/litar@/Web@/style rules@={"description": "CSS of the page; colors are variables with a dark scheme."}@
+@<Chunk@/Project@/litar@/Web@/elements@={"description": "Helpers that build DOM elements, and the toast."}@
+@<Chunk@/Project@/litar@/Web@/resource access@={"description": "Reading MCP resources with a cache, calling tools, and the locations of views."}@
+@<Chunk@/Project@/litar@/Web@/dialogs@={"description": "The dialog that asks for values or a confirmation."}@
+@<Chunk@/Project@/litar@/Web@/trees@={"description": "Indexes of the trees of a node, and lookups of chunks and label paths by name."}@
+@<Chunk@/Project@/litar@/Web@/navigator@={"description": "The side panel: one tree of the node, filtered, with rename on each entry."}@
+@<Chunk@/Project@/litar@/Web@/block syntax@={"description": "Scanner and parser of the text of a block, and name resolution."}@
+@<Chunk@/Project@/litar@/Web@/block rendering@={"description": "A block as a card: linked references that open in place, filters, and item chips."}@
+@<Chunk@/Project@/litar@/Web@/block actions@={"description": "Editing, adding, moving, and deleting blocks."}@
+@<Chunk@/Project@/litar@/Web@/views@={"description": "The views of a chunk, file, item, label path, search, evaluation, and node."}@
+@<Chunk@/Project@/litar@/Web@/tool forms@={"description": "A form for every MCP tool, built from its input schema."}@
+@<Chunk@/Project@/litar@/Web@/routing@={"description": "Locations to views, the bar, reloading from disk, and the events of the page."}@

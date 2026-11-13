@@ -464,6 +464,20 @@ func (w *World) DumpArchives() error {
 	return nil
 }
 
+// Describe replaces the description of a node, or of the composition when nodeName is empty.
+func (w *World) Describe(nodeName, description string) error {
+	if nodeName == "" {
+		w.Description = description
+		return w.save()
+	}
+	n, err := w.requireLocal(nodeName)
+	if err != nil {
+		return err
+	}
+	n.Description = description
+	return w.save()
+}
+
 // LoadComposer reads a composer file.
 // The combined ground and local nodes have exactly one root.
 func LoadComposer(path string) (*World, error) {

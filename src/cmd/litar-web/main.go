@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"net"
+	"net/url"
 )
 
 var command struct {
@@ -26,11 +28,6 @@ var command struct {
 
 //go:embed index.html
 var indexHTML []byte
-
-var readOnlyTools = map[string]bool{
-	"import_composition":  true,
-	"evaluate_expression": true,
-}
 
 func main() {
 	flag.StringVar(&command.flags.addr, "addr", "127.0.0.1:8080", "address to listen on")
@@ -62,9 +59,10 @@ func main() {
 	defer session.Close()
 	http.HandleFunc("GET /{$}", serveIndex)
 	http.HandleFunc("GET /api/resource", resourceHandler(session))
+	http.HandleFunc("GET /api/tools", toolsHandler(session))
 	http.HandleFunc("POST /api/tool", toolHandler(session))
 	fmt.Fprintf(os.Stderr, "litar-web: serving on http://%s/\n", command.flags.addr)
-	if err := http.ListenAndServe(command.flags.addr, nil); err != nil {
+	if err := http.ListenAndServe(command.flags.addr, guard(http.DefaultServeMux)); err != nil {
 		fmt.Fprintln(os.Stderr, "litar-web:", err)
 		os.Exit(1)
 	}
@@ -126,10 +124,6 @@ func toolHandler(session *mcp.ClientSession) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if !readOnlyTools[call.Name] {
-			http.Error(w, "tool '"+call.Name+"' is not available", http.StatusForbidden)
-			return
-		}
 		res, err := session.CallTool(r.Context(), &mcp.CallToolParams{Name: call.Name, Arguments: call.Arguments})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
@@ -148,4 +142,41 @@ func toolHandler(session *mcp.ClientSession) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, text.String())
 	}
+}
+
+func toolsHandler(session *mcp.ClientSession) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		res, err := session.ListTools(r.Context(), nil)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(res.Tools)
+	}
+}
+
+func guard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !localHost(r.Host) {
+			http.Error(w, "host '"+r.Host+"' is not an address of this server", http.StatusForbidden)
+			return
+		}
+		if origin := r.Header.Get("Origin"); origin != "" {
+			if u, err := url.Parse(origin); err != nil || u.Host != r.Host {
+				http.Error(w, "origin '"+origin+"' is not this server", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// localHost tells whether the host of a request is localhost or an IP address.
+func localHost(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	return host == "localhost" || net.ParseIP(strings.Trim(host, "[]")) != nil
 }

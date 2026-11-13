@@ -30,7 +30,7 @@ A chunks tree might like the following:
   - (frameworks for building applications)
 - Project
   - (concrete projects)
-    - Build: the wrapping composition that builds the project
+    - Build: the build system
     - Tests
     - Documents
 

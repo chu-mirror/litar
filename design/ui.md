@@ -128,7 +128,10 @@ Tools:
 - apply a block to a node, cannot apply a block to a node in the ground archive,
   can specify a block applied to same chunk reference the new block overrides;
 - delete a block;
-- move a block to a node.
+- move a block to a node;
+- describe a composition or a node, replace its description;
+- search blocks, list the blocks of a node and its bases whose comment or text contains a string,
+  in the format of `blocks://`.
 
 `list://` returns a list of json objects:
 

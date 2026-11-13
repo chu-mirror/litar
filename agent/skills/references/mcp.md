@@ -62,6 +62,8 @@ prefer `blocks://effective`, `blocks://refer`, or `blocks://specialization`
 | `apply_block` | `composition`, `node`, `text`, `overrides` | append the block text (comment first); with `overrides` (a block ref) the new text takes that block's place |
 | `delete_block` | `composition`, `node`, `block` | delete one block |
 | `move_block` | `composition`, `node`, `block`, `to` | move one block, with its comment, to another node of the composition |
+| `describe` | `composition`, `node`, `description` | replace the description of the node, or of the composition when `node` is left out |
+| `search_blocks` | `composition`, `node`, `text` | the blocks of the node and its bases whose comment or text contains `text`, as a `blocks://` array; over 100 matches is an error, so search for a longer string |
 
 ## Editing
 

@@ -67,20 +67,29 @@ A run is not kept when its view has a mapped file or directory, or when it write
 Filters see the directory in `LITAR_CACHE`; remove the whole directory to clear the cache.
 A filter that reads anything else, such as the network or the clock, must not rely on running every time.
 
-# Browse
+# Browse and edit
 
-`litar-web` runs `litar -a` and serves a read-only page over its MCP resources:
-the node tree, the chunks, files, and items of a node, its own blocks,
-and for a chunk its specializations, effective, applied, and dependent blocks, and its result.
-References, filters, items, and file headers in blocks are links.
+`litar-web` runs `litar -a` and serves a page over its MCP resources and tools,
+so the page can do what an agent can:
+
+- browse the nodes, and the chunks, files, items, and label paths of a node;
+- read a chunk under a label path: its effective and applied blocks, the blocks that use it, and its result.
+  A reference in a block is a link, and opens the blocks of its chunk in place;
+  a reference that no block defines is marked. Items are chips that lead to the blocks carrying them;
+- edit: add, change, move, and delete blocks; rename and delete chunks, modules, items, and files;
+  describe chunks, files, items, nodes, and the composition; create and delete nodes;
+- search the blocks of a node, evaluate an expression, and call any tool of the server
+  from a form built from its input schema (Tools).
 
 ```
 bin/litar-web -litar bin/litar -file examples/go/project-hello.la
 ```
 
 It listens on `127.0.0.1:8080` by default (`-addr`).
-The page may import compositions and evaluate expressions, which runs their filters,
-but it cannot change an archive.
+The page writes archives and runs filters, so the server answers only requests whose host is
+`localhost` or an IP address and whose origin is the page itself.
+It has its own `litar` process: what an agent or an editor writes to the archives is loaded
+when the window gets the focus again, or with Reload.
 
 # Test
 

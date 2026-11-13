@@ -4788,8 +4788,12 @@ func Effective(blocks []Block, ref ChunkRef) (string, error) {
 
 @~ Project@/litar@/Go@/functions@/litar.Effective @~ Project@/litar@/Go@/functions@/litar.FormatBlocks @~ Project@/litar@/Go@/functions@/litar.effectiveBlocks @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @
 
+A use without labels takes the labels of the reference it is evaluated under: 'outer',
+and when 'open' any specialization of 'outer', because the blocks of a chunk reference
+are also evaluated for its specializations. So such a use matches the query when one
+label path continues the other.
 @<list@:litar@:Language@/Go@/File@/functions@+
-func useMatches(use ChunkRef, query ChunkRef, header ModulePath) bool {
+func useMatches(use ChunkRef, query ChunkRef, header ModulePath, outer []Name, open bool) bool {
 	mod := use.Module
 	if hasRel(mod) {
 		mod = resolveModule(header, mod)
@@ -4797,38 +4801,49 @@ func useMatches(use ChunkRef, query ChunkRef, header ModulePath) bool {
 	if use.Chunk != query.Chunk || !modulesEqual(mod, query.Module) {
 		return false
 	}
-	return isSuffix(query.Labels, use.Labels)
+	if len(use.Labels) > 0 {
+		return isSuffix(query.Labels, use.Labels)
+	}
+	return isSuffix(query.Labels, outer) || open && isSuffix(outer, query.Labels)
 }
 
-@~ Project@/litar@/Go@/functions@/litar.hasRel @~ Project@/litar@/Go@/functions@/litar.isSuffix @~ Project@/litar@/Go@/functions@/litar.modulesEqual @~ Project@/litar@/Go@/functions@/litar.resolveModule @~ Project@/litar@/Go@/functions@/litar.useMatches @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.ModulePath @
+@~ Project@/litar@/Go@/functions@/litar.hasRel @~ Project@/litar@/Go@/functions@/litar.isSuffix @~ Project@/litar@/Go@/functions@/litar.modulesEqual @~ Project@/litar@/Go@/functions@/litar.resolveModule @~ Project@/litar@/Go@/functions@/litar.useMatches @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.ModulePath @~ Project@/litar@/Go@/types@/litar.Name @
 
+A reference in the content and a filter of the block are evaluated under the labels of
+the block, or of a specialization of it; a file has no specialization.
+A filter of a reference is evaluated under the labels of that reference.
 @<list@:litar@:Language@/Go@/File@/functions@+
 func blockDepends(b Block, query ChunkRef) bool {
-	check := func(use ChunkRef) bool {
-		return useMatches(use, query, b.Ref.Module)
+	check := func(use ChunkRef, outer []Name, open bool) bool {
+		return useMatches(use, query, b.Ref.Module, outer, open)
 	}
+	open := !b.IsFile
 	for _, part := range b.Parts {
 		if part.Ref == nil {
 			continue
 		}
-		if check(part.Ref.ChunkRef) {
+		if check(part.Ref.ChunkRef, b.Ref.Labels, open) {
 			return true
 		}
+		outer, inherits := b.Ref.Labels, open
+		if len(part.Ref.Labels) > 0 {
+			outer, inherits = part.Ref.Labels, false
+		}
 		for _, f := range part.Ref.Filters {
-			if check(f.Ref) {
+			if check(f.Ref, outer, inherits) {
 				return true
 			}
 		}
 	}
 	for _, f := range b.Filters {
-		if check(f.Ref) {
+		if check(f.Ref, b.Ref.Labels, open) {
 			return true
 		}
 	}
 	return false
 }
 
-@~ Project@/litar@/Go@/functions@/litar.blockDepends @~ Project@/litar@/Go@/functions@/litar.useMatches @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @
+@~ Project@/litar@/Go@/functions@/litar.blockDepends @~ Project@/litar@/Go@/functions@/litar.useMatches @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Name @
 
 @<list@:litar@:Language@/Go@/File@/functions@+
 // Depend is the -d listing. No match is an empty string, not an error.
@@ -14209,3 +14224,37 @@ route();
 @<Chunk@/Project@/litar@/Web@/views@={"description": "The views of a chunk, file, item, label path, search, evaluation, and node."}@
 @<Chunk@/Project@/litar@/Web@/tool forms@={"description": "A form for every MCP tool, built from its input schema."}@
 @<Chunk@/Project@/litar@/Web@/routing@={"description": "Locations to views, the bar, reloading from disk, and the events of the page."}@
+A reference without labels is evaluated under the labels of its block and of their
+specializations, so the block depends on the chunk under each of those label paths.
+@<cli test@:litar@:Language@/Go@/File@/functions@+
+func TestDependInheritedLabels(t *testing.T) {
+	src := "@@<chunk@@=\n@@<substructure@@>\n@@\n\n@@<other@@:chunk@@=\n@@<substructure@@>\n@@\n\n@@<chunk@@+\n@@<fixed@@:substructure@@>\n@@\n"
+	a, err := ParseArchive([]byte(src), "t.la")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for query, want := range map[string]int{
+		"substructure":            3,
+		"label@@:substructure":     1,
+		"other@@:substructure":     2,
+		"x@@:other@@:substructure": 2,
+		"fixed@@:substructure":     2,
+		"x@@:fixed@@:substructure": 1,
+	} {
+		ref, err := ParseChunkRef(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := 0
+		for _, b := range a.Blocks {
+			if blockDepends(b, ref) {
+				got++
+			}
+		}
+		if got != want {
+			t.Errorf("%s: %d blocks depend on it, want %d", query, got, want)
+		}
+	}
+}
+
+@~ Project@/litar@/Go@/functions@/litar.TestDependInheritedLabels @~ Project@/litar@/Go@/functions@/litar.blockDepends @~ Project@/litar@/Go@/functions@/litar.ParseArchive @~ Project@/litar@/Go@/functions@/litar.ParseChunkRef @

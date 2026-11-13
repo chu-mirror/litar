@@ -54,7 +54,7 @@ func Effective(blocks []Block, ref ChunkRef) (string, error) {
 	return FormatBlocks(got), nil
 }
 
-func useMatches(use ChunkRef, query ChunkRef, header ModulePath) bool {
+func useMatches(use ChunkRef, query ChunkRef, header ModulePath, outer []Name, open bool) bool {
 	mod := use.Module
 	if hasRel(mod) {
 		mod = resolveModule(header, mod)
@@ -62,28 +62,36 @@ func useMatches(use ChunkRef, query ChunkRef, header ModulePath) bool {
 	if use.Chunk != query.Chunk || !modulesEqual(mod, query.Module) {
 		return false
 	}
-	return isSuffix(query.Labels, use.Labels)
+	if len(use.Labels) > 0 {
+		return isSuffix(query.Labels, use.Labels)
+	}
+	return isSuffix(query.Labels, outer) || open && isSuffix(outer, query.Labels)
 }
 
 func blockDepends(b Block, query ChunkRef) bool {
-	check := func(use ChunkRef) bool {
-		return useMatches(use, query, b.Ref.Module)
+	check := func(use ChunkRef, outer []Name, open bool) bool {
+		return useMatches(use, query, b.Ref.Module, outer, open)
 	}
+	open := !b.IsFile
 	for _, part := range b.Parts {
 		if part.Ref == nil {
 			continue
 		}
-		if check(part.Ref.ChunkRef) {
+		if check(part.Ref.ChunkRef, b.Ref.Labels, open) {
 			return true
 		}
+		outer, inherits := b.Ref.Labels, open
+		if len(part.Ref.Labels) > 0 {
+			outer, inherits = part.Ref.Labels, false
+		}
 		for _, f := range part.Ref.Filters {
-			if check(f.Ref) {
+			if check(f.Ref, outer, inherits) {
 				return true
 			}
 		}
 	}
 	for _, f := range b.Filters {
-		if check(f.Ref) {
+		if check(f.Ref, b.Ref.Labels, open) {
 			return true
 		}
 	}

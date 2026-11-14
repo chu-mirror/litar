@@ -23,10 +23,10 @@ Tests of cli.go.
 
 @<cli test@:litar@:Language@/Go@/File@/import paths@+
 "bytes"
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
+"os"
+"path/filepath"
+"strings"
+"testing"
 @
 
 Compositions: composer.json, grounds, the node graph, and archive edits with compaction.
@@ -35,11 +35,11 @@ Compositions: composer.json, grounds, the node graph, and archive edits with com
 
 @<compose@:litar@:Language@/Go@/File@/import paths@+
 "bytes"
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
+"encoding/json"
+"fmt"
+"os"
+"path/filepath"
+"strings"
 @
 
 @<compose@:litar@:Language@/Go@/File@/types@+
@@ -1380,9 +1380,9 @@ Tests of compose.go.
 
 @<compose test@:litar@:Language@/Go@/File@/import paths@+
 "os"
-	"path/filepath"
-	"strings"
-	"testing"
+"path/filepath"
+"strings"
+"testing"
 @
 
 @<compose test@:litar@:Language@/Go@/File@/functions@+
@@ -1545,6 +1545,8 @@ if err != nil || again.ArchiveSpec != "./again.la" {
 }
 @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/methods@/litar.World.lookup @
 
+The cases hold raw strings over several lines, so their reference starts its line:
+an indented reference would indent the lines inside the strings too.
 @<compose test@:litar@:Language@/Go@/File@/functions@+
 func TestComposerErrors(t *testing.T) {
 	dir := t.TempDir()
@@ -1554,7 +1556,7 @@ func TestComposerErrors(t *testing.T) {
 		json string
 		msg  string
 	}{
-		@<Project@/litar@/Tests@/Composer@/composers that LoadComposer refuses, each with a part of its error@>
+@<Project@/litar@/Tests@/Composer@/composers that LoadComposer refuses, each with a part of its error@>
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2219,9 +2221,9 @@ The evaluator: expands references through specialization, detects cycles, and ru
 
 @<eval@:litar@:Language@/Go@/File@/import paths@+
 "fmt"
-	"io"
-	"strings"
-	"sync"
+"io"
+"strings"
+"sync"
 @
 
 @<eval@:litar@:Language@/Go@/File@/types@+
@@ -2607,10 +2609,15 @@ return text, nil
 An inner reference takes the labels of the reference being expanded when it has none,
 and its relative module is resolved against the block's header.
 A missing inner chunk expands to nothing.
+A reference that only spaces and tabs of the block precede on its line is indented:
+its content, after the filters of the reference, gets them before each later line.
+'indent' and 'blank' follow the line of the block the parts have reached.
 @<Project@/litar@/Evaluator@/write each part of 'b' to 'sb', expanding its references@=
+indent, blank := "", true
 for _, part := range b.Parts {
 	if part.Ref == nil {
 		sb.WriteString(part.Text)
+		indent, blank = continueLine(indent, blank, part.Text)
 		continue
 	}
 	inner := resolveBody(part.Ref.ChunkRef, applied.Labels, b.Ref.Module)
@@ -2624,9 +2631,13 @@ for _, part := range b.Parts {
 			return "", err
 		}
 	}
+	if blank && indent != "" {
+		text = indentLines(text, indent)
+	}
+	blank = false
 	sb.WriteString(text)
 }
-@~ Project@/litar@/Go@/functions@/litar.resolveBody @~ Project@/litar@/Go@/methods@/litar.Evaluator.expandLocked @~ Project@/litar@/Go@/methods@/litar.Evaluator.runFiltersLocked @
+@~ Project@/litar@/Go@/functions@/litar.continueLine @~ Project@/litar@/Go@/functions@/litar.indentLines @~ Project@/litar@/Go@/functions@/litar.resolveBody @~ Project@/litar@/Go@/methods@/litar.Evaluator.expandLocked @~ Project@/litar@/Go@/methods@/litar.Evaluator.runFiltersLocked @
 
 @<eval@:litar@:Language@/Go@/File@/functions@+
 func resolveBody(ref ChunkRef, outerLabels []Name, header ModulePath) ChunkRef {
@@ -2710,7 +2721,7 @@ Tests of eval.go.
 
 @<eval test@:litar@:Language@/Go@/File@/import paths@+
 "strings"
-	"testing"
+"testing"
 @
 
 @<eval test@:litar@:Language@/Go@/File@/functions@+
@@ -3125,12 +3136,12 @@ Filters: the file catalog and views, shebang parsing, and running filter scripts
 
 @<filter@:litar@:Language@/Go@/File@/import paths@+
 "bytes"
-	"fmt"
-	"io"
-	"os"
-	"os/exec"
-	"strings"
-	"syscall"
+"fmt"
+"io"
+"os"
+"os/exec"
+"strings"
+"syscall"
 @
 
 @<filter@:litar@:Language@/Go@/File@/types@+
@@ -3311,11 +3322,11 @@ Tests of filter.go.
 
 @<filter test@:litar@:Language@/Go@/File@/import paths@+
 "bytes"
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
-	"time"
+"os"
+"path/filepath"
+"strings"
+"testing"
+"time"
 @
 
 @<filter test@:litar@:Language@/Go@/File@/functions@+
@@ -3838,16 +3849,16 @@ The FUSE view that shows a filter the files of its view.
 
 @<fuse@:litar@:Language@/Go@/File@/import paths@+
 "context"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"sort"
-	"sync"
-	"syscall"
-	"time"
+"os"
+"os/exec"
+"path/filepath"
+"sort"
+"sync"
+"syscall"
+"time"
 
-	"github.com/hanwen/go-fuse/v2/fs"
-	"github.com/hanwen/go-fuse/v2/fuse"
+"github.com/hanwen/go-fuse/v2/fs"
+"github.com/hanwen/go-fuse/v2/fuse"
 @
 
 @<fuse@:litar@:Language@/Go@/File@/types@+
@@ -4626,8 +4637,8 @@ Listings: literal, effective, depend, and reference outputs, and module, chunk, 
 
 @<list@:litar@:Language@/Go@/File@/import paths@+
 "fmt"
-	"strings"
-	"unicode/utf8"
+"strings"
+"unicode/utf8"
 @
 
 @<list@:litar@:Language@/Go@/File@/functions@+
@@ -6442,15 +6453,15 @@ Tests of mcp.go.
 
 @<mcp test@:litar@:Language@/Go@/File@/import paths@+
 "context"
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"slices"
-	"strconv"
-	"strings"
-	"testing"
+"encoding/json"
+"os"
+"path/filepath"
+"slices"
+"strconv"
+"strings"
+"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+"github.com/modelcontextprotocol/go-sdk/mcp"
 @
 
 @<mcp test@:litar@:Language@/Go@/File@/functions@+
@@ -6842,12 +6853,12 @@ Tests of meta.go.
 
 @<meta test@:litar@:Language@/Go@/File@/import paths@+
 "encoding/json"
-	"os"
-	"path/filepath"
-	"runtime"
-	"strings"
-	"testing"
-	"unicode/utf8"
+"os"
+"path/filepath"
+"runtime"
+"strings"
+"testing"
+"unicode/utf8"
 @
 
 @<meta test@:litar@:Language@/Go@/File@/functions@+
@@ -7344,7 +7355,7 @@ The parser of archives, expressions, module paths, and items.
 
 @<parse@:litar@:Language@/Go@/File@/import paths@+
 "fmt"
-	"strings"
+"strings"
 @
 
 @<parse@:litar@:Language@/Go@/File@/types@+
@@ -8196,7 +8207,7 @@ Tests of parse.go.
 
 @<parse test@:litar@:Language@/Go@/File@/import paths@+
 "strings"
-	"testing"
+"testing"
 @
 
 @<parse test@:litar@:Language@/Go@/File@/functions@+
@@ -8512,7 +8523,7 @@ Core types: names, chunk references, blocks, nodes, worlds, and their helpers.
 
 @<types@:litar@:Language@/Go@/File@/import paths@+
 "fmt"
-	"strings"
+"strings"
 @
 
 @<types@:litar@:Language@/Go@/File@/types@+
@@ -9018,15 +9029,15 @@ The page is embedded beside the program, so the command is one file to install.
 @
 
 @<litar-web@:command@:Language@/Go@/File@/import paths@+
-    "context"
-    _ "embed"
-    "encoding/json"
-    "io"
-    "net/http"
-    "os/exec"
-    "strings"
+"context"
+_ "embed"
+"encoding/json"
+"io"
+"net/http"
+"os/exec"
+"strings"
 
-    "github.com/modelcontextprotocol/go-sdk/mcp"
+"github.com/modelcontextprotocol/go-sdk/mcp"
 @
 
 @<litar-web@:command@:Language@/Go@/File@/variables@+
@@ -9509,12 +9520,12 @@ if code == 0 || out != "" || !strings.Contains(errText, "could not find archive 
 @
 @<cli@:litar@:Language@/Go@/File@/import paths@=
 "context"
-	"errors"
-	"fmt"
-	"io"
-	"os"
-	"os/signal"
-	"syscall"
+"errors"
+"fmt"
+"io"
+"os"
+"os/signal"
+"syscall"
 @
 The default address is on the loopback interface,
 because the interface reads archives and runs their filters on this machine.
@@ -9611,12 +9622,12 @@ so a later run with the same script, input, and view files is not started again.
 
 @<cache@:litar@:Language@/Go@/File@/import paths@+
 "crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	"strings"
+"encoding/hex"
+"fmt"
+"io"
+"os"
+"path/filepath"
+"strings"
 @
 Only Main sets the cache directory, so the tests run every filter unless a test sets it.
 @<cache@:litar@:Language@/Go@/File@/variables@+
@@ -12648,8 +12659,8 @@ func TestMCPDescribeSearch(t *testing.T) {
 
 @~ Project@/litar@/Go@/functions@/litar.TestMCPDescribeSearch @~ Project@/litar@/Go@/functions@/litar.callTool @~ Project@/litar@/Go@/functions@/litar.newMCPFixture @~ Project@/litar@/Go@/functions@/litar.refOf @~ Project@/litar@/Go@/methods@/litar.mcpFixture.fail @~ Project@/litar@/Go@/methods@/litar.mcpFixture.tool @~ Project@/litar@/Go@/types@/litar.blockJSON @~ Project@/litar@/Go@/types@/litar.mcpFixture @
 @<litar-web@:command@:Language@/Go@/File@/import paths@+
-    "net"
-    "net/url"
+"net"
+"net/url"
 @
 
 The page builds a form for each tool from this list, so a tool added to litar
@@ -14350,3 +14361,85 @@ _ = filepath.WalkDir(f.origin, func(p string, d os.DirEntry, err error) error {
 @<mcp@:litar@:Language@/Go@/File@/import paths@+
 "path/filepath"
 @
+@<eval@:litar@:Language@/Go@/File@/functions@+
+// continueLine adds text to a line of a block body: indent is the line so far
+// and blank tells that it holds only spaces and tabs. It returns the same
+// for the line that text ends in.
+func continueLine(indent string, blank bool, text string) (string, bool) {
+	if i := strings.LastIndexByte(text, '\n'); i >= 0 {
+		indent, blank, text = "", true, text[i+1:]
+	}
+	if !blank || strings.Trim(text, " \t") != "" {
+		return "", false
+	}
+	return indent + text, true
+}
+
+// indentLines writes indent before every line of text after the first.
+// An empty line stays empty, and nothing follows a final line break.
+func indentLines(text, indent string) string {
+	var sb strings.Builder
+	for {
+		i := strings.IndexByte(text, '\n')
+		if i < 0 {
+			break
+		}
+		sb.WriteString(text[:i+1])
+		text = text[i+1:]
+		if text != "" && text[0] != '\n' && text[0] != '\r' {
+			sb.WriteString(indent)
+		}
+	}
+	sb.WriteString(text)
+	return sb.String()
+}
+
+@~ Project@/litar@/Go@/functions@/litar.continueLine @~ Project@/litar@/Go@/functions@/litar.indentLines @
+@<eval test@:litar@:Language@/Go@/File@/functions@+
+func TestIndentedReference(t *testing.T) {
+	src := "" +
+		"@@<body@@=\n" +
+		"a\n" +
+		"\n" +
+		"  b\n" +
+		"@@\n" +
+		"@@<body@@+\n" +
+		"c\n" +
+		"@@\n" +
+		"@@<upper@@=\n" +
+		"#!/bin/sh\n" +
+		"tr a-c A-C\n" +
+		"@@\n" +
+		"@@<first@@=  @@<body@@>;@@\n" +
+		"@@<nested@@=\n" +
+		"if x:\n" +
+		"\t@@<first@@>\n" +
+		"@@\n" +
+		"@@<inline@@=\n" +
+		"  x = @@<body@@>\n" +
+		"  @@<one@@>@@<body@@>\n" +
+		"@@\n" +
+		"@@<one@@=1@@\n" +
+		"@@<ended@@=\n" +
+		"  @@<lines@@>end\n" +
+		"@@\n" +
+		"@@<lines@@=\n" +
+		"a\n" +
+		"b\n" +
+		"\n" +
+		"@@\n" +
+		"@@<filtered@@=\n" +
+		"  @@<body@@|upper@@>\n" +
+		"@@\n" +
+		"@@<escaped@@=\n" +
+		"  @@@@ @@<body@@>\n" +
+		"@@\n"
+	mustEval(t, src, "first", "  a\n\n    b\n  c;")
+	mustEval(t, src, "nested", "if x:\n\t  a\n\n\t    b\n\t  c;")
+	mustEval(t, src, "inline", "  x = a\n\n  b\nc\n  1a\n\n  b\nc")
+	mustEval(t, src, "ended", "  a\n  b\nend")
+	mustEval(t, src, "filtered", "  A\n\n    B\n  C")
+	mustEval(t, src, "escaped", "  @@ a\n\n  b\nc")
+}
+
+@~ Project@/litar@/Go@/functions@/litar.mustEval @

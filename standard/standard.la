@@ -1637,10 +1637,6 @@ gofmt
 {"description": "go:build lines before the package clause."}
 @
 
-@<Chunk@/Language@/Go@/File@/Header@/imports@=
-{"description": "Import declaration, omitted when there are no paths."}
-@
-
 @<Chunk@/Language@/Go@/File@/import paths@=
 {"description": "Lines of the import declaration."}
 @
@@ -1763,24 +1759,6 @@ further fields belong there too, and Jsonnet rejects a field given twice.
 } + {
     @<..@/module properties@>
 }
-@
-No import declaration is emitted when the path list is empty
-or contains only whitespace.
-A blank line between paths starts another group,
-and gofmt keeps that group.
-@<Language@/Go@/File@/Header@/imports@=
-@<Tool@/Text Processing@/basic python settings@>
-paths = r'''
-@<..@/import paths@>
-'''.strip(' \t\n\r\f\v')
-if paths:
-    print(f'import (\n{paths}\n)')
-@|Tool@/evaluate@
-
-@<command@:Language@/Go@/File@/import paths@+
-    "flag"
-    "fmt"
-    "os"
 @
 @<UI@/Command Line@/Go@/command variables@=
 @<Tool@/Text Processing@/basic python settings@>
@@ -2564,6 +2542,63 @@ for line in r'''
     elif fields:
         fail(f"requirement '{line.strip()}' is not a module path and a version")
 @|Tool@/evaluate@
+A module path has no blank and does not start with a slash;
+a Go version is 1.N or 1.N.P.
+Further fields are kept for other generators.
+@<Language@/Go@/Module@/Meta@/project meta model@=
+class ProjectMeta(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='allow')
+    module: str = pydantic.Field(pattern=r'^[^\s/]\S*$')
+    go: str = pydantic.Field(pattern=r'^1\.\d+(\.\d+)?$')
+@
+A Go project is one Go module: packages in directories below the module root,
+with go.mod and go.sum in the module file directory, where the go command manages them.
+One node holds one project, so the blocks of this module carry no label,
+and every file of the node sees the same module.
+A package is a label, as in the Go file structure,
+and each file of a package carries that label with a label of its own.
+A command is a package whose rightmost label is command;
+by convention its files live in cmd, in a directory named after the command.
+A test file is one more file of its package, named after the file it tests with _test,
+and it adds testing to its own import paths.
+Declare every Go file in the file set go module, and map the module file directory into it,
+so the project checks below see the whole project.
+
+The module field is the module path, and the go field is the minimum Go version.
+example.com/project stands in until a project sets its own path.
+A project sets its fields in project properties, the fields of a second Jsonnet object,
+which override these defaults; Jsonnet rejects a field given twice.
+@<Language@/Go@/Module@/Meta@/project meta information@=
+{
+    module: 'example.com/project',
+    go: '1.24',
+} + {
+    @<..@/project properties@>
+}
+@
+
+@<Chunk@/Language@/Go@/Module@/module file report@=
+{"description": "Output of syncing go.mod and go.sum in the module file directory with the archive."}
+@
+No import declaration is emitted when the path list is empty
+or contains only whitespace.
+A blank line between paths starts another group,
+and gofmt keeps that group.
+The paths are written unindented, one on a line; gofmt indents them.
+@<Language@/Go@/File@/Header@/imports@=
+@<Tool@/Text Processing@/basic python settings@>
+paths = r'''
+@<..@/import paths@>
+'''.strip(' \t\n\r\f\v')
+if paths:
+    print(f'import (\n{paths}\n)')
+@|Tool@/evaluate@
+
+@<command@:Language@/Go@/File@/import paths@+
+"flag"
+"fmt"
+"os"
+@
 A text processing script is a Python script that declares its dependencies:
 jsonnet evaluates configuration, and pydantic validates it.
 Its interpreter runs it in a background process that has loaded them already.
@@ -2856,41 +2891,6 @@ def configuration(model, source):
     except pydantic.ValidationError as error:
         fail(str(error))
 @~ Tool@/Python@/functions@/configuration @~ Tool@/Python@/functions@/fail @
-A module path has no blank and does not start with a slash;
-a Go version is 1.N or 1.N.P.
-Further fields are kept for other generators.
-@<Language@/Go@/Module@/Meta@/project meta model@=
-class ProjectMeta(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='allow')
-    module: str = pydantic.Field(pattern=r'^[^\s/]\S*$')
-    go: str = pydantic.Field(pattern=r'^1\.\d+(\.\d+)?$')
-@
-A Go project is one Go module: packages in directories below the module root,
-with go.mod and go.sum in the module file directory, where the go command manages them.
-One node holds one project, so the blocks of this module carry no label,
-and every file of the node sees the same module.
-A package is a label, as in the Go file structure,
-and each file of a package carries that label with a label of its own.
-A command is a package whose rightmost label is command;
-by convention its files live in cmd, in a directory named after the command.
-A test file is one more file of its package, named after the file it tests with _test,
-and it adds testing to its own import paths.
-Declare every Go file in the file set go module, and map the module file directory into it,
-so the project checks below see the whole project.
-
-The module field is the module path, and the go field is the minimum Go version.
-example.com/project stands in until a project sets its own path.
-A project sets its fields in project properties, the fields of a second Jsonnet object,
-which override these defaults; Jsonnet rejects a field given twice.
-@<Language@/Go@/Module@/Meta@/project meta information@=
-{
-    module: 'example.com/project',
-    go: '1.24',
-} + {
-    @<..@/project properties@>
-}
-@
-
-@<Chunk@/Language@/Go@/Module@/module file report@=
-{"description": "Output of syncing go.mod and go.sum in the module file directory with the archive."}
+@<Chunk@/Language@/Go@/File@/Header@/imports@=
+{"description": "Import declaration, omitted when there are no paths."}
 @

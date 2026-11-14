@@ -387,49 +387,49 @@ function parseBlock(text) {
   const at = () => toks[i] ? toks[i].ctl : undefined;
   const name = () => (toks[i] && toks[i].text !== undefined ? toks[i++].text : '').trim();
   const operand = () => {
-  const r = {labels: [], path: [], view: [], filters: []};
-  let op = '';
-  for (;;) {
-    const n = name(), c = at();
-    if (op) r.view.push({op, name: n});
-    else if (c === ':') r.labels.push(n);
-    else if (n !== '') r.path.push(n);
-    if (!op && (c === ':' || c === '/')) i++;
-    else if (c && '+-,!'.includes(c)) { op = c; i++; }
-    else return r;
-  }
-};
+    const r = {labels: [], path: [], view: [], filters: []};
+    let op = '';
+    for (;;) {
+      const n = name(), c = at();
+      if (op) r.view.push({op, name: n});
+      else if (c === ':') r.labels.push(n);
+      else if (n !== '') r.path.push(n);
+      if (!op && (c === ':' || c === '/')) i++;
+      else if (c && '+-,!'.includes(c)) { op = c; i++; }
+      else return r;
+    }
+  };
   const open = toks[i++];
-b.file = Boolean(open) && open.ctl !== '<';
-b.exec = Boolean(open) && open.ctl === '(';
-for (let inSet = false; ;) {
-  const n = name(), c = at();
-  i++;
-  if (c === undefined || c === '') return b;
-  if (inSet) b.sets.push(n);
-  else if (c === ':') b.labels.push(n);
-  else b.path.push(n);
-  if (c === '`') inSet = true;
-  else if (c === '=' || c === '+') { b.op = c; break; }
-  else if (c !== ':' && c !== '/') return b;
-}
+  b.file = Boolean(open) && open.ctl !== '<';
+  b.exec = Boolean(open) && open.ctl === '(';
+  for (let inSet = false; ;) {
+    const n = name(), c = at();
+    i++;
+    if (c === undefined || c === '') return b;
+    if (inSet) b.sets.push(n);
+    else if (c === ':') b.labels.push(n);
+    else b.path.push(n);
+    if (c === '`') inSet = true;
+    else if (c === '=' || c === '+') { b.op = c; break; }
+    else if (c !== ':' && c !== '/') return b;
+  }
   for (let tail = false; ;) {
-  const t = toks[i++];
-  if (!t || t.ctl === '') break;
-  if (t.text !== undefined) { if (!tail) b.body.push(t.text); }
-  else if (t.ctl === '<') {
-    const r = operand();
-    while (at() === '|') { i++; r.filters.push(operand()); }
-    if (at() === '>') i++;
-    b.body.push(r);
-  } else if (t.ctl === '|') { tail = true; b.filters.push(operand()); }
-  else if (t.ctl === '~') {
-    tail = true;
-    const item = [name()];
-    while (at() === '/') { i++; item.push(name()); }
-    b.items.push(item);
-  } else if (!tail) b.body.push(ctl(t.ctl));
-}
+    const t = toks[i++];
+    if (!t || t.ctl === '') break;
+    if (t.text !== undefined) { if (!tail) b.body.push(t.text); }
+    else if (t.ctl === '<') {
+      const r = operand();
+      while (at() === '|') { i++; r.filters.push(operand()); }
+      if (at() === '>') i++;
+      b.body.push(r);
+    } else if (t.ctl === '|') { tail = true; b.filters.push(operand()); }
+    else if (t.ctl === '~') {
+      tail = true;
+      const item = [name()];
+      while (at() === '/') { i++; item.push(name()); }
+      b.items.push(item);
+    } else if (!tail) b.body.push(ctl(t.ctl));
+  }
   return b;
 }
 

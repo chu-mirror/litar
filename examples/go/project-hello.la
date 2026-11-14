@@ -30,7 +30,7 @@ func Greeting(name string) string {
 @
 
 @<test@:greet@:Language@/Go@/File@/import paths@+
-    "testing"
+"testing"
 @
 
 @<test@:greet@:Language@/Go@/File@/functions@+
@@ -50,7 +50,7 @@ The command hello takes the name to greet from the flag -name.
 @
 
 @<hello@:command@:Language@/Go@/File@/import paths@+
-    "@<greet@:Language@/Go@/Module@/import path@>"
+"@<greet@:Language@/Go@/Module@/import path@>"
 @
 
 @<hello@:command@:Language@/Go@/File@/main body@=

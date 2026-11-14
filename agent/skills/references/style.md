@@ -60,8 +60,10 @@ Modules form one tree; every chunk may refer to any other.
 - Split a switch with distinct constant cases into a sequence
   (`cases of 'opt' in 'run'`): start with `@=`, add the rest with `@+`.
 - Leave whole: generated or data blocks, and order-dependent structures.
-- Expansion does not re-indent. Where a ground formats the code, write sub-chunks unindented;
-  otherwise give a sub-chunk its absolute indentation.
+- Expansion indents the content of an indented reference. Write a sub-chunk unindented
+  and indent its reference to the level of the code around it.
+- Content with a string or here-document over several lines must not be indented:
+  start the line with its reference.
 - End a tree sub-chunk without an empty line before `@`, or a blank line follows the reference.
   Sequence blocks without a trailing empty line are joined by one line feed.
 

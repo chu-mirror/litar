@@ -239,6 +239,11 @@ and all chunk references are replaced by the content**.
 
 The predecessors of `spec2@:spec1@:module@/chunk` are `spec1@:module@/chunk` and `module@/chunk`.
 
+Evaluation also keeps indentation.
+If only spaces and tabs precede a chunk reference on its line,
+the content replacing it is indented at the same level:
+each of its lines after the first is preceded by the same spaces and tabs.
+
 # Filter
 
 Another major extension is user defined filters.

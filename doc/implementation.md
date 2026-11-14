@@ -124,6 +124,12 @@ for the `composer.json` schema and ground search path):
   reference-level filter pipeline on each inner reference), runs the block's own filter
   pipeline on the combined text, and then sets or appends. Filter output is final and is
   not scanned for controls.
+- **Indentation:** While expanding a block, `continueLine` follows the text of the current
+  line of the block's own parts. When that text is non-empty and holds only spaces and tabs
+  at an inner reference, `indentLines` writes it before every line after the first of the
+  reference's text (after the reference-level pipeline), skipping empty lines and the end
+  of the text. Text included by an earlier reference on the same line makes the line
+  non-blank, whatever it expanded to.
 - **Resolution and inheritance:**
   - An inner reference without labels inherits the labels of the chunk reference currently
     being expanded.

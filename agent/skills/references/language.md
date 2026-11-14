@@ -35,6 +35,9 @@ content
   with a line feed; otherwise it is concatenated.
 - A reference in content: `@<chunk@>`, `@<label@:Module@/chunk@>`, `@<.@/sub@>`.
   A reference without labels inherits the labels of the reference being expanded.
+- A reference preceded on its line only by spaces and tabs is indented: every later line of
+  its content (after its filters) gets that white space too; empty lines stay empty.
+  A reference after other text, or at the start of a line, includes its content as it is.
 - Pipeline: `@|filter1@|filter2` after the content filters this block's text;
   `@<chunk@|filter@>` filters one reference.
 

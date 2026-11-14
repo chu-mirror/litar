@@ -171,6 +171,52 @@ References do not nest inside one another, and an end control before `@>` is an
 unterminated-block error.
 To write literal `@<` in content, write `@@<`.
 
+### Indented references
+
+When only spaces and tabs of the block precede a reference on its line, the reference is
+**indented**, and that white space is its indentation.
+The content included for an indented reference gets the indentation before each of its lines
+after the first; the first line already follows the indentation written in the block.
+
+```
+@<body@=
+if (argc > 1) {
+    return 1;
+}
+@
+
+@<main@=
+int main(int argc, char **argv)
+{
+    @<body@>
+    return 0;
+}
+@
+```
+
+Here `main` evaluates to:
+
+```
+int main(int argc, char **argv)
+{
+    if (argc > 1) {
+        return 1;
+    }
+    return 0;
+}
+```
+
+- An empty line of the included content stays empty, and nothing is added after a line break
+  that ends the content.
+- The indentation is added after the filter pipeline of the reference has run,
+  so the filters see the content unindented.
+- Indentation accumulates: when the block holding an indented reference is itself included
+  by an indented reference, both indentations precede the lines.
+- A reference that follows any other text or another reference on its line is not indented,
+  and its content is included as it is.
+- Every line is indented, also a line inside a string or a here-document that spans lines.
+  Start the line with the reference to include such content exactly.
+
 ## Block pipeline and items
 
 After the content, a block body may optionally include a filter pipeline and item references

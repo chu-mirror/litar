@@ -263,9 +263,11 @@ func (e *Evaluator) viewSum(view []ViewOp) [sha256.Size]byte {
 
 func (e *Evaluator) expandBlock(b Block, applied ChunkRef) (string, error) {
 	var sb strings.Builder
+	indent, blank := "", true
 	for _, part := range b.Parts {
 		if part.Ref == nil {
 			sb.WriteString(part.Text)
+			indent, blank = continueLine(indent, blank, part.Text)
 			continue
 		}
 		inner := resolveBody(part.Ref.ChunkRef, applied.Labels, b.Ref.Module)
@@ -279,6 +281,10 @@ func (e *Evaluator) expandBlock(b Block, applied ChunkRef) (string, error) {
 				return "", err
 			}
 		}
+		if blank && indent != "" {
+			text = indentLines(text, indent)
+		}
+		blank = false
 		sb.WriteString(text)
 	}
 	text := sb.String()
@@ -365,4 +371,36 @@ func resolveFilter(ref ChunkRef, outerLabels []Name) ChunkRef {
 		labels = copyLabels(labels)
 	}
 	return ChunkRef{Labels: labels, Module: copyModule(ref.Module), Chunk: ref.Chunk}
+}
+
+// continueLine adds text to a line of a block body: indent is the line so far
+// and blank tells that it holds only spaces and tabs. It returns the same
+// for the line that text ends in.
+func continueLine(indent string, blank bool, text string) (string, bool) {
+	if i := strings.LastIndexByte(text, '\n'); i >= 0 {
+		indent, blank, text = "", true, text[i+1:]
+	}
+	if !blank || strings.Trim(text, " \t") != "" {
+		return "", false
+	}
+	return indent + text, true
+}
+
+// indentLines writes indent before every line of text after the first.
+// An empty line stays empty, and nothing follows a final line break.
+func indentLines(text, indent string) string {
+	var sb strings.Builder
+	for {
+		i := strings.IndexByte(text, '\n')
+		if i < 0 {
+			break
+		}
+		sb.WriteString(text[:i+1])
+		text = text[i+1:]
+		if text != "" && text[0] != '\n' && text[0] != '\r' {
+			sb.WriteString(indent)
+		}
+	}
+	sb.WriteString(text)
+	return sb.String()
 }

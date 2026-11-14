@@ -26,7 +26,7 @@ Every object is addressed by its `ref`, ten hex digits hashed from its kind and 
 | `tree://node/{c}` | node tree |
 | `tree://chunk/{c}/{n}` | chunks by module, file chunks under `File`, with descriptions |
 | `tree://item/{c}/{n}` | items by domain, with descriptions |
-| `tree://file/{c}/{n}` | files by directory |
+| `tree://file/{c}/{n}` | files by directory; a mapped directory lists the host files below it |
 | `tree://specialization/{c}/{n}` | label paths used in the node; `a` → `b` is `b@:a` |
 | `blocks://node/{c}/{n}` | the node's own blocks |
 | `blocks://apply/{c}/{n}/{chunk}/{spec}` | all blocks matching that reference |

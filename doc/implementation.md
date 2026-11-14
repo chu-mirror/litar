@@ -244,7 +244,7 @@ All resources, resource templates, and tools are registered at startup.
 | `tree://node/{composition}` | `application/json` | node tree of the composition |
 | `tree://chunk/{composition}/{node}` | `application/json` | chunk tree organized by module, file chunks under `File` |
 | `tree://item/{composition}/{node}` | `application/json` | item tree organized by domain |
-| `tree://file/{composition}/{node}` | `application/json` | file tree organized by directory |
+| `tree://file/{composition}/{node}` | `application/json` | file tree organized by directory; a mapped directory is a branch that lists the host files below it, each readable as a `file://` resource |
 | `tree://specialization/{composition}/{node}` | `application/json` | specialization tree of the node |
 | `blocks://node/{composition}/{node}` | `application/json` | the node's own blocks (`Own`) |
 | `blocks://apply/{composition}/{node}/{chunk}/{specialization}` | `application/json` | the blocks `-l` prints for that chunk reference |

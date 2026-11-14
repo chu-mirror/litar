@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 )
@@ -139,6 +140,20 @@ func (e *Evaluator) tangle(files []viewFile) error {
 			return err
 		}
 		files[i].body = data
+	}
+	return nil
+}
+
+// file is the catalog file at path, or the file at path below a mapped directory.
+func (c *catalog) file(path string) *catFile {
+	if f := c.files[path]; f != nil {
+		return f
+	}
+	for dir, f := range c.files {
+		rest, ok := strings.CutPrefix(path, dir+"/")
+		if ok && f.dir && !f.archive {
+			return &catFile{mapping: true, origin: filepath.Join(f.origin, filepath.FromSlash(rest))}
+		}
 	}
 	return nil
 }

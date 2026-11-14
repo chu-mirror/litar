@@ -10,6 +10,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -611,7 +612,7 @@ func (a *agent) renderFile(uri, mime string) (string, string, []byte, error) {
 	if err != nil {
 		return "", "", nil, err
 	}
-	f := buildCatalog(chain, maps).files[path]
+	f := buildCatalog(chain, maps).file(path)
 	if f == nil {
 		return "", "", nil, errString("file '" + path + "' is not defined")
 	}
@@ -1223,18 +1224,35 @@ func fileTree(blocks []Block, mappings []Mapping) (treeJSON, error) {
 	cat := buildCatalog(blocks, mappings)
 	root := newNest()
 	for _, path := range cat.order {
-		if cat.files[path].dir {
-			continue
-		}
 		parts := strings.Split(path, "/")
 		cur := root
-		for i, part := range parts {
-			if i == len(parts)-1 {
-				cur.addLeaf(part)
-				break
-			}
+		for _, part := range parts[:len(parts)-1] {
 			cur = cur.addSub(part)
 		}
+		last := parts[len(parts)-1]
+		f := cat.files[path]
+		if !f.dir || f.archive {
+			cur.addLeaf(last)
+			continue
+		}
+		dir := cur.addSub(last)
+		_ = filepath.WalkDir(f.origin, func(p string, d os.DirEntry, err error) error {
+			rel, relErr := filepath.Rel(f.origin, p)
+			if err != nil || relErr != nil || rel == "." {
+				return nil
+			}
+			names := strings.Split(filepath.ToSlash(rel), "/")
+			at := dir
+			for _, name := range names[:len(names)-1] {
+				at = at.addSub(name)
+			}
+			if d.IsDir() {
+				at.addSub(names[len(names)-1])
+			} else {
+				at.addLeaf(names[len(names)-1])
+			}
+			return nil
+		})
 	}
 	tree := root.treeWith("/", meta.files[pathKey(nil)], nil,
 		func(path []Name) string { return meta.files[pathKey(path)] },

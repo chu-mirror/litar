@@ -5780,7 +5780,7 @@ if err != nil {
 if err != nil {
 	return "", "", nil, err
 }
-f := buildCatalog(chain, maps).files[path]
+f := buildCatalog(chain, maps).file(path)
 @<Project@/litar@/MCP Server@/fail unless the catalog file 'f' at 'path' is defined exactly once@>
 var data []byte
 @<Project@/litar@/MCP Server@/read 'f' into 'data', from its origin or by evaluating 'path'@>
@@ -5790,7 +5790,7 @@ if utf8.Valid(data) {
 return "", "application/octet-stream", data, nil
 }
 
-@~ Project@/litar@/Go@/functions@/litar.buildCatalog @~ Project@/litar@/Go@/methods@/litar.agent.nodeChain @~ Project@/litar@/Go@/methods@/litar.agent.renderFile @~ Project@/litar@/Go@/types@/litar.agent @~ Project@/litar@/Go@/functions@/litar.fileByRef @~ Project@/litar@/Go@/methods@/litar.agent.refParts @
+@~ Project@/litar@/Go@/functions@/litar.buildCatalog @~ Project@/litar@/Go@/methods@/litar.agent.nodeChain @~ Project@/litar@/Go@/methods@/litar.agent.renderFile @~ Project@/litar@/Go@/types@/litar.agent @~ Project@/litar@/Go@/functions@/litar.fileByRef @~ Project@/litar@/Go@/methods@/litar.agent.refParts @~ Project@/litar@/Go@/methods@/litar.catalog.file @
 
 @<Project@/litar@/MCP Server@/fail unless the catalog file 'f' at 'path' is defined exactly once@=
 if f == nil {
@@ -6182,21 +6182,22 @@ root := newNest()
 
 @~ Project@/litar@/Go@/functions@/litar.buildCatalog @~ Project@/litar@/Go@/functions@/litar.describe @~ Project@/litar@/Go@/functions@/litar.fileTree @~ Project@/litar@/Go@/functions@/litar.joinPath @~ Project@/litar@/Go@/functions@/litar.newNest @~ Project@/litar@/Go@/functions@/litar.pathKey @~ Project@/litar@/Go@/methods@/litar.nest.treeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.treeJSON @~ Project@/litar@/Go@/functions@/litar.assignRefs @
 
-A mapped directory is not a file, so it has no resource.
+A mapped directory is a branch, like the directory of an archive file; the files below it
+are listed from the host each time, since filters and other programs write them.
 @<Project@/litar@/MCP Server@/add each file of 'cat' to 'root', its directories as branches@=
 for _, path := range cat.order {
-	if cat.files[path].dir {
-		continue
-	}
 	parts := strings.Split(path, "/")
 	cur := root
-	for i, part := range parts {
-		if i == len(parts)-1 {
-			cur.addLeaf(part)
-			break
-		}
+	for _, part := range parts[:len(parts)-1] {
 		cur = cur.addSub(part)
 	}
+	last := parts[len(parts)-1]
+	f := cat.files[path]
+	if !f.dir || f.archive {
+		cur.addLeaf(last)
+		continue
+	}
+	@<Project@/litar@/MCP Server@/add the files below the origin of 'f' to the branch 'last' of 'cur'@>
 }
 @~ Project@/litar@/Go@/methods@/litar.nest.addLeaf @~ Project@/litar@/Go@/methods@/litar.nest.addSub @
 
@@ -14277,3 +14278,75 @@ Text is shown with line numbers; any other content is only measured and offered 
 @
 @<Chunk@/Project@/litar@/Rewrite@={"description": "Steps of the functions that rename, move, and remove chunks, files, and blocks across nodes."}@
 @<Chunk@/Project@/litar@/Web@/Script@={"description": "Steps of the functions of the page script."}@
+A file below a mapped directory has no entry in the catalog, since the directory is mapped
+as a whole; it is read as a mapped file whose origin lies below the origin of the directory.
+@<filter@:litar@:Language@/Go@/File@/methods@+
+// file is the catalog file at path, or the file at path below a mapped directory.
+func (c *catalog) file(path string) *catFile {
+	if f := c.files[path]; f != nil {
+		return f
+	}
+	for dir, f := range c.files {
+		rest, ok := strings.CutPrefix(path, dir+"/")
+		if ok && f.dir && !f.archive {
+			return &catFile{mapping: true, origin: filepath.Join(f.origin, filepath.FromSlash(rest))}
+		}
+	}
+	return nil
+}
+
+@~ Project@/litar@/Go@/methods@/litar.catalog.file @~ Project@/litar@/Go@/types@/litar.catFile @~ Project@/litar@/Go@/types@/litar.catalog @
+
+@<filter@:litar@:Language@/Go@/File@/import paths@+
+"path/filepath"
+@
+A mapped directory shows in the file tree with the files of the host below it,
+and each of them is read through its file resource.
+@<mcp test@:litar@:Language@/Go@/File@/functions@+
+func TestMCPMappedDirectory(t *testing.T) {
+	f := newMCPFixture(t, "@@[a.txt@@=a@@\n")
+	if err := os.MkdirAll(filepath.Join(f.dir, "host", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(f.dir, "host", "sub", "data.txt"), "inside")
+	f.tool("map_file", "path", "in/", "origin", "host")
+	f.tool("map_file", "path", "later/", "origin", "missing")
+	tree := readResource(t, f.ctx, f.session, "tree://file/"+f.c+"/"+f.n)
+	for _, want := range []string{`"name":"in"`, `"name":"sub"`, `"name":"data.txt"`, `"name":"later"`} {
+		if !strings.Contains(tree, want) {
+			t.Fatalf("missing %s in %s", want, tree)
+		}
+	}
+	uri := "file://" + f.c + "/" + f.n + "/" + refOf("file", "in", "sub", "data.txt")
+	if got := readResource(t, f.ctx, f.session, uri); got != "inside" {
+		t.Fatalf("file of the mapped directory %q", got)
+	}
+}
+
+@~ Project@/litar@/Go@/functions@/litar.fileTree @~ Project@/litar@/Go@/methods@/litar.agent.renderFile @
+A directory that is missing or cannot be read is an empty branch: a filter creates it
+when it first runs, and the tree must not fail before that.
+@<Project@/litar@/MCP Server@/add the files below the origin of 'f' to the branch 'last' of 'cur'@=
+dir := cur.addSub(last)
+_ = filepath.WalkDir(f.origin, func(p string, d os.DirEntry, err error) error {
+	rel, relErr := filepath.Rel(f.origin, p)
+	if err != nil || relErr != nil || rel == "." {
+		return nil
+	}
+	names := strings.Split(filepath.ToSlash(rel), "/")
+	at := dir
+	for _, name := range names[:len(names)-1] {
+		at = at.addSub(name)
+	}
+	if d.IsDir() {
+		at.addSub(names[len(names)-1])
+	} else {
+		at.addLeaf(names[len(names)-1])
+	}
+	return nil
+})
+@~ Project@/litar@/Go@/methods@/litar.nest.addLeaf @~ Project@/litar@/Go@/methods@/litar.nest.addSub @
+
+@<mcp@:litar@:Language@/Go@/File@/import paths@+
+"path/filepath"
+@

@@ -1,12 +1,12 @@
+
 A hello command split into a library package, its test, and a command, as one Go module.
 
-- `go.mod`: the module example.com/hello;
+- `mod/go.mod`: the module example.com/hello, in the directory project-hello beside the archive,
+  which the node maps at the module file directory; the go command writes it,
+  when the module file report of the Go module structure is evaluated;
 - `greet/greet.go`: the package greet, which builds a greeting;
 - `greet/greet_test.go`: the test of the package greet;
 - `cmd/hello/main.go`: the command hello, which prints the greeting.
-
-@[go.mod@`go module@=
-@<Language@/Go@/Module@/go.mod@>@
 
 The package greet lives in the directory greet.
 lib is the label of its source file, test the label of its test file.

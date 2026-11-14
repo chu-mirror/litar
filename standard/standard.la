@@ -2182,11 +2182,11 @@ echo 'go vet ./...: ok'
 @
 
 @<Chunk@/Language@/Go@/Module@/requirements@=
-{"description": "Lines of the require block of go.mod."}
+{"description": "Direct requirements of the project: a module path and a version on each line."}
 @
 
-@<Chunk@/Language@/Go@/Module@/go.mod@=
-{"description": "Contents of go.mod for the project."}
+@<Chunk@/Language@/Go@/Module@/module file edits@=
+{"description": "Flags of go mod edit that set the module path, the Go version, and the requirements."}
 @
 
 @<Chunk@/Language@/Go@/Module@/package directory@=
@@ -2244,27 +2244,261 @@ The package directory is the path of a package below the module root, without a 
 A package sets it under the package label.
 The package at the module root keeps the empty directory.
 @<Language@/Go@/Module@/package directory@=@
-A requirement is one line of the require block: a module path and a version.
-No require block is emitted when the list is empty or contains only whitespace.
-Only blank lines are removed before the first requirement,
-so every requirement keeps its indentation.
-A project with requirements also declares go.sum in the file set go module,
-because the checks never rewrite go.mod or go.sum.
-@<Language@/Go@/Module@/go.mod@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/Meta@/project meta model@>
+@<Chunk@/Language@/Go@/Module@/Meta@/project meta information@=
+{"description": "Module path, Go version, and other properties, as a Jsonnet object."}
+@
+@<Chunk@/Language@/Go@/Module@/project properties@=
+{"description": "Jsonnet fields that override the project meta information."}
+@
+@<Chunk@/Language@/Go@/Module@/Meta@/project meta model@=
+{"description": "Pydantic model that validates the project meta information."}
+@
+
+The commands are built in a view of the file set go module, like the checks.
+The view must also hold the command directory; a composition wrapping the project
+maps it to a directory of the host, so the binaries leave the view.
+Each binary is named after the directory of its command;
+the go command replaces an existing binary instead of writing into it.
+@<Language@/Go@/Module@/Go Command@/build commands@=#!/bin/sh
+@<.@/go command settings@>
+go build -o '@<..@/command directory@>/' ./cmd/...
+echo 'go build -o @<..@/command directory@>/ ./cmd/...: ok'
+@
+
+The command directory is bin, below the module root of the view.
+@<Language@/Go@/Module@/command directory@=bin@
 
 
-meta = configuration(ProjectMeta, r'''
-@<.@/Meta@/project meta information@>
-''')
-requirements = re.sub(r'\A\s*\n', '', r'''
-@<.@/requirements@>
-''').rstrip(' \t\n\r\f\v')
-print(f'module {meta.module}\n\ngo {meta.go}')
-if requirements:
-    print(f'\nrequire (\n{requirements}\n)')
-@|Tool@/evaluate@
+@<Chunk@/Language@/Go@/Module@/Go Command@/build commands@=
+{"description": "Build every command of the project into the command directory."}
+@
+
+@<Chunk@/Language@/Go@/Module@/command directory@=
+{"description": "Directory of the view, below the module root, that receives the built commands."}
+@
+
+The go command reports a failed test on stdout, and the output of a failed filter is dropped,
+so the report is kept and written to stderr when a test fails.
+Declare every test file in the file set go tests as well as in go module,
+so a view that only needs the program can subtract the tests.
+@<Language@/Go@/Module@/Go Command@/test packages@=#!/bin/sh
+@<.@/go command settings@>
+report=$(go test ./... 2>&1) || {
+	printf '%s\n' "$report" >&2
+	exit 1
+}
+printf '%s\n' "$report"
+@
+@<Chunk@/Language@=
+{"description": "Common structures found in languages."}
+@
+@<Chunk@/Language@/C@=
+{"description": "Structures of C programming."}
+@
+@<Chunk@/Language@/Go@=
+{"description": "Structures of Go programming."}
+@
+@<Chunk@/UI@=
+{"description": "Shared schemas and generators of user interfaces."}
+@
+@<Chunk@/UI@/Command Line@/C@=
+{"description": "Parse the command line of a C program with getopt, from the invocation syntax."}
+@
+@<Chunk@/Framework@=
+{"description": "Frameworks an application chooses to adopt."}
+@
+@<Chunk@/Project@=
+{"description": "Concrete projects."}
+@
+@<Index@/UI@/Command Line@/Python@=
+{"description": "Top-level names of the Python scripts that read the invocation syntax."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@=
+{"description": "Top-level functions."}
+@
+One case of an acceptance test is a chunk: its content is a script of checks, and this filter
+turns the script into the result of the case, so evaluating the chunk runs the test.
+The view of the filter holds the command and the fixtures of the case.
+A case that fails still evaluates: its result says what failed, and the report decides.
+@<UI@/Command Line@/Test@/run case@=#!/bin/bash
+set -u
+command=$PWD/@<.@/command@>
+@<.@/environment@>
+@<.@/Runner@/state of the case@>
+@<.@/Runner@/result@>
+@<.@/checks@>
+@<.@/Runner@/run the script on stdin@>
+finish
+@
+The project names its command with a labelled block, and passes the labels to the filter:
+the labels reach every reference of the filter.
+@<Chunk@/UI@/Command Line@/Test@/command@=
+{"description": "Path of the command under test in the view; set it under the label of the command."}
+@
+@<Chunk@/UI@/Command Line@/Test@/environment@=
+{"description": "Shell lines that prepare the environment of the command under test; set them under the label of the command."}
+@
+@<Chunk@/UI@/Command Line@/Test@=
+{"description": "Acceptance tests of a command: a case is a chunk filtered into its result."}
+@
+@<Chunk@/UI@/Command Line@/Test@/run case@=
+{"description": "Filter that runs the script of one case and prints its result: ok NAME COUNT, skip NAME: REASON, or FAIL NAME with the failed checks."}
+@
+@<Chunk@/UI@/Command Line@/Test@/summarize results@=
+{"description": "Filter that counts the results of the cases, and fails when a case failed or none passed."}
+@
+@<Chunk@/UI@/Command Line@/Test@/checks@=
+{"description": "Shell functions a case script calls; a project may add its own."}
+@
+The work directory is outside the view, because the view only shows files of the composition.
+@<UI@/Command Line@/Test@/Runner@/state of the case@=
+name=unnamed
+checks=0
+failed=
+skipped=
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+@
+The result has no final line break, so a report can list one case on each line.
+A case without a check fails: a script that ended early must not look like a success.
+@<UI@/Command Line@/Test@/Runner@/result@=
+# finish: print the result of the case and end the filter.
+finish() {
+	if [ -n "$skipped" ]; then
+		printf 'skip %s: %s' "$name" "$skipped"
+	elif [ -n "$failed" ]; then
+		printf 'FAIL %s\n%s' "$name" "${failed%$'\n'}"
+	elif [ "$checks" -eq 0 ]; then
+		printf 'FAIL %s\n  no check ran' "$name"
+	else
+		printf 'ok %s %s' "$name" "$checks"
+	fi
+	exit 0
+}
+
+# miss CHECK WHAT [FILE]: record a failed check, with the file that explains it.
+miss() {
+	failed+="  $1: $2"$'\n'
+	if [ $# -gt 2 ] && [ -s "$3" ]; then
+		failed+=$(sed 's/^/    /' "$3")$'\n'
+	fi
+}
+@~ UI@/Command Line@/Bash@/functions@/finish @~ UI@/Command Line@/Bash@/functions@/miss @
+The script is checked before it runs: a syntax error would otherwise stop it halfway,
+after checks that passed.
+@<UI@/Command Line@/Test@/Runner@/run the script on stdin@=
+cat >"$work/case"
+if bash -n "$work/case" 2>"$work/syntax"; then
+	. "$work/case"
+else
+	miss script "syntax error" "$work/syntax"
+fi
+@~ UI@/Command Line@/Bash@/functions@/miss @
+@<UI@/Command Line@/Test@/checks@+
+# test_case NAME [DIRECTORY]: name the case, and enter the directory of its fixtures.
+test_case() {
+	name=$1
+	if [ $# -gt 1 ] && ! cd "$2" 2>/dev/null; then
+		miss fixtures "no directory $2"
+		finish
+	fi
+}
+
+# skip REASON: end the case without a verdict.
+skip() {
+	skipped=$1
+	finish
+}
+@~ UI@/Command Line@/Bash@/functions@/finish @~ UI@/Command Line@/Bash@/functions@/miss @
+@<UI@/Command Line@/Test@/checks@+
+# run ARGUMENT...: run the command; its output goes to $work/out and $work/err,
+# its exit status to $status.
+run() {
+	checks=$((checks + 1))
+	"$command" "$@@" >"$work/out" 2>"$work/err"
+	status=$?
+}
+@~ UI@/Command Line@/Bash@/functions@/run @
+A passing command must leave stderr empty.
+@<UI@/Command Line@/Test@/checks@+
+# prints_file CHECK FILE ARGUMENT...: the command succeeds and prints exactly FILE.
+prints_file() {
+	local check=$1 want=$2
+	shift 2
+	run "$@@"
+	if [ "$status" -ne 0 ]; then
+		miss "$check" "exit $status" "$work/err"
+	elif [ -s "$work/err" ]; then
+		miss "$check" "unexpected stderr" "$work/err"
+	elif ! diff -u --label expected --label printed "$want" "$work/out" >"$work/diff"; then
+		miss "$check" stdout "$work/diff"
+	fi
+}
+
+# prints CHECK TEXT ARGUMENT...: the command succeeds and prints exactly TEXT.
+prints() {
+	local check=$1
+	printf '%s' "$2" >"$work/want"
+	shift 2
+	prints_file "$check" "$work/want" "$@@"
+}
+@~ UI@/Command Line@/Bash@/functions@/miss @~ UI@/Command Line@/Bash@/functions@/run @
+A failing command must leave stdout empty, and its stderr only has to contain the needle.
+@<UI@/Command Line@/Test@/checks@+
+# fails CHECK NEEDLE ARGUMENT...: the command fails and reports NEEDLE.
+fails() {
+	local check=$1 needle=$2
+	shift 2
+	run "$@@"
+	if [ "$status" -eq 0 ]; then
+		miss "$check" "expected failure"
+	elif ! grep -F -q -e "$needle" "$work/err"; then
+		miss "$check" "stderr misses [$needle]" "$work/err"
+	elif [ -s "$work/out" ]; then
+		miss "$check" "stdout not empty" "$work/out"
+	fi
+}
+@~ UI@/Command Line@/Bash@/functions@/miss @~ UI@/Command Line@/Bash@/functions@/run @
+The output of a failed filter is dropped, so a failing report goes to stderr.
+A report in which no case passed fails too: the cases may all have been lost.
+@<UI@/Command Line@/Test@/summarize results@=#!/bin/sh
+results=$(cat)
+count() {
+	printf '%s\n' "$results" | grep -c "^$1 "
+}
+report=$(printf '%s\npassed %s failed %s skipped %s' "$results" "$(count ok)" "$(count FAIL)" "$(count skip)")
+if [ "$(count FAIL)" -ne 0 ] || [ "$(count ok)" -eq 0 ]; then
+	printf '%s\n' "$report" >&2
+	exit 1
+fi
+printf '%s\n' "$report"
+@
+@<Index@/UI@/Command Line@/Bash@/functions@=
+{"description": "Shell functions of the acceptance test runner."}
+@
+
+@<Chunk@/Language@/Go@/Module@/module file directory@=
+{"description": "Directory of the view, mapped from the host, that holds go.mod and go.sum."}
+@
+The input is the module file edits. go mod edit applies them to go.mod in the module file directory,
+then go mod tidy adds the indirect requirements, removes a requirement that no package imports,
+and writes go.sum. So the view must hold every Go file: the file set go module.
+A missing go.mod is started with the module line, which is all go mod edit needs.
+The module files are edited before the settings copy go.mod to the module root,
+so the copy carries the new Go version.
+@<Language@/Go@/Module@/Go Command@/tidy module files@=#!/bin/sh
+set -e
+mod='@<..@/module file directory@>/go.mod'
+[ -s "$mod" ] || printf 'module %s\n' '@<..@/Meta@/module path@>' > "$mod"
+set --
+while IFS= read -r flag; do
+	[ -z "$flag" ] || set -- "$@@" "$flag"
+done
+go mod edit "$@@" "$mod"
+@<.@/go command settings@>
+go mod tidy
+echo 'go mod tidy: ok'
+@
 @<Language@/Go@/Module@/Meta@/module path@=
 @<Tool@/Text Processing@/basic python settings@>
 @<.@/project meta model@>
@@ -2274,6 +2508,61 @@ meta = configuration(ProjectMeta, r'''
 @<.@/project meta information@>
 ''')
 print(meta.module, end='')
+@|Tool@/evaluate@
+
+Each check runs the go command in a view of the file set go module,
+so the module root is the working directory.
+GOTOOLCHAIN=local keeps the go command from downloading another toolchain,
+and GOWORK=off ignores a workspace file outside the view.
+-modfile makes the go command read and write go.mod in the module file directory,
+and go.sum beside it. The go command still looks for a go.mod at the module root,
+to find the root and to choose the toolchain from its go line, so the file is copied there;
+the copy is a new file of the view, and it is discarded with the view.
+The build cache and the module cache stay at their host locations.
+A failed check fails the evaluation, and the go command reports on stderr.
+@<Language@/Go@/Module@/Go Command@/go command settings@=
+set -e
+export GOTOOLCHAIN=local
+export GOWORK=off
+export GOFLAGS='-modfile=@<..@/module file directory@>/go.mod'
+cp '@<..@/module file directory@>/go.mod' go.mod
+@
+The go command manages go.mod and go.sum: it adds the indirect requirements and the checksums,
+so the two files are not archive files. They live in a directory of the host,
+which a project maps into its node at the module file directory, in the file set go module.
+The directory is mod, below the module root of the view.
+@<Language@/Go@/Module@/module file directory@=mod@
+
+@<Chunk@/Language@/Go@/Module@/Go Command@/tidy module files@=
+{"description": "Apply the go mod edit flags on stdin to go.mod, then run go mod tidy."}
+@
+
+Evaluate the module file report after a change of the module path, the Go version,
+the requirements, or the imports of a Go file; the checks never rewrite go.mod or go.sum.
+@<Language@/Go@/Module@/module file report@=
+@<Language@/Go@/Module@/module file edits@|Language@/Go@/Module@/Go Command@/tidy module files@+go module@>
+@
+The archive records what a project decides about go.mod: the module path, the Go version,
+and the direct requirements. Each becomes one flag of go mod edit, one flag on a line.
+A requirement is a line of the chunk requirements: a module path and a version.
+Blank lines are skipped; any other line with more or fewer than two fields is an error.
+@<Language@/Go@/Module@/module file edits@=
+@<Tool@/Text Processing@/basic python settings@>
+@<.@/Meta@/project meta model@>
+
+
+meta = configuration(ProjectMeta, r'''
+@<.@/Meta@/project meta information@>
+''')
+print(f'-module={meta.module}\n-go={meta.go}')
+for line in r'''
+@<.@/requirements@>
+'''.splitlines():
+    fields = line.split()
+    if len(fields) == 2:
+        print(f'-require={fields[0]}@@{fields[1]}')
+    elif fields:
+        fail(f"requirement '{line.strip()}' is not a module path and a version")
 @|Tool@/evaluate@
 A text processing script is a Python script that declares its dependencies:
 jsonnet evaluates configuration, and pydantic validates it.
@@ -2576,8 +2865,8 @@ class ProjectMeta(pydantic.BaseModel):
     module: str = pydantic.Field(pattern=r'^[^\s/]\S*$')
     go: str = pydantic.Field(pattern=r'^1\.\d+(\.\d+)?$')
 @
-A Go project is one Go module: a go.mod file at the root of the module,
-and packages in directories below it.
+A Go project is one Go module: packages in directories below the module root,
+with go.mod and go.sum in the module file directory, where the go command manages them.
 One node holds one project, so the blocks of this module carry no label,
 and every file of the node sees the same module.
 A package is a label, as in the Go file structure,
@@ -2586,7 +2875,7 @@ A command is a package whose rightmost label is command;
 by convention its files live in cmd, in a directory named after the command.
 A test file is one more file of its package, named after the file it tests with _test,
 and it adds testing to its own import paths.
-Declare go.mod and every Go file in the file set go module,
+Declare every Go file in the file set go module, and map the module file directory into it,
 so the project checks below see the whole project.
 
 The module field is the module path, and the go field is the minimum Go version.
@@ -2601,247 +2890,7 @@ which override these defaults; Jsonnet rejects a field given twice.
     @<..@/project properties@>
 }
 @
-@<Chunk@/Language@/Go@/Module@/Meta@/project meta information@=
-{"description": "Module path, Go version, and other properties, as a Jsonnet object."}
-@
-@<Chunk@/Language@/Go@/Module@/project properties@=
-{"description": "Jsonnet fields that override the project meta information."}
-@
-@<Chunk@/Language@/Go@/Module@/Meta@/project meta model@=
-{"description": "Pydantic model that validates the project meta information."}
-@
 
-The commands are built in a view of the file set go module, like the checks.
-The view must also hold the command directory; a composition wrapping the project
-maps it to a directory of the host, so the binaries leave the view.
-Each binary is named after the directory of its command;
-the go command replaces an existing binary instead of writing into it.
-@<Language@/Go@/Module@/Go Command@/build commands@=#!/bin/sh
-@<.@/go command settings@>
-go build -o '@<..@/command directory@>/' ./cmd/...
-echo 'go build -o @<..@/command directory@>/ ./cmd/...: ok'
-@
-
-The command directory is bin, below the module root of the view.
-@<Language@/Go@/Module@/command directory@=bin@
-
-
-@<Chunk@/Language@/Go@/Module@/Go Command@/build commands@=
-{"description": "Build every command of the project into the command directory."}
-@
-
-@<Chunk@/Language@/Go@/Module@/command directory@=
-{"description": "Directory of the view, below the module root, that receives the built commands."}
-@
-
-The go command reports a failed test on stdout, and the output of a failed filter is dropped,
-so the report is kept and written to stderr when a test fails.
-Declare every test file in the file set go tests as well as in go module,
-so a view that only needs the program can subtract the tests.
-@<Language@/Go@/Module@/Go Command@/test packages@=#!/bin/sh
-@<.@/go command settings@>
-report=$(go test ./... 2>&1) || {
-	printf '%s\n' "$report" >&2
-	exit 1
-}
-printf '%s\n' "$report"
-@
-
-Each check runs the go command in a view of the file set go module,
-so the module root is the working directory.
-GOTOOLCHAIN=local keeps the go command from downloading another toolchain,
-and GOWORK=off ignores a workspace file outside the view.
-The build cache and the module cache stay at their host locations.
-A failed check fails the evaluation, and the go command reports on stderr.
-@<Language@/Go@/Module@/Go Command@/go command settings@=
-set -e
-export GOTOOLCHAIN=local
-export GOWORK=off
-@
-@<Chunk@/Language@=
-{"description": "Common structures found in languages."}
-@
-@<Chunk@/Language@/C@=
-{"description": "Structures of C programming."}
-@
-@<Chunk@/Language@/Go@=
-{"description": "Structures of Go programming."}
-@
-@<Chunk@/UI@=
-{"description": "Shared schemas and generators of user interfaces."}
-@
-@<Chunk@/UI@/Command Line@/C@=
-{"description": "Parse the command line of a C program with getopt, from the invocation syntax."}
-@
-@<Chunk@/Framework@=
-{"description": "Frameworks an application chooses to adopt."}
-@
-@<Chunk@/Project@=
-{"description": "Concrete projects."}
-@
-@<Index@/UI@/Command Line@/Python@=
-{"description": "Top-level names of the Python scripts that read the invocation syntax."}
-@
-@<Index@/UI@/Command Line@/Python@/functions@=
-{"description": "Top-level functions."}
-@
-One case of an acceptance test is a chunk: its content is a script of checks, and this filter
-turns the script into the result of the case, so evaluating the chunk runs the test.
-The view of the filter holds the command and the fixtures of the case.
-A case that fails still evaluates: its result says what failed, and the report decides.
-@<UI@/Command Line@/Test@/run case@=#!/bin/bash
-set -u
-command=$PWD/@<.@/command@>
-@<.@/environment@>
-@<.@/Runner@/state of the case@>
-@<.@/Runner@/result@>
-@<.@/checks@>
-@<.@/Runner@/run the script on stdin@>
-finish
-@
-The project names its command with a labelled block, and passes the labels to the filter:
-the labels reach every reference of the filter.
-@<Chunk@/UI@/Command Line@/Test@/command@=
-{"description": "Path of the command under test in the view; set it under the label of the command."}
-@
-@<Chunk@/UI@/Command Line@/Test@/environment@=
-{"description": "Shell lines that prepare the environment of the command under test; set them under the label of the command."}
-@
-@<Chunk@/UI@/Command Line@/Test@=
-{"description": "Acceptance tests of a command: a case is a chunk filtered into its result."}
-@
-@<Chunk@/UI@/Command Line@/Test@/run case@=
-{"description": "Filter that runs the script of one case and prints its result: ok NAME COUNT, skip NAME: REASON, or FAIL NAME with the failed checks."}
-@
-@<Chunk@/UI@/Command Line@/Test@/summarize results@=
-{"description": "Filter that counts the results of the cases, and fails when a case failed or none passed."}
-@
-@<Chunk@/UI@/Command Line@/Test@/checks@=
-{"description": "Shell functions a case script calls; a project may add its own."}
-@
-The work directory is outside the view, because the view only shows files of the composition.
-@<UI@/Command Line@/Test@/Runner@/state of the case@=
-name=unnamed
-checks=0
-failed=
-skipped=
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-@
-The result has no final line break, so a report can list one case on each line.
-A case without a check fails: a script that ended early must not look like a success.
-@<UI@/Command Line@/Test@/Runner@/result@=
-# finish: print the result of the case and end the filter.
-finish() {
-	if [ -n "$skipped" ]; then
-		printf 'skip %s: %s' "$name" "$skipped"
-	elif [ -n "$failed" ]; then
-		printf 'FAIL %s\n%s' "$name" "${failed%$'\n'}"
-	elif [ "$checks" -eq 0 ]; then
-		printf 'FAIL %s\n  no check ran' "$name"
-	else
-		printf 'ok %s %s' "$name" "$checks"
-	fi
-	exit 0
-}
-
-# miss CHECK WHAT [FILE]: record a failed check, with the file that explains it.
-miss() {
-	failed+="  $1: $2"$'\n'
-	if [ $# -gt 2 ] && [ -s "$3" ]; then
-		failed+=$(sed 's/^/    /' "$3")$'\n'
-	fi
-}
-@~ UI@/Command Line@/Bash@/functions@/finish @~ UI@/Command Line@/Bash@/functions@/miss @
-The script is checked before it runs: a syntax error would otherwise stop it halfway,
-after checks that passed.
-@<UI@/Command Line@/Test@/Runner@/run the script on stdin@=
-cat >"$work/case"
-if bash -n "$work/case" 2>"$work/syntax"; then
-	. "$work/case"
-else
-	miss script "syntax error" "$work/syntax"
-fi
-@~ UI@/Command Line@/Bash@/functions@/miss @
-@<UI@/Command Line@/Test@/checks@+
-# test_case NAME [DIRECTORY]: name the case, and enter the directory of its fixtures.
-test_case() {
-	name=$1
-	if [ $# -gt 1 ] && ! cd "$2" 2>/dev/null; then
-		miss fixtures "no directory $2"
-		finish
-	fi
-}
-
-# skip REASON: end the case without a verdict.
-skip() {
-	skipped=$1
-	finish
-}
-@~ UI@/Command Line@/Bash@/functions@/finish @~ UI@/Command Line@/Bash@/functions@/miss @
-@<UI@/Command Line@/Test@/checks@+
-# run ARGUMENT...: run the command; its output goes to $work/out and $work/err,
-# its exit status to $status.
-run() {
-	checks=$((checks + 1))
-	"$command" "$@@" >"$work/out" 2>"$work/err"
-	status=$?
-}
-@~ UI@/Command Line@/Bash@/functions@/run @
-A passing command must leave stderr empty.
-@<UI@/Command Line@/Test@/checks@+
-# prints_file CHECK FILE ARGUMENT...: the command succeeds and prints exactly FILE.
-prints_file() {
-	local check=$1 want=$2
-	shift 2
-	run "$@@"
-	if [ "$status" -ne 0 ]; then
-		miss "$check" "exit $status" "$work/err"
-	elif [ -s "$work/err" ]; then
-		miss "$check" "unexpected stderr" "$work/err"
-	elif ! diff -u --label expected --label printed "$want" "$work/out" >"$work/diff"; then
-		miss "$check" stdout "$work/diff"
-	fi
-}
-
-# prints CHECK TEXT ARGUMENT...: the command succeeds and prints exactly TEXT.
-prints() {
-	local check=$1
-	printf '%s' "$2" >"$work/want"
-	shift 2
-	prints_file "$check" "$work/want" "$@@"
-}
-@~ UI@/Command Line@/Bash@/functions@/miss @~ UI@/Command Line@/Bash@/functions@/run @
-A failing command must leave stdout empty, and its stderr only has to contain the needle.
-@<UI@/Command Line@/Test@/checks@+
-# fails CHECK NEEDLE ARGUMENT...: the command fails and reports NEEDLE.
-fails() {
-	local check=$1 needle=$2
-	shift 2
-	run "$@@"
-	if [ "$status" -eq 0 ]; then
-		miss "$check" "expected failure"
-	elif ! grep -F -q -e "$needle" "$work/err"; then
-		miss "$check" "stderr misses [$needle]" "$work/err"
-	elif [ -s "$work/out" ]; then
-		miss "$check" "stdout not empty" "$work/out"
-	fi
-}
-@~ UI@/Command Line@/Bash@/functions@/miss @~ UI@/Command Line@/Bash@/functions@/run @
-The output of a failed filter is dropped, so a failing report goes to stderr.
-A report in which no case passed fails too: the cases may all have been lost.
-@<UI@/Command Line@/Test@/summarize results@=#!/bin/sh
-results=$(cat)
-count() {
-	printf '%s\n' "$results" | grep -c "^$1 "
-}
-report=$(printf '%s\npassed %s failed %s skipped %s' "$results" "$(count ok)" "$(count FAIL)" "$(count skip)")
-if [ "$(count FAIL)" -ne 0 ] || [ "$(count ok)" -eq 0 ]; then
-	printf '%s\n' "$report" >&2
-	exit 1
-fi
-printf '%s\n' "$report"
-@
-@<Index@/UI@/Command Line@/Bash@/functions@=
-{"description": "Shell functions of the acceptance test runner."}
+@<Chunk@/Language@/Go@/Module@/module file report@=
+{"description": "Output of syncing go.mod and go.sum in the module file directory with the archive."}
 @

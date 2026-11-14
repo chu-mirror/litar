@@ -15,18 +15,27 @@ Every file of the view outside the destination is written to a temporary name be
 its place in the destination and renamed there, so a failed write keeps the old file;
 other files of the destination are left alone.
 An executable file gets mode 755 and any other file 644.
-The filter prints each written path, in sorted order.
+The files of the module file directory, go.mod and go.sum, are written to the root of the
+destination, where the go command looks for them when it boots the next build without litar.
+The filter prints each written path: the files in sorted order, then the module files.
 @<Project@/litar@/Build@/Sync@/write files@=#!/bin/sh
 set -e
 dest=$(cat)
-find . -path "./$dest" -prune -o -type f -printf '%P\n' | LC_ALL=C sort |
+mod='@<Language@/Go@/Module@/module file directory@>'
+write() {
+	mkdir -p "$dest/$(dirname "$2")"
+	cat "$1" > "$dest/$2.litar-new"
+	if [ -x "$1" ]; then mode=755; else mode=644; fi
+	chmod "$mode" "$dest/$2.litar-new"
+	mv "$dest/$2.litar-new" "$dest/$2"
+	echo "$2"
+}
+find . \( -path "./$dest" -o -path "./$mod" \) -prune -o -type f -printf '%P\n' | LC_ALL=C sort |
 while IFS= read -r f; do
-	mkdir -p "$dest/$(dirname "$f")"
-	cat "$f" > "$dest/$f.litar-new"
-	if [ -x "$f" ]; then mode=755; else mode=644; fi
-	chmod "$mode" "$dest/$f.litar-new"
-	mv "$dest/$f.litar-new" "$dest/$f"
-	echo "$f"
+	write "$f" "$f"
+done
+for f in "$mod"/*; do
+	[ ! -f "$f" ] || write "$f" "$(basename "$f")"
 done
 @
 
@@ -65,7 +74,7 @@ os.replace(path + '.litar-new', path)
 {"description": "Directory of the view that receives the source tree."}
 @
 @<Chunk@/Project@/litar@/Build@/Sync@/write files@=
-{"description": "Write every file of the view into the directory named on stdin."}
+{"description": "Write every file of the view into the directory named on stdin, the module files at its root."}
 @
 @<Chunk@/Project@/litar@/Build@/MCP configuration script@=
 {"description": "Python script that sets the litar entry of a Cursor MCP configuration."}

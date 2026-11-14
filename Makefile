@@ -1,6 +1,7 @@
 # Build litar from the composition in litar, sync src from it, and install.
 #   make                  compile litar and litar-web into $(BIN)
 #   make sync             write the files of the composition, except the Go tests, into $(SRC)
+#   make mod              bring go.mod and go.sum of the composition in step with its requirements
 #   make test             build, then run the Go tests and the acceptance cases in invocations
 #   make boot             compile $(BOOT) from the Go sources in $(SRC)
 #   make web              browse $(ARCHIVE) with $(BIN)/litar-web on $(WEB_ADDR)
@@ -23,6 +24,9 @@
 # and then the acceptance cases on the commands in $(BIN).
 # Evaluation reads the ground standard from this repository, not the installed one.
 # sync overwrites the files the composition lists and leaves any other file.
+# go.mod and go.sum are not in the archives: the go command manages them in the directory mod
+# of the composition, which the node Litar maps into the views. `make mod` runs go mod edit and
+# go mod tidy on them from the requirements chunk; `make sync` copies them into $(SRC).
 #
 # PREFIX defaults to /usr/local; DESTDIR is prepended to every installed path.
 # litar finds grounds in /usr/local/share/litar, /usr/share/litar, and ~/.local/share/litar;
@@ -60,7 +64,7 @@ EVAL = LITAR_LIBRARY=$(CURDIR) $(LITAR) -f $(abspath $(BUILD_ARCHIVE))
 # Build the bootstrap binary only when it is the one evaluating.
 EVALUATOR := $(filter $(abspath $(BOOT)),$(LITAR))
 
-.PHONY: all litar sync test boot web install install-bin install-grounds
+.PHONY: all litar sync mod test boot web install install-bin install-grounds
 .PHONY: install-cursor install-mcp install-skills mcp clean
 
 all: litar
@@ -76,6 +80,9 @@ litar: $(EVALUATOR)
 
 sync: $(EVALUATOR)
 	$(EVAL) -p 'Project@/litar@/Build@/source files'
+
+mod: $(EVALUATOR)
+	$(EVAL) -p 'Language@/Go@/Module@/module file report'
 
 test: litar
 	$(EVAL) -p 'Project@/litar@/Tests@/go test report'

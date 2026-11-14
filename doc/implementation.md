@@ -32,6 +32,8 @@ At the repository root, the `Makefile` evaluates the node `Litar Build` (`litar/
 based on the node `Litar`; it maps `bin/` and `src/` of the repository into
 the filter views: `make` runs `go build` in a view of the go module that writes the binaries
 into `bin/`, `make sync` writes the generated files, except the Go test files, into `src/`,
+`make mod` runs `go mod edit` and `go mod tidy` on `litar/mod/go.mod` and `litar/mod/go.sum`,
+which the go command manages outside the archives and the node `Litar` maps at `mod/`,
 and `make test` runs `go test ./...` in a view of the go module with the file set `test data`,
 which the node `Litar` maps from `examples/` and `standard/` into `internal/litar/testdata/`,
 then the acceptance cases in views of `bin/` and their fixtures.

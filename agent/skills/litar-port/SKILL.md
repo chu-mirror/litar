@@ -45,6 +45,10 @@ Use `create_composition` with that ground, then `create_node` for the project wi
 Put the project's own chunks under `Project@/<project>`.
 Take the file sets from the filters of the ground you will use (the Go module filters expect
 `go module` and `go tests`); otherwise group files by role.
+`go.mod` and `go.sum` of a Go project are not ported into the archive: keep them in a directory
+beside the composer file, map it with `map_file` at `mod/` in the file set `go module`,
+record the direct requirements in `Language@/Go@/Module@/requirements`,
+and evaluate `Language@/Go@/Module@/module file report` to let the go command write them.
 
 **2. Stage 1: verbatim.** For each file, or a few at a time:
 

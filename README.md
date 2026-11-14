@@ -43,7 +43,11 @@ and each target evaluates one of its chunks.
 
 - `make` compiles `bin/litar` and `bin/litar-web` from the Go files of the composition.
   With no `bin/litar` yet, it first compiles `tmp/boot/litar` from `src` to do the evaluation.
-- `make sync` writes the files of the node `Litar`, except the Go test files, into `src`.
+- `make sync` writes the files of the node `Litar`, except the Go test files, into `src`,
+  with `go.mod` and `go.sum` of the composition.
+- `make mod` runs `go mod edit` and `go mod tidy` on `litar/mod/go.mod` and `litar/mod/go.sum`,
+  from the requirements chunk of the composition. The go command manages the two files,
+  so they are not in the archives; the node `Litar` maps their directory into the filter views.
 - `make test` runs the Go tests and the acceptance cases, each in a filter view.
 - `make web` opens the node `Litar` in `bin/litar-web` at <http://127.0.0.1:8080/> (`WEB_ADDR` changes it).
 - `make install` installs `bin/litar` and `bin/litar-web` into `$(PREFIX)/bin`

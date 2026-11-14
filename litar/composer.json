@@ -20,6 +20,13 @@
                         "test data"
                     ],
                     "origin": "../standard"
+                },
+                {
+                    "path": "mod/",
+                    "fileset": [
+                        "go module"
+                    ],
+                    "origin": "mod"
                 }
             ],
             "base": [

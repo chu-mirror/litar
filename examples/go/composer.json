@@ -7,14 +7,26 @@
             "archive": "hello.la",
             "description": "A classic example at the beginning of learning programming, written in Go.",
             "mappings": [],
-            "base": ["Standard"]
+            "base": [
+                "Standard"
+            ]
         },
         {
             "name": "Project Hello",
             "archive": "project-hello.la",
             "description": "A hello command split into a library package, its test, and a command, as one Go module.",
-            "mappings": [],
-            "base": ["Standard"]
+            "mappings": [
+                {
+                    "path": "mod/",
+                    "fileset": [
+                        "go module"
+                    ],
+                    "origin": "project-hello"
+                }
+            ],
+            "base": [
+                "Standard"
+            ]
         }
     ]
 }

@@ -8,7 +8,6 @@ import (
 	"sync"
 )
 
-// fileCache holds the files evaluated in this process, by path.
 var fileCache = struct {
 	sync.Mutex
 	files map[string]cachedFile
@@ -23,10 +22,6 @@ type frame struct {
 	ref ChunkRef
 }
 
-// Evaluator expands chunk references on one node chain.
-// The mutex is held across in-memory expansion and released around
-// filter execution, which may mount a filesystem and block.
-// deps holds the dependencies of each file being expanded, innermost last.
 type Evaluator struct {
 	mu      sync.Mutex
 	chain   []Block
@@ -71,8 +66,6 @@ func (e *Evaluator) takeFuseErr() error {
 	return err
 }
 
-// Eval evaluates a print expression. A missing chunk is an error.
-// An empty chunk with a pipeline is the empty input of that pipeline.
 func (e *Evaluator) Eval(ref ChunkRef, filters []Filter) (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -172,8 +165,6 @@ func (e *Evaluator) expandChunkLocked(ref ChunkRef, missingErr bool) (string, er
 	return acc, nil
 }
 
-// isArchiveFile reports whether ref names a file of the archive:
-// a chunk of the root module, without labels, that a file block defines.
 func (e *Evaluator) isArchiveFile(ref ChunkRef) bool {
 	if len(ref.Labels) > 0 || len(ref.Module) > 0 {
 		return false
@@ -182,8 +173,6 @@ func (e *Evaluator) isArchiveFile(ref ChunkRef) bool {
 	return f != nil && f.archive
 }
 
-// recording is the dependencies of the innermost file being expanded,
-// or nil when no file is.
 func (e *Evaluator) recording() map[string]dependency {
 	if len(e.deps) == 0 {
 		return nil
@@ -320,9 +309,6 @@ func (e *Evaluator) runFiltersLocked(text string, filters []Filter, attached Chu
 	return text, nil
 }
 
-// readChunk evaluates a root-module file chunk on the current visit stack.
-// Tangling calls it before the filter process starts, so the lock
-// is not already held.
 func (e *Evaluator) readChunk(chunk Name) ([]byte, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -373,9 +359,6 @@ func resolveFilter(ref ChunkRef, outerLabels []Name) ChunkRef {
 	return ChunkRef{Labels: labels, Module: copyModule(ref.Module), Chunk: ref.Chunk}
 }
 
-// continueLine adds text to a line of a block body: indent is the line so far
-// and blank tells that it holds only spaces and tabs. It returns the same
-// for the line that text ends in.
 func continueLine(indent string, blank bool, text string) (string, bool) {
 	if i := strings.LastIndexByte(text, '\n'); i >= 0 {
 		indent, blank, text = "", true, text[i+1:]

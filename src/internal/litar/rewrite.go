@@ -19,8 +19,6 @@ const (
 
 type spanRole int
 
-// A nameSpan is one name of a block that a rewrite may replace.
-// The bytes Raw[start:end] hold it as written, with the blanks around it.
 type nameSpan struct {
 	start, end int
 	role       spanRole
@@ -29,14 +27,11 @@ type nameSpan struct {
 	item       Item
 }
 
-// A spanScanner walks the text of one block and collects its names.
 type spanScanner struct {
 	p     parser
 	spans []nameSpan
 }
 
-// A renaming moves a chunk, or every chunk of a module, to another path.
-// With items set it moves an item, or every item of a domain.
 type renaming struct {
 	module bool
 	items  bool
@@ -44,7 +39,6 @@ type renaming struct {
 	from, to []Name
 }
 
-// A fileMove sends a file, or every file below a directory, to another path.
 type fileMove struct {
 	from, to string
 	dir      bool
@@ -52,7 +46,6 @@ type fileMove struct {
 
 type fileMoves []fileMove
 
-// A fileIndex tells where each file visible in a node comes from.
 type fileIndex struct {
 	own map[string]bool // files of the node's own blocks
 	// Files of the base nodes and mapped paths, with their source.
@@ -60,7 +53,6 @@ type fileIndex struct {
 	other map[string]string
 }
 
-// header reads up to the operation control and moves past it.
 func (s *spanScanner) header() error {
 	p := &s.p
 	if len(p.src) < 2 {
@@ -93,7 +85,6 @@ func (s *spanScanner) header() error {
 	return nil
 }
 
-// body reads the content, the pipeline, and the items.
 func (s *spanScanner) body() error {
 	p := &s.p
 	for p.i < len(p.src) {
@@ -123,7 +114,6 @@ func (s *spanScanner) body() error {
 	return nil
 }
 
-// reference reads a reference in content. The caller has consumed "@<".
 func (s *spanScanner) reference() error {
 	p := &s.p
 	start := p.i
@@ -145,8 +135,6 @@ func (s *spanScanner) reference() error {
 	return nil
 }
 
-// filters reads a pipeline up to the control that ends it.
-// Of the view operands, only files are names a rewrite replaces.
 func (s *spanScanner) filters() error {
 	p := &s.p
 	for {
@@ -175,7 +163,6 @@ func (s *spanScanner) filters() error {
 	}
 }
 
-// subtree lists the node and the local nodes based on it.
 func (w *World) subtree(n *Node) []*Node {
 	root := nodePath(*n)
 	var nodes []*Node
@@ -187,8 +174,6 @@ func (w *World) subtree(n *Node) []*Node {
 	return nodes
 }
 
-// rewriteNodes applies edit to the own blocks of the nodes and compacts them.
-// No archive is written unless every node could be rewritten.
 func (w *World) rewriteNodes(nodes []*Node, edit func(Block, nameSpan) (string, bool)) error {
 	type pending struct {
 		n    *Node
@@ -229,9 +214,6 @@ func (w *World) rewriteNodes(nodes []*Node, edit func(Block, nameSpan) (string, 
 	return nil
 }
 
-// apply returns ref renamed. A description in the namespace Chunk moves with
-// the module or chunk it describes, and one in Index with its domain or item;
-// a renaming of items moves no other chunk.
 func (r renaming) apply(ref ChunkRef) (ChunkRef, bool) {
 	full := refPath(ref)
 	skip := 0
@@ -256,7 +238,6 @@ func (r renaming) apply(ref ChunkRef) (ChunkRef, bool) {
 	return ref, true
 }
 
-// edit replaces the names of a block that the renaming moves.
 func (r renaming) edit(bl Block, sp nameSpan) (string, bool) {
 	switch sp.role {
 	case spanHeader, spanFilter:
@@ -272,9 +253,6 @@ func (r renaming) edit(bl Block, sp nameSpan) (string, bool) {
 	return "", false
 }
 
-// editRef renames a reference in the content of bl. A relative path stays as
-// written while it still leads from the renamed header to the renamed chunk;
-// otherwise the reference is written from the root.
 func (r renaming) editRef(bl Block, ref ChunkRef) (string, bool) {
 	abs := ref
 	abs.Module = resolveModule(bl.Ref.Module, ref.Module)
@@ -289,7 +267,6 @@ func (r renaming) editRef(bl Block, ref ChunkRef) (string, bool) {
 	return encodeRef(to), true
 }
 
-// what names the kind of the renaming in a message.
 func (r renaming) what() string {
 	switch {
 	case r.items && r.module:
@@ -302,8 +279,6 @@ func (r renaming) what() string {
 	return "chunk"
 }
 
-// moves reports whether the renaming moves the chunk of a block,
-// leaving its description aside.
 func (r renaming) moves(bl Block) bool {
 	if len(bl.Ref.Module) > 0 && bl.Ref.Module[0] == "Chunk" {
 		return false
@@ -312,7 +287,6 @@ func (r renaming) moves(bl Block) bool {
 	return ok
 }
 
-// validate refuses an empty path and, for chunks, the namespaces of descriptions.
 func (r renaming) validate() error {
 	if len(r.from) == 0 || len(r.to) == 0 {
 		return fmt.Errorf("empty name")
@@ -328,8 +302,6 @@ func (r renaming) validate() error {
 	return nil
 }
 
-// baseChunks lists in taken the chunks of the base nodes of n.
-// A base keeps its blocks, so a chunk it defines is not renamed from n.
 func (w *World) baseChunks(n *Node, r renaming, taken map[string]bool) error {
 	rev, err := w.ancestry(formatNodePath(nodePath(*n)))
 	if err != nil {
@@ -346,9 +318,6 @@ func (w *World) baseChunks(n *Node, r renaming, taken map[string]bool) error {
 	return nil
 }
 
-// checkRename refuses a renaming that would split a chunk or join two:
-// the node itself must define what is renamed, and no other chunk may
-// hold a new path.
 func (w *World) checkRename(n *Node, r renaming) error {
 	if err := r.validate(); err != nil {
 		return err
@@ -388,9 +357,6 @@ func (w *World) checkRename(n *Node, r renaming) error {
 	return nil
 }
 
-// Rename moves a chunk, a module, an item, or a domain to another path.
-// Block headers, references, filters, items, and descriptions follow,
-// in the node and in the local nodes based on it.
 func (w *World) Rename(nodeName string, r renaming) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -402,7 +368,6 @@ func (w *World) Rename(nodeName string, r renaming) error {
 	return w.rewriteNodes(w.subtree(n), r.edit)
 }
 
-// apply returns the new path of a file, or of a directory that moves.
 func (m fileMove) apply(p string) (string, bool) {
 	if p == m.from {
 		return m.to, true
@@ -422,8 +387,6 @@ func (ms fileMoves) apply(p string) (string, bool) {
 	return p, false
 }
 
-// applyRef moves the root chunk of a file and the description of a file
-// or directory, File@/dir@/file.
 func (ms fileMoves) applyRef(ref ChunkRef) (ChunkRef, bool) {
 	if len(ref.Module) == 0 {
 		to, ok := ms.apply(string(ref.Chunk))
@@ -450,8 +413,6 @@ func (ms fileMoves) applyRef(ref ChunkRef) (ChunkRef, bool) {
 	return ref, true
 }
 
-// edit replaces the names of a block that the moves change: file headers,
-// file operands of views, and the names that applyRef moves.
 func (ms fileMoves) edit(bl Block, sp nameSpan) (string, bool) {
 	switch sp.role {
 	case spanItem:
@@ -468,7 +429,6 @@ func (ms fileMoves) edit(bl Block, sp nameSpan) (string, bool) {
 	return encodeRef(to), ok
 }
 
-// indexFiles collects the files visible in the node.
 func (w *World) indexFiles(n *Node) (fileIndex, error) {
 	ix := fileIndex{own: map[string]bool{}, other: map[string]string{}}
 	rev, err := w.ancestry(formatNodePath(nodePath(*n)))
@@ -492,7 +452,6 @@ func (w *World) indexFiles(n *Node) (fileIndex, error) {
 	return ix, nil
 }
 
-// under lists the own files at p or below the directory p.
 func (ix fileIndex) under(p string) []string {
 	var files []string
 	for f := range ix.own {
@@ -504,8 +463,6 @@ func (ix fileIndex) under(p string) []string {
 	return files
 }
 
-// foreign names the source of a file at or below p that the node does not
-// hold itself, or of a mapped directory that p lies in.
 func (ix fileIndex) foreign(p string) (string, bool) {
 	var keys []string
 	for k := range ix.other {
@@ -522,7 +479,6 @@ func (ix fileIndex) foreign(p string) (string, bool) {
 	return "", false
 }
 
-// isDir reports whether some visible file lies below p.
 func (ix fileIndex) isDir(p string) bool {
 	for f := range ix.own {
 		if strings.HasPrefix(f, p+"/") {
@@ -537,8 +493,6 @@ func (ix fileIndex) isDir(p string) bool {
 	return false
 }
 
-// source resolves an operand to the own files it names.
-// dir is set when the operand is a directory.
 func (ix fileIndex) source(arg string) (p string, files []string, dir bool, err error) {
 	if p, err = cleanPath(arg); err != nil {
 		return "", nil, false, err
@@ -550,8 +504,6 @@ func (ix fileIndex) source(arg string) (p string, files []string, dir bool, err 
 	return p, files, len(files) > 0 && !ix.own[p], nil
 }
 
-// OperateFiles interprets one rm or mv command on the files of the node,
-// and returns a line for each file it changed.
 func (w *World) OperateFiles(nodeName, command string) (string, error) {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -580,8 +532,6 @@ func (w *World) OperateFiles(nodeName, command string) (string, error) {
 	return joinLines(lines), err
 }
 
-// removeFiles is rm: it deletes the own blocks of each file, the blocks
-// applied to its root chunk, and its description. A directory needs -r.
 func (w *World) removeFiles(n *Node, ix fileIndex, words []string) ([]string, error) {
 	flags, args, err := fileArgs(words, "rRf")
 	if err != nil {
@@ -630,9 +580,6 @@ func (w *World) removeFiles(n *Node, ix fileIndex, words []string) ([]string, er
 	return lines, err
 }
 
-// moveTarget reads the last operand of mv. It is the new path, or the
-// directory that receives the sources when it holds files, ends with a slash,
-// or follows several sources.
 func (ix fileIndex) moveTarget(args []string) (target string, into bool, err error) {
 	if len(args) < 2 {
 		return "", false, fmt.Errorf("mv needs a source and a target")
@@ -648,7 +595,6 @@ func (ix fileIndex) moveTarget(args []string) (target string, into bool, err err
 	return target, into, nil
 }
 
-// planMoves turns the sources of mv into moves.
 func (ix fileIndex) planMoves(sources []string, target string, into bool) (fileMoves, error) {
 	var moves fileMoves
 	for _, arg := range sources {
@@ -671,9 +617,6 @@ func (ix fileIndex) planMoves(sources []string, target string, into bool) (fileM
 	return moves, nil
 }
 
-// settle lists each file that moves with its new path.
-// A file is never moved onto another one, unlike the mv of a shell,
-// because the block of the other file would be lost without a trace.
 func (ix fileIndex) settle(moves fileMoves) ([]string, error) {
 	moving := map[string]string{}
 	var order []string
@@ -700,8 +643,6 @@ func (ix fileIndex) settle(moves fileMoves) ([]string, error) {
 	return lines, nil
 }
 
-// moveFiles is mv: file headers, references to the files, file operands of
-// views, and descriptions follow, in the node and the local nodes based on it.
 func (w *World) moveFiles(n *Node, ix fileIndex, words []string) ([]string, error) {
 	_, args, err := fileArgs(words, "f")
 	if err != nil {
@@ -722,7 +663,6 @@ func (w *World) moveFiles(n *Node, ix fileIndex, words []string) ([]string, erro
 	return lines, w.rewriteNodes(w.subtree(n), moves.edit)
 }
 
-// items reads the items up to the end control. The caller has consumed "@~".
 func (s *spanScanner) items() error {
 	p := &s.p
 	start := p.i
@@ -746,7 +686,6 @@ func (s *spanScanner) items() error {
 	}
 }
 
-// namespace is the reserved module that holds the descriptions of what moves.
 func (r renaming) namespace() Name {
 	if r.items {
 		return "Index"
@@ -754,7 +693,6 @@ func (r renaming) namespace() Name {
 	return "Chunk"
 }
 
-// applyItem returns an item renamed.
 func (r renaming) applyItem(it Item) (Item, bool) {
 	exact := len(it) == len(r.from) && !r.module
 	below := r.module && len(it) > len(r.from)
@@ -764,7 +702,6 @@ func (r renaming) applyItem(it Item) (Item, bool) {
 	return append(append(Item{}, r.to...), it[len(r.from):]...), true
 }
 
-// carried reports whether a block carries an item that the renaming moves.
 func (r renaming) carried(bl Block) bool {
 	for _, it := range bl.Items {
 		if _, ok := r.applyItem(it); ok {
@@ -774,9 +711,6 @@ func (r renaming) carried(bl Block) bool {
 	return false
 }
 
-// checkItems refuses to rename an item that the node does not carry, or that
-// a base node carries: the base keeps its blocks, so the cross-reference
-// would break in two.
 func (w *World) checkItems(n *Node, r renaming) error {
 	name := formatModule(ModulePath(r.from))
 	rev, err := w.ancestry(formatNodePath(nodePath(*n)))
@@ -798,8 +732,6 @@ func (w *World) checkItems(n *Node, r renaming) error {
 	return fmt.Errorf("unknown %s '%s'", r.what(), name)
 }
 
-// MapFile adds a mapping to a node: the file or directory origin, outside
-// the archives, appears in the node at path.
 func (w *World) MapFile(nodeName, at, origin string, sets []string) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -830,9 +762,6 @@ func (w *World) MapFile(nodeName, at, origin string, sets []string) error {
 	return nil
 }
 
-// OverrideBlock puts the blocks of text in the place of one block of the node.
-// The new blocks are applied to the chunk reference of the old one, so the
-// change stays within one chunk; the comment of the old block goes with it.
 func (w *World) OverrideBlock(nodeName, ref, text string) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -870,7 +799,6 @@ func (w *World) OverrideBlock(nodeName, ref, text string) error {
 	return store(n, data, next)
 }
 
-// DeleteBlock removes one block of the node.
 func (w *World) DeleteBlock(nodeName, ref string) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -883,8 +811,6 @@ func (w *World) DeleteBlock(nodeName, ref string) error {
 	return w.rewriteOwn(n, func(_ Block, at int) bool { return at != i })
 }
 
-// MoveBlock takes one block of a node, with its comment, to the end of
-// another local node. Neither archive is written unless both can be.
 func (w *World) MoveBlock(nodeName, ref, toName string) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -922,7 +848,6 @@ func (w *World) MoveBlock(nodeName, ref, toName string) error {
 	return store(n, fromData, fromArch)
 }
 
-// scanSpans lists the names of a block that parsed before, in order.
 func scanSpans(raw string) ([]nameSpan, error) {
 	s := &spanScanner{p: parser{src: []byte(raw)}}
 	if err := s.header(); err != nil {
@@ -934,12 +859,10 @@ func scanSpans(raw string) ([]nameSpan, error) {
 	return s.spans, nil
 }
 
-// encodeName writes a name as an archive holds it.
 func encodeName(n Name) string {
 	return strings.ReplaceAll(string(n), "@", "@@")
 }
 
-// encodeRef writes a qualified name as an archive holds it.
 func encodeRef(r ChunkRef) string {
 	var b strings.Builder
 	for _, label := range r.Labels {
@@ -952,14 +875,10 @@ func encodeRef(r ChunkRef) string {
 	return b.String()
 }
 
-// refPath is the module path of ref followed by its chunk.
 func refPath(ref ChunkRef) []Name {
 	return append(append([]Name{}, ref.Module...), ref.Chunk)
 }
 
-// rewriteRaw is the text of a block with the names that edit replaces.
-// The spans are replaced from the last one, so the earlier offsets stay valid,
-// and a new name keeps the blanks that surrounded the old one.
 func rewriteRaw(bl Block, edit func(Block, nameSpan) (string, bool)) (string, error) {
 	spans, err := scanSpans(bl.Raw)
 	if err != nil {
@@ -979,8 +898,6 @@ func rewriteRaw(bl Block, edit func(Block, nameSpan) (string, bool)) (string, er
 	return raw, nil
 }
 
-// shellWords splits a command into words the way a shell splits plain words:
-// blanks separate them, and quotes or a backslash keep the next bytes literal.
 func shellWords(cmd string) ([]string, error) {
 	var words []string
 	var word strings.Builder
@@ -1023,8 +940,6 @@ func shellWords(cmd string) ([]string, error) {
 	return words, nil
 }
 
-// fileArgs separates the option letters of a command from its operands.
-// Only the letters of allowed are options of the command.
 func fileArgs(words []string, allowed string) (flags string, args []string, err error) {
 	i := 0
 	for ; i < len(words); i++ {
@@ -1046,7 +961,6 @@ func fileArgs(words []string, allowed string) (flags string, args []string, err 
 	return flags, words[i:], nil
 }
 
-// cleanPath is the path of an operand as a file header writes it.
 func cleanPath(arg string) (string, error) {
 	p := path.Clean(arg)
 	if arg == "" || p == "." || p == ".." || strings.HasPrefix(p, "../") || path.IsAbs(p) {
@@ -1055,7 +969,6 @@ func cleanPath(arg string) (string, error) {
 	return p, nil
 }
 
-// unmap takes the mapping of the path of arg away from maps.
 func unmap(maps []Mapping, arg string) ([]Mapping, bool) {
 	p := path.Clean(arg)
 	for i, m := range maps {
@@ -1066,7 +979,6 @@ func unmap(maps []Mapping, arg string) ([]Mapping, bool) {
 	return maps, false
 }
 
-// ownBlock finds a block of the node by its ref.
 func ownBlock(n *Node, ref string) (int, error) {
 	for i, bl := range n.Own {
 		if blockRef(bl) == ref {
@@ -1076,9 +988,6 @@ func ownBlock(n *Node, ref string) (int, error) {
 	return 0, fmt.Errorf("unknown block '%s'", ref)
 }
 
-// joinBlocks writes blocks as an archive holds them.
-// A block that closed at the end of its archive has no blank after its "@";
-// the next text would join it.
 func joinBlocks(b *strings.Builder, blocks []Block) {
 	for _, bl := range blocks {
 		b.WriteString(bl.Comment)
@@ -1089,7 +998,6 @@ func joinBlocks(b *strings.Builder, blocks []Block) {
 	}
 }
 
-// compacted parses text as the archive of n and compacts it, writing nothing.
 func compacted(n *Node, text string) ([]byte, *Archive, error) {
 	arch, err := ParseArchive([]byte(text), n.Archive)
 	if err != nil {
@@ -1100,7 +1008,6 @@ func compacted(n *Node, text string) ([]byte, *Archive, error) {
 	return compactOwn(&next)
 }
 
-// store writes a compacted archive and makes it the content of the node.
 func store(n *Node, data []byte, arch *Archive) error {
 	if err := writeFileKeepMode(n.Archive, data); err != nil {
 		return fmt.Errorf("could not write '%s'", n.Archive)
@@ -1109,7 +1016,6 @@ func store(n *Node, data []byte, arch *Archive) error {
 	return nil
 }
 
-// encodeItem writes an item as an archive holds it.
 func encodeItem(it Item) string {
 	parts := make([]string, len(it))
 	for i, n := range it {

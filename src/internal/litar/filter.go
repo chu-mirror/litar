@@ -111,10 +111,6 @@ func (c *catalog) apply(ops []ViewOp) ([]viewFile, error) {
 	return out, nil
 }
 
-// tangle writes each view file's bytes before the filter process starts.
-// An archive file is the root-module chunk named by its path.
-// A mapped file is the contents of origin. A mapped directory is created
-// when it is missing, so a build can write into a fresh tree.
 func (e *Evaluator) tangle(files []viewFile) error {
 	for i := range files {
 		var (
@@ -144,7 +140,6 @@ func (e *Evaluator) tangle(files []viewFile) error {
 	return nil
 }
 
-// file is the catalog file at path, or the file at path below a mapped directory.
 func (c *catalog) file(path string) *catFile {
 	if f := c.files[path]; f != nil {
 		return f
@@ -211,9 +206,6 @@ func validFilePath(p string) error {
 	return nil
 }
 
-// parseShebang reads "#! interpreter" or "#! interpreter arg".
-// As the kernel's script loader does, arg is the rest of the line,
-// one argument without its surrounding blanks.
 func parseShebang(script string) (interp, arg string, hasArg, ok bool) {
 	if len(script) < 2 || script[0] != '#' || script[1] != '!' {
 		return "", "", false, false
@@ -246,8 +238,6 @@ func parseShebang(script string) (interp, arg string, hasArg, ok bool) {
 	return interp, arg, true, true
 }
 
-// shebangWord returns the word of script at i, up to a blank or a line end,
-// and the index after it.
 func shebangWord(script string, i int) (string, int) {
 	start := i
 	for i < len(script) && script[i] != ' ' && script[i] != '\t' && script[i] != '\n' && script[i] != '\r' {
@@ -349,8 +339,6 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 	return out.String(), nil
 }
 
-// exitStatus is the status of a failed wait: the exit code,
-// or 128 plus the signal for a process killed by a signal.
 func exitStatus(err error) int {
 	code := 1
 	if ee, ok := err.(*exec.ExitError); ok {

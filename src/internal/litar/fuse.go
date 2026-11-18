@@ -19,8 +19,6 @@ var (
 	liveMounts = map[*mount]struct{}{}
 )
 
-// fixedStatTime is the timestamp reported for every tangled file.
-// It does not move when the file is stated, opened, or read.
 var fixedStatTime = time.Unix(0, 0)
 
 var (
@@ -388,9 +386,6 @@ func buildVTree(files []viewFile) (*vdir, error) {
 	return root, nil
 }
 
-// assignInos gives every archive path one inode number for this mount.
-// Entry timeouts are zero, so the kernel may look the name up again
-// between stat and open. The same number keeps the stat stable.
 func assignInos(root *vdir) {
 	next := uint64(2)
 	var walk func(*vdir)
@@ -451,8 +446,6 @@ func detach(dir string, direct bool) {
 	}
 }
 
-// DetachMounts lazily unmounts every filter view that is still mounted.
-// A process that exits without it leaves a dead mount in the temporary directory.
 func DetachMounts() {
 	liveMu.Lock()
 	defer liveMu.Unlock()

@@ -36,7 +36,6 @@ func effectiveBlocks(blocks []Block, ref ChunkRef) (eff []Block, ok bool) {
 	return eff, ok
 }
 
-// Literal is the -l listing. A reference with no block is an error.
 func Literal(blocks []Block, ref ChunkRef) (string, error) {
 	got := matchingBlocks(blocks, ref)
 	if len(got) == 0 {
@@ -45,7 +44,6 @@ func Literal(blocks []Block, ref ChunkRef) (string, error) {
 	return FormatBlocks(got), nil
 }
 
-// Effective is the -e listing.
 func Effective(blocks []Block, ref ChunkRef) (string, error) {
 	got, ok := effectiveBlocks(blocks, ref)
 	if !ok {
@@ -98,7 +96,6 @@ func blockDepends(b Block, query ChunkRef) bool {
 	return false
 }
 
-// Depend is the -d listing. No match is an empty string, not an error.
 func Depend(blocks []Block, query ChunkRef) string {
 	var got []Block
 	for _, b := range blocks {
@@ -109,7 +106,6 @@ func Depend(blocks []Block, query ChunkRef) string {
 	return FormatBlocks(got)
 }
 
-// Refer is the -r listing.
 func Refer(blocks []Block, item Item) string {
 	var got []Block
 	for _, b := range blocks {
@@ -140,8 +136,6 @@ func moduleSeen(seen []ModulePath, m ModulePath) bool {
 	return false
 }
 
-// Modules lists module paths strictly under parent, in first-introduction order.
-// A reserved namespace is omitted. A description follows `Name:`, aligned with tabs.
 func Modules(blocks []Block, parent ModulePath, meta metaInfo) string {
 	var seen []ModulePath
 	for _, b := range blocks {
@@ -168,8 +162,6 @@ func Modules(blocks []Block, parent ModulePath, meta metaInfo) string {
 	return formatNamed(rows)
 }
 
-// Chunks lists chunk names whose module equals mod.
-// Chunks in a reserved namespace are omitted.
 func Chunks(blocks []Block, mod ModulePath, meta metaInfo) string {
 	seen := map[Name]bool{}
 	var rows []namedLine
@@ -190,10 +182,6 @@ func Chunks(blocks []Block, mod ModulePath, meta metaInfo) string {
 	return formatNamed(rows)
 }
 
-// formatNamed prints one name per line.
-// A description is `Name:` then tabs, then the description.
-// Tab stops are eight columns apart, and every description in the list
-// starts at the same column, past the longest `Name:`.
 func formatNamed(rows []namedLine) string {
 	const tabWidth = 8
 	col := 0
@@ -237,7 +225,6 @@ func formatUnder(domain []Name, name Name) string {
 	return formatModule(domain) + "@/" + string(name)
 }
 
-// Subdomains lists the name that follows domain, once each.
 func Subdomains(blocks []Block, domain []Name, meta metaInfo) string {
 	seen := map[string]bool{}
 	var rows []namedLine
@@ -257,7 +244,6 @@ func Subdomains(blocks []Block, domain []Name, meta metaInfo) string {
 	return formatNamed(rows)
 }
 
-// Items lists item paths whose prefix before the last name is domain.
 func Items(blocks []Block, domain []Name, meta metaInfo) string {
 	seen := map[string]bool{}
 	var rows []namedLine

@@ -5,9 +5,6 @@ import (
 	"strings"
 )
 
-// ParseError is a scan or parse failure.
-// Archive errors name the file and line.
-// Command-line errors are marked Expr and read "… in expression".
 type ParseError struct {
 	Msg  string
 	File string
@@ -65,10 +62,6 @@ func (p *parser) fail(msg string) error {
 	return &ParseError{Msg: msg, File: p.file, Line: p.line()}
 }
 
-// atControl reports a control at p.i.
-// n == 1 is a final "@" at end of input.
-// n == 2 is "@" plus the returned kind.
-// "@" followed by a letter or a byte >= 128 is text, not a control.
 func (p *parser) atControl() (kind byte, n int, ok bool) {
 	if p.i >= len(p.src) || p.src[p.i] != '@' {
 		return 0, 0, false
@@ -87,11 +80,6 @@ func (p *parser) unexpected(kind byte, n int) error {
 	return p.fail(fmt.Sprintf("unexpected control '%s'", ctrlText(kind, n)))
 }
 
-// readName reads bytes up to the next control.
-// "@@" stays inside the name and decodes to one "@".
-// Trim happens before that decode.
-// allowEOF lets a command-line name end at end of input.
-// kind, n describe the control that stopped the name; they are zero at EOF.
 func (p *parser) readName(allowEOF bool) (Name, byte, int, error) {
 	start := p.i
 	for p.i < len(p.src) {
@@ -113,9 +101,6 @@ func (p *parser) readName(allowEOF bool) (Name, byte, int, error) {
 	return Name(decodeAt(trimWS(p.src[start:p.i]))), 0, 0, nil
 }
 
-// parseQName reads labels, a module path, and a chunk.
-// The terminating control is not consumed.
-// An empty chunk is returned to the caller; it is not an error here.
 func (p *parser) parseQName(opt qOpt) (ChunkRef, byte, int, error) {
 	var labels []Name
 	var module ModulePath
@@ -152,8 +137,6 @@ func (p *parser) parseQName(opt qOpt) (ChunkRef, byte, int, error) {
 	return ChunkRef{Labels: labels, Module: module, Chunk: name}, kind, n, nil
 }
 
-// parseFilterList reads one or more filters. The caller has consumed the
-// opening "@|". The terminating control is not consumed.
 func (p *parser) parseFilterList(allowEOF bool) ([]Filter, byte, int, error) {
 	var filters []Filter
 	for {
@@ -200,7 +183,6 @@ func (p *parser) consumeLayout() {
 	}
 }
 
-// parseInnerRef reads a body reference. The caller has consumed "@<".
 func (p *parser) parseInnerRef() (*Ref, error) {
 	ref, kind, n, err := p.parseQName(qOpt{dotOK: true})
 	if err != nil {
@@ -227,9 +209,6 @@ func (p *parser) parseInnerRef() (*Ref, error) {
 	return &Ref{ChunkRef: ref, Filters: filters}, nil
 }
 
-// parseBody reads the content and what follows it up to the end control.
-// One line break that ends the content is layout, not content;
-// endsLine records it.
 func (p *parser) parseBody() (body, error) {
 	var b body
 	var text strings.Builder
@@ -298,7 +277,6 @@ func (p *parser) parseBody() (body, error) {
 	}
 }
 
-// flush moves the pending content text into a text part.
 func (b *body) flush(text *strings.Builder) {
 	if text.Len() == 0 {
 		return
@@ -307,8 +285,6 @@ func (b *body) flush(text *strings.Builder) {
 	text.Reset()
 }
 
-// endContent flushes the content text without the one line break that
-// ends it, and records that break in endsLine.
 func (b *body) endContent(text *strings.Builder) {
 	s := text.String()
 	switch {
@@ -389,7 +365,6 @@ func (p *parser) parseBlock() (Block, error) {
 	return p.finishBlock(ref, Op(kind), startLine)
 }
 
-// finishBlock reads the rest of a block whose operation control is at p.i.
 func (p *parser) finishBlock(ref ChunkRef, op Op, startLine int) (Block, error) {
 	p.i += 2
 	p.consumeLayout()
@@ -458,8 +433,6 @@ func (p *parser) parseFile(executable bool) (Block, error) {
 	return b, nil
 }
 
-// skipToControl moves to the next control that starts or rejects an
-// expression. "@@" stays in the comment.
 func (p *parser) skipToControl() {
 	for p.i < len(p.src) {
 		kind, n, ok := p.atControl()
@@ -485,8 +458,6 @@ func (a *Archive) Text() string {
 	return b.String()
 }
 
-// parseNames reads the names of an expression separated by "/".
-// relOK allows the names "." and "..".
 func (p *parser) parseNames(relOK bool) ([]Name, error) {
 	var names []Name
 	for {
@@ -551,7 +522,6 @@ func trimWS(b []byte) []byte {
 	return b[i:j]
 }
 
-// decodeAt replaces "@@" with "@". The caller trims first.
 func decodeAt(b []byte) string {
 	var sb strings.Builder
 	for i := 0; i < len(b); i++ {
@@ -582,8 +552,6 @@ func viewKind(kind byte) ViewOpKind {
 	}
 }
 
-// ParseArchive parses one archive. Comment+Raw of every block, then
-// Trailing, reconstructs src.
 func ParseArchive(src []byte, file string) (*Archive, error) {
 	p := &parser{src: src, file: file}
 	var blocks []Block
@@ -655,12 +623,10 @@ func parseExpr(s string, allowPipeline bool) (ChunkRef, []Filter, error) {
 	return ref, filters, nil
 }
 
-// ParsePrint parses a -p expression: a qualified name and an optional pipeline.
 func ParsePrint(s string) (ChunkRef, []Filter, error) {
 	return parseExpr(s, true)
 }
 
-// ParseChunkRef parses a -l, -e, or -d operand. A pipeline is an error.
 func ParseChunkRef(s string) (ChunkRef, error) {
 	ref, filters, err := parseExpr(s, false)
 	if err != nil {
@@ -672,8 +638,6 @@ func ParseChunkRef(s string) (ChunkRef, error) {
 	return ref, nil
 }
 
-// ParseModulePath parses a module path or a domain.
-// "/" is the root. "." and ".." are rejected.
 func ParseModulePath(s string) (ModulePath, error) {
 	if s == "/" {
 		return nil, nil
@@ -683,7 +647,6 @@ func ParseModulePath(s string) (ModulePath, error) {
 	return ModulePath(names), err
 }
 
-// ParseItem parses an -r operand. The root marker "/" is not special.
 func ParseItem(s string) (Item, error) {
 	if s == "" {
 		return nil, &ParseError{Msg: "empty name", Expr: true}

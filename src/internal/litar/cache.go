@@ -10,10 +10,8 @@ import (
 	"strings"
 )
 
-// filterCacheDir is the directory of the filter cache; empty turns the cache off.
 var filterCacheDir string
 
-// countingWriter passes writes to w and counts the bytes written.
 type countingWriter struct {
 	w io.Writer
 	n int
@@ -25,8 +23,6 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// cacheDirFromEnv is the directory that LITAR_CACHE names, or litar below the user cache
-// directory when it is unset. LITAR_CACHE=off, or an empty value, turns the cache off.
 func cacheDirFromEnv() string {
 	dir, ok := os.LookupEnv("LITAR_CACHE")
 	if !ok {
@@ -46,8 +42,6 @@ func cacheDirFromEnv() string {
 	return abs
 }
 
-// filterKey names a filter run by its script, its input, and the path, mode,
-// and contents of each file in its view.
 func filterKey(script, input string, files []viewFile) (string, bool) {
 	if filterCacheDir == "" {
 		return "", false
@@ -96,7 +90,6 @@ func writeCachedOutput(key, out string) {
 	}
 }
 
-// filterEnv is the environment of a filter process.
 func filterEnv() []string {
 	var env []string
 	for _, kv := range os.Environ() {

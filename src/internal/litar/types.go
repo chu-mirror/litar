@@ -17,10 +17,8 @@ const (
 	OpAdd Op = '+'
 )
 
-// A Name is a decoded, trimmed string. Interior whitespace stays.
 type Name string
 
-// ModulePath is empty for the root module.
 type ModulePath []Name
 
 type ChunkRef struct {
@@ -41,7 +39,6 @@ type Filter struct {
 	View []ViewOp
 }
 
-// An Item is a path of names separated by @/.
 type Item []Name
 
 type Op byte
@@ -113,8 +110,6 @@ type Archive struct {
 	Source   string
 }
 
-// String renders a chunk reference in qualified-name form.
-// The root module is omitted.
 func (r ChunkRef) String() string {
 	var b strings.Builder
 	for _, label := range r.Labels {
@@ -134,7 +129,6 @@ func (r ChunkRef) String() string {
 	return b.String()
 }
 
-// key is a length-prefixed identity. Names may contain the bytes "@:".
 func (r ChunkRef) key() string {
 	var b strings.Builder
 	writeNames(&b, r.Labels)
@@ -179,9 +173,6 @@ func hasRel(m ModulePath) bool {
 	return false
 }
 
-// resolveModule applies "." and ".." against base when the path starts
-// with one of them. Otherwise the path starts at the root, and a later
-// "." or ".." still applies to the path built so far.
 func resolveModule(base, path ModulePath) ModulePath {
 	var cur ModulePath
 	if len(path) > 0 && isRelName(path[0]) {
@@ -215,9 +206,6 @@ func copyModule(m ModulePath) ModulePath {
 	return append(ModulePath(nil), m...)
 }
 
-// matchRef reports whether a block header matches a chunk reference.
-// The block's labels must be a suffix of the reference's labels.
-// Empty block labels match every specialization.
 func matchRef(block, ref ChunkRef) bool {
 	if block.Chunk != ref.Chunk || !modulesEqual(block.Module, ref.Module) {
 		return false
@@ -281,8 +269,6 @@ func namePrefix(path []Name, prefix []Name) bool {
 	return true
 }
 
-// FormatBlocks is the -l form: each block's comment and raw text.
-// Trailing bytes after the last expression are not included.
 func FormatBlocks(blocks []Block) string {
 	var b strings.Builder
 	for _, bl := range blocks {
@@ -299,7 +285,6 @@ func joinLines(lines []string) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// nodePath is the path from the root through this node.
 func nodePath(n Node) []string {
 	p := make([]string, len(n.Base)+1)
 	copy(p, n.Base)
@@ -307,8 +292,6 @@ func nodePath(n Node) []string {
 	return p
 }
 
-// formatNodePath joins a node path with slashes.
-// A node name does not contain a slash, so the join is reversible.
 func formatNodePath(p []string) string {
 	return strings.Join(p, "/")
 }

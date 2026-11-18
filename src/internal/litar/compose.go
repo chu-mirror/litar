@@ -23,8 +23,6 @@ type composerNode struct {
 	Base        basePath          `json:"base"`
 }
 
-// basePath is the path from the root to the direct parent.
-// An empty array is the root. Null and a string are rejected.
 type basePath struct {
 	names []string
 	set   bool
@@ -65,8 +63,6 @@ func (b basePath) MarshalJSON() ([]byte, error) {
 	return json.Marshal(names)
 }
 
-// requireLocal returns a node declared in this composer file.
-// A node that arrived through ground is visible, and it is not edited here.
 func (w *World) requireLocal(ref string) (*Node, error) {
 	i, err := w.findIndex(ref)
 	if err != nil {
@@ -78,7 +74,6 @@ func (w *World) requireLocal(ref string) (*Node, error) {
 	return &w.Nodes[i], nil
 }
 
-// lookup finds a node by its full path, the names from the root joined by "/".
 func (w *World) lookup(ref string) (*Node, error) {
 	i, err := w.findIndex(ref)
 	if err != nil {
@@ -128,7 +123,6 @@ func (w *World) rootName() (string, error) {
 	return formatNodePath(nodePath(*n)), nil
 }
 
-// ancestry returns the node, then its base, up to the root.
 func (w *World) ancestry(ref string) ([]*Node, error) {
 	var n *Node
 	var err error
@@ -159,7 +153,6 @@ func (w *World) ancestry(ref string) ([]*Node, error) {
 	}
 }
 
-// Chain is the base chain followed by the node's own blocks.
 func (w *World) Chain(name string) ([]Block, error) {
 	rev, err := w.ancestry(name)
 	if err != nil {
@@ -172,7 +165,6 @@ func (w *World) Chain(name string) ([]Block, error) {
 	return blocks, nil
 }
 
-// Mappings is the base chain's mappings followed by the node's own.
 func (w *World) Mappings(name string) ([]Mapping, error) {
 	rev, err := w.ancestry(name)
 	if err != nil {
@@ -215,9 +207,6 @@ func (w *World) save() error {
 	return os.WriteFile(w.Composer, data, 0o644)
 }
 
-// CreateNode parses the archive, then appends the node and rewrites the composer.
-// An empty base creates the root, and only when the composer has none.
-// The archive file is created empty and must not already exist.
 func (w *World) CreateNode(name, archive, description string, base []string) error {
 	if name == "" {
 		return fmt.Errorf("empty name")
@@ -290,11 +279,6 @@ func (w *World) CreateNode(name, archive, description string, base []string) err
 	return nil
 }
 
-// DeleteNode removes the node and every node based on it
-// from this composer file, then deletes each removed node's archive file.
-// A node defined in the ground is left in place.
-// A file that is already gone is not an error.
-// If a file cannot be removed, the composer stays updated.
 func (w *World) DeleteNode(name string) error {
 	target, err := w.requireLocal(name)
 	if err != nil {
@@ -331,10 +315,6 @@ func (w *World) DeleteNode(name string) error {
 	return nil
 }
 
-// ApplyBlock appends text to the node's own archive, then reparses.
-// A block that is no longer effective in that node is removed.
-// A node defined in the ground is left unchanged.
-// A failed parse leaves the file.
 func (w *World) ApplyBlock(nodeName, text string) error {
 	if text == "" {
 		return fmt.Errorf("empty block text")
@@ -397,7 +377,6 @@ func (w *World) rewriteOwn(n *Node, keep func(Block, int) bool) error {
 	return nil
 }
 
-// DeleteChunk removes own blocks that match ref, the same set -l prints.
 func (w *World) DeleteChunk(nodeName string, ref ChunkRef) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -408,8 +387,6 @@ func (w *World) DeleteChunk(nodeName string, ref ChunkRef) error {
 	})
 }
 
-// DeleteChunkAll removes every own block of ref's module and chunk,
-// whatever labels it carries.
 func (w *World) DeleteChunkAll(nodeName string, ref ChunkRef) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -420,8 +397,6 @@ func (w *World) DeleteChunkAll(nodeName string, ref ChunkRef) error {
 	})
 }
 
-// DeleteFile removes file blocks with that path and blocks applied to
-// the root chunk of that path.
 func (w *World) DeleteFile(nodeName, path string) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -436,9 +411,6 @@ func (w *World) DeleteFile(nodeName, path string) error {
 	})
 }
 
-// DumpArchives rewrites each node's own archive, dropping a block that
-// is not an effective block of its own chunk reference in that node
-// and ordering the rest as orderOwn does.
 func (w *World) DumpArchives() error {
 	type pending struct {
 		n    *Node
@@ -464,7 +436,6 @@ func (w *World) DumpArchives() error {
 	return nil
 }
 
-// Describe replaces the description of a node, or of the composition when nodeName is empty.
 func (w *World) Describe(nodeName, description string) error {
 	if nodeName == "" {
 		w.Description = description
@@ -478,13 +449,10 @@ func (w *World) Describe(nodeName, description string) error {
 	return w.save()
 }
 
-// LoadComposer reads a composer file.
-// The combined ground and local nodes have exactly one root.
 func LoadComposer(path string) (*World, error) {
 	return loadComposer(path, false)
 }
 
-// LoadComposerAllowEmpty accepts a composer with a null ground and no nodes.
 func LoadComposerAllowEmpty(path string) (*World, error) {
 	return loadComposer(path, true)
 }
@@ -734,8 +702,6 @@ func resolveArchive(spec, composerDir string) (string, error) {
 	return "", fmt.Errorf("could not find archive '%s'", spec)
 }
 
-// createNewArchive writes an empty archive beside the composer file.
-// The file must not already exist.
 func createNewArchive(spec, composerDir string) (string, error) {
 	if spec == "" || filepath.IsAbs(spec) {
 		return "", fmt.Errorf("could not find archive '%s'", spec)
@@ -793,10 +759,6 @@ func identityPath(path string) (string, error) {
 	return abs, nil
 }
 
-// FindArchive loads the composition that declares archive and returns the
-// path of the declaring node. It looks for composer.json from the archive's
-// directory upward; the nearest composer that declares the archive as one of
-// its own nodes wins.
 func FindArchive(archive string) (*World, string, error) {
 	ident, err := identityPath(archive)
 	if err != nil || !isRegular(ident) {
@@ -855,8 +817,6 @@ func emptyComposerBytes() []byte {
 	return data
 }
 
-// SpecifyComposer loads an existing composer file.
-// A directory uses the composer.json inside it.
 func SpecifyComposer(path string) (*World, error) {
 	if path == "" {
 		return nil, fmt.Errorf("missing path")
@@ -878,11 +838,6 @@ func SpecifyComposer(path string) (*World, error) {
 	return LoadComposerAllowEmpty(path)
 }
 
-// CreateComposedArchive creates dir/composer.json when that file is absent,
-// then loads it. An empty node list is allowed.
-// An empty ground is stored as null.
-// A named ground is resolved on the library search path before the file is written.
-// If the new file cannot be loaded, it is removed.
 func CreateComposedArchive(dir, ground string) (*World, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("missing path")
@@ -948,8 +903,6 @@ func writeFileKeepMode(path string, data []byte) error {
 	return os.WriteFile(path, data, mode)
 }
 
-// compactOwn drops blocks that are not effective for their own
-// chunk reference among this node's own blocks, then orders the rest.
 func compactOwn(n *Node) ([]byte, *Archive, error) {
 	var kept []Block
 	own := orderOwn(n.Own)
@@ -1000,15 +953,10 @@ func endsWithSpace(s string) bool {
 	return false
 }
 
-// chunkKey identifies a module and chunk, whatever the labels.
 func chunkKey(ref ChunkRef) string {
 	return ChunkRef{Module: ref.Module, Chunk: ref.Chunk}.key()
 }
 
-// orderOwn places a block after the blocks whose content includes its chunk.
-// Blocks of one module and chunk follow specializationOrder, because that order
-// decides the content and the effective blocks; when inclusion is circular,
-// the rule gives way to that order. Otherwise blocks keep their order.
 func orderOwn(blocks []Block) []Block {
 	n := len(blocks)
 	keys := make([]string, n)
@@ -1079,7 +1027,6 @@ func orderOwn(blocks []Block) []Block {
 	return out
 }
 
-// effectiveIndexSet lists blocks that still contribute to query.
 func effectiveIndexSet(blocks []Block, query ChunkRef) map[int]bool {
 	var idx []int
 	for i, b := range blocks {
@@ -1099,8 +1046,6 @@ func effectiveIndexSet(blocks []Block, query ChunkRef) map[int]bool {
 	return set
 }
 
-// specializationOrder lists idx, the blocks of one chunk, so that a block follows
-// the blocks whose labels are a proper suffix of its labels; otherwise idx keeps its order.
 func specializationOrder(blocks []Block, idx []int) []int {
 	k := len(idx)
 	before := make([]int, k)

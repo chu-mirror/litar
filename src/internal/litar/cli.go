@@ -16,8 +16,6 @@ var modeOrder = []string{
 	"print", "literal", "effective", "depend", "reference", "agent",
 }
 
-// Options is the command line of litar after parsing.
-// An action is given by a non-empty operand; Agent takes none.
 type Options struct {
 	Agent     bool
 	File      string
@@ -28,7 +26,6 @@ type Options struct {
 	Print     string
 }
 
-// Main runs litar with a parsed command line and returns the exit status.
 func Main(opts Options) int {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)

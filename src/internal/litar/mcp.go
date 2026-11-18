@@ -18,7 +18,6 @@ import (
 	"unicode/utf8"
 )
 
-// searchLimit is the largest number of blocks a search answers.
 const searchLimit = 100
 
 var fixedResources = []struct {
@@ -185,8 +184,6 @@ type moveIn struct {
 	To          string `json:"to" jsonschema:"ref of the node that receives the block"`
 }
 
-// A blockJSON is one block of a blocks:// resource.
-// Node is left out when the block belongs to the node of the resource.
 type blockJSON struct {
 	Ref     string `json:"ref"`
 	Node    string `json:"node,omitempty"`
@@ -229,8 +226,6 @@ func (a *agent) useWorld(w *World) (*mcp.CallToolResult, any, error) {
 	return toolText(compositionRef(w))
 }
 
-// compositions is the imported compositions in list order.
-// The caller holds a.mu.
 func (a *agent) compositions() []*World {
 	out := make([]*World, 0, len(a.order))
 	for _, dir := range a.order {
@@ -377,8 +372,6 @@ func (a *agent) evaluate(ctx context.Context, _ *mcp.CallToolRequest, in evalIn)
 	return toolText(text)
 }
 
-// applyBlock answers with the refs of the blocks of the text, one per line,
-// so that a later call can address them without reading the node again.
 func (a *agent) applyBlock(ctx context.Context, _ *mcp.CallToolRequest, in applyIn) (*mcp.CallToolResult, any, error) {
 	arch, err := ParseArchive([]byte(in.Text), "")
 	if err != nil {
@@ -405,8 +398,6 @@ func (a *agent) applyBlock(ctx context.Context, _ *mcp.CallToolRequest, in apply
 	return toolText(strings.Join(refs, "\n"))
 }
 
-// worldNode resolves a composition ref and a node ref.
-// The caller holds a.mu.
 func (a *agent) worldNode(composition, node string) (*World, *Node, error) {
 	w, err := a.compositionByRef(composition)
 	if err != nil {
@@ -464,10 +455,6 @@ func (a *agent) refresh() {
 	}()
 }
 
-// listURIsLocked lists concrete URIs whose contents may have changed.
-// list://composition is the registered resource.
-// Every other URI is a read of a resource template.
-// Template variables are the refs of that list or tree.
 func (a *agent) listURIsLocked() []string {
 	uris := []string{"list://composition"}
 	for _, w := range a.compositions() {
@@ -529,8 +516,6 @@ func (a *agent) compositionList() []listJSON {
 	return out
 }
 
-// nodeChain loads the block chain and mappings of a node ref.
-// The caller holds a.mu.
 func (a *agent) nodeChain(w *World, ref string) ([]Block, []Mapping, error) {
 	n, err := nodeByRef(w, ref)
 	if err != nil {
@@ -568,8 +553,6 @@ func (a *agent) renderTree(uri, prefix string, build func([]Block, []Mapping) (t
 	return string(raw), mimeOf(uri), nil, nil
 }
 
-// renderBlocks answers a blocks:// resource: the kind after the scheme says
-// which blocks of the node's chain are listed, and how many refs follow.
 func (a *agent) renderBlocks(uri, mime string) (string, string, []byte, error) {
 	kind, rest, _ := strings.Cut(strings.TrimPrefix(uri, "blocks://"), "/")
 	count := map[string]int{"node": 2, "refer": 3, "specialization": 3, "apply": 4, "effective": 4, "depend": 4}[kind]
@@ -598,7 +581,6 @@ func (a *agent) renderBlocks(uri, mime string) (string, string, []byte, error) {
 	return string(raw), mime, nil, nil
 }
 
-// renderFile is called with a.mu held, and releases it while the file is evaluated.
 func (a *agent) renderFile(uri, mime string) (string, string, []byte, error) {
 	w, refs, err := a.refParts(strings.TrimPrefix(uri, "file://"), 3)
 	if err != nil {
@@ -688,8 +670,6 @@ func (n *nest) treeWith(name, desc string, path []Name, nodeDesc func([]Name) st
 	return t
 }
 
-// chunkDescription describes the module or chunk at path in the chunk tree.
-// Below File, the path names a file or directory.
 func (m metaInfo) chunkDescription(path []Name) string {
 	if len(path) > 0 && path[0] == "File" {
 		return m.files[pathKey(path[1:])]
@@ -697,8 +677,6 @@ func (m metaInfo) chunkDescription(path []Name) string {
 	return m.chunks[pathKey(path)]
 }
 
-// rename takes the ref of an entry of the chunk tree or of the item tree.
-// A branch and a leaf have different refs, so the ref alone says what is renamed.
 func (a *agent) rename(ctx context.Context, _ *mcp.CallToolRequest, in renameIn) (*mcp.CallToolResult, any, error) {
 	to, err := ParseModulePath(in.To)
 	if err != nil {
@@ -729,8 +707,6 @@ func (a *agent) operateFiles(ctx context.Context, _ *mcp.CallToolRequest, in fil
 	return toolText(report)
 }
 
-// compositionByRef resolves a ref from list://composition.
-// The caller holds a.mu.
 func (a *agent) compositionByRef(ref string) (*World, error) {
 	for _, w := range a.compositions() {
 		if compositionRef(w) == ref {
@@ -740,8 +716,6 @@ func (a *agent) compositionByRef(ref string) (*World, error) {
 	return nil, fmt.Errorf("unknown composition '%s'", ref)
 }
 
-// createNodeLocked creates the node with its mappings and returns its ref.
-// A mapping that fails takes the new node away again.
 func (a *agent) createNodeLocked(in createIn) (string, error) {
 	w, err := a.compositionByRef(in.Composition)
 	if err != nil {
@@ -814,8 +788,6 @@ func (a *agent) moveBlock(ctx context.Context, _ *mcp.CallToolRequest, in moveIn
 	return toolText(in.Block)
 }
 
-// refParts splits a URI tail of n refs and resolves the composition.
-// The caller holds a.mu.
 func (a *agent) refParts(rest string, n int) (*World, []string, error) {
 	refs := strings.Split(rest, "/")
 	if rest == "" || len(refs) != n {
@@ -1001,9 +973,6 @@ func newAgent() *agent {
 	return a
 }
 
-// nullableStringSchema is the inferred object schema with field rewritten.
-// A *string infers "type": ["null", "string"]. Some clients accept only
-// one type per schema, so null and string are separate anyOf branches.
 func nullableStringSchema[T any](field string) *jsonschema.Schema {
 	s, err := jsonschema.For[T](nil)
 	if err != nil {
@@ -1033,10 +1002,6 @@ func toolText(text string) (*mcp.CallToolResult, any, error) {
 	}, map[string]any{"text": text}, nil
 }
 
-// evalReporting runs without a.mu, since a filter may run for long;
-// chain and maps are copies taken under it.
-// A failed evaluation carries the stderr of its filters,
-// which is the only report a client sees.
 func evalReporting(chain []Block, maps []Mapping, ref ChunkRef, filters []Filter) (string, error) {
 	var stderr bytes.Buffer
 	ev := NewEvaluator(chain, maps, &stderr)
@@ -1073,11 +1038,6 @@ func newNest() *nest {
 	return &nest{leaves: map[string]bool{}, subs: map[string]*nest{}}
 }
 
-// A reserved chunk lives in the Chunk, Specialization, File, or Index namespace.
-// Its module path starts with that name. The remaining components, then the
-// chunk name, are the module or chunk, the specialization, the file or directory,
-// or the domain or item the chunk describes.
-// A specialization path is stored reversed: label2@:label1 is Specialization@/label1@/label2.
 func reservedNamespace(mod ModulePath) (Name, bool) {
 	if len(mod) == 0 {
 		return "", false
@@ -1321,14 +1281,6 @@ func nodeTree(w *World) treeJSON {
 	return tree
 }
 
-// specializationTree is the specializations of one chunk, or of every chunk
-// when only is nil.
-// The root is named "/" and is the unspecialized form.
-// Each child is one label, general toward specific.
-// The path label1/label2 is the specialization label2@:label1.
-// Every node, including the root, is a specialization.
-// A specialization is a label path on a block of the chunk,
-// or on a reference to the chunk.
 func specializationTree(blocks []Block, maps []Mapping, only *ChunkRef) (treeJSON, error) {
 	meta, err := describe(blocks, maps)
 	if err != nil {
@@ -1402,11 +1354,6 @@ func specializationTree(blocks []Block, maps []Mapping, only *ChunkRef) (treeJSO
 	return tree, nil
 }
 
-// indexTree maps each ref to its path.
-// includeRoot puts the root object's name on that path.
-// Chunk, file, item, and specialization trees leave it off,
-// so the wrapper named "/" does not appear in the path.
-// The wrapper's own ref is still present, with an empty path.
 func indexTree(t treeJSON, includeRoot bool) map[string]treePlace {
 	out := map[string]treePlace{}
 	var walk func(treeJSON, []string)
@@ -1425,7 +1372,6 @@ func indexTree(t treeJSON, includeRoot bool) map[string]treePlace {
 	return out
 }
 
-// A leaf below File is the file chunk of the path under File.
 func chunkRefOf(p treePlace) ChunkRef {
 	if len(p.names) == 0 {
 		return ChunkRef{}
@@ -1440,8 +1386,6 @@ func chunkRefOf(p treePlace) ChunkRef {
 	return ChunkRef{Module: mod, Chunk: Name(p.names[len(p.names)-1])}
 }
 
-// nodeURIs lists the URIs below one node. A chunk is paired only with the
-// label paths it is used with, although any label path of the node is accepted.
 func nodeURIs(w *World, cs string, n *Node) []string {
 	tail := cs + "/" + nodeRef(*n)
 	uris := []string{
@@ -1486,8 +1430,6 @@ func nodeURIs(w *World, cs string, n *Node) []string {
 	return uris
 }
 
-// selectBlocks picks from the chain the blocks that refs ask for:
-// an item, a label path, or a chunk followed by a label path.
 func selectBlocks(kind string, chain []Block, maps []Mapping, refs []string) ([]Block, error) {
 	var got []Block
 	switch kind {
@@ -1539,8 +1481,6 @@ func selectBlocks(kind string, chain []Block, maps []Mapping, refs []string) ([]
 	return got, nil
 }
 
-// blockList renders blocks for a resource of node. A block is found again
-// among the nodes of the chain by its archive and line.
 func blockList(w *World, node *Node, blocks []Block) []blockJSON {
 	owner := map[string]string{}
 	rev, _ := w.ancestry(formatNodePath(nodePath(*node)))
@@ -1569,9 +1509,6 @@ func inputSchema[T any]() *jsonschema.Schema {
 	return s
 }
 
-// plainArrays publishes every slice as an array.
-// A slice infers "type": ["null", "array"], and some clients accept only
-// one type per schema; a missing slice already stands for an empty one.
 func plainArrays(s *jsonschema.Schema) *jsonschema.Schema {
 	if len(s.Types) > 0 && slices.Contains(s.Types, "array") {
 		s.Types, s.Type = nil, "array"
@@ -1585,14 +1522,10 @@ func plainArrays(s *jsonschema.Schema) *jsonschema.Schema {
 	return s
 }
 
-// labelTree is the specialization tree of a node: every label path in use.
 func labelTree(blocks []Block, maps []Mapping) (treeJSON, error) {
 	return specializationTree(blocks, maps, nil)
 }
 
-// refOf is the ref of an object: ten hex digits of a hash over its kind and
-// its names. A ref depends on nothing else, so it stays the same until the
-// object is renamed.
 func refOf(kind string, names ...string) string {
 	h := sha256.New()
 	h.Write([]byte(kind))
@@ -1603,8 +1536,6 @@ func refOf(kind string, names ...string) string {
 	return hex.EncodeToString(h.Sum(nil))[:10]
 }
 
-// blockRef hashes the text of a block without the blank after its end
-// control, which changes when the block stops being the last of its archive.
 func blockRef(b Block) string {
 	return refOf("block", strings.TrimRight(b.Raw, " \t\r\n"))
 }
@@ -1617,9 +1548,6 @@ func nodeRef(n Node) string {
 	return refOf("node", nodePath(n)...)
 }
 
-// assignRefs gives every entry of a tree its ref. A branch and a leaf of the
-// same path are different objects, so their kinds differ.
-// includeRoot is as in indexTree.
 func assignRefs(t *treeJSON, branch, leaf string, includeRoot bool) {
 	var walk func(*treeJSON, []string)
 	walk = func(node *treeJSON, path []string) {
@@ -1693,8 +1621,6 @@ func toNames(names []string) []Name {
 	return out
 }
 
-// labelsByRef resolves a ref of the specialization tree to labels,
-// the most specific first, as a reference writes them.
 func labelsByRef(blocks []Block, maps []Mapping, ref string) ([]Name, error) {
 	tree, err := labelTree(blocks, maps)
 	if err != nil {

@@ -62,9 +62,8 @@ type composerNode struct {
 
 @~ Project@/litar@/Go@/types@/litar.basePath @~ Project@/litar@/Go@/types@/litar.composerMapping @~ Project@/litar@/Go@/types@/litar.composerNode @
 
+basePath is the path from the root to the direct parent. An empty array is the root. Null and a string are rejected.
 @<compose@:litar@:Language@/Go@/File@/types@+
-// basePath is the path from the root to the direct parent.
-// An empty array is the root. Null and a string are rejected.
 type basePath struct {
 	names []string
 	set   bool
@@ -111,17 +110,16 @@ type composerMapping struct {
 
 @~ Project@/litar@/Go@/types@/litar.composerMapping @
 
+LoadComposer reads a composer file. The combined ground and local nodes have exactly one root.
 @<compose@:litar@:Language@/Go@/File@/functions@+
-// LoadComposer reads a composer file.
-// The combined ground and local nodes have exactly one root.
 func LoadComposer(path string) (*World, error) {
 	return loadComposer(path, false)
 }
 
 @~ Project@/litar@/Go@/functions@/litar.LoadComposer @~ Project@/litar@/Go@/functions@/litar.loadComposer @~ Project@/litar@/Go@/types@/litar.World @
 
+LoadComposerAllowEmpty accepts a composer with a null ground and no nodes.
 @<compose@:litar@:Language@/Go@/File@/functions@+
-// LoadComposerAllowEmpty accepts a composer with a null ground and no nodes.
 func LoadComposerAllowEmpty(path string) (*World, error) {
 	return loadComposer(path, true)
 }
@@ -449,9 +447,8 @@ func resolveArchive(spec, composerDir string) (string, error) {
 
 @~ Project@/litar@/Go@/functions@/litar.isRegular @~ Project@/litar@/Go@/functions@/litar.resolveArchive @
 
+createNewArchive writes an empty archive beside the composer file. The file must not already exist.
 @<compose@:litar@:Language@/Go@/File@/functions@+
-// createNewArchive writes an empty archive beside the composer file.
-// The file must not already exist.
 func createNewArchive(spec, composerDir string) (string, error) {
 if spec == "" || filepath.IsAbs(spec) {
 	return "", fmt.Errorf("could not find archive '%s'", spec)
@@ -529,11 +526,8 @@ func identityPath(path string) (string, error) {
 
 @~ Project@/litar@/Go@/functions@/litar.identityPath @
 
+FindArchive loads the composition that declares archive and returns the path of the declaring node. It looks for composer.json from the archive's directory upward; the nearest composer that declares the archive as one of its own nodes wins.
 @<compose@:litar@:Language@/Go@/File@/functions@+
-// FindArchive loads the composition that declares archive and returns the
-// path of the declaring node. It looks for composer.json from the archive's
-// directory upward; the nearest composer that declares the archive as one of
-// its own nodes wins.
 func FindArchive(archive string) (*World, string, error) {
 ident, err := identityPath(archive)
 if err != nil || !isRegular(ident) {
@@ -577,9 +571,8 @@ if isRegular(comp) {
 }
 @~ Project@/litar@/Go@/functions@/litar.LoadComposer @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.isRegular @~ Project@/litar@/Go@/functions@/litar.nodePath @
 
+requireLocal returns a node declared in this composer file. A node that arrived through ground is visible, and it is not edited here.
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// requireLocal returns a node declared in this composer file.
-// A node that arrived through ground is visible, and it is not edited here.
 func (w *World) requireLocal(ref string) (*Node, error) {
 	i, err := w.findIndex(ref)
 	if err != nil {
@@ -593,8 +586,8 @@ func (w *World) requireLocal(ref string) (*Node, error) {
 
 @~ Project@/litar@/Go@/methods@/litar.World.findIndex @~ Project@/litar@/Go@/methods@/litar.World.requireLocal @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.World @
 
+lookup finds a node by its full path, the names from the root joined by "/".
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// lookup finds a node by its full path, the names from the root joined by "/".
 func (w *World) lookup(ref string) (*Node, error) {
 	i, err := w.findIndex(ref)
 	if err != nil {
@@ -658,8 +651,8 @@ func (w *World) rootName() (string, error) {
 
 @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/methods@/litar.World.root @~ Project@/litar@/Go@/methods@/litar.World.rootName @~ Project@/litar@/Go@/types@/litar.World @
 
+ancestry returns the node, then its base, up to the root.
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// ancestry returns the node, then its base, up to the root.
 func (w *World) ancestry(ref string) ([]*Node, error) {
 var n *Node
 var err error
@@ -701,8 +694,8 @@ for {
 }
 @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/methods@/litar.World.lookup @~ Project@/litar@/Go@/types@/litar.Node @
 
+Chain is the base chain followed by the node's own blocks.
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// Chain is the base chain followed by the node's own blocks.
 func (w *World) Chain(name string) ([]Block, error) {
 	rev, err := w.ancestry(name)
 	if err != nil {
@@ -717,8 +710,8 @@ func (w *World) Chain(name string) ([]Block, error) {
 
 @~ Project@/litar@/Go@/methods@/litar.World.Chain @~ Project@/litar@/Go@/methods@/litar.World.ancestry @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.World @
 
+Mappings is the base chain's mappings followed by the node's own.
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// Mappings is the base chain's mappings followed by the node's own.
 func (w *World) Mappings(name string) ([]Mapping, error) {
 	rev, err := w.ancestry(name)
 	if err != nil {
@@ -800,9 +793,8 @@ for i, n := range local {
 }
 @~ Project@/litar@/Go@/functions@/litar.copyPath @~ Project@/litar@/Go@/types@/litar.basePath @~ Project@/litar@/Go@/types@/litar.composerMapping @~ Project@/litar@/Go@/types@/litar.composerNode @
 
+SpecifyComposer loads an existing composer file. A directory uses the composer.json inside it.
 @<compose@:litar@:Language@/Go@/File@/functions@+
-// SpecifyComposer loads an existing composer file.
-// A directory uses the composer.json inside it.
 func SpecifyComposer(path string) (*World, error) {
 if path == "" {
 	return nil, fmt.Errorf("missing path")
@@ -830,12 +822,8 @@ if st.IsDir() {
 }
 @
 
+CreateComposedArchive creates dir/composer.json when that file is absent, then loads it. An empty node list is allowed. An empty ground is stored as null. A named ground is resolved on the library search path before the file is written. If the new file cannot be loaded, it is removed.
 @<compose@:litar@:Language@/Go@/File@/functions@+
-// CreateComposedArchive creates dir/composer.json when that file is absent,
-// then loads it. An empty node list is allowed.
-// An empty ground is stored as null.
-// A named ground is resolved on the library search path before the file is written.
-// If the new file cannot be loaded, it is removed.
 func CreateComposedArchive(dir, ground string) (*World, error) {
 if dir == "" {
 	return nil, fmt.Errorf("missing path")
@@ -909,10 +897,8 @@ if err != nil {
 return w, nil
 @~ Project@/litar@/Go@/functions@/litar.LoadComposerAllowEmpty @~ Project@/litar@/Go@/functions@/litar.composerFileBytes @
 
+CreateNode parses the archive, then appends the node and rewrites the composer. An empty base creates the root, and only when the composer has none. The archive file is created empty and must not already exist.
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// CreateNode parses the archive, then appends the node and rewrites the composer.
-// An empty base creates the root, and only when the composer has none.
-// The archive file is created empty and must not already exist.
 func (w *World) CreateNode(name, archive, description string, base []string) error {
 @<Project@/litar@/Composer@/check the 'name' and 'base' of the new node@>
 dir := filepath.Dir(w.Composer)
@@ -1001,12 +987,8 @@ if err := w.save(); err != nil {
 return nil
 @~ Project@/litar@/Go@/functions@/litar.ParseArchive @~ Project@/litar@/Go@/methods@/litar.World.save @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Node @
 
+DeleteNode removes the node and every node based on it from this composer file, then deletes each removed node's archive file. A node defined in the ground is left in place. A file that is already gone is not an error. If a file cannot be removed, the composer stays updated.
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// DeleteNode removes the node and every node based on it
-// from this composer file, then deletes each removed node's archive file.
-// A node defined in the ground is left in place.
-// A file that is already gone is not an error.
-// If a file cannot be removed, the composer stays updated.
 func (w *World) DeleteNode(name string) error {
 target, err := w.requireLocal(name)
 if err != nil {
@@ -1065,11 +1047,8 @@ func writeFileKeepMode(path string, data []byte) error {
 
 @~ Project@/litar@/Go@/functions@/litar.writeFileKeepMode @
 
+ApplyBlock appends text to the node's own archive, then reparses. A block that is no longer effective in that node is removed. A node defined in the ground is left unchanged. A failed parse leaves the file.
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// ApplyBlock appends text to the node's own archive, then reparses.
-// A block that is no longer effective in that node is removed.
-// A node defined in the ground is left unchanged.
-// A failed parse leaves the file.
 func (w *World) ApplyBlock(nodeName, text string) error {
 	if text == "" {
 		return fmt.Errorf("empty block text")
@@ -1089,9 +1068,8 @@ func (w *World) ApplyBlock(nodeName, text string) error {
 
 @~ Project@/litar@/Go@/functions@/litar.ParseArchive @~ Project@/litar@/Go@/methods@/litar.World.ApplyBlock @~ Project@/litar@/Go@/methods@/litar.World.requireLocal @~ Project@/litar@/Go@/types@/litar.World @
 
+compactOwn drops blocks that are not effective for their own chunk reference among this node's own blocks, then orders the rest.
 @<compose@:litar@:Language@/Go@/File@/functions@+
-// compactOwn drops blocks that are not effective for their own
-// chunk reference among this node's own blocks, then orders the rest.
 func compactOwn(n *Node) ([]byte, *Archive, error) {
 var kept []Block
 @<Project@/litar@/Composer@/keep the effective own blocks of 'n' in 'kept'@>
@@ -1139,19 +1117,16 @@ func endsWithSpace(s string) bool {
 
 @~ Project@/litar@/Go@/functions@/litar.endsWithSpace @
 
+chunkKey identifies a module and chunk, whatever the labels.
 @<compose@:litar@:Language@/Go@/File@/functions@+
-// chunkKey identifies a module and chunk, whatever the labels.
 func chunkKey(ref ChunkRef) string {
 	return ChunkRef{Module: ref.Module, Chunk: ref.Chunk}.key()
 }
 
 @~ Project@/litar@/Go@/functions@/litar.chunkKey @~ Project@/litar@/Go@/methods@/litar.ChunkRef.key @~ Project@/litar@/Go@/types@/litar.ChunkRef @
 
+orderOwn places a block after the blocks whose content includes its chunk. Blocks of one module and chunk follow specializationOrder, because that order decides the content and the effective blocks; when inclusion is circular, the rule gives way to that order. Otherwise blocks keep their order.
 @<compose@:litar@:Language@/Go@/File@/functions@+
-// orderOwn places a block after the blocks whose content includes its chunk.
-// Blocks of one module and chunk follow specializationOrder, because that order
-// decides the content and the effective blocks; when inclusion is circular,
-// the rule gives way to that order. Otherwise blocks keep their order.
 func orderOwn(blocks []Block) []Block {
 n := len(blocks)
 keys := make([]string, n)
@@ -1273,8 +1248,8 @@ func (w *World) rewriteOwn(n *Node, keep func(Block, int) bool) error {
 
 @~ Project@/litar@/Go@/methods@/litar.World.rewriteOwn @~ Project@/litar@/Go@/methods@/litar.World.storeCompact @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.World @
 
+DeleteChunk removes own blocks that match ref, the same set -l prints.
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// DeleteChunk removes own blocks that match ref, the same set -l prints.
 func (w *World) DeleteChunk(nodeName string, ref ChunkRef) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -1287,9 +1262,8 @@ func (w *World) DeleteChunk(nodeName string, ref ChunkRef) error {
 
 @~ Project@/litar@/Go@/functions@/litar.matchRef @~ Project@/litar@/Go@/methods@/litar.World.DeleteChunk @~ Project@/litar@/Go@/methods@/litar.World.requireLocal @~ Project@/litar@/Go@/methods@/litar.World.rewriteOwn @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.World @
 
+DeleteChunkAll removes every own block of ref's module and chunk, whatever labels it carries.
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// DeleteChunkAll removes every own block of ref's module and chunk,
-// whatever labels it carries.
 func (w *World) DeleteChunkAll(nodeName string, ref ChunkRef) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -1302,9 +1276,8 @@ func (w *World) DeleteChunkAll(nodeName string, ref ChunkRef) error {
 
 @~ Project@/litar@/Go@/functions@/litar.modulesEqual @~ Project@/litar@/Go@/methods@/litar.World.DeleteChunkAll @~ Project@/litar@/Go@/methods@/litar.World.requireLocal @~ Project@/litar@/Go@/methods@/litar.World.rewriteOwn @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.World @
 
+DeleteFile removes file blocks with that path and blocks applied to the root chunk of that path.
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// DeleteFile removes file blocks with that path and blocks applied to
-// the root chunk of that path.
 func (w *World) DeleteFile(nodeName, path string) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -1321,8 +1294,8 @@ func (w *World) DeleteFile(nodeName, path string) error {
 
 @~ Project@/litar@/Go@/functions@/litar.matchRef @~ Project@/litar@/Go@/methods@/litar.World.DeleteFile @~ Project@/litar@/Go@/methods@/litar.World.requireLocal @~ Project@/litar@/Go@/methods@/litar.World.rewriteOwn @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.World @
 
+effectiveIndexSet lists blocks that still contribute to query.
 @<compose@:litar@:Language@/Go@/File@/functions@+
-// effectiveIndexSet lists blocks that still contribute to query.
 func effectiveIndexSet(blocks []Block, query ChunkRef) map[int]bool {
 	var idx []int
 	for i, b := range blocks {
@@ -1344,10 +1317,8 @@ func effectiveIndexSet(blocks []Block, query ChunkRef) map[int]bool {
 
 @~ Project@/litar@/Go@/constants@/litar.OpSet @~ Project@/litar@/Go@/functions@/litar.effectiveIndexSet @~ Project@/litar@/Go@/functions@/litar.matchRef @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @
 
+DumpArchives rewrites each node's own archive, dropping a block that is not an effective block of its own chunk reference in that node and ordering the rest as orderOwn does.
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// DumpArchives rewrites each node's own archive, dropping a block that
-// is not an effective block of its own chunk reference in that node
-// and ordering the rest as orderOwn does.
 func (w *World) DumpArchives() error {
 type pending struct {
 	n    *Node
@@ -2252,11 +2223,8 @@ type frame struct {
 
 @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.frame @
 
+Evaluator expands chunk references on one node chain. The mutex is held across in-memory expansion and released around filter execution, which may mount a filesystem and block. deps holds the dependencies of each file being expanded, innermost last.
 @<eval@:litar@:Language@/Go@/File@/types@+
-// Evaluator expands chunk references on one node chain.
-// The mutex is held across in-memory expansion and released around
-// filter execution, which may mount a filesystem and block.
-// deps holds the dependencies of each file being expanded, innermost last.
 type Evaluator struct {
 	mu      sync.Mutex
 	chain   []Block
@@ -2269,12 +2237,12 @@ type Evaluator struct {
 
 @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.catalog @~ Project@/litar@/Go@/types@/litar.dependency @~ Project@/litar@/Go@/types@/litar.frame @
 
+fileCache holds the files evaluated in this process, by path.
 An evaluated file is kept for the rest of the process,
 so a file is evaluated again only when something it depends on changes.
 Filters and mapped files are assumed to give the same output for the same blocks:
 a file whose filter reads the outside world keeps its first output.
 @<eval@:litar@:Language@/Go@/File@/variables@+
-// fileCache holds the files evaluated in this process, by path.
 var fileCache = struct {
 	sync.Mutex
 	files map[string]cachedFile
@@ -2340,9 +2308,8 @@ func (e *Evaluator) takeFuseErr() error {
 
 @~ Project@/litar@/Go@/methods@/litar.Evaluator.takeFuseErr @~ Project@/litar@/Go@/types@/litar.Evaluator @
 
+Eval evaluates a print expression. A missing chunk is an error. An empty chunk with a pipeline is the empty input of that pipeline.
 @<eval@:litar@:Language@/Go@/File@/methods@+
-// Eval evaluates a print expression. A missing chunk is an error.
-// An empty chunk with a pipeline is the empty input of that pipeline.
 func (e *Evaluator) Eval(ref ChunkRef, filters []Filter) (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -2434,9 +2401,8 @@ return acc, nil
 
 @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @~ Project@/litar@/Go@/methods@/litar.ChunkRef.key @~ Project@/litar@/Go@/methods@/litar.Evaluator.expandChunkLocked @~ Project@/litar@/Go@/methods@/litar.Evaluator.recordChunk @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.frame @
 
+isArchiveFile reports whether ref names a file of the archive: a chunk of the root module, without labels, that a file block defines.
 @<eval@:litar@:Language@/Go@/File@/methods@+
-// isArchiveFile reports whether ref names a file of the archive:
-// a chunk of the root module, without labels, that a file block defines.
 func (e *Evaluator) isArchiveFile(ref ChunkRef) bool {
 	if len(ref.Labels) > 0 || len(ref.Module) > 0 {
 		return false
@@ -2447,9 +2413,8 @@ func (e *Evaluator) isArchiveFile(ref ChunkRef) bool {
 
 @~ Project@/litar@/Go@/methods@/litar.Evaluator.isArchiveFile @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.catFile @
 
+recording is the dependencies of the innermost file being expanded, or nil when no file is.
 @<eval@:litar@:Language@/Go@/File@/methods@+
-// recording is the dependencies of the innermost file being expanded,
-// or nil when no file is.
 func (e *Evaluator) recording() map[string]dependency {
 	if len(e.deps) == 0 {
 		return nil
@@ -2696,10 +2661,8 @@ func (e *Evaluator) runFiltersLocked(text string, filters []Filter, attached Chu
 
 @~ Project@/litar@/Go@/functions@/litar.executeFilter @~ Project@/litar@/Go@/functions@/litar.resolveFilter @~ Project@/litar@/Go@/methods@/litar.Evaluator.expandLocked @~ Project@/litar@/Go@/methods@/litar.Evaluator.recordView @~ Project@/litar@/Go@/methods@/litar.Evaluator.runFiltersLocked @~ Project@/litar@/Go@/methods@/litar.Evaluator.takeFuseErr @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.Filter @
 
+readChunk evaluates a root-module file chunk on the current visit stack. Tangling calls it before the filter process starts, so the lock is not already held.
 @<eval@:litar@:Language@/Go@/File@/methods@+
-// readChunk evaluates a root-module file chunk on the current visit stack.
-// Tangling calls it before the filter process starts, so the lock
-// is not already held.
 func (e *Evaluator) readChunk(chunk Name) ([]byte, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -3280,11 +3243,8 @@ for _, path := range order {
 return out, nil
 @~ Project@/litar@/Go@/types@/litar.viewFile @
 
+tangle writes each view file's bytes before the filter process starts. An archive file is the root-module chunk named by its path. A mapped file is the contents of origin. A mapped directory is created when it is missing, so a build can write into a fresh tree.
 @<filter@:litar@:Language@/Go@/File@/methods@+
-// tangle writes each view file's bytes before the filter process starts.
-// An archive file is the root-module chunk named by its path.
-// A mapped file is the contents of origin. A mapped directory is created
-// when it is missing, so a build can write into a fresh tree.
 func (e *Evaluator) tangle(files []viewFile) error {
 	for i := range files {
 		var (
@@ -3930,10 +3890,8 @@ if cur == nil {
 dir = cur.dir
 @~ Project@/litar@/Go@/functions@/litar.errPath @~ Project@/litar@/Go@/functions@/litar.newVdir @~ Project@/litar@/Go@/types@/litar.ventry @
 
+assignInos gives every archive path one inode number for this mount. Entry timeouts are zero, so the kernel may look the name up again between stat and open. The same number keeps the stat stable.
 @<fuse@:litar@:Language@/Go@/File@/functions@+
-// assignInos gives every archive path one inode number for this mount.
-// Entry timeouts are zero, so the kernel may look the name up again
-// between stat and open. The same number keeps the stat stable.
 func assignInos(root *vdir) {
 next := uint64(2)
 var walk func(*vdir)
@@ -4071,9 +4029,8 @@ func detach(dir string, direct bool) {
 
 @~ Project@/litar@/Go@/functions@/litar.detach @
 
+DetachMounts lazily unmounts every filter view that is still mounted. A process that exits without it leaves a dead mount in the temporary directory.
 @<fuse@:litar@:Language@/Go@/File@/functions@+
-// DetachMounts lazily unmounts every filter view that is still mounted.
-// A process that exits without it leaves a dead mount in the temporary directory.
 func DetachMounts() {
 	liveMu.Lock()
 	defer liveMu.Unlock()
@@ -4268,9 +4225,8 @@ func modeOf(f *viewFile) uint32 {
 
 @~ Project@/litar@/Go@/functions@/litar.modeOf @~ Project@/litar@/Go@/types@/litar.viewFile @
 
+fixedStatTime is the timestamp reported for every tangled file. It does not move when the file is stated, opened, or read.
 @<fuse@:litar@:Language@/Go@/File@/variables@+
-// fixedStatTime is the timestamp reported for every tangled file.
-// It does not move when the file is stated, opened, or read.
 var fixedStatTime = time.Unix(0, 0)
 
 @~ Project@/litar@/Go@/variables@/litar.fixedStatTime @
@@ -4672,8 +4628,8 @@ func effectiveBlocks(blocks []Block, ref ChunkRef) (eff []Block, ok bool) {
 
 @~ Project@/litar@/Go@/constants@/litar.OpSet @~ Project@/litar@/Go@/functions@/litar.effectiveBlocks @~ Project@/litar@/Go@/functions@/litar.matchRef @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @
 
+Literal is the -l listing. A reference with no block is an error.
 @<list@:litar@:Language@/Go@/File@/functions@+
-// Literal is the -l listing. A reference with no block is an error.
 func Literal(blocks []Block, ref ChunkRef) (string, error) {
 	got := matchingBlocks(blocks, ref)
 	if len(got) == 0 {
@@ -4684,8 +4640,8 @@ func Literal(blocks []Block, ref ChunkRef) (string, error) {
 
 @~ Project@/litar@/Go@/functions@/litar.FormatBlocks @~ Project@/litar@/Go@/functions@/litar.Literal @~ Project@/litar@/Go@/functions@/litar.matchingBlocks @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @
 
+Effective is the -e listing.
 @<list@:litar@:Language@/Go@/File@/functions@+
-// Effective is the -e listing.
 func Effective(blocks []Block, ref ChunkRef) (string, error) {
 	got, ok := effectiveBlocks(blocks, ref)
 	if !ok {
@@ -4753,8 +4709,8 @@ func blockDepends(b Block, query ChunkRef) bool {
 
 @~ Project@/litar@/Go@/functions@/litar.blockDepends @~ Project@/litar@/Go@/functions@/litar.useMatches @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Name @
 
+Depend is the -d listing. No match is an empty string, not an error.
 @<list@:litar@:Language@/Go@/File@/functions@+
-// Depend is the -d listing. No match is an empty string, not an error.
 func Depend(blocks []Block, query ChunkRef) string {
 	var got []Block
 	for _, b := range blocks {
@@ -4767,8 +4723,8 @@ func Depend(blocks []Block, query ChunkRef) string {
 
 @~ Project@/litar@/Go@/functions@/litar.Depend @~ Project@/litar@/Go@/functions@/litar.FormatBlocks @~ Project@/litar@/Go@/functions@/litar.blockDepends @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @
 
+Refer is the -r listing.
 @<list@:litar@:Language@/Go@/File@/functions@+
-// Refer is the -r listing.
 func Refer(blocks []Block, item Item) string {
 	var got []Block
 	for _, b := range blocks {
@@ -4807,9 +4763,8 @@ func moduleSeen(seen []ModulePath, m ModulePath) bool {
 
 @~ Project@/litar@/Go@/functions@/litar.moduleSeen @~ Project@/litar@/Go@/functions@/litar.modulesEqual @~ Project@/litar@/Go@/types@/litar.ModulePath @
 
+Modules lists module paths strictly under parent, in first-introduction order. A reserved namespace is omitted. A description follows `Name:`, aligned with tabs.
 @<list@:litar@:Language@/Go@/File@/functions@+
-// Modules lists module paths strictly under parent, in first-introduction order.
-// A reserved namespace is omitted. A description follows `Name:`, aligned with tabs.
 func Modules(blocks []Block, parent ModulePath, meta metaInfo) string {
 var seen []ModulePath
 @<Project@/litar@/Listing@/collect in 'seen' each module of 'blocks' and its prefixes, in first order@>
@@ -4847,9 +4802,8 @@ for _, m := range seen {
 }
 @~ Project@/litar@/Go@/functions@/litar.formatModule @~ Project@/litar@/Go@/functions@/litar.modulesEqual @~ Project@/litar@/Go@/functions@/litar.reservedNamespace @~ Project@/litar@/Go@/types@/litar.namedLine @
 
+Chunks lists chunk names whose module equals mod. Chunks in a reserved namespace are omitted.
 @<list@:litar@:Language@/Go@/File@/functions@+
-// Chunks lists chunk names whose module equals mod.
-// Chunks in a reserved namespace are omitted.
 func Chunks(blocks []Block, mod ModulePath, meta metaInfo) string {
 	seen := map[Name]bool{}
 	var rows []namedLine
@@ -4880,11 +4834,8 @@ type namedLine struct {
 
 @~ Project@/litar@/Go@/types@/litar.namedLine @
 
+formatNamed prints one name per line. A description is `Name:` then tabs, then the description. Tab stops are eight columns apart, and every description in the list starts at the same column, past the longest `Name:`.
 @<list@:litar@:Language@/Go@/File@/functions@+
-// formatNamed prints one name per line.
-// A description is `Name:` then tabs, then the description.
-// Tab stops are eight columns apart, and every description in the list
-// starts at the same column, past the longest `Name:`.
 func formatNamed(rows []namedLine) string {
 const tabWidth = 8
 col := 0
@@ -4945,8 +4896,8 @@ func formatUnder(domain []Name, name Name) string {
 
 @~ Project@/litar@/Go@/functions@/litar.formatModule @~ Project@/litar@/Go@/functions@/litar.formatUnder @~ Project@/litar@/Go@/types@/litar.Name @
 
+Subdomains lists the name that follows domain, once each.
 @<list@:litar@:Language@/Go@/File@/functions@+
-// Subdomains lists the name that follows domain, once each.
 func Subdomains(blocks []Block, domain []Name, meta metaInfo) string {
 	seen := map[string]bool{}
 	var rows []namedLine
@@ -4968,8 +4919,8 @@ func Subdomains(blocks []Block, domain []Name, meta metaInfo) string {
 
 @~ Project@/litar@/Go@/functions@/litar.Subdomains @~ Project@/litar@/Go@/functions@/litar.formatNamed @~ Project@/litar@/Go@/functions@/litar.formatUnder @~ Project@/litar@/Go@/functions@/litar.namePrefix @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.metaInfo @~ Project@/litar@/Go@/types@/litar.namedLine @
 
+Items lists item paths whose prefix before the last name is domain.
 @<list@:litar@:Language@/Go@/File@/functions@+
-// Items lists item paths whose prefix before the last name is domain.
 func Items(blocks []Block, domain []Name, meta metaInfo) string {
 	seen := map[string]bool{}
 	var rows []namedLine
@@ -5237,10 +5188,8 @@ type applyIn struct {
 
 @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.applyIn @
 
+nullableStringSchema is the inferred object schema with field rewritten. A *string infers "type": ["null", "string"]. Some clients accept only one type per schema, so null and string are separate anyOf branches.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// nullableStringSchema is the inferred object schema with field rewritten.
-// A *string infers "type": ["null", "string"]. Some clients accept only
-// one type per schema, so null and string are separate anyOf branches.
 func nullableStringSchema[T any](field string) *jsonschema.Schema {
 	s, err := jsonschema.For[T](nil)
 	if err != nil {
@@ -5306,9 +5255,8 @@ func (a *agent) useWorld(w *World) (*mcp.CallToolResult, any, error) {
 
 @~ Project@/litar@/Go@/functions@/litar.compositionRef @~ Project@/litar@/Go@/functions@/litar.toolText @~ Project@/litar@/Go@/methods@/litar.agent.addWorld @~ Project@/litar@/Go@/methods@/litar.agent.refresh @~ Project@/litar@/Go@/methods@/litar.agent.useWorld @~ Project@/litar@/Go@/types@/litar.World @~ Project@/litar@/Go@/types@/litar.agent @
 
+compositions is the imported compositions in list order. The caller holds a.mu.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
-// compositions is the imported compositions in list order.
-// The caller holds a.mu.
 func (a *agent) compositions() []*World {
 	out := make([]*World, 0, len(a.order))
 	for _, dir := range a.order {
@@ -5486,11 +5434,8 @@ func (a *agent) evaluate(ctx context.Context, _ *mcp.CallToolRequest, in evalIn)
 
 @~ Project@/litar@/Go@/functions@/litar.ParsePrint @~ Project@/litar@/Go@/functions@/litar.evalReporting @~ Project@/litar@/Go@/functions@/litar.toolErr @~ Project@/litar@/Go@/functions@/litar.toolText @~ Project@/litar@/Go@/methods@/litar.agent.compositionByRef @~ Project@/litar@/Go@/methods@/litar.agent.evaluate @~ Project@/litar@/Go@/methods@/litar.agent.nodeChain @~ Project@/litar@/Go@/types@/litar.agent @~ Project@/litar@/Go@/types@/litar.evalIn @
 
+evalReporting runs without a.mu, since a filter may run for long; chain and maps are copies taken under it. A failed evaluation carries the stderr of its filters, which is the only report a client sees.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// evalReporting runs without a.mu, since a filter may run for long;
-// chain and maps are copies taken under it.
-// A failed evaluation carries the stderr of its filters,
-// which is the only report a client sees.
 func evalReporting(chain []Block, maps []Mapping, ref ChunkRef, filters []Filter) (string, error) {
 	var stderr bytes.Buffer
 	ev := NewEvaluator(chain, maps, &stderr)
@@ -5506,9 +5451,8 @@ func evalReporting(chain []Block, maps []Mapping, ref ChunkRef, filters []Filter
 
 @~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.evalReporting @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Filter @~ Project@/litar@/Go@/types@/litar.Mapping @
 
+applyBlock answers with the refs of the blocks of the text, one per line, so that a later call can address them without reading the node again.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
-// applyBlock answers with the refs of the blocks of the text, one per line,
-// so that a later call can address them without reading the node again.
 func (a *agent) applyBlock(ctx context.Context, _ *mcp.CallToolRequest, in applyIn) (*mcp.CallToolResult, any, error) {
 	arch, err := ParseArchive([]byte(in.Text), "")
 	if err != nil {
@@ -5537,9 +5481,8 @@ func (a *agent) applyBlock(ctx context.Context, _ *mcp.CallToolRequest, in apply
 
 @~ Project@/litar@/Go@/functions@/litar.ParseArchive @~ Project@/litar@/Go@/functions@/litar.blockRef @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/functions@/litar.toolErr @~ Project@/litar@/Go@/functions@/litar.toolText @~ Project@/litar@/Go@/methods@/litar.Archive.Text @~ Project@/litar@/Go@/methods@/litar.World.ApplyBlock @~ Project@/litar@/Go@/methods@/litar.World.OverrideBlock @~ Project@/litar@/Go@/methods@/litar.agent.applyBlock @~ Project@/litar@/Go@/methods@/litar.agent.refresh @~ Project@/litar@/Go@/methods@/litar.agent.worldNode @~ Project@/litar@/Go@/types@/litar.agent @~ Project@/litar@/Go@/types@/litar.applyIn @
 
+worldNode resolves a composition ref and a node ref. The caller holds a.mu.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
-// worldNode resolves a composition ref and a node ref.
-// The caller holds a.mu.
 func (a *agent) worldNode(composition, node string) (*World, *Node, error) {
 	w, err := a.compositionByRef(composition)
 	if err != nil {
@@ -5615,11 +5558,8 @@ func mimeOf(uri string) string {
 
 @~ Project@/litar@/Go@/functions@/litar.mimeOf @
 
+listURIsLocked lists concrete URIs whose contents may have changed. list://composition is the registered resource. Every other URI is a read of a resource template. Template variables are the refs of that list or tree.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
-// listURIsLocked lists concrete URIs whose contents may have changed.
-// list://composition is the registered resource.
-// Every other URI is a read of a resource template.
-// Template variables are the refs of that list or tree.
 func (a *agent) listURIsLocked() []string {
 	uris := []string{"list://composition"}
 	for _, w := range a.compositions() {
@@ -5698,9 +5638,8 @@ type listJSON struct {
 
 @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.Ref @~ Project@/litar@/Go@/types@/litar.listJSON @
 
+nodeChain loads the block chain and mappings of a node ref. The caller holds a.mu.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
-// nodeChain loads the block chain and mappings of a node ref.
-// The caller holds a.mu.
 func (a *agent) nodeChain(w *World, ref string) ([]Block, []Mapping, error) {
 	n, err := nodeByRef(w, ref)
 	if err != nil {
@@ -5743,9 +5682,8 @@ func (a *agent) renderTree(uri, prefix string, build func([]Block, []Mapping) (t
 
 @~ Project@/litar@/Go@/functions@/litar.mimeOf @~ Project@/litar@/Go@/methods@/litar.agent.nodeChain @~ Project@/litar@/Go@/methods@/litar.agent.refParts @~ Project@/litar@/Go@/methods@/litar.agent.renderTree @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.agent @~ Project@/litar@/Go@/types@/litar.treeJSON @
 
+renderBlocks answers a blocks:// resource: the kind after the scheme says which blocks of the node's chain are listed, and how many refs follow.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
-// renderBlocks answers a blocks:// resource: the kind after the scheme says
-// which blocks of the node's chain are listed, and how many refs follow.
 func (a *agent) renderBlocks(uri, mime string) (string, string, []byte, error) {
 	kind, rest, _ := strings.Cut(strings.TrimPrefix(uri, "blocks://"), "/")
 	count := map[string]int{"node": 2, "refer": 3, "specialization": 3, "apply": 4, "effective": 4, "depend": 4}[kind]
@@ -5776,8 +5714,8 @@ func (a *agent) renderBlocks(uri, mime string) (string, string, []byte, error) {
 
 @~ Project@/litar@/Go@/functions@/litar.blockList @~ Project@/litar@/Go@/functions@/litar.nodeByRef @~ Project@/litar@/Go@/functions@/litar.selectBlocks @~ Project@/litar@/Go@/methods@/litar.agent.nodeChain @~ Project@/litar@/Go@/methods@/litar.agent.refParts @~ Project@/litar@/Go@/methods@/litar.agent.renderBlocks @~ Project@/litar@/Go@/types@/litar.agent @
 
+renderFile is called with a.mu held, and releases it while the file is evaluated.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
-// renderFile is called with a.mu held, and releases it while the file is evaluated.
 func (a *agent) renderFile(uri, mime string) (string, string, []byte, error) {
 	w, refs, err := a.refParts(strings.TrimPrefix(uri, "file://"), 3)
 if err != nil {
@@ -5955,12 +5893,8 @@ t.SubTrees = append(t.SubTrees, treeJSON{
 })
 @~ Project@/litar@/Go@/functions@/litar.emptySub @~ Project@/litar@/Go@/types@/litar.treeJSON @
 
+A reserved chunk lives in the Chunk, Specialization, File, or Index namespace. Its module path starts with that name. The remaining components, then the chunk name, are the module or chunk, the specialization, the file or directory, or the domain or item the chunk describes. A specialization path is stored reversed: label2@@:label1 is Specialization@@/label1@@/label2.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// A reserved chunk lives in the Chunk, Specialization, File, or Index namespace.
-// Its module path starts with that name. The remaining components, then the
-// chunk name, are the module or chunk, the specialization, the file or directory,
-// or the domain or item the chunk describes.
-// A specialization path is stored reversed: label2@@:label1 is Specialization@@/label1@@/label2.
 func reservedNamespace(mod ModulePath) (Name, bool) {
 	if len(mod) == 0 {
 		return "", false
@@ -6121,9 +6055,8 @@ root := newNest()
 
 @~ Project@/litar@/Go@/functions@/litar.chunkTree @~ Project@/litar@/Go@/functions@/litar.describe @~ Project@/litar@/Go@/functions@/litar.joinPath @~ Project@/litar@/Go@/functions@/litar.newNest @~ Project@/litar@/Go@/methods@/litar.metaInfo.chunkDescription @~ Project@/litar@/Go@/methods@/litar.nest.treeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.treeJSON @~ Project@/litar@/Go@/functions@/litar.assignRefs @
 
+chunkDescription describes the module or chunk at path in the chunk tree. Below File, the path names a file or directory.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
-// chunkDescription describes the module or chunk at path in the chunk tree.
-// Below File, the path names a file or directory.
 func (m metaInfo) chunkDescription(path []Name) string {
 	if len(path) > 0 && path[0] == "File" {
 		return m.files[pathKey(path[1:])]
@@ -6290,15 +6223,8 @@ for _, c := range children[path] {
 return t
 @~ Project@/litar@/Go@/functions@/litar.emptySub @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/types@/litar.treeJSON @
 
+specializationTree is the specializations of one chunk, or of every chunk when only is nil. The root is named "/" and is the unspecialized form. Each child is one label, general toward specific. The path label1/label2 is the specialization label2@@:label1. Every node, including the root, is a specialization. A specialization is a label path on a block of the chunk, or on a reference to the chunk.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// specializationTree is the specializations of one chunk, or of every chunk
-// when only is nil.
-// The root is named "/" and is the unspecialized form.
-// Each child is one label, general toward specific.
-// The path label1/label2 is the specialization label2@@:label1.
-// Every node, including the root, is a specialization.
-// A specialization is a label path on a block of the chunk,
-// or on a reference to the chunk.
 func specializationTree(blocks []Block, maps []Mapping, only *ChunkRef) (treeJSON, error) {
 meta, err := describe(blocks, maps)
 if err != nil {
@@ -6398,12 +6324,8 @@ type treePlace struct {
 
 @~ Project@/litar@/Go@/types@/litar.treePlace @
 
+indexTree maps each ref to its path. includeRoot puts the root object's name on that path. Chunk, file, item, and specialization trees leave it off, so the wrapper named "/" does not appear in the path. The wrapper's own ref is still present, with an empty path.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// indexTree maps each ref to its path.
-// includeRoot puts the root object's name on that path.
-// Chunk, file, item, and specialization trees leave it off,
-// so the wrapper named "/" does not appear in the path.
-// The wrapper's own ref is still present, with an empty path.
 func indexTree(t treeJSON, includeRoot bool) map[string]treePlace {
 	out := map[string]treePlace{}
 var walk func(treeJSON, []string)
@@ -6429,8 +6351,8 @@ for _, sub := range node.SubTrees {
 }
 @~ Project@/litar@/Go@/types@/litar.treePlace @
 
+A leaf below File is the file chunk of the path under File.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// A leaf below File is the file chunk of the path under File.
 func chunkRefOf(p treePlace) ChunkRef {
 	if len(p.names) == 0 {
 		return ChunkRef{}
@@ -7358,10 +7280,8 @@ The parser of archives, expressions, module paths, and items.
 "strings"
 @
 
+ParseError is a scan or parse failure. Archive errors name the file and line. Command-line errors are marked Expr and read "… in expression".
 @<parse@:litar@:Language@/Go@/File@/types@+
-// ParseError is a scan or parse failure.
-// Archive errors name the file and line.
-// Command-line errors are marked Expr and read "… in expression".
 type ParseError struct {
 	Msg  string
 	File string
@@ -7435,11 +7355,8 @@ func isWS(b byte) bool {
 
 @~ Project@/litar@/Go@/functions@/litar.isWS @
 
+atControl reports a control at p.i. n == 1 is a final "@@" at end of input. n == 2 is "@@" plus the returned kind. "@@" followed by a letter or a byte >= 128 is text, not a control.
 @<parse@:litar@:Language@/Go@/File@/methods@+
-// atControl reports a control at p.i.
-// n == 1 is a final "@@" at end of input.
-// n == 2 is "@@" plus the returned kind.
-// "@@" followed by a letter or a byte >= 128 is text, not a control.
 func (p *parser) atControl() (kind byte, n int, ok bool) {
 	if p.i >= len(p.src) || p.src[p.i] != '@@' {
 		return 0, 0, false
@@ -7501,8 +7418,8 @@ func trimWS(b []byte) []byte {
 
 @~ Project@/litar@/Go@/functions@/litar.isWS @~ Project@/litar@/Go@/functions@/litar.trimWS @
 
+decodeAt replaces "@@@@" with "@@". The caller trims first.
 @<parse@:litar@:Language@/Go@/File@/functions@+
-// decodeAt replaces "@@@@" with "@@". The caller trims first.
 func decodeAt(b []byte) string {
 	var sb strings.Builder
 	for i := 0; i < len(b); i++ {
@@ -7518,12 +7435,8 @@ func decodeAt(b []byte) string {
 
 @~ Project@/litar@/Go@/functions@/litar.decodeAt @
 
+readName reads bytes up to the next control. "@@@@" stays inside the name and decodes to one "@@". Trim happens before that decode. allowEOF lets a command-line name end at end of input. kind, n describe the control that stopped the name; they are zero at EOF.
 @<parse@:litar@:Language@/Go@/File@/methods@+
-// readName reads bytes up to the next control.
-// "@@@@" stays inside the name and decodes to one "@@".
-// Trim happens before that decode.
-// allowEOF lets a command-line name end at end of input.
-// kind, n describe the control that stopped the name; they are zero at EOF.
 func (p *parser) readName(allowEOF bool) (Name, byte, int, error) {
 	start := p.i
 	for p.i < len(p.src) {
@@ -7555,10 +7468,8 @@ type qOpt struct {
 
 @~ Project@/litar@/Go@/types@/litar.qOpt @
 
+parseQName reads labels, a module path, and a chunk. The terminating control is not consumed. An empty chunk is returned to the caller; it is not an error here.
 @<parse@:litar@:Language@/Go@/File@/methods@+
-// parseQName reads labels, a module path, and a chunk.
-// The terminating control is not consumed.
-// An empty chunk is returned to the caller; it is not an error here.
 func (p *parser) parseQName(opt qOpt) (ChunkRef, byte, int, error) {
 var labels []Name
 var module ModulePath
@@ -7626,9 +7537,8 @@ func viewKind(kind byte) ViewOpKind {
 
 @~ Project@/litar@/Go@/constants@/litar.AddFile @~ Project@/litar@/Go@/constants@/litar.AddSet @~ Project@/litar@/Go@/constants@/litar.DelFile @~ Project@/litar@/Go@/constants@/litar.SubSet @~ Project@/litar@/Go@/functions@/litar.viewKind @~ Project@/litar@/Go@/types@/litar.ViewOpKind @
 
+parseFilterList reads one or more filters. The caller has consumed the opening "@@|". The terminating control is not consumed.
 @<parse@:litar@:Language@/Go@/File@/methods@+
-// parseFilterList reads one or more filters. The caller has consumed the
-// opening "@@|". The terminating control is not consumed.
 func (p *parser) parseFilterList(allowEOF bool) ([]Filter, byte, int, error) {
 var filters []Filter
 for {
@@ -7684,8 +7594,8 @@ func (p *parser) consumeLayout() {
 
 @~ Project@/litar@/Go@/methods@/litar.parser.consumeLayout @~ Project@/litar@/Go@/types@/litar.parser @
 
+parseInnerRef reads a body reference. The caller has consumed "@@<".
 @<parse@:litar@:Language@/Go@/File@/methods@+
-// parseInnerRef reads a body reference. The caller has consumed "@@<".
 func (p *parser) parseInnerRef() (*Ref, error) {
 	ref, kind, n, err := p.parseQName(qOpt{dotOK: true})
 	if err != nil {
@@ -7724,10 +7634,8 @@ type body struct {
 
 @~ Project@/litar@/Go@/types@/litar.Filter @~ Project@/litar@/Go@/types@/litar.Item @~ Project@/litar@/Go@/types@/litar.Part @~ Project@/litar@/Go@/types@/litar.body @
 
+parseBody reads the content and what follows it up to the end control. One line break that ends the content is layout, not content; endsLine records it.
 @<parse@:litar@:Language@/Go@/File@/methods@+
-// parseBody reads the content and what follows it up to the end control.
-// One line break that ends the content is layout, not content;
-// endsLine records it.
 func (p *parser) parseBody() (body, error) {
 var b body
 var text strings.Builder
@@ -7810,8 +7718,8 @@ b.items = items
 return b, nil
 @~ Project@/litar@/Go@/methods@/litar.body.endContent @~ Project@/litar@/Go@/methods@/litar.parser.parseItems @
 
+flush moves the pending content text into a text part.
 @<parse@:litar@:Language@/Go@/File@/methods@+
-// flush moves the pending content text into a text part.
 func (b *body) flush(text *strings.Builder) {
 if text.Len() == 0 {
 return
@@ -7822,9 +7730,8 @@ text.Reset()
 
 @~ Project@/litar@/Go@/methods@/litar.body.flush @~ Project@/litar@/Go@/types@/litar.Part @~ Project@/litar@/Go@/types@/litar.body @
 
+endContent flushes the content text without the one line break that ends it, and records that break in endsLine.
 @<parse@:litar@:Language@/Go@/File@/methods@+
-// endContent flushes the content text without the one line break that
-// ends it, and records that break in endsLine.
 func (b *body) endContent(text *strings.Builder) {
 s := text.String()
 switch {
@@ -7916,8 +7823,8 @@ return p.finishBlock(ref, Op(kind), startLine)
 
 @~ Project@/litar@/Go@/methods@/litar.parser.fail @~ Project@/litar@/Go@/methods@/litar.parser.finishBlock @~ Project@/litar@/Go@/methods@/litar.parser.line @~ Project@/litar@/Go@/methods@/litar.parser.parseBlock @~ Project@/litar@/Go@/methods@/litar.parser.parseQName @~ Project@/litar@/Go@/methods@/litar.parser.unexpected @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Op @~ Project@/litar@/Go@/types@/litar.parser @~ Project@/litar@/Go@/types@/litar.qOpt @
 
+finishBlock reads the rest of a block whose operation control is at p.i.
 @<parse@:litar@:Language@/Go@/File@/methods@+
-// finishBlock reads the rest of a block whose operation control is at p.i.
 func (p *parser) finishBlock(ref ChunkRef, op Op, startLine int) (Block, error) {
 p.i += 2
 p.consumeLayout()
@@ -8000,9 +7907,8 @@ return Block{}, p.unexpected(kind, n)
 }
 @~ Project@/litar@/Go@/methods@/litar.parser.fail @~ Project@/litar@/Go@/methods@/litar.parser.unexpected @
 
+skipToControl moves to the next control that starts or rejects an expression. "@@@@" stays in the comment.
 @<parse@:litar@:Language@/Go@/File@/methods@+
-// skipToControl moves to the next control that starts or rejects an
-// expression. "@@@@" stays in the comment.
 func (p *parser) skipToControl() {
 	for p.i < len(p.src) {
 		kind, n, ok := p.atControl()
@@ -8020,9 +7926,8 @@ func (p *parser) skipToControl() {
 
 @~ Project@/litar@/Go@/methods@/litar.parser.atControl @~ Project@/litar@/Go@/methods@/litar.parser.skipToControl @~ Project@/litar@/Go@/types@/litar.parser @
 
+ParseArchive parses one archive. Comment+Raw of every block, then Trailing, reconstructs src.
 @<parse@:litar@:Language@/Go@/File@/functions@+
-// ParseArchive parses one archive. Comment+Raw of every block, then
-// Trailing, reconstructs src.
 func ParseArchive(src []byte, file string) (*Archive, error) {
 p := &parser{src: src, file: file}
 var blocks []Block
@@ -8119,16 +8024,16 @@ return ref, filters, nil
 
 @~ Project@/litar@/Go@/functions@/litar.parseExpr @~ Project@/litar@/Go@/methods@/litar.parser.fail @~ Project@/litar@/Go@/methods@/litar.parser.parseFilterList @~ Project@/litar@/Go@/methods@/litar.parser.parseQName @~ Project@/litar@/Go@/methods@/litar.parser.unexpected @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Filter @~ Project@/litar@/Go@/types@/litar.parser @~ Project@/litar@/Go@/types@/litar.qOpt @
 
+ParsePrint parses a -p expression: a qualified name and an optional pipeline.
 @<parse@:litar@:Language@/Go@/File@/functions@+
-// ParsePrint parses a -p expression: a qualified name and an optional pipeline.
 func ParsePrint(s string) (ChunkRef, []Filter, error) {
 	return parseExpr(s, true)
 }
 
 @~ Project@/litar@/Go@/functions@/litar.ParsePrint @~ Project@/litar@/Go@/functions@/litar.parseExpr @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Filter @
 
+ParseChunkRef parses a -l, -e, or -d operand. A pipeline is an error.
 @<parse@:litar@:Language@/Go@/File@/functions@+
-// ParseChunkRef parses a -l, -e, or -d operand. A pipeline is an error.
 func ParseChunkRef(s string) (ChunkRef, error) {
 	ref, filters, err := parseExpr(s, false)
 	if err != nil {
@@ -8142,9 +8047,8 @@ func ParseChunkRef(s string) (ChunkRef, error) {
 
 @~ Project@/litar@/Go@/functions@/litar.ParseChunkRef @~ Project@/litar@/Go@/functions@/litar.parseExpr @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.ParseError @
 
+ParseModulePath parses a module path or a domain. "/" is the root. "." and ".." are rejected.
 @<parse@:litar@:Language@/Go@/File@/functions@+
-// ParseModulePath parses a module path or a domain.
-// "/" is the root. "." and ".." are rejected.
 func ParseModulePath(s string) (ModulePath, error) {
 if s == "/" {
 return nil, nil
@@ -8156,9 +8060,8 @@ return ModulePath(names), err
 
 @~ Project@/litar@/Go@/functions@/litar.ParseModulePath @~ Project@/litar@/Go@/methods@/litar.parser.parseNames @~ Project@/litar@/Go@/types@/litar.ModulePath @~ Project@/litar@/Go@/types@/litar.parser @
 
+parseNames reads the names of an expression separated by "/". relOK allows the names "." and "..".
 @<parse@:litar@:Language@/Go@/File@/methods@+
-// parseNames reads the names of an expression separated by "/".
-// relOK allows the names "." and "..".
 func (p *parser) parseNames(relOK bool) ([]Name, error) {
 var names []Name
 for {
@@ -8188,8 +8091,8 @@ return nil, p.fail("empty name")
 
 @~ Project@/litar@/Go@/functions@/litar.isRelName @~ Project@/litar@/Go@/methods@/litar.parser.fail @~ Project@/litar@/Go@/methods@/litar.parser.parseNames @~ Project@/litar@/Go@/methods@/litar.parser.readName @~ Project@/litar@/Go@/methods@/litar.parser.unexpected @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.parser @
 
+ParseItem parses an -r operand. The root marker "/" is not special.
 @<parse@:litar@:Language@/Go@/File@/functions@+
-// ParseItem parses an -r operand. The root marker "/" is not special.
 func ParseItem(s string) (Item, error) {
 if s == "" {
 return nil, &ParseError{Msg: "empty name", Expr: true}
@@ -8526,14 +8429,14 @@ Core types: names, chunk references, blocks, nodes, worlds, and their helpers.
 "strings"
 @
 
+A Name is a decoded, trimmed string. Interior whitespace stays.
 @<types@:litar@:Language@/Go@/File@/types@+
-// A Name is a decoded, trimmed string. Interior whitespace stays.
 type Name string
 
 @~ Project@/litar@/Go@/types@/litar.Name @
 
+ModulePath is empty for the root module.
 @<types@:litar@:Language@/Go@/File@/types@+
-// ModulePath is empty for the root module.
 type ModulePath []Name
 
 @~ Project@/litar@/Go@/types@/litar.ModulePath @~ Project@/litar@/Go@/types@/litar.Name @
@@ -8578,8 +8481,8 @@ type Filter struct {
 
 @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Filter @~ Project@/litar@/Go@/types@/litar.ViewOp @
 
+An Item is a path of names separated by @@/.
 @<types@:litar@:Language@/Go@/File@/types@+
-// An Item is a path of names separated by @@/.
 type Item []Name
 
 @~ Project@/litar@/Go@/types@/litar.Item @~ Project@/litar@/Go@/types@/litar.Name @
@@ -8685,9 +8588,8 @@ type Archive struct {
 
 @~ Project@/litar@/Go@/types@/litar.Archive @~ Project@/litar@/Go@/types@/litar.Block @
 
+String renders a chunk reference in qualified-name form. The root module is omitted.
 @<types@:litar@:Language@/Go@/File@/methods@+
-// String renders a chunk reference in qualified-name form.
-// The root module is omitted.
 func (r ChunkRef) String() string {
 	var b strings.Builder
 	for _, label := range r.Labels {
@@ -8709,8 +8611,8 @@ func (r ChunkRef) String() string {
 
 @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @~ Project@/litar@/Go@/types@/litar.ChunkRef @
 
+key is a length-prefixed identity. Names may contain the bytes "@@:".
 @<types@:litar@:Language@/Go@/File@/methods@+
-// key is a length-prefixed identity. Names may contain the bytes "@@:".
 func (r ChunkRef) key() string {
 	var b strings.Builder
 	writeNames(&b, r.Labels)
@@ -8769,10 +8671,8 @@ func hasRel(m ModulePath) bool {
 
 @~ Project@/litar@/Go@/functions@/litar.hasRel @~ Project@/litar@/Go@/functions@/litar.isRelName @~ Project@/litar@/Go@/types@/litar.ModulePath @
 
+resolveModule applies "." and ".." against base when the path starts with one of them. Otherwise the path starts at the root, and a later "." or ".." still applies to the path built so far.
 @<types@:litar@:Language@/Go@/File@/functions@+
-// resolveModule applies "." and ".." against base when the path starts
-// with one of them. Otherwise the path starts at the root, and a later
-// "." or ".." still applies to the path built so far.
 func resolveModule(base, path ModulePath) ModulePath {
 	var cur ModulePath
 	if len(path) > 0 && isRelName(path[0]) {
@@ -8814,10 +8714,8 @@ func copyModule(m ModulePath) ModulePath {
 
 @~ Project@/litar@/Go@/functions@/litar.copyModule @~ Project@/litar@/Go@/types@/litar.ModulePath @
 
+matchRef reports whether a block header matches a chunk reference. The block's labels must be a suffix of the reference's labels. Empty block labels match every specialization.
 @<types@:litar@:Language@/Go@/File@/functions@+
-// matchRef reports whether a block header matches a chunk reference.
-// The block's labels must be a suffix of the reference's labels.
-// Empty block labels match every specialization.
 func matchRef(block, ref ChunkRef) bool {
 	if block.Chunk != ref.Chunk || !modulesEqual(block.Module, ref.Module) {
 		return false
@@ -8898,9 +8796,8 @@ func namePrefix(path []Name, prefix []Name) bool {
 
 @~ Project@/litar@/Go@/functions@/litar.namePrefix @~ Project@/litar@/Go@/types@/litar.Name @
 
+FormatBlocks is the -l form: each block's comment and raw text. Trailing bytes after the last expression are not included.
 @<types@:litar@:Language@/Go@/File@/functions@+
-// FormatBlocks is the -l form: each block's comment and raw text.
-// Trailing bytes after the last expression are not included.
 func FormatBlocks(blocks []Block) string {
 	var b strings.Builder
 	for _, bl := range blocks {
@@ -8922,8 +8819,8 @@ func joinLines(lines []string) string {
 
 @~ Project@/litar@/Go@/functions@/litar.joinLines @
 
+nodePath is the path from the root through this node.
 @<types@:litar@:Language@/Go@/File@/functions@+
-// nodePath is the path from the root through this node.
 func nodePath(n Node) []string {
 	p := make([]string, len(n.Base)+1)
 	copy(p, n.Base)
@@ -8933,9 +8830,8 @@ func nodePath(n Node) []string {
 
 @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/types@/litar.Node @
 
+formatNodePath joins a node path with slashes. A node name does not contain a slash, so the join is reversible.
 @<types@:litar@:Language@/Go@/File@/functions@+
-// formatNodePath joins a node path with slashes.
-// A node name does not contain a slash, so the join is reversible.
 func formatNodePath(p []string) string {
 	return strings.Join(p, "/")
 }
@@ -9212,13 +9108,12 @@ for bi, bl := range own {
 	}
 }
 @~ Project@/litar@/Go@/functions@/litar.effectiveIndexSet @~ Project@/litar@/Go@/functions@/litar.orderOwn @~ Project@/litar@/Go@/methods@/litar.ChunkRef.key @
+specializationOrder lists idx, the blocks of one chunk, in the order they apply.
 A block applies after every block whose labels are a proper suffix of its own,
 because a reference that sees both means the more specialized one to win.
 Blocks with no such relation never apply to one reference together, so they keep their order;
 the first block whose less specialized blocks are placed goes next.
 @<compose@:litar@:Language@/Go@/File@/functions@+
-// specializationOrder lists idx, the blocks of one chunk, so that a block follows
-// the blocks whose labels are a proper suffix of its labels; otherwise idx keeps its order.
 func specializationOrder(blocks []Block, idx []int) []int {
 	k := len(idx)
 	before := make([]int, k)
@@ -9361,10 +9256,9 @@ const missingAction = "missing -p, --print, -l, --literal, -e, --effective, -d, 
 
 @~ Project@/litar@/Go@/constants@/litar.missingAction @
 
+Options is the command line of litar after parsing. An action is given by a non-empty operand; Agent takes none.
 The command litar parses its command line with the flag package and passes the result here.
 @<cli@:litar@:Language@/Go@/File@/types@+
-// Options is the command line of litar after parsing.
-// An action is given by a non-empty operand; Agent takes none.
 type Options struct {
 	Agent     bool
 	File      string
@@ -9629,16 +9523,15 @@ so a later run with the same script, input, and view files is not started again.
 "path/filepath"
 "strings"
 @
+filterCacheDir is the directory of the filter cache; empty turns the cache off.
 Only Main sets the cache directory, so the tests run every filter unless a test sets it.
 @<cache@:litar@:Language@/Go@/File@/variables@+
-// filterCacheDir is the directory of the filter cache; empty turns the cache off.
 var filterCacheDir string
 
 @~ Project@/litar@/Go@/variables@/litar.filterCacheDir @
+cacheDirFromEnv is the directory that LITAR_CACHE names, or litar below the user cache directory when it is unset. LITAR_CACHE=off, or an empty value, turns the cache off.
 The directory is made absolute, because filters run in another working directory.
 @<cache@:litar@:Language@/Go@/File@/functions@+
-// cacheDirFromEnv is the directory that LITAR_CACHE names, or litar below the user cache
-// directory when it is unset. LITAR_CACHE=off, or an empty value, turns the cache off.
 func cacheDirFromEnv() string {
 	dir, ok := os.LookupEnv("LITAR_CACHE")
 	if !ok {
@@ -9659,12 +9552,11 @@ func cacheDirFromEnv() string {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.cacheDirFromEnv @
+filterKey names a filter run by its script, its input, and the path, mode, and contents of each file in its view.
 A run is keyed by everything it reads from litar. A mapped file or directory lies outside
 the archive and may be written by the run, so a view with one gets no key and always runs.
 The version line changes whenever the meaning of a key does.
 @<cache@:litar@:Language@/Go@/File@/functions@+
-// filterKey names a filter run by its script, its input, and the path, mode,
-// and contents of each file in its view.
 func filterKey(script, input string, files []viewFile) (string, bool) {
 	if filterCacheDir == "" {
 		return "", false
@@ -9720,10 +9612,10 @@ func writeCachedOutput(key, out string) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.cachedOutputPath @~ Project@/litar@/Go@/functions@/litar.readCachedOutput @~ Project@/litar@/Go@/functions@/litar.writeCachedOutput @~ Project@/litar@/Go@/variables@/litar.filterCacheDir @
+countingWriter passes writes to w and counts the bytes written.
 A run that writes to stderr is not kept, so its messages are not lost on later runs.
 The count is read after the command is waited for, when its copying has finished.
 @<cache@:litar@:Language@/Go@/File@/types@+
-// countingWriter passes writes to w and counts the bytes written.
 type countingWriter struct {
 	w io.Writer
 	n int
@@ -9739,11 +9631,11 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.countingWriter.Write @~ Project@/litar@/Go@/types@/litar.countingWriter @
+filterEnv is the environment of a filter process.
 A filter learns the cache directory from LITAR_CACHE, so the files it leaves for its output,
 such as an interpreter its output names, live and go with the outputs kept there.
 When the cache is off the variable is removed, so a filter never reads "off" as a directory.
 @<cache@:litar@:Language@/Go@/File@/functions@+
-// filterEnv is the environment of a filter process.
 func filterEnv() []string {
 	var env []string
 	for _, kv := range os.Environ() {
@@ -9827,10 +9719,8 @@ func validFilePath(p string) error {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.validFilePath @
+parseShebang reads "#! interpreter" or "#! interpreter arg". As the kernel's script loader does, arg is the rest of the line, one argument without its surrounding blanks.
 @<filter@:litar@:Language@/Go@/File@/functions@+
-// parseShebang reads "#! interpreter" or "#! interpreter arg".
-// As the kernel's script loader does, arg is the rest of the line,
-// one argument without its surrounding blanks.
 func parseShebang(script string) (interp, arg string, hasArg, ok bool) {
 if len(script) < 2 || script[0] != '#' || script[1] != '!' {
 	return "", "", false, false
@@ -9869,9 +9759,8 @@ if i >= len(script) || script[i] == '\n' || script[i] == '\r' {
 	return interp, "", false, true
 }
 @
+shebangWord returns the word of script at i, up to a blank or a line end, and the index after it.
 @<filter@:litar@:Language@/Go@/File@/functions@+
-// shebangWord returns the word of script at i, up to a blank or a line end,
-// and the index after it.
 func shebangWord(script string, i int) (string, int) {
 	start := i
 	for i < len(script) && script[i] != ' ' && script[i] != '\t' && script[i] != '\n' && script[i] != '\r' {
@@ -9945,10 +9834,9 @@ if _, err := scriptFile.WriteString(script); err != nil {
 scriptFile.Close()
 defer os.Remove(scriptPath)
 @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @
+exitStatus is the status of a failed wait: the exit code, or 128 plus the signal for a process killed by a signal.
 A process killed by a signal gets the status a shell reports for it.
 @<filter@:litar@:Language@/Go@/File@/functions@+
-// exitStatus is the status of a failed wait: the exit code,
-// or 128 plus the signal for a process killed by a signal.
 func exitStatus(err error) int {
 	code := 1
 	if ee, ok := err.(*exec.ExitError); ok {
@@ -10018,9 +9906,9 @@ if keyed && stderr.n == 0 {
 }
 return out.String(), nil
 @~ Project@/litar@/Go@/functions@/litar.exitStatus @~ Project@/litar@/Go@/functions@/litar.writeCachedOutput @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @
+Main runs litar with a parsed command line and returns the exit status.
 The command keeps filter outputs in the cache that LITAR_CACHE names; run alone, as the tests call it, keeps none.
 @<cli@:litar@:Language@/Go@/File@/functions@=
-// Main runs litar with a parsed command line and returns the exit status.
 func Main(opts Options) int {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
@@ -10269,9 +10157,8 @@ const (
 type spanRole int
 
 @~ Project@/litar@/Go@/types@/litar.spanRole @
+A nameSpan is one name of a block that a rewrite may replace. The bytes Raw[start:end] hold it as written, with the blanks around it.
 @<rewrite@:litar@:Language@/Go@/File@/types@+
-// A nameSpan is one name of a block that a rewrite may replace.
-// The bytes Raw[start:end] hold it as written, with the blanks around it.
 type nameSpan struct {
 	start, end int
 	role       spanRole
@@ -10281,19 +10168,18 @@ type nameSpan struct {
 }
 
 @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Item @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.nameSpan @~ Project@/litar@/Go@/types@/litar.spanRole @
+A spanScanner walks the text of one block and collects its names.
 The parser keeps no positions, and only a rewrite needs them, so the names are found
 by a second walk over the text of a block that already parsed.
 @<rewrite@:litar@:Language@/Go@/File@/types@+
-// A spanScanner walks the text of one block and collects its names.
 type spanScanner struct {
 	p     parser
 	spans []nameSpan
 }
 
 @~ Project@/litar@/Go@/types@/litar.nameSpan @~ Project@/litar@/Go@/types@/litar.parser @~ Project@/litar@/Go@/types@/litar.spanScanner @
+A renaming moves a chunk, or every chunk of a module, to another path. With items set it moves an item, or every item of a domain.
 @<rewrite@:litar@:Language@/Go@/File@/types@+
-// A renaming moves a chunk, or every chunk of a module, to another path.
-// With items set it moves an item, or every item of a domain.
 type renaming struct {
 	module bool
 	items  bool
@@ -10302,8 +10188,8 @@ type renaming struct {
 }
 
 @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.renaming @
+A fileMove sends a file, or every file below a directory, to another path.
 @<rewrite@:litar@:Language@/Go@/File@/types@+
-// A fileMove sends a file, or every file below a directory, to another path.
 type fileMove struct {
 	from, to string
 	dir      bool
@@ -10314,8 +10200,8 @@ type fileMove struct {
 type fileMoves []fileMove
 
 @~ Project@/litar@/Go@/types@/litar.fileMove @~ Project@/litar@/Go@/types@/litar.fileMoves @
+A fileIndex tells where each file visible in a node comes from.
 @<rewrite@:litar@:Language@/Go@/File@/types@+
-// A fileIndex tells where each file visible in a node comes from.
 type fileIndex struct {
 	own map[string]bool // files of the node's own blocks
 	// Files of the base nodes and mapped paths, with their source.
@@ -10324,8 +10210,8 @@ type fileIndex struct {
 }
 
 @~ Project@/litar@/Go@/types@/litar.fileIndex @
+scanSpans lists the names of a block that parsed before, in order.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// scanSpans lists the names of a block that parsed before, in order.
 func scanSpans(raw string) ([]nameSpan, error) {
 	s := &spanScanner{p: parser{src: []byte(raw)}}
 	if err := s.header(); err != nil {
@@ -10338,8 +10224,8 @@ func scanSpans(raw string) ([]nameSpan, error) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.scanSpans @~ Project@/litar@/Go@/methods@/litar.spanScanner.body @~ Project@/litar@/Go@/methods@/litar.spanScanner.header @~ Project@/litar@/Go@/types@/litar.nameSpan @~ Project@/litar@/Go@/types@/litar.parser @~ Project@/litar@/Go@/types@/litar.spanScanner @
+header reads up to the operation control and moves past it.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// header reads up to the operation control and moves past it.
 func (s *spanScanner) header() error {
 	p := &s.p
 	if len(p.src) < 2 {
@@ -10373,8 +10259,8 @@ func (s *spanScanner) header() error {
 }
 
 @~ Project@/litar@/Go@/constants@/litar.spanHeader @~ Project@/litar@/Go@/constants@/litar.spanPath @~ Project@/litar@/Go@/methods@/litar.parser.fail @~ Project@/litar@/Go@/methods@/litar.parser.parseQName @~ Project@/litar@/Go@/methods@/litar.parser.readName @~ Project@/litar@/Go@/methods@/litar.spanScanner.header @~ Project@/litar@/Go@/types@/litar.nameSpan @~ Project@/litar@/Go@/types@/litar.qOpt @~ Project@/litar@/Go@/types@/litar.spanScanner @
+body reads the content, the pipeline, and the items.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// body reads the content, the pipeline, and the items.
 func (s *spanScanner) body() error {
 	p := &s.p
 	for p.i < len(p.src) {
@@ -10405,8 +10291,8 @@ func (s *spanScanner) body() error {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.parser.atControl @~ Project@/litar@/Go@/methods@/litar.spanScanner.body @~ Project@/litar@/Go@/methods@/litar.spanScanner.filters @~ Project@/litar@/Go@/methods@/litar.spanScanner.items @~ Project@/litar@/Go@/methods@/litar.spanScanner.reference @~ Project@/litar@/Go@/types@/litar.spanScanner @
+reference reads a reference in content. The caller has consumed "@@<".
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// reference reads a reference in content. The caller has consumed "@@<".
 func (s *spanScanner) reference() error {
 	p := &s.p
 	start := p.i
@@ -10429,9 +10315,8 @@ func (s *spanScanner) reference() error {
 }
 
 @~ Project@/litar@/Go@/constants@/litar.spanRef @~ Project@/litar@/Go@/methods@/litar.parser.parseQName @~ Project@/litar@/Go@/methods@/litar.spanScanner.filters @~ Project@/litar@/Go@/methods@/litar.spanScanner.reference @~ Project@/litar@/Go@/types@/litar.nameSpan @~ Project@/litar@/Go@/types@/litar.qOpt @~ Project@/litar@/Go@/types@/litar.spanScanner @
+filters reads a pipeline up to the control that ends it. Of the view operands, only files are names a rewrite replaces.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// filters reads a pipeline up to the control that ends it.
-// Of the view operands, only files are names a rewrite replaces.
 func (s *spanScanner) filters() error {
 	p := &s.p
 	for {
@@ -10461,15 +10346,15 @@ func (s *spanScanner) filters() error {
 }
 
 @~ Project@/litar@/Go@/constants@/litar.AddFile @~ Project@/litar@/Go@/constants@/litar.DelFile @~ Project@/litar@/Go@/constants@/litar.spanFilter @~ Project@/litar@/Go@/constants@/litar.spanViewFile @~ Project@/litar@/Go@/functions@/litar.isViewOp @~ Project@/litar@/Go@/functions@/litar.viewKind @~ Project@/litar@/Go@/methods@/litar.parser.parseQName @~ Project@/litar@/Go@/methods@/litar.parser.readName @~ Project@/litar@/Go@/methods@/litar.spanScanner.filters @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.nameSpan @~ Project@/litar@/Go@/types@/litar.qOpt @~ Project@/litar@/Go@/types@/litar.spanScanner @
+encodeName writes a name as an archive holds it.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// encodeName writes a name as an archive holds it.
 func encodeName(n Name) string {
 	return strings.ReplaceAll(string(n), "@@", "@@@@")
 }
 
 @~ Project@/litar@/Go@/functions@/litar.encodeName @~ Project@/litar@/Go@/types@/litar.Name @
+encodeRef writes a qualified name as an archive holds it.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// encodeRef writes a qualified name as an archive holds it.
 func encodeRef(r ChunkRef) string {
 	var b strings.Builder
 	for _, label := range r.Labels {
@@ -10483,17 +10368,15 @@ func encodeRef(r ChunkRef) string {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.encodeName @~ Project@/litar@/Go@/functions@/litar.encodeRef @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @~ Project@/litar@/Go@/types@/litar.ChunkRef @
+refPath is the module path of ref followed by its chunk.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// refPath is the module path of ref followed by its chunk.
 func refPath(ref ChunkRef) []Name {
 	return append(append([]Name{}, ref.Module...), ref.Chunk)
 }
 
 @~ Project@/litar@/Go@/functions@/litar.refPath @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Name @
+rewriteRaw is the text of a block with the names that edit replaces. The spans are replaced from the last one, so the earlier offsets stay valid, and a new name keeps the blanks that surrounded the old one.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// rewriteRaw is the text of a block with the names that edit replaces.
-// The spans are replaced from the last one, so the earlier offsets stay valid,
-// and a new name keeps the blanks that surrounded the old one.
 func rewriteRaw(bl Block, edit func(Block, nameSpan) (string, bool)) (string, error) {
 	spans, err := scanSpans(bl.Raw)
 	if err != nil {
@@ -10514,8 +10397,8 @@ func rewriteRaw(bl Block, edit func(Block, nameSpan) (string, bool)) (string, er
 }
 
 @~ Project@/litar@/Go@/functions@/litar.rewriteRaw @~ Project@/litar@/Go@/functions@/litar.scanSpans @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.nameSpan @
+subtree lists the node and the local nodes based on it.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// subtree lists the node and the local nodes based on it.
 func (w *World) subtree(n *Node) []*Node {
 	root := nodePath(*n)
 	var nodes []*Node
@@ -10528,10 +10411,9 @@ func (w *World) subtree(n *Node) []*Node {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.hasPathPrefix @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/methods@/litar.World.subtree @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.World @
+rewriteNodes applies edit to the own blocks of the nodes and compacts them. No archive is written unless every node could be rewritten.
 The archives of the node and of the nodes based on it change together or not at all.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// rewriteNodes applies edit to the own blocks of the nodes and compacts them.
-// No archive is written unless every node could be rewritten.
 func (w *World) rewriteNodes(nodes []*Node, edit func(Block, nameSpan) (string, bool)) error {
 	type pending struct {
 		n    *Node
@@ -10557,10 +10439,8 @@ for _, p := range all {
 	p.n.Trailing = p.arch.Trailing
 }
 @~ Project@/litar@/Go@/functions@/litar.writeFileKeepMode @
+apply returns ref renamed. A description in the namespace Chunk moves with the module or chunk it describes, and one in Index with its domain or item; a renaming of items moves no other chunk.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// apply returns ref renamed. A description in the namespace Chunk moves with
-// the module or chunk it describes, and one in Index with its domain or item;
-// a renaming of items moves no other chunk.
 func (r renaming) apply(ref ChunkRef) (ChunkRef, bool) {
 	full := refPath(ref)
 	skip := 0
@@ -10586,8 +10466,8 @@ func (r renaming) apply(ref ChunkRef) (ChunkRef, bool) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.namePrefix @~ Project@/litar@/Go@/functions@/litar.refPath @~ Project@/litar@/Go@/methods@/litar.renaming.apply @~ Project@/litar@/Go@/methods@/litar.renaming.namespace @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.ModulePath @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.renaming @
+edit replaces the names of a block that the renaming moves.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// edit replaces the names of a block that the renaming moves.
 func (r renaming) edit(bl Block, sp nameSpan) (string, bool) {
 	switch sp.role {
 	case spanHeader, spanFilter:
@@ -10604,10 +10484,8 @@ func (r renaming) edit(bl Block, sp nameSpan) (string, bool) {
 }
 
 @~ Project@/litar@/Go@/constants@/litar.spanFilter @~ Project@/litar@/Go@/constants@/litar.spanHeader @~ Project@/litar@/Go@/constants@/litar.spanItem @~ Project@/litar@/Go@/constants@/litar.spanRef @~ Project@/litar@/Go@/functions@/litar.encodeItem @~ Project@/litar@/Go@/functions@/litar.encodeRef @~ Project@/litar@/Go@/methods@/litar.mcpFixture.ref @~ Project@/litar@/Go@/methods@/litar.renaming.applyItem @~ Project@/litar@/Go@/methods@/litar.renaming.edit @~ Project@/litar@/Go@/methods@/litar.renaming.editRef @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.nameSpan @~ Project@/litar@/Go@/types@/litar.renaming @
+editRef renames a reference in the content of bl. A relative path stays as written while it still leads from the renamed header to the renamed chunk; otherwise the reference is written from the root.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// editRef renames a reference in the content of bl. A relative path stays as
-// written while it still leads from the renamed header to the renamed chunk;
-// otherwise the reference is written from the root.
 func (r renaming) editRef(bl Block, ref ChunkRef) (string, bool) {
 	abs := ref
 	abs.Module = resolveModule(bl.Ref.Module, ref.Module)
@@ -10623,8 +10501,8 @@ func (r renaming) editRef(bl Block, ref ChunkRef) (string, bool) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.encodeRef @~ Project@/litar@/Go@/functions@/litar.hasRel @~ Project@/litar@/Go@/functions@/litar.modulesEqual @~ Project@/litar@/Go@/functions@/litar.resolveModule @~ Project@/litar@/Go@/methods@/litar.renaming.editRef @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.renaming @
+what names the kind of the renaming in a message.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// what names the kind of the renaming in a message.
 func (r renaming) what() string {
 	switch {
 	case r.items && r.module:
@@ -10638,9 +10516,8 @@ func (r renaming) what() string {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.renaming.what @~ Project@/litar@/Go@/types@/litar.renaming @
+moves reports whether the renaming moves the chunk of a block, leaving its description aside.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// moves reports whether the renaming moves the chunk of a block,
-// leaving its description aside.
 func (r renaming) moves(bl Block) bool {
 	if len(bl.Ref.Module) > 0 && bl.Ref.Module[0] == "Chunk" {
 		return false
@@ -10650,8 +10527,8 @@ func (r renaming) moves(bl Block) bool {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.renaming.moves @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.renaming @
+validate refuses an empty path and, for chunks, the namespaces of descriptions.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// validate refuses an empty path and, for chunks, the namespaces of descriptions.
 func (r renaming) validate() error {
 	if len(r.from) == 0 || len(r.to) == 0 {
 		return fmt.Errorf("empty name")
@@ -10668,9 +10545,8 @@ func (r renaming) validate() error {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.formatModule @~ Project@/litar@/Go@/functions@/litar.reservedNamespace @~ Project@/litar@/Go@/methods@/litar.renaming.validate @~ Project@/litar@/Go@/types@/litar.ModulePath @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.renaming @
+baseChunks lists in taken the chunks of the base nodes of n. A base keeps its blocks, so a chunk it defines is not renamed from n.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// baseChunks lists in taken the chunks of the base nodes of n.
-// A base keeps its blocks, so a chunk it defines is not renamed from n.
 func (w *World) baseChunks(n *Node, r renaming, taken map[string]bool) error {
 	rev, err := w.ancestry(formatNodePath(nodePath(*n)))
 	if err != nil {
@@ -10688,12 +10564,10 @@ func (w *World) baseChunks(n *Node, r renaming, taken map[string]bool) error {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.chunkKey @~ Project@/litar@/Go@/functions@/litar.formatModule @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/methods@/litar.World.ancestry @~ Project@/litar@/Go@/methods@/litar.World.baseChunks @~ Project@/litar@/Go@/methods@/litar.renaming.moves @~ Project@/litar@/Go@/methods@/litar.renaming.what @~ Project@/litar@/Go@/types@/litar.ModulePath @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.World @~ Project@/litar@/Go@/types@/litar.renaming @
+checkRename refuses a renaming that would split a chunk or join two: the node itself must define what is renamed, and no other chunk may hold a new path.
 A renaming must leave every chunk whole: a base node keeps its blocks, and two chunks
 must not become one.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// checkRename refuses a renaming that would split a chunk or join two:
-// the node itself must define what is renamed, and no other chunk may
-// hold a new path.
 func (w *World) checkRename(n *Node, r renaming) error {
 	if err := r.validate(); err != nil {
 		return err
@@ -10713,10 +10587,8 @@ func (w *World) checkRename(n *Node, r renaming) error {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.formatModule @~ Project@/litar@/Go@/methods@/litar.World.baseChunks @~ Project@/litar@/Go@/methods@/litar.World.checkItems @~ Project@/litar@/Go@/methods@/litar.World.checkRename @~ Project@/litar@/Go@/methods@/litar.renaming.validate @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.ModulePath @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.World @~ Project@/litar@/Go@/types@/litar.renaming @
+Rename moves a chunk, a module, an item, or a domain to another path. Block headers, references, filters, items, and descriptions follow, in the node and in the local nodes based on it.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// Rename moves a chunk, a module, an item, or a domain to another path.
-// Block headers, references, filters, items, and descriptions follow,
-// in the node and in the local nodes based on it.
 func (w *World) Rename(nodeName string, r renaming) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -10729,8 +10601,8 @@ func (w *World) Rename(nodeName string, r renaming) error {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.World.Rename @~ Project@/litar@/Go@/methods@/litar.World.checkRename @~ Project@/litar@/Go@/methods@/litar.World.requireLocal @~ Project@/litar@/Go@/methods@/litar.World.rewriteNodes @~ Project@/litar@/Go@/methods@/litar.World.subtree @~ Project@/litar@/Go@/types@/litar.World @~ Project@/litar@/Go@/types@/litar.renaming @
+apply returns the new path of a file, or of a directory that moves.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// apply returns the new path of a file, or of a directory that moves.
 func (m fileMove) apply(p string) (string, bool) {
 	if p == m.from {
 		return m.to, true
@@ -10753,11 +10625,10 @@ func (ms fileMoves) apply(p string) (string, bool) {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.fileMoves.apply @~ Project@/litar@/Go@/types@/litar.fileMoves @
+applyRef moves the root chunk of a file and the description of a file or directory, File@@/dir@@/file.
 A file is also a chunk of the root module, and its description lives in the namespace File,
 so both follow the file.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// applyRef moves the root chunk of a file and the description of a file
-// or directory, File@@/dir@@/file.
 func (ms fileMoves) applyRef(ref ChunkRef) (ChunkRef, bool) {
 	if len(ref.Module) == 0 {
 		to, ok := ms.apply(string(ref.Chunk))
@@ -10785,9 +10656,8 @@ func (ms fileMoves) applyRef(ref ChunkRef) (ChunkRef, bool) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.refPath @~ Project@/litar@/Go@/methods@/litar.fileMoves.applyRef @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.ModulePath @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.fileMoves @
+edit replaces the names of a block that the moves change: file headers, file operands of views, and the names that applyRef moves.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// edit replaces the names of a block that the moves change: file headers,
-// file operands of views, and the names that applyRef moves.
 func (ms fileMoves) edit(bl Block, sp nameSpan) (string, bool) {
 	switch sp.role {
 	case spanItem:
@@ -10805,8 +10675,8 @@ func (ms fileMoves) edit(bl Block, sp nameSpan) (string, bool) {
 }
 
 @~ Project@/litar@/Go@/constants@/litar.spanItem @~ Project@/litar@/Go@/constants@/litar.spanPath @~ Project@/litar@/Go@/constants@/litar.spanRef @~ Project@/litar@/Go@/constants@/litar.spanViewFile @~ Project@/litar@/Go@/functions@/litar.encodeName @~ Project@/litar@/Go@/functions@/litar.encodeRef @~ Project@/litar@/Go@/functions@/litar.resolveModule @~ Project@/litar@/Go@/methods@/litar.fileMoves.applyRef @~ Project@/litar@/Go@/methods@/litar.fileMoves.edit @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.fileMoves @~ Project@/litar@/Go@/types@/litar.nameSpan @
+indexFiles collects the files visible in the node.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// indexFiles collects the files visible in the node.
 func (w *World) indexFiles(n *Node) (fileIndex, error) {
 	ix := fileIndex{own: map[string]bool{}, other: map[string]string{}}
 	rev, err := w.ancestry(formatNodePath(nodePath(*n)))
@@ -10831,8 +10701,8 @@ func (w *World) indexFiles(n *Node) (fileIndex, error) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/methods@/litar.World.ancestry @~ Project@/litar@/Go@/methods@/litar.World.indexFiles @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.World @~ Project@/litar@/Go@/types@/litar.fileIndex @
+under lists the own files at p or below the directory p.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// under lists the own files at p or below the directory p.
 func (ix fileIndex) under(p string) []string {
 	var files []string
 	for f := range ix.own {
@@ -10845,9 +10715,8 @@ func (ix fileIndex) under(p string) []string {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.fileIndex.under @~ Project@/litar@/Go@/types@/litar.fileIndex @
+foreign names the source of a file at or below p that the node does not hold itself, or of a mapped directory that p lies in.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// foreign names the source of a file at or below p that the node does not
-// hold itself, or of a mapped directory that p lies in.
 func (ix fileIndex) foreign(p string) (string, bool) {
 	var keys []string
 	for k := range ix.other {
@@ -10865,8 +10734,8 @@ func (ix fileIndex) foreign(p string) (string, bool) {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.fileIndex.foreign @~ Project@/litar@/Go@/types@/litar.fileIndex @
+isDir reports whether some visible file lies below p.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// isDir reports whether some visible file lies below p.
 func (ix fileIndex) isDir(p string) bool {
 	for f := range ix.own {
 		if strings.HasPrefix(f, p+"/") {
@@ -10882,9 +10751,8 @@ func (ix fileIndex) isDir(p string) bool {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.fileIndex.isDir @~ Project@/litar@/Go@/types@/litar.fileIndex @
+shellWords splits a command into words the way a shell splits plain words: blanks separate them, and quotes or a backslash keep the next bytes literal.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// shellWords splits a command into words the way a shell splits plain words:
-// blanks separate them, and quotes or a backslash keep the next bytes literal.
 func shellWords(cmd string) ([]string, error) {
 	var words []string
 	var word strings.Builder
@@ -10928,9 +10796,8 @@ func shellWords(cmd string) ([]string, error) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.isWS @~ Project@/litar@/Go@/functions@/litar.shellWords @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @
+fileArgs separates the option letters of a command from its operands. Only the letters of allowed are options of the command.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// fileArgs separates the option letters of a command from its operands.
-// Only the letters of allowed are options of the command.
 func fileArgs(words []string, allowed string) (flags string, args []string, err error) {
 	i := 0
 	for ; i < len(words); i++ {
@@ -10953,8 +10820,8 @@ func fileArgs(words []string, allowed string) (flags string, args []string, err 
 }
 
 @~ Project@/litar@/Go@/functions@/litar.fileArgs @
+cleanPath is the path of an operand as a file header writes it.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// cleanPath is the path of an operand as a file header writes it.
 func cleanPath(arg string) (string, error) {
 	p := path.Clean(arg)
 	if arg == "" || p == "." || p == ".." || strings.HasPrefix(p, "../") || path.IsAbs(p) {
@@ -10964,9 +10831,8 @@ func cleanPath(arg string) (string, error) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.cleanPath @
+source resolves an operand to the own files it names. dir is set when the operand is a directory.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// source resolves an operand to the own files it names.
-// dir is set when the operand is a directory.
 func (ix fileIndex) source(arg string) (p string, files []string, dir bool, err error) {
 	if p, err = cleanPath(arg); err != nil {
 		return "", nil, false, err
@@ -10979,9 +10845,8 @@ func (ix fileIndex) source(arg string) (p string, files []string, dir bool, err 
 }
 
 @~ Project@/litar@/Go@/functions@/litar.cleanPath @~ Project@/litar@/Go@/methods@/litar.fileIndex.foreign @~ Project@/litar@/Go@/methods@/litar.fileIndex.source @~ Project@/litar@/Go@/methods@/litar.fileIndex.under @~ Project@/litar@/Go@/types@/litar.fileIndex @
+OperateFiles interprets one rm or mv command on the files of the node, and returns a line for each file it changed.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// OperateFiles interprets one rm or mv command on the files of the node,
-// and returns a line for each file it changed.
 func (w *World) OperateFiles(nodeName, command string) (string, error) {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -11011,9 +10876,8 @@ func (w *World) OperateFiles(nodeName, command string) (string, error) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.joinLines @~ Project@/litar@/Go@/functions@/litar.shellWords @~ Project@/litar@/Go@/methods@/litar.World.OperateFiles @~ Project@/litar@/Go@/methods@/litar.World.indexFiles @~ Project@/litar@/Go@/methods@/litar.World.moveFiles @~ Project@/litar@/Go@/methods@/litar.World.removeFiles @~ Project@/litar@/Go@/methods@/litar.World.requireLocal @~ Project@/litar@/Go@/types@/litar.World @
+removeFiles is rm: it deletes the own blocks of each file, the blocks applied to its root chunk, and its description. A directory needs -r.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// removeFiles is rm: it deletes the own blocks of each file, the blocks
-// applied to its root chunk, and its description. A directory needs -r.
 func (w *World) removeFiles(n *Node, ix fileIndex, words []string) ([]string, error) {
 	flags, args, err := fileArgs(words, "rRf")
 	if err != nil {
@@ -11037,10 +10901,8 @@ func (w *World) removeFiles(n *Node, ix fileIndex, words []string) ([]string, er
 }
 
 @~ Project@/litar@/Go@/functions@/litar.fileArgs @~ Project@/litar@/Go@/functions@/litar.unmap @~ Project@/litar@/Go@/methods@/litar.World.Mappings @~ Project@/litar@/Go@/methods@/litar.World.removeFiles @~ Project@/litar@/Go@/methods@/litar.World.rewriteOwn @~ Project@/litar@/Go@/methods@/litar.fileMoves.applyRef @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.World @~ Project@/litar@/Go@/types@/litar.fileIndex @~ Project@/litar@/Go@/types@/litar.fileMoves @
+moveTarget reads the last operand of mv. It is the new path, or the directory that receives the sources when it holds files, ends with a slash, or follows several sources.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// moveTarget reads the last operand of mv. It is the new path, or the
-// directory that receives the sources when it holds files, ends with a slash,
-// or follows several sources.
 func (ix fileIndex) moveTarget(args []string) (target string, into bool, err error) {
 	if len(args) < 2 {
 		return "", false, fmt.Errorf("mv needs a source and a target")
@@ -11057,8 +10919,8 @@ func (ix fileIndex) moveTarget(args []string) (target string, into bool, err err
 }
 
 @~ Project@/litar@/Go@/functions@/litar.cleanPath @~ Project@/litar@/Go@/methods@/litar.fileIndex.isDir @~ Project@/litar@/Go@/methods@/litar.fileIndex.moveTarget @~ Project@/litar@/Go@/types@/litar.fileIndex @
+planMoves turns the sources of mv into moves.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// planMoves turns the sources of mv into moves.
 func (ix fileIndex) planMoves(sources []string, target string, into bool) (fileMoves, error) {
 	var moves fileMoves
 	for _, arg := range sources {
@@ -11082,11 +10944,9 @@ func (ix fileIndex) planMoves(sources []string, target string, into bool) (fileM
 }
 
 @~ Project@/litar@/Go@/methods@/litar.fileIndex.planMoves @~ Project@/litar@/Go@/methods@/litar.fileIndex.source @~ Project@/litar@/Go@/types@/litar.fileIndex @~ Project@/litar@/Go@/types@/litar.fileMove @~ Project@/litar@/Go@/types@/litar.fileMoves @
+settle lists each file that moves with its new path.
 Unlike a shell, mv does not replace an existing file: its block would be lost silently.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// settle lists each file that moves with its new path.
-// A file is never moved onto another one, unlike the mv of a shell,
-// because the block of the other file would be lost without a trace.
 func (ix fileIndex) settle(moves fileMoves) ([]string, error) {
 	moving := map[string]string{}
 	var order []string
@@ -11114,9 +10974,8 @@ func (ix fileIndex) settle(moves fileMoves) ([]string, error) {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.fileIndex.foreign @~ Project@/litar@/Go@/methods@/litar.fileIndex.isDir @~ Project@/litar@/Go@/methods@/litar.fileIndex.settle @~ Project@/litar@/Go@/methods@/litar.fileIndex.under @~ Project@/litar@/Go@/types@/litar.fileIndex @~ Project@/litar@/Go@/types@/litar.fileMoves @
+moveFiles is mv: file headers, references to the files, file operands of views, and descriptions follow, in the node and the local nodes based on it.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// moveFiles is mv: file headers, references to the files, file operands of
-// views, and descriptions follow, in the node and the local nodes based on it.
 func (w *World) moveFiles(n *Node, ix fileIndex, words []string) ([]string, error) {
 	_, args, err := fileArgs(words, "f")
 	if err != nil {
@@ -11155,9 +11014,8 @@ type filesIn struct {
 }
 
 @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.filesIn @
+rename takes the ref of an entry of the chunk tree or of the item tree. A branch and a leaf have different refs, so the ref alone says what is renamed.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
-// rename takes the ref of an entry of the chunk tree or of the item tree.
-// A branch and a leaf have different refs, so the ref alone says what is renamed.
 func (a *agent) rename(ctx context.Context, _ *mcp.CallToolRequest, in renameIn) (*mcp.CallToolResult, any, error) {
 	to, err := ParseModulePath(in.To)
 	if err != nil {
@@ -11218,8 +11076,8 @@ Tests of rewrite.go.
 "strings"
 "testing"
 @
+rewriteWorld loads a composition of a root node and a node based on it.
 @<rewrite test@:litar@:Language@/Go@/File@/functions@+
-// rewriteWorld loads a composition of a root node and a node based on it.
 func rewriteWorld(t *testing.T, root, child string) (*World, string, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -11543,9 +11401,8 @@ type moveIn struct {
 }
 
 @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.moveIn @
+A blockJSON is one block of a blocks:// resource. Node is left out when the block belongs to the node of the resource.
 @<mcp@:litar@:Language@/Go@/File@/types@+
-// A blockJSON is one block of a blocks:// resource.
-// Node is left out when the block belongs to the node of the resource.
 type blockJSON struct {
 	Ref     string `json:"ref"`
 	Node    string `json:"node,omitempty"`
@@ -11554,9 +11411,8 @@ type blockJSON struct {
 }
 
 @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.Ref @~ Project@/litar@/Go@/types@/litar.blockJSON @
+compositionByRef resolves a ref from list://composition. The caller holds a.mu.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
-// compositionByRef resolves a ref from list://composition.
-// The caller holds a.mu.
 func (a *agent) compositionByRef(ref string) (*World, error) {
 	for _, w := range a.compositions() {
 		if compositionRef(w) == ref {
@@ -11567,9 +11423,8 @@ func (a *agent) compositionByRef(ref string) (*World, error) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.compositionRef @~ Project@/litar@/Go@/methods@/litar.agent.compositionByRef @~ Project@/litar@/Go@/methods@/litar.agent.compositions @~ Project@/litar@/Go@/types@/litar.World @~ Project@/litar@/Go@/types@/litar.agent @
+createNodeLocked creates the node with its mappings and returns its ref. A mapping that fails takes the new node away again.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
-// createNodeLocked creates the node with its mappings and returns its ref.
-// A mapping that fails takes the new node away again.
 func (a *agent) createNodeLocked(in createIn) (string, error) {
 	w, err := a.compositionByRef(in.Composition)
 	if err != nil {
@@ -11649,9 +11504,8 @@ func (a *agent) moveBlock(ctx context.Context, _ *mcp.CallToolRequest, in moveIn
 }
 
 @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.nodeByRef @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/functions@/litar.toolErr @~ Project@/litar@/Go@/functions@/litar.toolText @~ Project@/litar@/Go@/methods@/litar.World.MoveBlock @~ Project@/litar@/Go@/methods@/litar.agent.moveBlock @~ Project@/litar@/Go@/methods@/litar.agent.refresh @~ Project@/litar@/Go@/methods@/litar.agent.worldNode @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.agent @~ Project@/litar@/Go@/types@/litar.moveIn @
+nodeURIs lists the URIs below one node. A chunk is paired only with the label paths it is used with, although any label path of the node is accepted.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// nodeURIs lists the URIs below one node. A chunk is paired only with the
-// label paths it is used with, although any label path of the node is accepted.
 func nodeURIs(w *World, cs string, n *Node) []string {
 	tail := cs + "/" + nodeRef(*n)
 	uris := []string{
@@ -11686,9 +11540,8 @@ func nodeURIs(w *World, cs string, n *Node) []string {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.indexTree @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/functions@/litar.nodeRef @~ Project@/litar@/Go@/functions@/litar.nodeURIs @~ Project@/litar@/Go@/methods@/litar.World.Chain @~ Project@/litar@/Go@/methods@/litar.World.Mappings @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.World @~ Project@/litar@/Go@/types@/litar.treeJSON @~ Project@/litar@/Go@/types@/litar.treePlace @
+refParts splits a URI tail of n refs and resolves the composition. The caller holds a.mu.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
-// refParts splits a URI tail of n refs and resolves the composition.
-// The caller holds a.mu.
 func (a *agent) refParts(rest string, n int) (*World, []string, error) {
 	refs := strings.Split(rest, "/")
 	if rest == "" || len(refs) != n {
@@ -11702,9 +11555,8 @@ func (a *agent) refParts(rest string, n int) (*World, []string, error) {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.agent.compositionByRef @~ Project@/litar@/Go@/methods@/litar.agent.refParts @~ Project@/litar@/Go@/types@/litar.World @~ Project@/litar@/Go@/types@/litar.agent @
+selectBlocks picks from the chain the blocks that refs ask for: an item, a label path, or a chunk followed by a label path.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// selectBlocks picks from the chain the blocks that refs ask for:
-// an item, a label path, or a chunk followed by a label path.
 func selectBlocks(kind string, chain []Block, maps []Mapping, refs []string) ([]Block, error) {
 	var got []Block
 	switch kind {
@@ -11733,9 +11585,8 @@ func selectBlocks(kind string, chain []Block, maps []Mapping, refs []string) ([]
 }
 
 @~ Project@/litar@/Go@/functions@/litar.blockDepends @~ Project@/litar@/Go@/functions@/litar.chunkByRef @~ Project@/litar@/Go@/functions@/litar.effectiveBlocks @~ Project@/litar@/Go@/functions@/litar.labelsByRef @~ Project@/litar@/Go@/functions@/litar.matchingBlocks @~ Project@/litar@/Go@/functions@/litar.selectBlocks @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @
+blockList renders blocks for a resource of node. A block is found again among the nodes of the chain by its archive and line.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// blockList renders blocks for a resource of node. A block is found again
-// among the nodes of the chain by its archive and line.
 func blockList(w *World, node *Node, blocks []Block) []blockJSON {
 	owner := map[string]string{}
 	rev, _ := w.ancestry(formatNodePath(nodePath(*node)))
@@ -11793,10 +11644,8 @@ func inputSchema[T any]() *jsonschema.Schema {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.inputSchema @
+plainArrays publishes every slice as an array. A slice infers "type": ["null", "array"], and some clients accept only one type per schema; a missing slice already stands for an empty one.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// plainArrays publishes every slice as an array.
-// A slice infers "type": ["null", "array"], and some clients accept only
-// one type per schema; a missing slice already stands for an empty one.
 func plainArrays(s *jsonschema.Schema) *jsonschema.Schema {
 	if len(s.Types) > 0 && slices.Contains(s.Types, "array") {
 		s.Types, s.Type = nil, "array"
@@ -11811,17 +11660,15 @@ func plainArrays(s *jsonschema.Schema) *jsonschema.Schema {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.plainArrays @
+labelTree is the specialization tree of a node: every label path in use.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// labelTree is the specialization tree of a node: every label path in use.
 func labelTree(blocks []Block, maps []Mapping) (treeJSON, error) {
 	return specializationTree(blocks, maps, nil)
 }
 
 @~ Project@/litar@/Go@/functions@/litar.labelTree @~ Project@/litar@/Go@/functions@/litar.specializationTree @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.treeJSON @
+refOf is the ref of an object: ten hex digits of a hash over its kind and its names. A ref depends on nothing else, so it stays the same until the object is renamed.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// refOf is the ref of an object: ten hex digits of a hash over its kind and
-// its names. A ref depends on nothing else, so it stays the same until the
-// object is renamed.
 func refOf(kind string, names ...string) string {
 	h := sha256.New()
 	h.Write([]byte(kind))
@@ -11833,9 +11680,8 @@ func refOf(kind string, names ...string) string {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.refOf @~ Project@/litar@/Go@/methods@/litar.countingWriter.Write @
+blockRef hashes the text of a block without the blank after its end control, which changes when the block stops being the last of its archive.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// blockRef hashes the text of a block without the blank after its end
-// control, which changes when the block stops being the last of its archive.
 func blockRef(b Block) string {
 	return refOf("block", strings.TrimRight(b.Raw, " \t\r\n"))
 }
@@ -11853,10 +11699,8 @@ func nodeRef(n Node) string {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/functions@/litar.nodeRef @~ Project@/litar@/Go@/functions@/litar.refOf @~ Project@/litar@/Go@/types@/litar.Node @
+assignRefs gives every entry of a tree its ref. A branch and a leaf of the same path are different objects, so their kinds differ. includeRoot is as in indexTree.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// assignRefs gives every entry of a tree its ref. A branch and a leaf of the
-// same path are different objects, so their kinds differ.
-// includeRoot is as in indexTree.
 func assignRefs(t *treeJSON, branch, leaf string, includeRoot bool) {
 	var walk func(*treeJSON, []string)
 	walk = func(node *treeJSON, path []string) {
@@ -11941,9 +11785,8 @@ func toNames(names []string) []Name {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.toNames @~ Project@/litar@/Go@/types@/litar.Name @
+labelsByRef resolves a ref of the specialization tree to labels, the most specific first, as a reference writes them.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-// labelsByRef resolves a ref of the specialization tree to labels,
-// the most specific first, as a reference writes them.
 func labelsByRef(blocks []Block, maps []Mapping, ref string) ([]Name, error) {
 	tree, err := labelTree(blocks, maps)
 	if err != nil {
@@ -11961,8 +11804,8 @@ func labelsByRef(blocks []Block, maps []Mapping, ref string) ([]Name, error) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.indexTree @~ Project@/litar@/Go@/functions@/litar.labelTree @~ Project@/litar@/Go@/functions@/litar.labelsByRef @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Name @
+items reads the items up to the end control. The caller has consumed "@@~".
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// items reads the items up to the end control. The caller has consumed "@@~".
 func (s *spanScanner) items() error {
 	p := &s.p
 	start := p.i
@@ -11987,8 +11830,8 @@ func (s *spanScanner) items() error {
 }
 
 @~ Project@/litar@/Go@/constants@/litar.spanItem @~ Project@/litar@/Go@/methods@/litar.parser.readName @~ Project@/litar@/Go@/methods@/litar.spanScanner.items @~ Project@/litar@/Go@/types@/litar.Item @~ Project@/litar@/Go@/types@/litar.nameSpan @~ Project@/litar@/Go@/types@/litar.spanScanner @
+namespace is the reserved module that holds the descriptions of what moves.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// namespace is the reserved module that holds the descriptions of what moves.
 func (r renaming) namespace() Name {
 	if r.items {
 		return "Index"
@@ -11997,8 +11840,8 @@ func (r renaming) namespace() Name {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.renaming.namespace @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.renaming @
+applyItem returns an item renamed.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// applyItem returns an item renamed.
 func (r renaming) applyItem(it Item) (Item, bool) {
 	exact := len(it) == len(r.from) && !r.module
 	below := r.module && len(it) > len(r.from)
@@ -12009,8 +11852,8 @@ func (r renaming) applyItem(it Item) (Item, bool) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.namePrefix @~ Project@/litar@/Go@/methods@/litar.renaming.applyItem @~ Project@/litar@/Go@/types@/litar.Item @~ Project@/litar@/Go@/types@/litar.renaming @
+carried reports whether a block carries an item that the renaming moves.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// carried reports whether a block carries an item that the renaming moves.
 func (r renaming) carried(bl Block) bool {
 	for _, it := range bl.Items {
 		if _, ok := r.applyItem(it); ok {
@@ -12021,10 +11864,8 @@ func (r renaming) carried(bl Block) bool {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.renaming.applyItem @~ Project@/litar@/Go@/methods@/litar.renaming.carried @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.renaming @
+checkItems refuses to rename an item that the node does not carry, or that a base node carries: the base keeps its blocks, so the cross-reference would break in two.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// checkItems refuses to rename an item that the node does not carry, or that
-// a base node carries: the base keeps its blocks, so the cross-reference
-// would break in two.
 func (w *World) checkItems(n *Node, r renaming) error {
 	name := formatModule(ModulePath(r.from))
 	rev, err := w.ancestry(formatNodePath(nodePath(*n)))
@@ -12047,8 +11888,8 @@ func (w *World) checkItems(n *Node, r renaming) error {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.formatModule @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/methods@/litar.World.ancestry @~ Project@/litar@/Go@/methods@/litar.World.checkItems @~ Project@/litar@/Go@/methods@/litar.renaming.carried @~ Project@/litar@/Go@/methods@/litar.renaming.what @~ Project@/litar@/Go@/types@/litar.ModulePath @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.World @~ Project@/litar@/Go@/types@/litar.renaming @
+unmap takes the mapping of the path of arg away from maps.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// unmap takes the mapping of the path of arg away from maps.
 func unmap(maps []Mapping, arg string) ([]Mapping, bool) {
 	p := path.Clean(arg)
 	for i, m := range maps {
@@ -12060,9 +11901,8 @@ func unmap(maps []Mapping, arg string) ([]Mapping, bool) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.unmap @~ Project@/litar@/Go@/types@/litar.Mapping @
+MapFile adds a mapping to a node: the file or directory origin, outside the archives, appears in the node at path.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// MapFile adds a mapping to a node: the file or directory origin, outside
-// the archives, appears in the node at path.
 func (w *World) MapFile(nodeName, at, origin string, sets []string) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -12094,8 +11934,8 @@ func (w *World) MapFile(nodeName, at, origin string, sets []string) error {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.cleanPath @~ Project@/litar@/Go@/functions@/litar.unmap @~ Project@/litar@/Go@/methods@/litar.World.MapFile @~ Project@/litar@/Go@/methods@/litar.World.Mappings @~ Project@/litar@/Go@/methods@/litar.World.requireLocal @~ Project@/litar@/Go@/methods@/litar.World.save @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.World @
+ownBlock finds a block of the node by its ref.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// ownBlock finds a block of the node by its ref.
 func ownBlock(n *Node, ref string) (int, error) {
 	for i, bl := range n.Own {
 		if blockRef(bl) == ref {
@@ -12106,10 +11946,8 @@ func ownBlock(n *Node, ref string) (int, error) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.blockRef @~ Project@/litar@/Go@/functions@/litar.ownBlock @~ Project@/litar@/Go@/types@/litar.Node @
+joinBlocks writes blocks as an archive holds them. A block that closed at the end of its archive has no blank after its "@@"; the next text would join it.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// joinBlocks writes blocks as an archive holds them.
-// A block that closed at the end of its archive has no blank after its "@@";
-// the next text would join it.
 func joinBlocks(b *strings.Builder, blocks []Block) {
 	for _, bl := range blocks {
 		b.WriteString(bl.Comment)
@@ -12121,8 +11959,8 @@ func joinBlocks(b *strings.Builder, blocks []Block) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.endsWithSpace @~ Project@/litar@/Go@/functions@/litar.joinBlocks @~ Project@/litar@/Go@/types@/litar.Block @
+compacted parses text as the archive of n and compacts it, writing nothing.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// compacted parses text as the archive of n and compacts it, writing nothing.
 func compacted(n *Node, text string) ([]byte, *Archive, error) {
 	arch, err := ParseArchive([]byte(text), n.Archive)
 	if err != nil {
@@ -12134,8 +11972,8 @@ func compacted(n *Node, text string) ([]byte, *Archive, error) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.ParseArchive @~ Project@/litar@/Go@/functions@/litar.compactOwn @~ Project@/litar@/Go@/functions@/litar.compacted @~ Project@/litar@/Go@/types@/litar.Archive @~ Project@/litar@/Go@/types@/litar.Node @
+store writes a compacted archive and makes it the content of the node.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// store writes a compacted archive and makes it the content of the node.
 func store(n *Node, data []byte, arch *Archive) error {
 	if err := writeFileKeepMode(n.Archive, data); err != nil {
 		return fmt.Errorf("could not write '%s'", n.Archive)
@@ -12145,10 +11983,8 @@ func store(n *Node, data []byte, arch *Archive) error {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.store @~ Project@/litar@/Go@/functions@/litar.writeFileKeepMode @~ Project@/litar@/Go@/types@/litar.Archive @~ Project@/litar@/Go@/types@/litar.Node @
+OverrideBlock puts the blocks of text in the place of one block of the node. The new blocks are applied to the chunk reference of the old one, so the change stays within one chunk; the comment of the old block goes with it.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// OverrideBlock puts the blocks of text in the place of one block of the node.
-// The new blocks are applied to the chunk reference of the old one, so the
-// change stays within one chunk; the comment of the old block goes with it.
 func (w *World) OverrideBlock(nodeName, ref, text string) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -12177,8 +12013,8 @@ func (w *World) OverrideBlock(nodeName, ref, text string) error {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.ParseArchive @~ Project@/litar@/Go@/functions@/litar.compacted @~ Project@/litar@/Go@/functions@/litar.joinBlocks @~ Project@/litar@/Go@/functions@/litar.ownBlock @~ Project@/litar@/Go@/functions@/litar.store @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @~ Project@/litar@/Go@/methods@/litar.World.OverrideBlock @~ Project@/litar@/Go@/methods@/litar.World.requireLocal @~ Project@/litar@/Go@/types@/litar.World @
+DeleteBlock removes one block of the node.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// DeleteBlock removes one block of the node.
 func (w *World) DeleteBlock(nodeName, ref string) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -12192,9 +12028,8 @@ func (w *World) DeleteBlock(nodeName, ref string) error {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.ownBlock @~ Project@/litar@/Go@/methods@/litar.World.DeleteBlock @~ Project@/litar@/Go@/methods@/litar.World.requireLocal @~ Project@/litar@/Go@/methods@/litar.World.rewriteOwn @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.World @
+MoveBlock takes one block of a node, with its comment, to the end of another local node. Neither archive is written unless both can be.
 @<rewrite@:litar@:Language@/Go@/File@/methods@+
-// MoveBlock takes one block of a node, with its comment, to the end of
-// another local node. Neither archive is written unless both can be.
 func (w *World) MoveBlock(nodeName, ref, toName string) error {
 	n, err := w.requireLocal(nodeName)
 	if err != nil {
@@ -12233,8 +12068,8 @@ func (w *World) MoveBlock(nodeName, ref, toName string) error {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.compacted @~ Project@/litar@/Go@/functions@/litar.joinBlocks @~ Project@/litar@/Go@/functions@/litar.ownBlock @~ Project@/litar@/Go@/functions@/litar.store @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @~ Project@/litar@/Go@/methods@/litar.World.MoveBlock @~ Project@/litar@/Go@/methods@/litar.World.requireLocal @~ Project@/litar@/Go@/types@/litar.World @
+encodeItem writes an item as an archive holds it.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
-// encodeItem writes an item as an archive holds it.
 func encodeItem(it Item) string {
 	parts := make([]string, len(it))
 	for i, n := range it {
@@ -12244,8 +12079,8 @@ func encodeItem(it Item) string {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.encodeItem @~ Project@/litar@/Go@/functions@/litar.encodeName @~ Project@/litar@/Go@/types@/litar.Item @
+An mcpFixture is a session on one composition with a root node.
 @<mcp test@:litar@:Language@/Go@/File@/types@+
-// An mcpFixture is a session on one composition with a root node.
 type mcpFixture struct {
 	t         *testing.T
 	ctx       context.Context
@@ -12255,9 +12090,8 @@ type mcpFixture struct {
 }
 
 @~ Project@/litar@/Go@/types@/litar.mcpFixture @
+newMCPFixture creates the composition through the session, fills the archive of its root node behind the server, and imports it again.
 @<mcp test@:litar@:Language@/Go@/File@/functions@+
-// newMCPFixture creates the composition through the session, fills the archive
-// of its root node behind the server, and imports it again.
 func newMCPFixture(t *testing.T, archive string) *mcpFixture {
 	t.Helper()
 	f := &mcpFixture{t: t, ctx: context.Background(), dir: filepath.Join(t.TempDir(), "archive")}
@@ -12275,8 +12109,8 @@ func newMCPFixture(t *testing.T, archive string) *mcpFixture {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.callTool @~ Project@/litar@/Go@/functions@/litar.connectMCP @~ Project@/litar@/Go@/functions@/litar.newMCPFixture @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/types@/litar.mcpFixture @
+args adds the composition and the root node to the arguments of a tool.
 @<mcp test@:litar@:Language@/Go@/File@/methods@+
-// args adds the composition and the root node to the arguments of a tool.
 func (f *mcpFixture) args(pairs ...any) map[string]any {
 	args := map[string]any{"composition": f.c, "node": f.n}
 	for i := 0; i < len(pairs); i += 2 {
@@ -12300,9 +12134,8 @@ func (f *mcpFixture) fail(name string, pairs ...any) string {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.callToolError @~ Project@/litar@/Go@/methods@/litar.mcpFixture.args @~ Project@/litar@/Go@/methods@/litar.mcpFixture.fail @~ Project@/litar@/Go@/types@/litar.mcpFixture @
+read reads a resource of the root node: kind is the URI up to the composition, and refs follow the node.
 @<mcp test@:litar@:Language@/Go@/File@/methods@+
-// read reads a resource of the root node: kind is the URI up to the
-// composition, and refs follow the node.
 func (f *mcpFixture) read(kind string, refs ...string) string {
 	f.t.Helper()
 	uri := kind + "/" + strings.Join(append([]string{f.c, f.n}, refs...), "/")
@@ -12310,8 +12143,8 @@ func (f *mcpFixture) read(kind string, refs ...string) string {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.readResource @~ Project@/litar@/Go@/methods@/litar.mcpFixture.read @~ Project@/litar@/Go@/types@/litar.mcpFixture @
+ref finds an entry of a tree of the root node by its names.
 @<mcp test@:litar@:Language@/Go@/File@/methods@+
-// ref finds an entry of a tree of the root node by its names.
 func (f *mcpFixture) ref(kind string, names ...string) string {
 	f.t.Helper()
 	var tree treeJSON
@@ -12348,8 +12181,8 @@ func (f *mcpFixture) archive() string {
 }
 
 @~ Project@/litar@/Go@/methods@/litar.mcpFixture.archive @~ Project@/litar@/Go@/types@/litar.mcpFixture @
+blockTexts joins the texts of blocks, one per line.
 @<mcp test@:litar@:Language@/Go@/File@/functions@+
-// blockTexts joins the texts of blocks, one per line.
 func blockTexts(blocks []blockJSON) string {
 	var b strings.Builder
 	for _, bl := range blocks {
@@ -12359,9 +12192,8 @@ func blockTexts(blocks []blockJSON) string {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.blockTexts @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @~ Project@/litar@/Go@/types@/litar.blockJSON @
+checkMCPRefs checks that a ref is a hash of the kind and names of its object, so a client can keep it across reads and mutations.
 @<mcp test@:litar@:Language@/Go@/File@/functions@+
-// checkMCPRefs checks that a ref is a hash of the kind and names of its object,
-// so a client can keep it across reads and mutations.
 func checkMCPRefs(t *testing.T, f *mcpFixture) {
 	t.Helper()
 	compDir, err := identityPath(f.dir)
@@ -12533,9 +12365,9 @@ type searchIn struct {
 
 @~ Project@/litar@/Go@/types@/litar.describeIn @~ Project@/litar@/Go@/types@/litar.searchIn @
 
+Describe replaces the description of a node, or of the composition when nodeName is empty.
 The description lives in the composer file, so only that file is written.
 @<compose@:litar@:Language@/Go@/File@/methods@+
-// Describe replaces the description of a node, or of the composition when nodeName is empty.
 func (w *World) Describe(nodeName, description string) error {
 	if nodeName == "" {
 		w.Description = description
@@ -12612,8 +12444,8 @@ func (a *agent) searchBlocks(ctx context.Context, _ *mcp.CallToolRequest, in sea
 
 @~ Project@/litar@/Go@/constants@/litar.searchLimit @~ Project@/litar@/Go@/functions@/litar.blockList @~ Project@/litar@/Go@/functions@/litar.toolErr @~ Project@/litar@/Go@/functions@/litar.toolText @~ Project@/litar@/Go@/methods@/litar.agent.nodeChain @~ Project@/litar@/Go@/methods@/litar.agent.searchBlocks @~ Project@/litar@/Go@/methods@/litar.agent.worldNode @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.errString @~ Project@/litar@/Go@/types@/litar.searchIn @
 
+searchLimit is the largest number of blocks a search answers.
 @<mcp@:litar@:Language@/Go@/File@/constants@+
-// searchLimit is the largest number of blocks a search answers.
 const searchLimit = 100
 
 @~ Project@/litar@/Go@/constants@/litar.searchLimit @
@@ -14289,10 +14121,10 @@ Text is shown with line numbers; any other content is only measured and offered 
 @
 @<Chunk@/Project@/litar@/Rewrite@={"description": "Steps of the functions that rename, move, and remove chunks, files, and blocks across nodes."}@
 @<Chunk@/Project@/litar@/Web@/Script@={"description": "Steps of the functions of the page script."}@
+file is the catalog file at path, or the file at path below a mapped directory.
 A file below a mapped directory has no entry in the catalog, since the directory is mapped
 as a whole; it is read as a mapped file whose origin lies below the origin of the directory.
 @<filter@:litar@:Language@/Go@/File@/methods@+
-// file is the catalog file at path, or the file at path below a mapped directory.
 func (c *catalog) file(path string) *catFile {
 	if f := c.files[path]; f != nil {
 		return f
@@ -14361,10 +14193,8 @@ _ = filepath.WalkDir(f.origin, func(p string, d os.DirEntry, err error) error {
 @<mcp@:litar@:Language@/Go@/File@/import paths@+
 "path/filepath"
 @
+continueLine adds text to a line of a block body: indent is the line so far and blank tells that it holds only spaces and tabs. It returns the same for the line that text ends in.
 @<eval@:litar@:Language@/Go@/File@/functions@+
-// continueLine adds text to a line of a block body: indent is the line so far
-// and blank tells that it holds only spaces and tabs. It returns the same
-// for the line that text ends in.
 func continueLine(indent string, blank bool, text string) (string, bool) {
 	if i := strings.LastIndexByte(text, '\n'); i >= 0 {
 		indent, blank, text = "", true, text[i+1:]

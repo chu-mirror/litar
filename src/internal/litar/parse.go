@@ -1,6 +1,7 @@
 package litar
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 )
@@ -13,10 +14,12 @@ type ParseError struct {
 }
 
 type parser struct {
-	src  []byte
-	i    int
-	file string
-	expr bool
+	src    []byte
+	i      int
+	file   string
+	expr   bool
+	lineAt int
+	lineNo int
 }
 
 type qOpt struct {
@@ -42,17 +45,13 @@ func (e *ParseError) Error() string {
 }
 
 func (p *parser) line() int {
-	line := 1
-	end := p.i
-	if end > len(p.src) {
-		end = len(p.src)
+	end := min(p.i, len(p.src))
+	if p.lineNo == 0 || end < p.lineAt {
+		p.lineAt, p.lineNo = 0, 1
 	}
-	for i := 0; i < end; i++ {
-		if p.src[i] == '\n' {
-			line++
-		}
-	}
-	return line
+	p.lineNo += bytes.Count(p.src[p.lineAt:end], []byte{'\n'})
+	p.lineAt = end
+	return p.lineNo
 }
 
 func (p *parser) fail(msg string) error {

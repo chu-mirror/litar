@@ -7304,29 +7304,32 @@ func (e *ParseError) Error() string {
 
 @~ Project@/litar@/Go@/types@/litar.ParseError @
 
+lineAt and lineNo remember the line of the position line last counted to.
 @<parse@:litar@:Language@/Go@/File@/types@+
 type parser struct {
-	src  []byte
-	i    int
-	file string
-	expr bool
+	src    []byte
+	i      int
+	file   string
+	expr   bool
+	lineAt int
+	lineNo int
 }
 
 @~ Project@/litar@/Go@/types@/litar.parser @
 
+line is the line number of the parse position.
+Every block asks for its start and end lines, so counting from the start of the archive each time
+made a parse quadratic in the archive size; line counts on from the position it last counted to,
+and starts over only when the position has moved back.
 @<parse@:litar@:Language@/Go@/File@/methods@+
 func (p *parser) line() int {
-	line := 1
-	end := p.i
-	if end > len(p.src) {
-		end = len(p.src)
+	end := min(p.i, len(p.src))
+	if p.lineNo == 0 || end < p.lineAt {
+		p.lineAt, p.lineNo = 0, 1
 	}
-	for i := 0; i < end; i++ {
-		if p.src[i] == '\n' {
-			line++
-		}
-	}
-	return line
+	p.lineNo += bytes.Count(p.src[p.lineAt:end], []byte{'\n'})
+	p.lineAt = end
+	return p.lineNo
 }
 
 @~ Project@/litar@/Go@/methods@/litar.parser.line @~ Project@/litar@/Go@/types@/litar.parser @
@@ -14273,3 +14276,6 @@ func TestIndentedReference(t *testing.T) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.mustEval @
+@<parse@:litar@:Language@/Go@/File@/import paths@+
+"bytes"
+@

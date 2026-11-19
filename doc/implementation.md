@@ -156,8 +156,32 @@ for the `composer.json` schema and ground search path):
   reference. Fails if no block matches.
 - **`-d` (depend):** Prints `Comment` + `Raw` for every block in the chain whose body
   references or filter pipelines use the queried chunk reference or a specialization of it.
+  A reference without labels counts under the labels of its block and under every
+  specialization of them.
 - **`-r` (reference):** Prints `Comment` + `Raw` for every block in the chain that carries
   the exact queried item.
+
+```
+@<chunk 1@=
+content
+@
+
+@<chunk 2@=
+@<label 1@:chunk 1@>
+@
+
+@<chunk 3@=
+content
+@|label 2@:chunk 2@
+
+@<x@:chunk 4@=
+@<chunk 1@>
+@
+```
+
+Here the second block depends on `chunk 1` and `label 1@:chunk 1`;
+the third block depends on `chunk 2` and `label 2@:chunk 2`;
+the fourth block depends on `chunk 1`, `x@:chunk 1`, and `y@:x@:chunk 1`, but not on `z@:chunk 1`.
 
 Module, chunk, subdomain, and item trees are exposed through the MCP server (and tested via
 `list.go`). They omit the reserved namespaces (`Chunk`, `Specialization`, `File`, `Index`)

@@ -9453,7 +9453,7 @@ file names an archive whose composition is imported before the first page.
     ],
 }
 @
-The options of litar, in the order of the usage in design/ui.md.
+The options of litar; the usage in doc/implementation.md is generated from them.
 An action is chosen by giving its operand; agent takes none.
 @<litar command@:command@:UI@/Command Line@/invocation syntax@=
 {

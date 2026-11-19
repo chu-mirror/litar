@@ -3,7 +3,7 @@
 This project proposes a system named litar,
 which is defined in [litar.md](design/litar.md).
 [style.md](design/style.md) explains the construction of a litar archive.
-[ui.md](design/ui.md) defines a command line tool for handling litar archives,
+[implementation.md](doc/implementation.md) describes the command line tool for handling litar archives,
 including the MCP server it opens for agents.
 [category.md](design/category.md) gives the strategy to classify chunks and items.
 

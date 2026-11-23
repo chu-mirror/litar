@@ -1,0 +1,19 @@
+{
+    "description": "Explore how litar implements its FUSE filter view: the virtual tree of view files, the go-fuse nodes serving it, host and read-only mapped directories, the overlay for new files, and mounting and unmounting around a filter run.",
+    "ground": "..",
+    "nodes": [
+        {
+            "name": "FUSE",
+            "archive": "fuse.la",
+            "description": "Read the FUSE view of litar: fuse.go, the blocks it is built of, the items it uses, and the blocks that use what it defines.",
+            "mappings": [],
+            "base": [
+                "Standard",
+                "Litar"
+            ],
+            "select": [
+                "File@/internal@/litar@/fuse.go"
+            ]
+        }
+    ]
+}

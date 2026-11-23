@@ -80,7 +80,7 @@ so the page can do what an agent can:
 - browse the nodes, and the chunks, files, items, and label paths of a node;
 - read a chunk under a label path: its effective and applied blocks, the blocks that use it, and its result.
   A reference in a block is a link, and opens the blocks of its chunk in place;
-  a reference that no block defines is marked. Items are chips, bold in the block that defines them;
+  a reference that no block defines is marked. A block lists the items it defines, underlined, and the items it uses;
   an item lists the blocks defining it apart from the blocks referring to it;
 - edit: add, change, move, and delete blocks; rename and delete chunks, modules, items, and files;
   describe chunks, files, items, nodes, and the composition; create and delete nodes;

@@ -7,131 +7,141 @@
 <style>
 :root {
   color-scheme: light dark;
-  --bg: #ffffff; --panel: #f6f7f9; --raised: #ffffff; --code: #f8f9fb; --fg: #1c2024; --muted: #68717d; --line: #e1e4e8;
-  --accent: #4f46e5; --accent-bg: #eef0fe; --label: #92400e; --label-bg: #fef3c7; --item: #166534; --item-bg: #dcfce7;
-  --filter: #86198f; --filter-bg: #fae8ff; --danger: #b91c1c; --side: 300px;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --paper: #f6f8fa; --chrome: #edf0f3; --leaf: #ffffff; --ink: #1b1f2a; --graphite: #5e6673; --rule: #dce0e6;
+  --woad: #2b4c9b; --woad-wash: #e4eaf6; --verdigris: #16705c; --danger: #b3261e; --side: 300px;
+  --serif: "Latin Modern Roman", "CMU Serif", "Sitka Text", "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --mono: "Latin Modern Mono", "CMU Typewriter Text", "Cascadia Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f1115; --panel: #161920; --raised: #1b1f27; --code: #12151b; --fg: #e4e7ec; --muted: #8b95a3; --line: #2a2f3a;
-    --accent: #a5b4fc; --accent-bg: #252a4a; --label: #fcd34d; --label-bg: #3b2f12; --item: #86efac; --item-bg: #143222;
-    --filter: #f0abfc; --filter-bg: #3a1840; --danger: #fca5a5;
+    --paper: #15181d; --chrome: #1b1f25; --leaf: #1f242b; --ink: #e3e6eb; --graphite: #959da9; --rule: #2c323c;
+    --woad: #9db4f0; --woad-wash: #232c44; --verdigris: #7fd1b9; --danger: #f2a099;
   }
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
-body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg);
+body { margin: 0; font: 14px/1.5 var(--sans); color: var(--ink); background: var(--paper);
   display: grid; grid-template: auto minmax(0, 1fr) / var(--side) minmax(0, 1fr); }
-a { color: var(--accent); text-decoration: none; }
-a[href]:hover { text-decoration: underline; }
+a { color: var(--woad); text-decoration: none; }
+a[href]:hover { text-decoration: underline; text-underline-offset: 2px; }
 button, input, select, textarea { font: inherit; color: inherit; }
-button { border: 1px solid var(--line); background: var(--raised); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
-button:hover { border-color: var(--accent); }
-button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+button { border: 1px solid var(--rule); background: var(--leaf); border-radius: 4px; padding: 3px 10px; cursor: pointer; }
+button:hover { border-color: var(--woad); }
+button.primary { background: var(--woad); border-color: var(--woad); color: var(--paper); }
 button.danger { color: var(--danger); }
-input, select, textarea { border: 1px solid var(--line); background: var(--raised); border-radius: 6px; padding: 4px 8px; min-width: 0; }
+input, select, textarea { border: 1px solid var(--rule); background: var(--leaf); border-radius: 4px; padding: 4px 8px; min-width: 0; }
 textarea { width: 100%; font: 13px/1.5 var(--mono); tab-size: 4; resize: vertical; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.note { color: var(--muted); }
+:focus-visible { outline: 2px solid var(--woad); outline-offset: 2px; }
+.note { color: var(--graphite); }
 .error { color: var(--danger); }
 
 #bar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px;
-  background: var(--panel); border-bottom: 1px solid var(--line); }
-#brand { font-weight: 700; font-size: 16px; color: var(--fg); }
+  background: var(--chrome); border-bottom: 1px solid var(--rule); }
+#brand { font-weight: 650; font-size: 16px; color: var(--ink); }
 #bar select { max-width: 24ch; text-overflow: ellipsis; }
 #search { flex: 1 1 160px; display: flex; }
 #search input { width: 100%; max-width: 420px; }
 #pages { display: flex; gap: 4px; }
-#pages a { padding: 3px 10px; border-radius: 6px; color: var(--muted); }
-#pages a.on, #pages a:hover { background: var(--accent-bg); color: var(--accent); text-decoration: none; }
+#pages a { padding: 3px 10px; border-radius: 4px; color: var(--graphite); }
+#pages a.on, #pages a:hover { background: var(--woad-wash); color: var(--woad); text-decoration: none; }
 #menu { display: none; }
-#side { position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-right: 1px solid var(--line); }
+#side { position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--chrome); border-right: 1px solid var(--rule); }
 #kinds { display: flex; gap: 2px; padding: 8px 8px 0; }
-#kinds button { flex: 1; border: 0; background: none; padding: 4px 0; color: var(--muted); }
-#kinds button.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+#kinds button { flex: 1; border: 0; background: none; padding: 4px 0; color: var(--graphite); }
+#kinds button.on { background: var(--woad-wash); color: var(--woad); font-weight: 600; }
 #filter { margin: 8px; }
 #tree { flex: 1; overflow: auto; padding: 0 8px 16px; }
 #grip { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; }
 #main { overflow: auto; min-width: 0; }
-#content { max-width: 1040px; margin: 0 auto; padding: 20px 24px 64px; }
+#content { max-width: 1040px; margin: 0 auto; padding: 28px 32px 72px; }
 
 ul.tree { list-style: none; margin: 0; padding: 0; }
-ul.tree ul.tree { margin-left: 9px; padding-left: 8px; border-left: 1px solid var(--line); }
-.tree summary, .tree .leaf { display: flex; gap: 4px; align-items: baseline; padding: 2px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+ul.tree ul.tree { margin-left: 9px; padding-left: 8px; border-left: 1px solid var(--rule); }
+.tree summary, .tree .leaf { display: flex; gap: 4px; align-items: baseline; padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
 .tree summary { cursor: pointer; font-weight: 600; list-style: none; }
 .tree summary::-webkit-details-marker { display: none; }
-.tree summary::before { content: '▸'; color: var(--muted); width: 1em; flex: none; }
+.tree summary::before { content: '▸'; color: var(--graphite); width: 1em; flex: none; }
 .tree details[open] > summary::before { content: '▾'; }
 .tree .name, .tree .leaf a { flex: 1; min-width: 0; }
-.tree .leaf a { color: var(--fg); }
-.tree .leaf:hover, .tree summary:hover { background: var(--accent-bg); }
-.tree .leaf.sel { background: var(--accent-bg); }
-.tree .leaf.sel a { color: var(--accent); font-weight: 600; }
-.tree .pen { visibility: hidden; border: 0; background: none; padding: 0 2px; color: var(--muted); }
+.tree .leaf a { color: var(--ink); }
+.tree .leaf:hover, .tree summary:hover { background: var(--woad-wash); }
+.tree .leaf.sel { background: var(--woad-wash); }
+.tree .leaf.sel a { color: var(--woad); font-weight: 600; }
+.tree .pen { visibility: hidden; border: 0; background: none; padding: 0 2px; color: var(--graphite); }
 .tree .leaf:hover .pen, .tree summary:hover .pen, .tree .pen:focus-visible { visibility: visible; }
 
-h1 { font-size: 20px; line-height: 1.35; margin: 0 0 4px; overflow-wrap: anywhere; }
-h1 .mod { color: var(--muted); font-weight: 400; }
-h2 { font-size: 15px; margin: 28px 0 8px; }
-.kind { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; color: var(--muted); }
-.desc { color: var(--muted); margin: 0 0 12px; max-width: 80ch; overflow-wrap: anywhere; }
+h1 { font-size: 21px; line-height: 1.3; font-weight: 600; margin: 0 0 6px; overflow-wrap: anywhere; }
+h1 .kind { color: var(--graphite); font-weight: 400; }
+.mod { color: var(--graphite); font-weight: 400; }
+h2 { font-size: 16px; font-weight: 600; margin: 40px 0 20px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.desc { font: 15px/1.6 var(--serif); color: var(--graphite); margin: 0 0 12px; max-width: 72ch; overflow-wrap: anywhere; }
 .actions, .buttons, .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 12px 0; }
-.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin: 16px 0; }
-.tabs a { padding: 6px 12px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
-.tabs a:hover { text-decoration: none; color: var(--fg); }
-.tabs a.on { color: var(--fg); border-color: var(--accent); font-weight: 600; }
-.lab, .set, .item, .owner, .view, .more { display: inline-block; border-radius: 999px; padding: 0 8px; font: 12px/20px system-ui, sans-serif; overflow-wrap: anywhere; }
-.lab { background: var(--label-bg); color: var(--label); }
-.lab.on { outline: 2px solid var(--label); }
-.item { background: var(--item-bg); color: var(--item); }
-.item.on { outline: 2px solid var(--item); }
-.item.def { font-weight: 700; }
-.set, .view { background: var(--filter-bg); color: var(--filter); }
-.owner { border: 1px solid var(--line); color: var(--muted); }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--rule); margin: 16px 0 24px; }
+.tabs a { padding: 6px 12px; color: var(--graphite); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs a:hover { text-decoration: none; color: var(--ink); }
+.tabs a.on { color: var(--ink); border-color: var(--woad); font-weight: 600; }
+.chunk, .ref > a, .filter > a { font-family: var(--serif); font-style: italic; }
+.chunk::before, .ref > a::before, .filter > a::before { content: '⟨'; font-style: normal; color: var(--graphite); padding-right: .08em; }
+.chunk::after, .ref > a::after, .filter > a::after { content: '⟩'; font-style: normal; color: var(--graphite); padding-left: .08em; }
+.file { font-family: var(--mono); font-size: .92em; }
+.lab { font-style: normal; color: var(--graphite); }
+.lab::after { content: ':\00a0'; }
+.chips .lab { border: 1px solid var(--rule); border-radius: 4px; padding: 0 8px; font-size: 13px; color: var(--ink); }
+.chips .lab::after { content: none; }
+.chips .lab.on { border-color: var(--woad); background: var(--woad-wash); color: var(--woad); }
+.set, .owner { color: var(--graphite); font-size: 13px; }
 
-.block { border: 1px solid var(--line); border-radius: 10px; margin: 12px 0; background: var(--raised); overflow: hidden; }
-.block > .comment { padding: 10px 14px; white-space: pre-wrap; overflow-wrap: anywhere; border-bottom: 1px solid var(--line); }
-.block > header { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.block .op { font: 600 13px/20px var(--mono); width: 20px; text-align: center; border-radius: 6px; background: var(--accent-bg); color: var(--accent); flex: none; }
-.block .title { font-weight: 600; color: var(--fg); overflow-wrap: anywhere; min-width: 0; }
-.title .mod, .ref .mod, .filter .mod { color: var(--muted); font-weight: 400; }
+.block { margin: 0 0 36px; }
+.block > .comment { font: 15.5px/1.6 var(--serif); max-width: 72ch; margin: 0 0 10px; overflow-wrap: anywhere; }
+.comment p { margin: 0 0 .5em; white-space: pre-line; }
+.comment p:last-child { margin-bottom: 0; }
+.block > header { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin: 0 0 4px; }
+.block .title { color: var(--ink); font-size: 16px; overflow-wrap: anywhere; min-width: 0; }
+.block .title.file { font-size: 14px; font-weight: 600; }
+.block .op { font: 17px/1 var(--serif); color: var(--graphite); flex: none; }
 .block .tools { margin-left: auto; display: flex; gap: 4px; opacity: 0; }
 .block:hover > header .tools, .block:focus-within > header .tools { opacity: 1; }
 .tools button, .tools select { padding: 0 8px; font-size: 12px; }
-.code { font: 13px/1.55 var(--mono); padding: 10px 14px; background: var(--code); tab-size: 4; }
-.line { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.55em; }
-.ref { background: var(--accent-bg); border-radius: 6px; padding: 1px 6px 1px 3px; font-family: system-ui, sans-serif; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
-.ref .lab, .filter .lab, .title .lab { margin-right: 4px; }
-a.missing { color: var(--muted); text-decoration: underline dashed; cursor: help; }
-.fold { border: 0; background: none; padding: 0 3px; color: var(--accent); }
-.nested { margin: 4px 0 8px 6px; padding-left: 12px; border-left: 2px solid var(--accent-bg); font: 14px/1.5 system-ui, sans-serif; }
-.nested .block { margin: 6px 0; }
-.pipe, .items { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 14px; border-top: 1px solid var(--line); }
-.pipe::before { content: 'filtered by'; color: var(--muted); font-size: 12px; }
-.filter { color: var(--muted); }
-.more { cursor: pointer; }
+.code { font: 13px/1.6 var(--mono); padding: 4px 0 4px 16px; border-left: 2px solid var(--rule); tab-size: 4; }
+.block:focus-within > .code { border-left-color: var(--woad); }
+.line { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.6em; }
+.code > .line:last-child:empty { display: none; }
+.ref { font: italic 1.08em/1 var(--serif); color: var(--woad); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.ref > a, .filter > a { color: var(--woad); }
+a.missing { color: var(--graphite); text-decoration: underline dashed; text-underline-offset: 3px; cursor: help; }
+.fold { border: 0; background: none; padding: 0 2px; font: 12px/1 var(--sans); color: var(--woad); }
+.nested { margin: 8px 0 12px; padding: 14px 0 2px 16px; border-left: 2px dotted var(--woad); font: 14px/1.5 var(--sans); }
+.nested .block { margin-bottom: 24px; }
+.pipe, .items { margin: 6px 0 0 18px; font-size: 13px; color: var(--graphite); overflow-wrap: anywhere; }
+.pipe::before { content: 'filtered by'; }
+.filter { color: var(--graphite); }
+.view { font: 12px var(--mono); color: var(--graphite); }
+.items a { color: var(--verdigris); }
+.items a.def { text-decoration: underline; text-underline-offset: 3px; }
+.items a.on { font-weight: 700; }
+.items .more { border: 0; background: none; padding: 0; font-size: 13px; color: var(--verdigris); }
 @media (hover: none) { .block .tools { opacity: 1; } .tree .pen { visibility: visible; } }
 
-.editor { padding: 10px 14px; }
+.editor { padding: 4px 0 0; }
 .veil { position: fixed; inset: 0; background: rgb(0 0 0 / .4); display: grid; place-items: center; padding: 16px; z-index: 10; }
-.dialog { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 20px; width: min(520px, 100%); box-shadow: 0 16px 48px rgb(0 0 0 / .25); }
+.dialog { background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 20px; width: min(520px, 100%); box-shadow: 0 16px 48px rgb(0 0 0 / .25); }
 .dialog h2 { margin: 0 0 12px; overflow-wrap: anywhere; }
 label { display: block; margin: 10px 0; }
 label > span { display: block; font-weight: 600; margin-bottom: 2px; }
 label input, label textarea { width: 100%; }
-label small { color: var(--muted); font-weight: 400; }
-pre.out { font: 13px/1.55 var(--mono); background: var(--code); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+label small { color: var(--graphite); font-weight: 400; }
+pre.out { font: 13px/1.6 var(--mono); background: var(--leaf); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px;
   white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; margin: 12px 0; }
 pre.numbered { counter-reset: n; padding-left: 0; }
 .numbered .line { position: relative; padding-left: 4.5em; }
-.numbered .line::before { counter-increment: n; content: counter(n); position: absolute; left: 0; width: 3.5em; text-align: right; color: var(--muted); }
+.numbered .line::before { counter-increment: n; content: counter(n); position: absolute; left: 0; width: 3.5em; text-align: right; color: var(--graphite); }
 #toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 20; max-width: min(480px, 90vw); }
-.toast { background: var(--fg); color: var(--bg); padding: 8px 12px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.toast { background: var(--ink); color: var(--paper); padding: 8px 12px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .toast.bad { background: var(--danger); }
 .split { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; }
-.split nav a { display: block; padding: 3px 8px; border-radius: 6px; color: var(--fg); overflow-wrap: anywhere; }
-.split nav a.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.split nav a { display: block; padding: 3px 8px; border-radius: 4px; color: var(--ink); overflow-wrap: anywhere; }
+.split nav a.on { background: var(--woad-wash); color: var(--woad); font-weight: 600; }
 
 @media (max-width: 820px) {
   body { grid-template-columns: minmax(0, 1fr); }
@@ -139,9 +149,10 @@ pre.numbered { counter-reset: n; padding-left: 0; }
   #grip { display: none; }
   #side { position: fixed; z-index: 5; top: 0; bottom: 0; left: 0; width: min(320px, 85vw); transform: translateX(-100%); transition: transform .15s; }
   body.nav #side { transform: none; box-shadow: 0 0 40px rgb(0 0 0 / .3); }
-  #content { padding: 16px 12px 48px; }
+  #content { padding: 20px 14px 48px; }
   .split { grid-template-columns: minmax(0, 1fr); }
 }
+@media (prefers-reduced-motion: reduce) { #side { transition: none; } }
 
 </style>
 </head>
@@ -496,18 +507,29 @@ function codeLines(b, ctx) {
   return code;
 }
 
-function itemChips(items, ctx) {
+function itemSentences(items, ctx) {
   const mine = it => key(it) === ctx.item;
-  const chip = it => {
+  const link = it => {
     const ref = ctx.ix.item.at.get(key(it));
-    const cls = 'item' + (mine(it) ? ' on' : '') + (it.defines ? ' def' : '');
-    const title = (it.defines ? 'defines ' : '') + it.join(' / ');
-    return h('a', {class: cls, href: ref ? here('item', ref) : null, title}, it[it.length - 1]);
+    const cls = [mine(it) ? 'on' : '', it.defines ? 'def' : ''].join(' ').trim();
+    return h('a', {class: cls, href: ref ? here('item', ref) : null, title: it.join(' / ')}, it[it.length - 1]);
   };
-  const sorted = [...items].sort((a, b) => mine(b) - mine(a));
-  const box = h('div', {class: 'items'}, sorted.slice(0, 8).map(chip));
-  if (sorted.length > 8) box.append(h('button', {type: 'button', class: 'more', title: 'Show every item', onclick: e => e.currentTarget.replaceWith(...sorted.slice(8).map(chip))}, '+' + (sorted.length - 8)));
-  return box;
+  const sentence = (verb, list) => {
+    if (list.length === 0) return null;
+    const sorted = [...list].sort((a, b) => mine(b) - mine(a));
+    const names = (from, to) => sorted.slice(from, to).flatMap((it, k) => [from + k > 0 ? ', ' : '', link(it)]);
+    const out = h('span', {}, verb + ' ', names(0, 8));
+    if (sorted.length > 8) {
+      const comma = document.createTextNode(', ');
+      out.append(comma, h('button', {type: 'button', class: 'more', title: 'Show every item', onclick: e => {
+        comma.remove();
+        e.currentTarget.replaceWith(...names(8));
+      }}, 'and ' + (sorted.length - 8) + ' more'));
+    }
+    out.append('. ');
+    return out;
+  };
+  return h('div', {class: 'items'}, sentence('Defines', items.filter(it => it.defines)), sentence('Uses', items.filter(it => !it.defines)));
 }
 function headName(b, ctx) {
   let href = null;
@@ -518,25 +540,27 @@ function headName(b, ctx) {
     const c = findChunk(ctx.ix, b.path);
     href = c ? here('chunk', c, findSpec(ctx.ix, b.labels)) : null;
   }
-  return h('a', {class: 'title', href, title: qualify(b.labels, b.path)}, nameParts(b.labels, b.file ? [b.path[0] || ''] : b.path));
+  return h('a', {class: 'title ' + (b.file ? 'file' : 'chunk'), href, title: qualify(b.labels, b.path)}, nameParts(b.labels, b.file ? [b.path[0] || ''] : b.path));
 }
 
+const prose = text => text.split(/\n[ \t]*\n/).map(p =>
+  h('p', {}, /^([ \t]+\S|[ \t]*([-*]|\d+[.)])[ \t])/m.test(p) ? p : p.replace(/[ \t]*\n[ \t]*/g, ' ')));
 function blockCard(j, ctx) {
   const card = h('article', {class: 'block'}), owner = j.node || state.n;
   let b;
   try { b = parseBlock(j.text); } catch (e) { b = null; }
   const render = () => card.replaceChildren(...[
-    j.comment ? h('div', {class: 'comment'}, j.comment) : null,
+    j.comment ? h('div', {class: 'comment'}, prose(j.comment)) : null,
     h('header', {},
-      b && b.op ? h('span', {class: 'op', title: b.op === '=' ? 'Sets the chunk' : 'Extends the chunk'}, b.op) : null,
       b ? headName(b, ctx) : null,
+      b && b.op ? h('span', {class: 'op', title: b.op === '=' ? 'Sets the chunk' : 'Extends the chunk'}, b.op === '=' ? '≡' : '+≡') : null,
       b && b.exec ? h('span', {class: 'set', title: 'An executable file'}, 'executable') : null,
-      b ? b.sets.map(s => h('span', {class: 'set', title: 'File set'}, s)) : null,
-      j.node ? h('a', {class: 'owner', href: '#/' + state.c + '/' + j.node, title: 'The node this block belongs to'}, nodeName(j.node)) : null,
+      b && b.sets.length ? h('span', {class: 'set', title: 'The file sets the file joins'}, b.sets.join(', ')) : null,
+      j.node ? h('a', {class: 'owner', href: '#/' + state.c + '/' + j.node, title: 'The node this block belongs to'}, 'from ' + nodeName(j.node)) : null,
       blockTools(card, j, b, owner, render)),
     b && b.op ? codeLines(b, ctx) : h('div', {class: 'code'}, h('div', {class: 'line'}, j.text)),
     b && b.filters.length ? h('div', {class: 'pipe'}, b.filters.map(f => filterSpan(b, f, ctx))) : null,
-    b && b.items.length ? itemChips(b.items, ctx) : null,
+    b && b.items.length ? itemSentences(b.items, ctx) : null,
   ].filter(Boolean));
   render();
   return card;
@@ -603,9 +627,10 @@ function blockTools(card, j, b, owner, render) {
 }
 
 
+const faces = {Chunk: 'chunk', File: 'file'};
 const title = (kind, path, labels, description) => [
-  h('div', {class: 'kind'}, kind),
-  h('h1', {}, nameParts(labels || [], path)),
+  h('h1', {}, kind === 'Chunk' ? null : h('span', {class: 'kind'}, kind + ' '),
+    h('span', {class: faces[kind] || ''}, nameParts(labels || [], path))),
   description ? h('p', {class: 'desc'}, description) : null,
 ];
 const tabBar = (tabs, on, link) => h('nav', {class: 'tabs'},
@@ -659,10 +684,10 @@ async function fill(body, make) {
 function specBar(ix, path, chunkRef, specRef, labels, tab) {
   if (ix.spec.byRef.size === 0) return null;
   const chip = (ref, ls) => h('a', {class: 'lab' + (ref === specRef ? ' on' : ''), href: here('chunk', chunkRef, ref, tab)},
-    ls.length ? ls.join(ctl(':')) : 'no label');
+    ls.length ? ls.join(': ') : 'no label');
   const pick = h('select', {'aria-label': 'Label path', onchange: () => { if (pick.value) location.hash = here('chunk', chunkRef, pick.value, tab); }},
     h('option', {value: ''}, 'Other label path…'),
-    [...ix.spec.byRef].map(([ref, s]) => h('option', {value: ref}, [...s.path].reverse().join(ctl(':')))));
+    [...ix.spec.byRef].map(([ref, s]) => h('option', {value: ref}, [...s.path].reverse().join(': '))));
   const bar = h('div', {class: 'chips'}, h('span', {class: 'note'}, 'Read under'), chip(ix.specRoot, []),
     specRef === ix.specRoot ? null : chip(specRef, labels), pick);
   tool('search_blocks', {composition: state.c, node: state.n, text: ctl(':') + path.join(ctl('/')) + AT}).then(found => {

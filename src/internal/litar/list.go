@@ -11,6 +11,12 @@ type namedLine struct {
 	desc string
 }
 
+type unit struct {
+	chunk *ChunkRef
+	item  Item
+	file  string
+}
+
 func matchingBlocks(blocks []Block, ref ChunkRef) []Block {
 	var out []Block
 	for _, b := range blocks {
@@ -261,4 +267,190 @@ func Items(blocks []Block, domain []Name, meta metaInfo) string {
 		}
 	}
 	return formatNamed(rows)
+}
+
+func parseUnit(s string) (unit, error) {
+	bad := fmt.Errorf("invalid select entry '%s'", s)
+	if rest, ok := strings.CutPrefix(s, "Index@/"); ok {
+		it, err := ParseItem(rest)
+		if err != nil {
+			return unit{}, bad
+		}
+		return unit{item: it}, nil
+	}
+	if rest, ok := strings.CutPrefix(s, "File@/"); ok {
+		names, err := ParseItem(rest)
+		if err != nil {
+			return unit{}, bad
+		}
+		parts := make([]string, len(names))
+		for i, n := range names {
+			parts[i] = string(n)
+		}
+		return unit{file: strings.Join(parts, "/")}, nil
+	}
+	ref, err := ParseChunkRef(s)
+	if err != nil {
+		return unit{}, bad
+	}
+	return unit{chunk: &ref}, nil
+}
+
+func parseUnits(entries []string) ([]unit, error) {
+	units := make([]unit, len(entries))
+	for i, s := range entries {
+		u, err := parseUnit(s)
+		if err != nil {
+			return nil, err
+		}
+		units[i] = u
+	}
+	return units, nil
+}
+
+func selection(chain []Block, units []unit) []bool {
+	built := constructionBlocks(chain, units)
+	in := append([]bool(nil), built...)
+	markItems(chain, itemsOf(chain, built, false), true, in)
+	reached := append([]bool(nil), in...)
+	markContainers(chain, reached, in)
+	markItems(chain, itemsOf(chain, built, true), false, in)
+	return in
+}
+
+func constructionBlocks(chain []Block, units []unit) []bool {
+	in := make([]bool, len(chain))
+	seen := map[string]bool{}
+	var visit func(i int, applied ChunkRef)
+	walk := func(ref ChunkRef) {
+		for _, i := range effectiveIndexes(chain, ref) {
+			visit(i, ref)
+		}
+	}
+	visit = func(i int, applied ChunkRef) {
+		key := fmt.Sprintf("%d %s", i, labelsText(applied.Labels))
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		in[i] = true
+		b := chain[i]
+		for _, part := range b.Parts {
+			if part.Ref == nil {
+				continue
+			}
+			inner := resolveBody(part.Ref.ChunkRef, applied.Labels, b.Ref.Module)
+			walk(inner)
+			for _, f := range part.Ref.Filters {
+				walk(resolveFilter(f.Ref, inner.Labels))
+			}
+		}
+		for _, f := range b.Filters {
+			walk(resolveFilter(f.Ref, applied.Labels))
+		}
+	}
+	for _, u := range units {
+		switch {
+		case u.chunk != nil:
+			walk(*u.chunk)
+		case u.file != "":
+			walk(ChunkRef{Chunk: Name(u.file)})
+		default:
+			for i, b := range chain {
+				if carries(b.Defines, u.item) {
+					visit(i, b.Ref)
+				}
+			}
+		}
+	}
+	return in
+}
+
+func effectiveIndexes(blocks []Block, ref ChunkRef) []int {
+	var eff []int
+	for i, b := range blocks {
+		if !matchRef(b.Ref, ref) {
+			continue
+		}
+		if b.Op == OpSet {
+			eff = eff[:0]
+		}
+		eff = append(eff, i)
+	}
+	return eff
+}
+
+func referred(b Block) []Item {
+	var out []Item
+	for _, it := range b.Items {
+		if !carries(b.Defines, it) {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+func carries(items []Item, it Item) bool {
+	for _, x := range items {
+		if sameItem(x, it) {
+			return true
+		}
+	}
+	return false
+}
+
+func itemsOf(chain []Block, marked []bool, defined bool) map[string]bool {
+	keys := map[string]bool{}
+	for i, b := range chain {
+		if marked[i] {
+			for _, it := range itemsBy(b, defined) {
+				keys[formatItem(it)] = true
+			}
+		}
+	}
+	return keys
+}
+
+func markItems(chain []Block, keys map[string]bool, defined bool, in []bool) {
+	for i, b := range chain {
+		for _, it := range itemsBy(b, defined) {
+			if keys[formatItem(it)] {
+				in[i] = true
+				break
+			}
+		}
+	}
+}
+
+func itemsBy(b Block, defined bool) []Item {
+	if defined {
+		return b.Defines
+	}
+	return referred(b)
+}
+
+func markContainers(chain []Block, from []bool, in []bool) {
+	byChunk := map[Name][]ChunkRef{}
+	for i, b := range chain {
+		if from[i] {
+			byChunk[b.Ref.Chunk] = append(byChunk[b.Ref.Chunk], b.Ref)
+		}
+	}
+	for i, b := range chain {
+		for _, part := range b.Parts {
+			if part.Ref != nil && usesAny(b, part.Ref.ChunkRef, byChunk[part.Ref.Chunk]) {
+				in[i] = true
+				break
+			}
+		}
+	}
+}
+
+func usesAny(b Block, use ChunkRef, applied []ChunkRef) bool {
+	for _, ref := range applied {
+		if useMatches(use, ref, b.Ref.Module, b.Ref.Labels, !b.IsFile) {
+			return true
+		}
+	}
+	return false
 }

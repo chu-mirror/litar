@@ -19,6 +19,8 @@ type catFile struct {
 	// dir is set for a mapping of a directory.
 	dir    bool
 	origin string
+	// readOnly is set for a mapping of the ground.
+	readOnly bool
 }
 
 type catalog struct {
@@ -33,6 +35,7 @@ type viewFile struct {
 	origin     string
 	archive    bool
 	dir        bool
+	readOnly   bool
 	body       []byte
 	// ino is assigned once for the mount. A fresh number on each
 	// lookup makes tools treat the file as replaced mid-invocation.
@@ -106,6 +109,7 @@ func (c *catalog) apply(ops []ViewOp) ([]viewFile, error) {
 			origin:     f.origin,
 			archive:    f.archive,
 			dir:        f.dir && !f.archive,
+			readOnly:   f.readOnly,
 		})
 	}
 	return out, nil
@@ -120,6 +124,7 @@ func (e *Evaluator) tangle(files []viewFile) error {
 		switch {
 		case files[i].archive:
 			data, err = e.readChunk(Name(files[i].path))
+		case files[i].dir && files[i].readOnly:
 		case files[i].dir:
 			if err = os.MkdirAll(files[i].origin, 0o755); err != nil {
 				err = fmt.Errorf("could not create '%s'", files[i].origin)
@@ -187,6 +192,7 @@ func buildCatalog(chain []Block, mappings []Mapping) *catalog {
 		f.mapping = true
 		f.dir = dir
 		f.origin = m.Origin
+		f.readOnly = m.ReadOnly
 		for _, set := range m.FileSet {
 			f.sets[set] = struct{}{}
 		}

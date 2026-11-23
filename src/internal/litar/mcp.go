@@ -38,7 +38,8 @@ var resourceTemplates = []struct {
 	{"applied blocks", "the blocks applied to the chunk reference", "blocks://apply/{composition}/{node}/{chunk}/{specialization}", "application/json"},
 	{"effective blocks", "the effective blocks of the chunk reference", "blocks://effective/{composition}/{node}/{chunk}/{specialization}", "application/json"},
 	{"dependent blocks", "the blocks depending on a chunk reference", "blocks://depend/{composition}/{node}/{chunk}/{specialization}", "application/json"},
-	{"related blocks", "the blocks referring to the item", "blocks://refer/{composition}/{node}/{item}", "application/json"},
+	{"related blocks", "the blocks carrying the item", "blocks://refer/{composition}/{node}/{item}", "application/json"},
+	{"defining blocks", "the blocks defining the item", "blocks://define/{composition}/{node}/{item}", "application/json"},
 	{"derived blocks", "the blocks written under exactly the label path", "blocks://specialization/{composition}/{node}/{labels}", "application/json"},
 	{"file", "the file of the path", "file://{composition}/{node}/{path}", "text/plain"},
 }
@@ -60,7 +61,7 @@ type createArchiveIn struct {
 	// A pointer so JSON null unmarshals. The property stays required:
 	// an absent ground is not null. nullableStringSchema publishes anyOf
 	// instead of the inferred type array.
-	Ground      *string `json:"ground" jsonschema:"name of the ground composition, or null"`
+	Ground      *string `json:"ground" jsonschema:"name of the ground composition, a path relative to the new directory starting with . or .., or null"`
 	Description string  `json:"description,omitempty" jsonschema:"description of the composition"`
 }
 
@@ -72,6 +73,8 @@ type createIn struct {
 	// Null creates the root.
 	Base     *string     `json:"base" jsonschema:"ref of the parent node, or null to create the root"`
 	Mappings []mappingIn `json:"mappings,omitempty" jsonschema:"files mapped into the node"`
+	// Absent leaves the node without a select field.
+	Select []string `json:"select,omitempty" jsonschema:"functional units the node selects (Index@/item, File@/path, or a chunk reference); a reader of the node sees only the blocks they select"`
 }
 
 type deleteNodeIn struct {
@@ -538,7 +541,7 @@ func (a *agent) renderTree(uri, prefix string, build func([]Block, []Mapping) (t
 	if err != nil {
 		return "", "", nil, err
 	}
-	chain, maps, err := a.nodeChain(w, refs[1])
+	chain, maps, err := a.readChain(w, refs[1])
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -555,7 +558,7 @@ func (a *agent) renderTree(uri, prefix string, build func([]Block, []Mapping) (t
 
 func (a *agent) renderBlocks(uri, mime string) (string, string, []byte, error) {
 	kind, rest, _ := strings.Cut(strings.TrimPrefix(uri, "blocks://"), "/")
-	count := map[string]int{"node": 2, "refer": 3, "specialization": 3, "apply": 4, "effective": 4, "depend": 4}[kind]
+	count := map[string]int{"node": 2, "refer": 3, "define": 3, "specialization": 3, "apply": 4, "effective": 4, "depend": 4}[kind]
 	w, refs, err := a.refParts(rest, count)
 	if err != nil {
 		return "", "", nil, err
@@ -564,7 +567,7 @@ func (a *agent) renderBlocks(uri, mime string) (string, string, []byte, error) {
 	if err != nil {
 		return "", "", nil, err
 	}
-	chain, maps, err := a.nodeChain(w, refs[1])
+	chain, maps, err := a.readChain(w, refs[1])
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -721,6 +724,9 @@ func (a *agent) createNodeLocked(in createIn) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if _, err := parseUnits(in.Select); err != nil {
+		return "", err
+	}
 	var base []string
 	if in.Base != nil {
 		parent, err := nodeByRef(w, *in.Base)
@@ -732,14 +738,20 @@ func (a *agent) createNodeLocked(in createIn) (string, error) {
 	if err := w.CreateNode(in.Name, in.Archive, in.Description, base); err != nil {
 		return "", err
 	}
-	path := append(base, in.Name)
+	path := formatNodePath(append(base, in.Name))
 	for _, m := range in.Mappings {
-		if err := w.MapFile(formatNodePath(path), m.Path, m.Origin, m.FileSet); err != nil {
-			_ = w.DeleteNode(formatNodePath(path))
+		if err := w.MapFile(path, m.Path, m.Origin, m.FileSet); err != nil {
+			_ = w.DeleteNode(path)
 			return "", err
 		}
 	}
-	return refOf("node", path...), nil
+	if in.Select != nil {
+		if err := w.SetSelect(path, in.Select); err != nil {
+			_ = w.DeleteNode(path)
+			return "", err
+		}
+	}
+	return refOf("node", append(base, in.Name)...), nil
 }
 
 func (a *agent) mapFile(ctx context.Context, _ *mcp.CallToolRequest, in mapIn) (*mcp.CallToolResult, any, error) {
@@ -855,7 +867,7 @@ func (a *agent) searchBlocks(ctx context.Context, _ *mcp.CallToolRequest, in sea
 	if err != nil {
 		return toolErr(err)
 	}
-	chain, _, err := a.nodeChain(w, in.Node)
+	chain, _, err := a.readChain(w, in.Node)
 	if err != nil {
 		return toolErr(err)
 	}
@@ -873,6 +885,23 @@ func (a *agent) searchBlocks(ctx context.Context, _ *mcp.CallToolRequest, in sea
 		return toolErr(err)
 	}
 	return toolText(string(raw))
+}
+
+func (a *agent) readChain(w *World, ref string) ([]Block, []Mapping, error) {
+	n, err := nodeByRef(w, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	np := formatNodePath(nodePath(*n))
+	chain, err := w.Visible(np)
+	if err != nil {
+		return nil, nil, err
+	}
+	maps, err := w.Mappings(np)
+	if err != nil {
+		return nil, nil, err
+	}
+	return chain, maps, nil
 }
 
 func newAgent() *agent {
@@ -902,7 +931,7 @@ func newAgent() *agent {
 	}, a.createComposition)
 	mcp.AddTool(a.server, &mcp.Tool{
 		Name:        "create_node",
-		Description: "Create a new node. The corresponding archive file is created empty and must not already exist. A null base creates the root. Mappings can be specified.",
+		Description: "Create a new node. The corresponding archive file is created empty and must not already exist. A null base creates the root. Mappings can be specified, and the functional units the node selects, which narrow what is read of the node but not what is evaluated.",
 		InputSchema: plainArrays(nullableStringSchema[createIn]("base")),
 	}, a.createNode)
 	mcp.AddTool(a.server, &mcp.Tool{
@@ -1393,7 +1422,7 @@ func nodeURIs(w *World, cs string, n *Node) []string {
 		"tree://specialization/" + tail, "blocks://node/" + tail,
 	}
 	np := formatNodePath(nodePath(*n))
-	chain, err := w.Chain(np)
+	chain, err := w.Visible(np)
 	if err != nil {
 		return uris
 	}
@@ -1424,7 +1453,9 @@ func nodeURIs(w *World, cs string, n *Node) []string {
 			}
 		}
 	})
-	leaves(itemTree, func(ref string, _ treePlace) { uris = append(uris, "blocks://refer/"+tail+"/"+ref) })
+	leaves(itemTree, func(ref string, _ treePlace) {
+		uris = append(uris, "blocks://refer/"+tail+"/"+ref, "blocks://define/"+tail+"/"+ref)
+	})
 	leaves(fileTree, func(ref string, _ treePlace) { uris = append(uris, "file://"+tail+"/"+ref) })
 	leaves(labelTree, func(ref string, _ treePlace) { uris = append(uris, "blocks://specialization/"+tail+"/"+ref) })
 	return uris
@@ -1454,6 +1485,17 @@ func selectBlocks(kind string, chain []Block, maps []Mapping, refs []string) ([]
 		}
 		for _, b := range chain {
 			if len(b.Ref.Labels) == len(labels) && isSuffix(b.Ref.Labels, labels) {
+				got = append(got, b)
+			}
+		}
+		return got, nil
+	case "define":
+		item, err := itemByRef(chain, maps, refs[0])
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range chain {
+			if carries(b.Defines, item) {
 				got = append(got, b)
 			}
 		}

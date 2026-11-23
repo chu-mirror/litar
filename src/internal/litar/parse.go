@@ -31,6 +31,7 @@ type body struct {
 	parts    []Part
 	filters  []Filter
 	items    []Item
+	defines  []Item
 	endsLine bool
 }
 
@@ -248,9 +249,9 @@ func (p *parser) parseBody() (body, error) {
 				return body{}, err
 			}
 			b.filters = filters
-			if k2 == '~' && n2 == 2 {
+			if (k2 == '~' || k2 == '?') && n2 == 2 {
 				p.i += n2
-				b.items, err = p.parseItems()
+				b.items, b.defines, err = p.parseItems(k2)
 				if err != nil {
 					return body{}, err
 				}
@@ -261,14 +262,14 @@ func (p *parser) parseBody() (body, error) {
 				return b, nil
 			}
 			return body{}, p.unexpected(k2, n2)
-		case '~':
+		case '~', '?':
 			b.endContent(&text)
 			p.i += n
-			items, err := p.parseItems()
+			var err error
+			b.items, b.defines, err = p.parseItems(kind)
 			if err != nil {
 				return body{}, err
 			}
-			b.items = items
 			return b, nil
 		default:
 			return body{}, p.unexpected(kind, n)
@@ -301,31 +302,35 @@ func (b *body) endContent(text *strings.Builder) {
 	b.flush(text)
 }
 
-func (p *parser) parseItems() ([]Item, error) {
-	var items []Item
+func (p *parser) parseItems(mark byte) ([]Item, []Item, error) {
+	var items, defines []Item
 	var item Item
 	for {
 		name, kind, n, err := p.readName(false)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if name == "" {
-			return nil, p.fail("empty name")
+			return nil, nil, p.fail("empty name")
 		}
 		item = append(item, name)
-		switch {
-		case kind == '/' && n == 2:
+		if kind == '/' && n == 2 {
 			p.i += n
-		case kind == '~' && n == 2:
-			items = append(items, item)
-			item = nil
-			p.i += n
-		case isEndControl(kind, n):
-			p.i += n
-			return append(items, item), nil
-		default:
-			return nil, p.unexpected(kind, n)
+			continue
 		}
+		end := isEndControl(kind, n)
+		if !end && ((kind != '~' && kind != '?') || n != 2) {
+			return nil, nil, p.unexpected(kind, n)
+		}
+		p.i += n
+		items = append(items, item)
+		if mark == '?' {
+			defines = append(defines, item)
+		}
+		if end {
+			return items, defines, nil
+		}
+		item, mark = nil, kind
 	}
 }
 
@@ -377,6 +382,7 @@ func (p *parser) finishBlock(ref ChunkRef, op Op, startLine int) (Block, error) 
 		Parts:     b.parts,
 		Filters:   b.filters,
 		Items:     b.items,
+		Defines:   b.defines,
 		EndsLine:  b.endsLine,
 		StartLine: startLine,
 		EndLine:   p.line(),

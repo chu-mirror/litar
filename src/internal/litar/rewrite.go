@@ -104,7 +104,7 @@ func (s *spanScanner) body() error {
 			if err := s.filters(); err != nil {
 				return err
 			}
-		case n == 2 && kind == '~':
+		case n == 2 && (kind == '~' || kind == '?'):
 			p.i += n
 			return s.items()
 		default:
@@ -678,7 +678,7 @@ func (s *spanScanner) items() error {
 			continue
 		}
 		s.spans = append(s.spans, nameSpan{start: start, end: p.i, role: spanItem, item: item})
-		if kind != '~' || n != 2 {
+		if (kind != '~' && kind != '?') || n != 2 {
 			return nil
 		}
 		p.i += n

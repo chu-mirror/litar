@@ -33,6 +33,7 @@ Every object is addressed by its `ref`, ten hex digits hashed from its kind and 
 | `blocks://effective/{c}/{n}/{chunk}/{spec}` | blocks still contributing |
 | `blocks://depend/{c}/{n}/{chunk}/{spec}` | blocks that include or filter by it |
 | `blocks://refer/{c}/{n}/{item}` | blocks carrying that item |
+| `blocks://define/{c}/{n}/{item}` | blocks defining that item (`@?`) |
 | `blocks://specialization/{c}/{n}/{spec}` | blocks written under exactly that label path |
 | `file://{c}/{n}/{file}` | evaluated file bytes |
 
@@ -51,7 +52,7 @@ prefer `blocks://effective`, `blocks://refer`, or `blocks://specialization`
 | --- | --- | --- |
 | `import_composition` | `path` | load a composition, or load it again from disk; returns its ref |
 | `create_composition` | `path`, `ground`, `description` | create `composer.json` and import it |
-| `create_node` | `composition`, `name`, `archive`, `description`, `base`, `mappings` | new node with a new empty archive; `base` null = root |
+| `create_node` | `composition`, `name`, `archive`, `description`, `base`, `mappings`, `select` | new node with a new empty archive; `base` null = root; `select` (optional) narrows what is read of it |
 | `map_file` | `composition`, `node`, `path`, `origin`, `fileset` | map a file or directory (`path` ending in `/`) outside the archives into the node |
 | `delete_node` | `composition`, `node` | delete it, its descendants, and their archives |
 | `delete_chunk` | `composition`, `node`, `chunk` | delete own blocks of that module+chunk, all labels |
@@ -75,6 +76,9 @@ prefer `blocks://effective`, `blocks://refer`, or `blocks://specialization`
 - **Rename or move** with `rename` and `operate_files`, never by re-applying under a new name.
 - Copy headers exactly from `blocks://`, labels included.
 - Ground nodes are read-only in a composition grounded on them; import the ground itself.
+  Their mapped directories are read-only to filters.
+- In a node with a `select` field (or based on one), trees, `blocks://`, and `search_blocks`
+  show only the selected blocks; `file://` and `evaluate_expression` use every block.
 - After an edit, evaluate the changed chunk or file, then build or run the result.
 
 ## Compaction

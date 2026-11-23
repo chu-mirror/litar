@@ -93,11 +93,11 @@ Restructure with `rename` and `operate_files`, not by applying blocks again unde
 1. For each block, list what its code defines or uses beyond the block:
    functions, types, global variables, macros, options, configuration keys.
 2. Name the items as the style reference says (Items), reusing the domains in `tree://item`.
-3. Override each block with its `@~` list added after the content and any pipeline,
-   on the defining block and on every user.
+3. Override each block with its items added after the content and any pipeline:
+   `@?` on the defining block, `@~` on every user.
 4. Add an `Index@/…` description for each new domain and each item whose name does not explain it.
-5. Check: `port-check.sh` still passes, and `blocks://refer` of a few items lists
-   the definition and all users.
+5. Check: `port-check.sh` still passes, and for a few items `blocks://define` lists
+   the definition and `blocks://refer` the definition and all users.
 
 **5. Stage 4: build.** Create a second node based on the project's,
 holding `Project@/<project>@/Build`: the commands that write the files out,

@@ -41,9 +41,11 @@ var (
 type ventry struct {
 	file *viewFile
 	dir  *vdir
-	// host is the origin of a mapped directory, and ino its inode number.
-	host string
-	ino  uint64
+	// host is the origin of a mapped directory, and ino its inode number;
+	// readOnly is set when the mapping belongs to the ground.
+	host     string
+	ino      uint64
+	readOnly bool
 }
 
 type vdir struct {
@@ -84,6 +86,10 @@ type archiveFH struct {
 	file *viewFile
 }
 
+type readOnlyNode struct {
+	*fs.LoopbackNode
+}
+
 func (e *pathUseError) Error() string {
 	return "invalid file path '" + e.path + "'"
 }
@@ -122,7 +128,7 @@ func (d *dirNode) lookupHost(ctx context.Context, ch *ventry, out *fuse.EntryOut
 		return nil, fs.ToErrno(err)
 	}
 	out.Attr.FromStat(&st)
-	return d.NewInode(ctx, hostNode(ch.host), fs.StableAttr{Mode: syscall.S_IFDIR, Ino: ch.ino}), 0
+	return d.NewInode(ctx, hostNode(ch.host, ch.readOnly), fs.StableAttr{Mode: syscall.S_IFDIR, Ino: ch.ino}), 0
 }
 
 func (d *dirNode) hostDir() string {
@@ -348,6 +354,55 @@ func (o *overlayNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, ui
 	return fs.NewLoopbackFileFromOS(fh), 0, 0
 }
 
+func (n *readOnlyNode) WrapChild(_ context.Context, ops fs.InodeEmbedder) fs.InodeEmbedder {
+	return &readOnlyNode{ops.(*fs.LoopbackNode)}
+}
+
+func (n *readOnlyNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+	if flags&syscall.O_ACCMODE != syscall.O_RDONLY || flags&syscall.O_TRUNC != 0 {
+		return nil, 0, syscall.EROFS
+	}
+	return n.LoopbackNode.Open(ctx, flags)
+}
+
+func (n *readOnlyNode) Create(context.Context, string, uint32, uint32, *fuse.EntryOut) (*fs.Inode, fs.FileHandle, uint32, syscall.Errno) {
+	return nil, nil, 0, syscall.EROFS
+}
+
+func (n *readOnlyNode) Setattr(context.Context, fs.FileHandle, *fuse.SetAttrIn, *fuse.AttrOut) syscall.Errno {
+	return syscall.EROFS
+}
+
+func (n *readOnlyNode) Mkdir(context.Context, string, uint32, *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	return nil, syscall.EROFS
+}
+
+func (n *readOnlyNode) Mknod(context.Context, string, uint32, uint32, *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	return nil, syscall.EROFS
+}
+
+func (n *readOnlyNode) Symlink(context.Context, string, string, *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	return nil, syscall.EROFS
+}
+
+func (n *readOnlyNode) Link(context.Context, fs.InodeEmbedder, string, *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	return nil, syscall.EROFS
+}
+
+func (n *readOnlyNode) Unlink(context.Context, string) syscall.Errno { return syscall.EROFS }
+
+func (n *readOnlyNode) Rmdir(context.Context, string) syscall.Errno { return syscall.EROFS }
+
+func (n *readOnlyNode) Rename(context.Context, string, fs.InodeEmbedder, string, uint32) syscall.Errno {
+	return syscall.EROFS
+}
+
+func (n *readOnlyNode) Setxattr(context.Context, string, []byte, uint32) syscall.Errno {
+	return syscall.EROFS
+}
+
+func (n *readOnlyNode) Removexattr(context.Context, string) syscall.Errno { return syscall.EROFS }
+
 func newVdir() *vdir {
 	return &vdir{kids: map[string]*ventry{}}
 }
@@ -366,7 +421,7 @@ func buildVTree(files []viewFile) (*vdir, error) {
 					return nil, errPath(f.path)
 				}
 				if f.dir {
-					dir.kids[part] = &ventry{host: f.origin}
+					dir.kids[part] = &ventry{host: f.origin, readOnly: f.readOnly}
 				} else {
 					dir.kids[part] = &ventry{file: f}
 				}
@@ -511,10 +566,13 @@ func fmtMount(err error) error {
 	return &mountError{err}
 }
 
-func hostNode(dir string) *fs.LoopbackNode {
+func hostNode(dir string, readOnly bool) fs.InodeEmbedder {
 	data := &fs.LoopbackRoot{Path: dir}
 	node := &fs.LoopbackNode{RootData: data}
 	data.RootNode = node
+	if readOnly {
+		return &readOnlyNode{node}
+	}
 	return node
 }
 

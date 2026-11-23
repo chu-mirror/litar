@@ -29,7 +29,7 @@ content
 
 - `@=` sets the chunk; `@+` extends it.
 - Layout: one line break right after `@=` / `@+` and one right before the closing `@`
-  (or `@|`, `@~`) are not content. To end content with a newline, leave an empty line before `@`.
+  (or `@|`, `@~`, `@?`) are not content. To end content with a newline, leave an empty line before `@`.
   `@<msg@=Hello@` stores `Hello`.
 - An `@+` block whose content ended with a line break is joined to the text before it
   with a line feed; otherwise it is concatenated.
@@ -78,12 +78,15 @@ Files in the view are visible, read-only, in the working directory.
 @<chunk@=
 int times;
 @|filter
-@~ Project@/hello@/C@/variables@/times @~ Project@/hello@/C@/functions@/main @
+@? Project@/hello@/C@/variables@/times @~ Project@/hello@/C@/functions@/main @
 ```
 
-- `@~` at the top level of the body, after the pipeline, lists items; the end control closes the last.
+- At the top level of the body, after the pipeline, `@?` attaches an item the block defines
+  and `@~` an item it refers to; they chain in any order, and the end control closes the last.
+  To write either in content, write `@@?` or `@@~`.
 - An item is a path of names, `owner@/kind@/name` by convention ([style.md](style.md)). Items are not content.
-- Blocks carrying the same item are connected (`blocks://refer`).
+- Blocks carrying the same item are connected (`blocks://refer`); `blocks://define` lists the
+  blocks defining it.
 
 ## Meta chunks
 
@@ -107,10 +110,14 @@ Describe a new module, domain, or non-obvious item when you create it:
 ## Compositions
 
 A composition is a directory with `composer.json`:
-`description`, `ground` (another composition's name, or null), and `nodes`.
+`description`, `ground` (another composition's name, a path from the composer's directory
+starting with `.` or `..`, or null), and `nodes`.
 Each node has `name`, `archive` (relative path), `description`, `mappings`, and `base`
-(the node names from the root to its parent; `[]` for the root).
+(the node names from the root to its parent; `[]` for the root), and may have `select`.
+`select` lists functional units, written `Index@/{item path}`, `File@/{dir}@/{file}`, or as a
+chunk reference: a reader of the node then sees only the blocks they select, their meta chunks,
+and the node's own blocks, but evaluation still uses every block.
 A mapping (`path`, `origin`, `fileset`) shows a file or directory outside the archives in the node.
 A node's blocks are its base's blocks followed by its own archive's.
-A ground's nodes come first; grounds are searched in the current directory,
-then `$LITAR_LIBRARY`.
+A ground's nodes come first; a ground named without a path is searched in the current
+directory, then `$LITAR_LIBRARY`. Filters cannot write the mapped directories of a ground.

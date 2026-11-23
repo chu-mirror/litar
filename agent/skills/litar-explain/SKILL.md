@@ -17,8 +17,10 @@ Item paths: Items in [style.md](../references/style.md).
 3. **Find the item.** `tree://item/{c}/{n}` and walk `owner → kind → name`
    (e.g. `Project` → `litar` → `Go` → `functions` → `litar.run`).
    Its description comes from an `Index@/…` block.
-4. **Get its blocks.** `blocks://refer/{c}/{n}/{item}`. The block whose code defines the item
-   is the definition; the others are its users. A block with a `node` field lives in a base node.
+4. **Get its blocks.** `blocks://refer/{c}/{n}/{item}` lists every block carrying it;
+   `blocks://define/{c}/{n}/{item}` lists the definition, marked `@?`. Where no block is marked,
+   the block whose code defines the item is the definition. The others are its users.
+   A block with a `node` field lives in a base node.
 5. **Follow one level out.** For items the definition itself carries (callees, types, variables),
    read their `blocks://refer` too, but only as far as the explanation needs.
 6. **Explain.** Answer, then support it.

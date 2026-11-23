@@ -243,7 +243,7 @@ func (e *Evaluator) viewSum(view []ViewOp) [sha256.Size]byte {
 		fmt.Fprintf(h, "error %s\n", err)
 	}
 	for _, f := range files {
-		fmt.Fprintf(h, "%q %t %t %t %q\n", f.path, f.archive, f.executable, f.dir, f.origin)
+		fmt.Fprintf(h, "%q %t %t %t %t %q\n", f.path, f.archive, f.executable, f.dir, f.readOnly, f.origin)
 	}
 	var sum [sha256.Size]byte
 	copy(sum[:], h.Sum(nil))

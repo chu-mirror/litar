@@ -41,7 +41,8 @@ All controls are listed below:
 | `@/` | separate module path components, separate module from chunk, or separate item path components |
 | `@:` | attach a specialization label |
 | <code>@&#124;</code> | start a filter pipeline or separate filters |
-| `@~` | attach an item reference to a block |
+| `@~` | attach an item the block refers to |
+| `@?` | attach an item the block defines |
 | `` @` `` | declare file-set membership on a file |
 | `@,` | add a single file in a view |
 | `@!` | remove a single file in a view |
@@ -53,7 +54,7 @@ At the top level of an archive:
 - `@(` starts an executable file expression;
 - `@@` is literal `@` in a comment.
 
-Any other control at the top level (such as a bare `@|`, `@~`, or end control) is an error.
+Any other control at the top level (such as a bare `@|`, `@~`, `@?`, or end control) is an error.
 To write `@<`, `@[`, or `@(` inside a comment, escape the `@` (for example, `@@<`).
 
 # Names
@@ -127,7 +128,7 @@ The body begins immediately after `@=` or `@+`:
   stripped as layout, not content. (`\r` is stripped only when it comes first, so `\n\r`
   strips only `\n`.)
 - **Trailing line break:** At most one `\n` or `\r\n` at the end of the content—immediately
-  before the closing `@`, `@|`, or `@~`—is also stripped as layout, and records that the
+  before the closing `@`, `@|`, `@~`, or `@?`—is also stripped as layout, and records that the
   block's content ended with a line break.
 
 Because one leading and one trailing line break are stripped, a standard multi-line block
@@ -219,20 +220,21 @@ int main(int argc, char **argv)
 
 ## Block pipeline and items
 
-After the content, a block body may optionally include a filter pipeline and item references
+After the content, a block body may optionally include a filter pipeline and items
 before the closing end control:
 
 ```
 @<chunk@=
 int times;
 @|filter
-@~ C@/variables@/times @
+@? C@/variables@/times @
 ```
 
 - **Filter pipeline (`@|`):** `@|` at the top level of the body ends the content and starts
   a filter pipeline that transforms this block's expanded content.
-- **Item references (`@~`):** `@~` at the top level of the body (after the filter pipeline,
-  if any) ends the content or pipeline and attaches an item reference to the block.
+- **Items (`@~` and `@?`):** `@~` or `@?` at the top level of the body (after the filter
+  pipeline, if any) ends the content or pipeline and attaches an item to the block.
+  `@~` attaches an item the block refers to; `@?` attaches an item the block defines.
 
 An **item** is a path of one or more names separated by `@/`:
 
@@ -242,16 +244,19 @@ domain@/subdomain@/name
 
 The first name is the domain, and each subsequent name classifies the item further;
 there is no fixed depth.
-Multiple items can be attached to the same block by chaining `@~`:
+Multiple items can be attached to the same block by chaining `@~` and `@?` in any order;
+the control before each item says whether the block defines it:
 
 ```
-@~C@/variables@/times@~C@/functions@/main@
+@?C@/functions@/main@~C@/variables@/times@
 ```
 
 The block's end control closes the last item.
-Items are metadata used for cross-referencing (`-r` and `blocks://refer`); they are not part
-of the block's content and are not printed when the block is evaluated.
-To write literal `@~` in content, write `@@~`.
+A block **carries** every item attached to it, and **refers to** those it does not define.
+Items are metadata used for cross-referencing (`-r`, `blocks://refer`, and `blocks://define`)
+and for the selection of a node (see [Select](#select)); they are not part of the block's
+content and are not printed when the block is evaluated.
+To write literal `@~` or `@?` in content, write `@@~` or `@@?`.
 
 # Specialization
 
@@ -335,7 +340,7 @@ echo "Hello"
   use `@=` (`@+` is an error).
 - Zero or more `` @`name `` clauses after the path add the file to the named file sets.
 - The body follows the same rules as a block body, including optional `@|` filters and
-  `@~` items.
+  `@~` or `@?` items.
 
 A file also defines a chunk in the root module whose chunk name is the file path.
 
@@ -431,9 +436,13 @@ A **composition** is a directory containing `composer.json`, a JSON object with
 
 ## Ground
 
-`ground` is either `null` or the name of another composition that this composition builds upon.
-When a ground is named, litar searches for `NAME/composer.json` (as a regular file) in the
-following directories, in order:
+`ground` is `null`, a relative path, or the name of another composition that this composition
+builds upon.
+A relative path has `.` or `..` as its first element (such as `../..` or `./base`) and names the
+directory of the ground relative to the directory of `composer.json`; litar reads
+`PATH/composer.json` there.
+Any other ground is a name, which cannot contain `/` or `\`, and litar searches for
+`NAME/composer.json` (as a regular file) in the following directories, in order:
 
 1. the current working directory (`.`);
 2. each directory in `$LITAR_LIBRARY` (a `$PATH`-style list);
@@ -444,6 +453,8 @@ following directories, in order:
 
 The first match wins.
 All nodes from the ground composition precede the nodes declared in this `composer.json`.
+The nodes of the ground cannot be changed through this composition, and their mapped
+directories are read-only to filters (see [Mappings](#mappings)).
 
 ## Nodes
 
@@ -456,7 +467,8 @@ Each entry in `nodes` has:
 - `description`: a short description of the node;
 - `mappings`: external file mappings for filter views;
 - `base`: an array of node names giving the path from the root node down to this node's
-  direct parent (`[]` for the root node).
+  direct parent (`[]` for the root node);
+- `select` (optional): an array of functional units the node selects (see [Select](#select)).
 
 The combined node list (ground nodes plus local nodes) must have a single root node.
 A node's full path is its `base` names plus its own `name`, joined by `/`.
@@ -475,6 +487,38 @@ seen by filters:
 - `origin`: path to the host file, relative to `composer.json`.
 
 A child node inherits all mappings from its `base` chain and may add more.
+A mapping whose `path` ends with `/` maps a host directory, which filters read and write in
+place; a mapped directory of a ground node is read-only, so writing into it fails with
+`EROFS`, and it is not created when missing.
+
+## Select
+
+A node with a `select` field narrows what is read of it, not what is evaluated.
+Each entry names a functional unit, written as in the reserved namespaces:
+
+- `Index@/` followed by an item path names an item;
+- `File@/` followed by the names of a file path, separated by `@/`, names a file;
+- any other entry is a qualified name, a chunk reference with optional labels.
+
+```json
+"select": ["Index@/C@/functions@/main", "File@/src@/main.c", "label@:module@/chunk"]
+```
+
+The blocks of the node that a reader sees are:
+
+1. the **construction blocks** of each unit: the blocks reached from the effective blocks of a
+   chunk reference or a file, or from the blocks defining an item, by following the chunk
+   references and filters in their bodies, under the labels they are evaluated with;
+2. the blocks defining an item that a block of step 1 refers to (one step, not further);
+3. the blocks whose body content references a chunk that a block of steps 1 and 2 is applied
+   to (filters are not followed back), and the blocks referring to an item that a block of
+   step 1 defines;
+4. the blocks of the reserved namespaces, and the own blocks of the selecting node and of the
+   nodes based on it.
+
+A node without a `select` field reads the selection of the nearest node on its base chain
+that has one, or the whole chain. An empty `select` selects no unit.
+Evaluation always uses the whole block chain of the node.
 
 # Command-line name
 
@@ -496,9 +540,11 @@ matches a chunk across all modules).
   - `-d` prints every block whose body content references, or whose pipeline uses, that
     chunk reference or a specialization of it.
 - **`-r` / `--reference` (`ITEM`):** Takes an item path of one or more names separated by
-  `@/` (without `@~` or a closing `@`), and prints every block carrying that exact item:
+  `@/` (without `@~`, `@?`, or a closing `@`), and prints every block carrying that exact item:
   ```
   domain@/subdomain@/item
   ```
 
 The output format of `-e`, `-d`, and `-r` is identical to `-l`.
+`-l`, `-e`, `-d`, and `-r` list only the blocks a reader of the node sees (see [Select](#select));
+`-p` evaluates with the whole chain.

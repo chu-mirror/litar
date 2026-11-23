@@ -1,11 +1,12 @@
 # About the project
 
 This project proposes a system named litar,
-which is defined in [litar.md](design/litar.md).
-[style.md](design/style.md) explains the construction of a litar archive.
+which is defined in [litar.md](design/litar.md):
+its Authoring section explains the construction of a litar archive,
+its Category section gives the strategy to classify chunks and items,
+and its Context and Workflow sections divide a task among workers.
 [implementation.md](doc/implementation.md) describes the command line tool for handling litar archives,
 including the MCP server it opens for agents.
-[category.md](design/category.md) gives the strategy to classify chunks and items.
 
 # Directories
 
@@ -79,7 +80,8 @@ so the page can do what an agent can:
 - browse the nodes, and the chunks, files, items, and label paths of a node;
 - read a chunk under a label path: its effective and applied blocks, the blocks that use it, and its result.
   A reference in a block is a link, and opens the blocks of its chunk in place;
-  a reference that no block defines is marked. Items are chips that lead to the blocks carrying them;
+  a reference that no block defines is marked. Items are chips, bold in the block that defines them;
+  an item lists the blocks defining it apart from the blocks referring to it;
 - edit: add, change, move, and delete blocks; rename and delete chunks, modules, items, and files;
   describe chunks, files, items, nodes, and the composition; create and delete nodes;
 - search the blocks of a node, evaluate an expression, and call any tool of the server
@@ -112,7 +114,7 @@ when the window gets the focus again, or with Reload.
 
 `standard/` is the standard library of litar, the ground of the other compositions here.
 It is a single node whose modules follow
-[category.md](design/category.md): shared filters under `Tool`, the structures of C and Go under `Language`,
+[Category](design/litar.md#category): shared filters under `Tool`, the structures of C and Go under `Language`,
 the command line generators under `UI@/Command Line`, and the framework Light under `Framework`.
 litar looks for a ground in the current directory, then in each directory of `$LITAR_LIBRARY`
 (a `$PATH`-style list), then in `~/.litar`, `~/.local/share/litar`,

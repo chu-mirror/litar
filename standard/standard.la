@@ -92,7 +92,7 @@ def italic(text):
 def bold_option(opt):
     text = rf'\fB{roff(option_name(opt))}\fR'
     return text if opt.type == 'bool' else text + ' ' + italic(metavar(opt))
-@~ UI@/Command Line@/Python@/functions@/bold_option @~ UI@/Command Line@/Python@/functions@/italic @~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_name @~ UI@/Command Line@/Python@/functions@/roff @
+@? UI@/Command Line@/Python@/functions@/bold_option @? UI@/Command Line@/Python@/functions@/italic @~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_name @? UI@/Command Line@/Python@/functions@/roff @
 @<Index@/Tool@/Python@=
 {"description": "Top-level names of the Python text processing scripts, shared by the blocks that build them."}
 @
@@ -1998,7 +1998,7 @@ class Option(pydantic.BaseModel):
         if not suits:
             raise ValueError(f'default {value!r} does not suit type {self.type}')
         return self
-@~ UI@/Command Line@/Python@/classes@/Option @
+@? UI@/Command Line@/Python@/classes@/Option @
 Options and arguments at the top level become one usage named after the command.
 Usage names, option names, and short names are each unique in the whole command,
 because its parser reads the options of every usage.
@@ -2039,7 +2039,7 @@ class InvocationSyntax(pydantic.BaseModel):
                 if names.count(name) > 1:
                     raise ValueError(f'{kind} {name!r} is given twice')
         return self
-@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/classes@/Option @~ UI@/Command Line@/Python@/classes@/Usage @~ UI@/Command Line@/Python@/functions@/all_options @
+@? UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/classes@/Option @? UI@/Command Line@/Python@/classes@/Usage @~ UI@/Command Line@/Python@/functions@/all_options @
 A placeholder stands for a value in a usage line: upper case, with underscores between words.
 @<UI@/Command Line@/invocation syntax helpers@+
 def all_options(syntax):
@@ -2052,7 +2052,7 @@ def placeholder(name):
 
 def metavar(opt):
     return placeholder(opt.argument or opt.name)
-@~ UI@/Command Line@/Python@/functions@/all_options @~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/placeholder @
+@? UI@/Command Line@/Python@/functions@/all_options @? UI@/Command Line@/Python@/functions@/metavar @? UI@/Command Line@/Python@/functions@/placeholder @
 An option is shown by its short name if it has one, otherwise by its long name.
 A long name follows two hyphens in the usage lines and the manpage of every structure.
 @<UI@/Command Line@/invocation syntax helpers@+
@@ -2065,12 +2065,12 @@ def option_name(opt):
 
 def option_with_value(opt):
     return option_name(opt) + ('' if opt.type == 'bool' else f' {metavar(opt)}')
-@~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_name @~ UI@/Command Line@/Python@/functions@/option_with_value @~ UI@/Command Line@/Python@/variables@/LONG_PREFIX @
+@~ UI@/Command Line@/Python@/functions@/metavar @? UI@/Command Line@/Python@/functions@/option_name @? UI@/Command Line@/Python@/functions@/option_with_value @? UI@/Command Line@/Python@/variables@/LONG_PREFIX @
 A description of an option names it both ways, the short name first.
 @<UI@/Command Line@/invocation syntax helpers@+
 def option_names(opt):
     return ([f'-{opt.short}'] if opt.short else []) + [LONG_PREFIX + opt.name]
-@~ UI@/Command Line@/Python@/functions@/option_names @~ UI@/Command Line@/Python@/variables@/LONG_PREFIX @
+@? UI@/Command Line@/Python@/functions@/option_names @~ UI@/Command Line@/Python@/variables@/LONG_PREFIX @
 @<UI@/Command Line@/Go@/flag syntax helpers@+
 FLAG_FUNCS = {
     'bool': 'BoolVar',
@@ -2361,7 +2361,7 @@ miss() {
 		failed+=$(sed 's/^/    /' "$3")$'\n'
 	fi
 }
-@~ UI@/Command Line@/Bash@/functions@/finish @~ UI@/Command Line@/Bash@/functions@/miss @
+@? UI@/Command Line@/Bash@/functions@/finish @? UI@/Command Line@/Bash@/functions@/miss @
 The script is checked before it runs: a syntax error would otherwise stop it halfway,
 after checks that passed.
 @<UI@/Command Line@/Test@/Runner@/run the script on stdin@=
@@ -2396,7 +2396,7 @@ run() {
 	"$command" "$@@" >"$work/out" 2>"$work/err"
 	status=$?
 }
-@~ UI@/Command Line@/Bash@/functions@/run @
+@? UI@/Command Line@/Bash@/functions@/run @
 A passing command must leave stderr empty.
 @<UI@/Command Line@/Test@/checks@+
 # prints_file CHECK FILE ARGUMENT...: the command succeeds and prints exactly FILE.
@@ -2890,7 +2890,7 @@ def configuration(model, source):
         return model.model_validate_json(value)
     except pydantic.ValidationError as error:
         fail(str(error))
-@~ Tool@/Python@/functions@/configuration @~ Tool@/Python@/functions@/fail @
+@? Tool@/Python@/functions@/configuration @? Tool@/Python@/functions@/fail @
 @<Chunk@/Language@/Go@/File@/Header@/imports@=
 {"description": "Import declaration, omitted when there are no paths."}
 @

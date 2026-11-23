@@ -58,7 +58,10 @@ type Block struct {
 	Op      Op
 	Parts   []Part
 	Filters []Filter
+	// Items are all items the block carries; Defines are those
+	// written after @?, which the block defines. The others it refers to.
 	Items   []Item
+	Defines []Item
 	// EndsLine is set when a line break ended the content.
 	// That line break is not content; an @+ block that has it
 	// is joined to the text before it with a line break.
@@ -80,6 +83,9 @@ type Mapping struct {
 	FileSet    []string
 	Origin     string // resolved against the composer file
 	OriginSpec string // as written
+	// ReadOnly is set on the mappings of the nodes of a ground:
+	// filters read a mapped directory of the ground but never write it.
+	ReadOnly bool
 }
 
 type Node struct {
@@ -90,7 +96,10 @@ type Node struct {
 	Mappings    []Mapping
 	// Base is the path from the root down to the direct parent.
 	// It is empty for the root.
-	Base     []string
+	Base []string
+	// Select lists the functional units the node selects, as written;
+	// it is nil when the node has no select field.
+	Select   []string
 	Own      []Block
 	Trailing string
 }

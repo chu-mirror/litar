@@ -36,7 +36,7 @@ the current composition.
 - change an existing block with `apply_block` and `overrides`; a block of a base node is
   changed in that node;
 - put a comment before each block that carries a decision;
-- mark the items each block defines or uses (`@~`), reusing the domains in `tree://item`;
+- mark the items each block defines (`@?`) or uses (`@~`), reusing the domains in `tree://item`;
 - evaluate the outputs and build or test them.
 
 **4. Digest.** See below.

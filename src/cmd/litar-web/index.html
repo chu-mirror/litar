@@ -86,6 +86,7 @@ h2 { font-size: 15px; margin: 28px 0 8px; }
 .lab.on { outline: 2px solid var(--label); }
 .item { background: var(--item-bg); color: var(--item); }
 .item.on { outline: 2px solid var(--item); }
+.item.def { font-weight: 700; }
 .set, .view { background: var(--filter-bg); color: var(--filter); }
 .owner { border: 1px solid var(--line); color: var(--muted); }
 
@@ -423,10 +424,11 @@ function parseBlock(text) {
       if (at() === '>') i++;
       b.body.push(r);
     } else if (t.ctl === '|') { tail = true; b.filters.push(operand()); }
-    else if (t.ctl === '~') {
+    else if (t.ctl === '~' || t.ctl === '?') {
       tail = true;
       const item = [name()];
       while (at() === '/') { i++; item.push(name()); }
+      item.defines = t.ctl === '?';
       b.items.push(item);
     } else if (!tail) b.body.push(ctl(t.ctl));
   }
@@ -498,7 +500,9 @@ function itemChips(items, ctx) {
   const mine = it => key(it) === ctx.item;
   const chip = it => {
     const ref = ctx.ix.item.at.get(key(it));
-    return h('a', {class: 'item' + (mine(it) ? ' on' : ''), href: ref ? here('item', ref) : null, title: it.join(' / ')}, it[it.length - 1]);
+    const cls = 'item' + (mine(it) ? ' on' : '') + (it.defines ? ' def' : '');
+    const title = (it.defines ? 'defines ' : '') + it.join(' / ');
+    return h('a', {class: cls, href: ref ? here('item', ref) : null, title}, it[it.length - 1]);
   };
   const sorted = [...items].sort((a, b) => mine(b) - mine(a));
   const box = h('div', {class: 'items'}, sorted.slice(0, 8).map(chip));
@@ -706,13 +710,25 @@ async function itemView(itemRef) {
   const ix = await indexes(), e = ix.item.byRef.get(itemRef);
   if (!e) return show(note('This node has no such item; it may have been renamed.'));
   select('item', itemRef, e.path);
-  const body = h('div', {}, note('Loading…'));
-  show(title(e.branch ? 'Domain' : 'Item', e.path, [], e.description),
+  const head = [title(e.branch ? 'Domain' : 'Item', e.path, [], e.description),
     h('div', {class: 'actions'},
       button('Describe', () => describeMeta(['Index', ...e.path], e.description)),
-      button('Rename', () => renameEntry('item', itemRef, e.path, e.branch))),
-    h('h2', {}, 'Blocks carrying this item'), body);
-  await fill(body, async () => blockList(await blocks('refer', itemRef), {ix, labels: null, item: key(e.path)}));
+      button('Rename', () => renameEntry('item', itemRef, e.path, e.branch)))];
+  if (e.branch) return show(head, note('A domain carries no blocks itself; open an item under it.'));
+  const defining = h('div', {}, note('Loading…')), referring = h('div', {}, note('Loading…'));
+  show(head, h('h2', {}, 'Blocks defining this item'), defining, h('h2', {}, 'Blocks referring to this item'), referring);
+  const ctx = {ix, labels: null, item: key(e.path)}, id = j => (j.node || '') + '\0' + j.ref;
+  const both = Promise.all([blocks('define', itemRef), blocks('refer', itemRef)]);
+  await Promise.all([
+    fill(defining, async () => {
+      const [defs] = await both;
+      return defs.length ? blockList(defs, ctx) : note('No block defines this item.');
+    }),
+    fill(referring, async () => {
+      const [defs, carriers] = await both, own = new Set(defs.map(id));
+      const refs = carriers.filter(j => !own.has(id(j)));
+      return refs.length ? blockList(refs, ctx) : note('No block refers to this item.');
+    })]);
 }
 async function labelView(specRef) {
   const ix = await indexes(), e = ix.spec.byRef.get(specRef);

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -21,6 +22,7 @@ type composerNode struct {
 	Description string            `json:"description"`
 	Mappings    []composerMapping `json:"mappings"`
 	Base        basePath          `json:"base"`
+	Select      *[]string         `json:"select,omitempty"`
 }
 
 type basePath struct {
@@ -192,12 +194,18 @@ func (w *World) save() error {
 		if maps == nil {
 			maps = []composerMapping{}
 		}
+		var sel *[]string
+		if n.Select != nil {
+			entries := append([]string{}, n.Select...)
+			sel = &entries
+		}
 		raw[i] = composerNode{
 			Name:        n.Name,
 			Archive:     n.ArchiveSpec,
 			Description: n.Description,
 			Mappings:    maps,
 			Base:        basePath{names: copyPath(n.Base), set: true},
+			Select:      sel,
 		}
 	}
 	data, err := composerFileBytes(w.Description, w.Ground, raw)
@@ -449,6 +457,59 @@ func (w *World) Describe(nodeName, description string) error {
 	return w.save()
 }
 
+func (w *World) Visible(name string) ([]Block, error) {
+	rev, err := w.ancestry(name)
+	if err != nil {
+		return nil, err
+	}
+	chain, err := w.Chain(name)
+	if err != nil {
+		return nil, err
+	}
+	sel := slices.IndexFunc(rev, func(n *Node) bool { return n.Select != nil })
+	if sel < 0 {
+		return chain, nil
+	}
+	units, err := parseUnits(rev[sel].Select)
+	if err != nil {
+		return nil, err
+	}
+	in := selection(chain, units)
+	// The ancestors of the selecting node come first in the chain.
+	start := 0
+	for _, n := range rev[sel+1:] {
+		start += len(n.Own)
+	}
+	var out []Block
+	for i, b := range chain {
+		_, meta := reservedNamespace(b.Ref.Module)
+		if in[i] || meta || i >= start {
+			out = append(out, b)
+		}
+	}
+	return out, nil
+}
+
+func (w *World) SetSelect(ref string, entries []string) error {
+	n, err := w.requireLocal(ref)
+	if err != nil {
+		return err
+	}
+	if _, err := parseUnits(entries); err != nil {
+		return err
+	}
+	old := n.Select
+	n.Select = nil
+	if entries != nil {
+		n.Select = append([]string{}, entries...)
+	}
+	if err := w.save(); err != nil {
+		n.Select = old
+		return fmt.Errorf("could not write '%s'", w.Composer)
+	}
+	return nil
+}
+
 func LoadComposer(path string) (*World, error) {
 	return loadComposer(path, false)
 }
@@ -502,7 +563,7 @@ func loadAt(path, ident string, allowEmpty bool, stack []groundFrame) (*World, e
 		if err := validGroundName(gname); err != nil {
 			return nil, err
 		}
-		gpath, err := findGround(gname)
+		gpath, err := findGround(gname, filepath.Dir(path))
 		if err != nil {
 			return nil, err
 		}
@@ -515,6 +576,11 @@ func loadAt(path, ident string, allowEmpty bool, stack []groundFrame) (*World, e
 			return nil, err
 		}
 		groundNodes = gw.Nodes
+		for i := range groundNodes {
+			for j := range groundNodes[i].Mappings {
+				groundNodes[i].Mappings[j].ReadOnly = true
+			}
+		}
 	}
 	if ground == nil && len(file.Nodes) == 0 {
 		if allowEmpty {
@@ -550,15 +616,29 @@ func loadAt(path, ident string, allowEmpty bool, stack []groundFrame) (*World, e
 }
 
 func validGroundName(name string) error {
-	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") || strings.Contains(name, `\`) {
+	if name == "" || strings.Contains(name, `\`) {
+		return fmt.Errorf("invalid ground '%s'", name)
+	}
+	if !groundIsPath(name) && strings.Contains(name, "/") {
 		return fmt.Errorf("invalid ground '%s'", name)
 	}
 	return nil
 }
 
-func findGround(name string) (string, error) {
-	for _, dir := range librarySearchDirs() {
-		path := filepath.Join(dir, name, "composer.json")
+func groundIsPath(name string) bool {
+	first, _, _ := strings.Cut(name, "/")
+	return first == "." || first == ".."
+}
+
+func findGround(name, dir string) (string, error) {
+	if groundIsPath(name) {
+		if path := filepath.Join(dir, name, "composer.json"); isRegular(path) {
+			return path, nil
+		}
+		return "", fmt.Errorf("could not find ground '%s'", name)
+	}
+	for _, lib := range librarySearchDirs() {
+		path := filepath.Join(lib, name, "composer.json")
 		if isRegular(path) {
 			return path, nil
 		}
@@ -665,6 +745,10 @@ func nodesFrom(composerPath string, raw []composerNode) ([]Node, error) {
 				OriginSpec: m.Origin,
 			}
 		}
+		sel, err := selectOf(n)
+		if err != nil {
+			return nil, err
+		}
 		nodes[i] = Node{
 			Name:        n.Name,
 			Archive:     ident,
@@ -672,6 +756,7 @@ func nodesFrom(composerPath string, raw []composerNode) ([]Node, error) {
 			Description: n.Description,
 			Mappings:    maps,
 			Base:        base,
+			Select:      sel,
 			Own:         arch.Blocks,
 			Trailing:    arch.Trailing,
 		}
@@ -847,7 +932,7 @@ func CreateComposedArchive(dir, ground string) (*World, error) {
 		if err := validGroundName(ground); err != nil {
 			return nil, err
 		}
-		if _, err := findGround(ground); err != nil {
+		if _, err := findGround(ground, dir); err != nil {
 			return nil, err
 		}
 		name := ground
@@ -1074,4 +1159,15 @@ func specializationOrder(blocks []Block, idx []int) []int {
 		}
 	}
 	return order
+}
+
+func selectOf(n composerNode) ([]string, error) {
+	if n.Select == nil {
+		return nil, nil
+	}
+	sel := append([]string{}, *n.Select...)
+	if _, err := parseUnits(sel); err != nil {
+		return nil, err
+	}
+	return sel, nil
 }

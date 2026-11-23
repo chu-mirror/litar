@@ -1,4 +1,27 @@
-# Introduction
+---
+title: Literate Programming for Agents
+author: Ma Zhizhong
+---
+
+litar is rooted in Donald Knuth's
+[Literate Programming](http://www.literateprogramming.com/knuthweb.pdf).
+Knuth says to write a program as an essay; a program written
+in this form will be better and more understandable.
+Unfortunately, in the AI era,
+most of the authoring work is done by LLMs rather than by humans.
+LLMs robbed human beings of the pleasure of writing, sigh.
+
+Anyway, we must adapt to the new paradigm.
+Literate Programming shines once again, if it has ever shone,
+when the cooperation between humans and LLMs becomes more and more important.
+
+The problem is that LLMs produce output too quickly to examine all the details,
+but we still want a way to grasp what LLMs have done.
+To command an agent to explain itself is one of the methods;
+litar tries to provide a more efficient way for this purpose:
+let LLMs write programs in literate program form to make the output more accessible.
+
+# Literate Programming
 
 Programmers have a lot of text to deal with: they write code,
 they write code to compile code, they write documents, they write
@@ -17,14 +40,14 @@ use a function to encapsulate it, or simply store the information
 in a macro or a variable, then pass it back to the original file.
 You can see all the extra efforts made here.
 
-litar operates on a smaller unit of text, which is called chunk.
-With litar, you gather text of whatever type into a single file
-and describe the relations between chunks with ease; some relations
-are hard or cumbersome to implement if between files.
+Literate programming operates on a smaller unit of text, which is called a chunk.
+You gather text of whatever type into a single file
+and describe the relations between chunks with ease;
+some relations are hard or cumbersome to implement if between files.
 What's more, in the spirit of literate programming,
-a litar archive explains itself.
-Such a file is called a litar archive; the name litar is a portmanteau of
-"literate" and "archive".
+this construction makes a program more readable.
+A file that contains a lot of chunks is called a litar archive;
+the name litar is a portmanteau of "literate" and "archive".
 
 # Syntax
 
@@ -49,7 +72,7 @@ Some other comments.
 
 `X` is a non-alphabetic character.
 
-# Block
+## Block
 
 Block expressions extend or set a chunk by a piece of text.
 Each block expression consists of three basic parts:
@@ -128,12 +151,12 @@ The contents of block2.
 
 Let's define formally what the content of a chunk is:
 **the result of applying every matching block in order,
-with each references replaced by the content of that chunk**.
+with each reference replaced by the content of that chunk**.
 
 It's a recursive procedure to evaluate the content of a chunk,
 so be careful to avoid circular dependency.
 
-# Module
+## Module
 
 The syntax above describes some common concepts that all literate programming tools have.
 litar has some useful extensions, which make it a general purpose tool
@@ -158,8 +181,8 @@ So litar supports modularization.
 ```
 
 litar allows attaching a series of module names to a chunk name;
-the series of module names, from left to right, form a path like a file path
-in a filesystem. Each module name is a directory name, the chunk name is a file name;
+the series of module names, from left to right, form a path like a file path in a filesystem.
+Each module name is a directory name, the chunk name is a file name;
 a module is a directory, a chunk is a file.
 
 The parent module of all modules is called root module,
@@ -169,7 +192,7 @@ you can refer to the module of the chunk reference that the block is applied to 
 `..` is also supported, just as `..` in a file path.
 `.` and `..` cannot be used outside the content of a block.
 
-# Specialization
+## Specialization
 
 A chunk can be used as a template naturally. Consider that a chunk
 defines a general structure for a C program, and we want to write two separate
@@ -223,8 +246,11 @@ printf("Hello from program1\n");
 @
 ```
 
-`program1` and `program2` here are called labels. Labels, module name, and chunk name construct a chunk reference.
-Extending through a chunk reference does not affect other chunk references of the same chunk.
+`program1` and `program2` here are called labels.
+Labels, module name, and chunk name construct a chunk reference.
+Extending through a chunk reference does not affect
+other chunk references of the same chunk but specialized differently.
+
 litar allows multiple specializations at once to further specialize a chunk reference.
 For example, `@<spec2@:spec1@:module@/chunk@=` specializes `spec1@:module@/chunk` further with the label `spec2`,
 but it should be pointed out that, `spec2@:spec1@:module@/chunk` does not include blocks applied to
@@ -239,12 +265,7 @@ and all chunk references are replaced by the content**.
 
 The predecessors of `spec2@:spec1@:module@/chunk` are `spec1@:module@/chunk` and `module@/chunk`.
 
-Evaluation also keeps indentation.
-If only spaces and tabs precede a chunk reference on its line,
-the content replacing it is indented at the same level:
-each of its lines after the first is preceded by the same spaces and tabs.
-
-# Filter
+## Filter
 
 Another major extension is user defined filters.
 The following simple program explains the usage of filters in litar.
@@ -300,13 +321,20 @@ The two relations, between block and chunk, are hence extended:
 - a block is applied to a chunk reference, the block might be transformed by filters;
 - a block contains a chunk reference, the chunk reference might be transformed by filters.
 
-This is the hardest part;
-filters are executed by litar, so litar has to
-face the complication of building a correct process. For example,
-which directory should be the working directory of filters,
+This is the hardest part; filters are executed by litar,
+so litar has to face the complication of building a correct process.
+For example, which directory should be the working directory of filters,
 how to decide what files a filter can access, etc.
 
-# Cross Reference
+The rule of evaluation is completed now that filters are introduced,
+here is a little addition: evaluation also keeps indentation.
+If only spaces and tabs precede a chunk reference on its line,
+the content replacing it is indented at the same level:
+each of its lines after the first is preceded by the same spaces and tabs.
+This little tuning makes the evaluation more intuitive,
+and makes programming an indentation based language, Python for instance, less painful.
+
+## Cross Reference
 
 litar allows browsing among related blocks. For example,
 
@@ -324,13 +352,21 @@ Variable 'times' saves the number of occurrences of an event.
 @<chunk@=
 int times;
 @|filter
+@? C@/variables@/times @
+
+@<count once@=
+++times;
 @~ C@/variables@/times @
 ```
 
+`@?` means that this block defines the item,
+`@~` means that this block refers to the item,
 `@/` means that the item is under a domain.
 litar allows arbitrary further classification of a domain.
+A block may carry several items, each introduced by `@?` or `@~`;
+a block carries every item attached to it, and refers to those it does not define.
 
-# File System
+## File System
 
 It's ideal if a filter uses only three files, stdin, stdout, and stderr,
 and does nothing more than transform stdin into stdout,
@@ -380,7 +416,7 @@ To be compatible with Unix programming environment, litar uses a technology call
 Filesystem in Userspace (FUSE), which allows litar to create a custom file system
 and mount it. So a filter can access an archive file when its view names that file.
 
-# Invocation
+## Invocation
 
 Now it's time to face this hard problem in the design of litar.
 Introducing a file system causes a lot of consequences.
@@ -437,6 +473,407 @@ The FUSE filesystem has several characteristics:
 
 In the end, litar shall notice and provide helpful information if a circular dependency occurs.
 Users can use the information to limit the files that an invocation relates.
+
+## Reserved Namespaces
+
+litar reserves some namespaces for saving meta information:
+
+- `Chunk@/{chunk path}`,
+- `Specialization@/{labels}`,
+- `File@/{file path}`,
+- `Index@/{item path}`.
+
+They are all chunks of a json object.
+
+`Chunk@/{chunk path}`:
+
+```
+{
+    "description": "<description for the chunk or module>"
+}
+```
+
+`Specialization@/{labels}`:
+
+```
+{
+    "description": "<description for the specialization>"
+}
+```
+
+The path `{labels}` is organized reversed, for example,
+the path for specialization `label2@:label1` is `Specialization@/label1@/label2`.
+
+`File@/{file path}`:
+
+```
+{
+    "description": "<description for the file or directory>"
+}
+```
+
+`Index@/{item path}`:
+
+```
+{
+    "description": "<description for the item or domain>"
+}
+```
+
+Users can assign a JSON object to these chunks to set up meta information,
+this meta information may be used by litar to improve user interface
+or influence the behaviour of litar.
+
+# Authoring
+
+The language used to constrain the authoring of a litar archive
+is based on the discussion of the shapes of structures.
+
+The knowledge for something is always structured, and programs are the same.
+For example, a C source file, at the outermost level,
+consists of includes, macros, variables, and functions, etc.
+A C source file hence shows itself in a litar archive typically as follows:
+
+```
+@[program.c@=
+@<includes@>
+@<variables@>
+@<functions@>
+@
+
+@<functions@+
+int main(int argc, char **argv)
+{
+    int ret = 0;
+    @<main body@>
+    return ret;
+}
+@
+
+@<main body@=
+@<initialize global variables@>
+if (ret) {
+    return ret;
+}
+@<read and handle input@>
+if (ret) {
+    return ret;
+}
+@<output result@>
+@
+```
+
+It's clear that a chunk encapsulates a structure,
+and there are two shapes of structure found here: sequence and tree.
+
+A structure of sequence shape is formed by a series of substructures of the same type,
+for example, a series of include files, a series of functions.
+A structure of tree shape is formed by a fixed composition of substructures.
+
+Among the chunks above, `includes`, `variables`, and `functions` are sequences,
+`program.c` and `main body` are trees, other chunks are undefined,
+but as we see in the following guidelines, we can assume that they are trees from the names.
+
+## Name a chunk with a phrase, whose grammatical role fits that structure
+
+First of all, because the name of a chunk is a phrase,
+**do not capitalize the first character and do not append a period at the end**.
+And one principle is mandatory:
+**name a chunk with a short description of the encapsulated structure**.
+It might be unnecessary to stress this principle, but anyway, this principle is the most important.
+
+Naming a sequence is simple; a sequence is always a list of items,
+so **name a sequence with a plural noun phrase**.
+
+Naming a tree is much more difficult; it depends heavily on the context.
+When programming in imperative style, the expressions usually operate on something,
+so a verb phrase is appropriate for encapsulating these expressions.
+When programming in functional style, the expressions are simply values,
+so a noun phrase is more suitable here.
+Even these apparent rules are not always applicable; like the `main body` in the example above,
+it's named from a declarative viewpoint.
+
+Nevertheless, there is some advice for more concrete situations.
+For imperative expressions, the rules are well established:
+
+- **quote the objects being operated on in the phrase**;
+- **all quoted objects shall be declared first before quoting**;
+- **omit the quotation if there are many chunks that refer to the same objects**;
+- **do not refer to an object declared inside a chunk outside the chunk**;
+- **use concrete verbs, do not use verbs like 'perform', 'do'**.
+
+The quoting here means that if a block of code is meant to add two numbers,
+`number1` and `number2`, the result is saved as `number3`,
+then the chunk name shall be `save the sum of 'number1' and 'number2' to 'number3'`.
+
+Other structures, such as a complicated data structure or a structured document, etc,
+shall be named with a noun phrase, **name a tree with a noun phrase if it's not an action**.
+
+## Encapsulate a chunk that shall not be referred to outside the module into a submodule
+
+This rule is derived from the general rule: hide the unnecessary details.
+Here is an example that shows each case:
+
+```
+@<C Structure@/module@=
+@<.@/includes@>
+@<.@/definitions@>
+@
+
+@<C Structure@/definitions@+
+void print_hello()
+{
+    @<.@/Output@/print hello to stdout@>
+}
+@
+
+@<C Structure@/Output@/print hello to stdout@=
+printf("Hello\n");
+@
+```
+
+The chunk `includes` and `definitions` are in the same module as `module`,
+but `print hello to stdout` is in the submodule `Output`.
+Because the former two form a template, when another module use `module` to create
+a C module so it must access the two chunks directly, but `print hello to stdout`
+is used only by the function `print_hello`, it's not supposed to be accessed outside the module.
+
+## If a tree is big enough, divide it
+
+So how do we determine whether a tree is big enough?
+
+Imagine that you are facing a C source file of thousands of lines without a header file,
+and you are trying to figure out what this file does.
+A skilled engineer will never read this file line by line.
+The steps he follows might be,
+
+1. go straight to functions, find a global function and start reading it;
+2. find the data types that the outermost logic deals with;
+3. list all global functions touching the same data types;
+4. figure out what this group of functions does.
+
+The C source file can be regarded as a structure of tree shape,
+its substructures are functions, data types; a global function is also a tree,
+it has an outermost logic, the details are encapsulated in substructures.
+
+The actions the skilled engineer takes are searching for functions,
+skimming the outermost logic of a function, searching for data types,
+and searching for functions that refer to a particular data type.
+
+A main goal of litar is to make the actions based on the structures easier,
+and the first step is to make the structures explicit.
+So an acceptable answer to the question at the opening is that the tree is long
+enough that those actions take a skilled engineer several minutes.
+Token count is a good measure of length;
+150 tokens is a comfortable length for human beings, at least for the author.
+The size of a block is the content of the block. Comments and items are not counted.
+
+In practice, the length of a tree usually equals the length of a block.
+Here's a more practical guideline: **control the length of a block at or below about 150 tokens**.
+
+## Explain a decision in the comment
+
+In the process of implementing an idea, we always make some compromises, trade-offs,
+or simply some details the idea has not specified. For example, the size of a buffer,
+handling of a failure, choosing of algorithm, etc.
+
+These details live outside the specification, scattered over implementation,
+but closely affect the finished program.
+litar requires these details to be documented where they are introduced.
+
+## Make blocks extending a sequence order-irrelevant
+
+A data type definition consists of other data types;
+so a data type should be put after the data types it's based on.
+In this case, if the data type and the base data types are in different blocks,
+the dependency imposes an order on blocks.
+
+The blocks shall be loosely related to reduce the context needed for understanding or editing a block.
+The `includes` in the above example is an ideal order-irrelevant sequence;
+if a block is created to introduce more header files,
+the only context information is the name of the chunk it ought to extend, `includes` here.
+Also, readers do not have to list all the blocks of `includes` to figure out what the current block
+is supposed to do.
+
+Sometimes, the ordering is unavoidable. For example, in an if-else chain, once one arm matches,
+every later arm is skipped even if its condition would be true.
+
+The rule: **gather substructures of a sequence into a single block if the order matters**.
+This rule might conflict with the rule of block length limitation,
+if they conflict, prioritize this rule.
+
+## Reduce repetition by filters
+
+A single piece of information can appear at so many places of a project in different forms.
+The specification of command line interface is a good example.
+It appears in help information, parsing algorithm, and manpage.
+It's cumbersome to maintain all three copies,
+and these copies can be programmatically generated from the original specification;
+filters are a good fit for that generation.
+
+Write the specification of command line interface declaratively in a chunk;
+it can be in any format like json, yaml, toml,
+data structure in script languages (python, perl, for example), etc.
+Then for each form, write a filter to transform the specification,
+finally use chunk references to insert the transformed specification into proper places.
+
+The rule: **use filters to generate different forms of a single piece of information**.
+
+## Build up cross-reference when possible
+
+A chunk of code always refers to other concepts, like, calling functions, modifying variables.
+Figure out whether the item is local; that is, whether the context of the item is limited to
+current block. If not, build reference to that item:
+**mark the block that defines the item with `@?`, and every block that uses it with `@~`**.
+
+Here are some rules:
+
+- **write the definition in the reserved namespace `Index@/{item path}`**,
+  the description of a concept or a term is its one-line definition,
+  so the item tree works as a glossary;
+- **explain an item fully in the comment of the block that defines it**,
+  every other block only refers to the item;
+- **define an item in one block, if it has a definition**,
+  a function, a variable, or a concept is defined once,
+  but a topic, and usually a term, has no defining block and is only referred to;
+- **create an item only when it connects blocks**,
+  at least two blocks carry it, or soon will.
+
+Selecting the context of a task (see [Context](#context)) traces *R* edges
+from the blocks that refer to an item to the block that defines it,
+so an item without a defining block cannot be traced,
+and a definition marked with `@~` is taken for one more use.
+
+There are some cases we want to avoid cross-reference:
+
+- the items are from common sense, like standard library, well-known third-party libraries;
+- the items are quoted in the name of the chunk name, if a chunk's name is `add 'a' to 'b'`,
+  then even though 'a' and 'b' is not limited to current block, the name implies the reference
+  implicitly, so do not use cross-reference.
+
+## Do not assign every tree with a chunk, use cross-referencing when appropriate
+
+Some trees are well defined units under the context, for example, a function in programming.
+That means, do not write:
+
+```
+@<functions@+
+@<print hello@>
+@
+
+@<print hello@=
+void hello()
+{
+    printf("Hello\n");
+}
+@
+```
+
+write:
+
+```
+@<functions@+
+void hello()
+{
+    printf("Hello\n");
+}
+@? function@/hello @
+```
+
+# Category
+
+The Authoring section gives general advice about
+how to create chunks and items and when to put a chunk under a module,
+but that's not the whole story.
+The chunks and items are categorized under modules and domains.
+When the scale expands, a firm strategy to classify them becomes important.
+
+The examples above are simplified, so they should not be used as models.
+
+## Chunks
+
+A chunk tree might look like the following:
+
+- Tool: useful filters shared by all modules
+- Language: common structures found in languages
+  - C
+    - Module: C source file and C header file
+    - Project: the whole codebase, including build system
+  - Go
+    - File: Go source file
+    - Package: Go package
+    - Module: go.mod unit
+  - (other languages)
+- UI: the shared schema and generators
+  - Command Line: the invocation syntax and the documents generated from it
+    - C: generators of command line parsing in C
+    - Go: generators of command line parsing in Go
+  - Terminal
+  - Graphical
+- Framework: something an application chooses to adopt
+  - (frameworks for building applications)
+- Project
+  - (concrete projects)
+    - Build: the build system
+    - Tests
+    - Documents
+
+Every chunk is free to refer to any other chunk.
+
+## Items
+
+An item path answers three questions in order:
+in which context the name means something, what kind of thing it is, and what it is called.
+
+```
+<owner>@/<kind>@/<name>
+```
+
+The owner is the narrowest context in which the name is unambiguous.
+It is written with the same path as the module that owns the chunks of that context,
+so chunks and items share one tree:
+
+- `Tool`
+- `Language@/Go`
+- `UI@/Command Line`
+- `Framework@/Light`
+- `Project@/litar`
+
+An item moves up to a wider owner only when a second owner starts using it.
+
+Kinds come from a short closed list.
+A kind is a plural noun, like the name of a sequence in the Authoring section.
+There are two families of kinds.
+
+Code kinds sit under the language,
+because they are specific to the language and a project can mix languages:
+`Go@/functions`, `Go@/methods`, `Go@/types`, `Go@/variables`, `C@/macros`, etc.
+
+Knowledge kinds have no language level:
+
+- `concepts`: one block defines it, other blocks depend on that definition;
+- `terms`: a word given a narrower meaning in this context,
+  the thing it names is described elsewhere or needs no definition;
+- `topics`: a subject several blocks are about, with no single definition;
+- `options`: a switch or setting that users face.
+
+When a name could be a term or a concept, choose `concepts`.
+
+A code item keeps the name as the language qualifies it, such as `litar.run`.
+A knowledge item is named by a singular phrase,
+not capitalized and without a period, the same as a chunk.
+
+Here are some examples:
+
+```
+Project@/litar@/Go@/functions@/litar.run
+Project@/litar@/concepts@/effective block
+Project@/litar@/terms@/view
+Project@/litar@/topics@/filter cache
+Project@/litar@/options@/--agent
+Framework@/Light@/C@/macros@/LIGHT_TEST
+Language@/Go@/concepts@/build constraint
+```
 
 # Composing
 
@@ -554,6 +991,8 @@ A composer file is in json format:
 
 The `ground` means a composition which this composition is based on;
 all nodes in `ground` precede the nodes in `examples`. The `ground` is nullable.
+`ground` can be a relative path starting with `.` or `..`,
+or a name searched for in a series of directories.
 
 Each record in the array is called a node.
 A node has a base node, the base node is expressed as a path from root node down to direct parent node;
@@ -606,57 +1045,173 @@ The example above adds a file `data/samples.txt` to the node and attaches it to 
 the content of the file is the same as `./samples.txt` relative to the composer file.
 A child keeps its base's mappings and can add more.
 
-The organization of compositions can mimic branching like nodes, but the purpose of using
-several compositions rather than one big composition is to control who may modify which nodes.
-Applying a block to a node in the ground composition is forbidden.
+The organization of compositions can mimic branching like nodes,
+but the purpose of using several compositions rather than one big composition
+is to control who may modify which nodes.
+Applying a block to a node in the ground composition is forbidden,
+so is writing to mappings in the ground composition.
 
-# Reserved Namespaces
+# Context
 
-litar reserves some namespaces for saving meta information:
+As we can see from the categorization above,
+litar tries to build inter-connection among different domains,
+but it also means that a composition may contain too much unnecessary information for a single task.
+The context is too big, for human, also for LLMs.
 
-- `Chunk@/{chunk path}`,
-- `Specialization@/{labels}`,
-- `File@/{file path}`,
-- `Index@/{item path}`.
+A well defined context is the key to good understandability,
+it shall be as small as possible, but complete, moreover, intriguing.
+The flat structure of litar archives makes the management of contexts really easy:
+a context for litar is simply a set of blocks,
+then the question is reduced to how to select blocks for a task.
 
-They are all chunks of a json object.
+All blocks, as Donald Knuth said, are organized as a web.
+A block may contain a chunk reference, hence contain all the effective blocks of that chunk reference.
+A block may refer to an item defined in other blocks.
+All these relations make a graph;
+this graph is the theoretical basis for our context management.
 
-`Chunk@/{chunk path}`:
+The graph is a directed graph, it has two types of edges: contain and refer.
+We call them *C* edge, and *R* edge.
+
+- a *C* edge points from A to B if A contains a chunk reference to which B is applied,
+  or A contains a chunk reference filtered by a chunk reference to which B is applied,
+  the former is also called a *Ca* edge, the latter is called a *Cf* edge;
+- an *R* edge points from A to B if A refers to an item which B defines.
+
+Here are some simple strategies based on the graph:
+
+- to figure out what a block is meant to do, visit back the *C* edges;
+- to figure out what a block does, visit through the *C* edges and *R* edges;
+- to figure out how to deal with an item, visit back the *R* edges.
+
+A task can be anything like,
+
+- exploring a codebase to answer a question,
+- modifying a codebase to pass some criteria,
+- browsing a codebase to raise a question.
+
+Some people may not think of the third as a task,
+but that's what the author does in most of the spare time,
+and somehow doing this actually intrigued the author to further improve the code.
+
+Whether a task can be smoothly done highly depends on the context.
+An experienced programmer can quickly find out proper context to explore.
+The efficiency of most work in the world is influenced by the quality of context mostly
+rather than by the worker's IQ.
+
+litar provides a mechanism to shrink the context to fit a task's needs.
+The selection of blocks is based on a concept which is called functional unit.
+Let's define the related terms first:
+
+- a functional unit is a file, a chunk reference, or an item;
+- a construction block of a functional unit is a block that can be visited by
+  traveling through the *C* edges from the applied blocks or defining blocks of a functional unit.
+
+Traditional programming only treats an item or a file as a functional unit,
+and the examination or test is usually performed upon the behaviour.
+Introducing a chunk reference as a functional unit and focusing on plain text rather than execution
+makes another way of examination more convenient.
+That is formal verification, which might be adopted extensively in future.
+
+When creating a new node, the node can select a bunch of functional units.
+Then all blocks that the new node can visit are selected in three steps:
+
+1. all construction blocks of the functional units;
+2. the blocks one step through *R* edges from the blocks of step 1;
+3. the blocks one step back through *Ca* edges from the blocks of steps 1 and 2,
+   and the blocks one step back through *R* edges from the blocks of step 1.
+
+*R* edges are traced only once.
+To know an item exactly, one needs all construction blocks of the block that defines it,
+then those of the items they refer to, and so on, which soon covers most of the composition.
+To use an item, the block that defines it is enough:
+its comment explains the item fully, and the chunks it contains are named after what they do.
+A task that needs to know an item exactly selects the item itself.
+
+Stepping back through *Ca* edges brings the blocks that declare the objects quoted in a chunk name.
+*Cf* edges are not stepped back, because a shared filter is invoked all over the composition.
+Stepping back through *R* edges brings the blocks that use what the task may change.
+
+The selection narrows what a worker reads, not what litar evaluates:
+an expression is always evaluated with all blocks of the node,
+so building and testing give exact results while the worker reads only the selected blocks.
+
+The node hence has a new value `select`:
 
 ```
 {
-    "description": "<description for the chunk or module>"
+    "description": "a task",
+    "ground": "base",
+    "nodes": [
+        {
+            "name": "task",
+            "archive": "./task.la",
+            "description": "do the task",
+            "mappings": [],
+            "base": ["Base Node"],
+            "select": [
+                "Index@/item",
+                "File@/file",
+                "label@:module@/chunk",
+                ...
+            ]
+        }
+    ]
 }
 ```
 
-`Specialization@/{labels}`:
+An entry that does not start with `Index@/` or `File@/` is considered a chunk reference,
+an entry that starts with `Index@/` or `File@/` always indicates an item or a file.
+
+# Workflow
+
+By introducing context management,
+we can now build a clean workflow for litar-backed development.
+
+An entity to perform a task is called a worker, it can be a human or an agent.
+
+When a worker is given a task, the worker judges the size of the task;
+if the task is small, it solves the task by applying blocks, examines the result and ends,
+if the task is big, it divides the task into several sub-tasks.
+A sub-task can depend on other sub-tasks and starts only after they finish.
+
+The structure of a task is saved in a special chunk `todo list`.
+`todo list` does not differ from other chunks for litar,
+it only acts as a hint for a worker.
 
 ```
+@<todo list@=
 {
-    "description": "<description for the specialization>"
+    "name": "<name of the task>",
+    "description": "<a short description>",
+    "sub-tasks": [
+        {
+            "name": "<name of sub-task 1>",
+            "description": "<a short description>",
+            "dependency": []
+        },
+        {
+            "name": "<name of sub-task 2>",
+            "description": "<a short description>",
+            "dependency": ["<name of sub-task 1>"]
+        },
+        ...
+    ]
 }
+@
 ```
 
-The path `{labels}` is organized reversed, for example,
-the path for specialization `label2@:label1` is `Specialization@/label1@/label2`.
+After dividing, the worker runs the sub-tasks in order:
 
-`File@/{file path}`:
+1. create a new composition, shrink the context, specify the acceptance,
+   for each sub-task that can run in parallel with its siblings;
+2. attach candidate workers to the new composition;
+3. wait until all the siblings have finished, merge the result:
+   merging is not moving blocks, the worker
+   treats the results of the sub-tasks as material for developing its own composition;
+4. update `todo list`, remove the finished entry and corresponding composition, go to step 1.
 
-```
-{
-    "description": "<description for the file or directory>"
-}
-```
-
-`Index@/{item path}`:
-
-```
-{
-    "description": "<description for the item or domain>"
-}
-```
-
-Users can assign a JSON object to these chunks to set up meta information,
-this meta information may be used by litar to improve user interface
-or influence the behaviour of litar.
-
+Each sub-task can be divided too.
+The new compositions are usually placed under the directory of the original composition.
+The acceptance is in a chunk that initializes the nodes of a sub-task's composition.
+After the task is finished, `todo list` shall be removed from the composition.

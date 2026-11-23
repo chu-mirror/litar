@@ -117,7 +117,11 @@ func dispatch(world *World, node, mode, operand string, stderr io.Writer) (strin
 			return "", err
 		}
 	}
-	chain, err := world.Chain(node)
+	read := world.Visible
+	if mode == "print" {
+		read = world.Chain
+	}
+	chain, err := read(node)
 	if err != nil {
 		return "", err
 	}

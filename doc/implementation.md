@@ -43,6 +43,8 @@ and filter view the evaluation used; the file is evaluated again only when one o
 changes, so a file is evaluated once per process and the MCP server serves repeated reads
 from memory. A mapping whose path ends in `/` maps a host directory into the views of its
 file sets; the directory is created if missing, and filters read and write it in place.
+A mapped directory of a ground node is read-only in the view: reads go through to the host,
+every change fails with `EROFS`, and a missing directory is not created.
 On any user error, `litar` prints the error to `stderr`, leaves `stdout` empty, and exits
 with status 1.
 
@@ -71,11 +73,12 @@ inheritance:
 
 - **Layout line breaks:** At most one `\r\n`, `\n`, or `\r` immediately after `@=` or `@+`
   is consumed as layout. At most one `\r\n` or `\n` at the end of the body content—before
-  `@`, `@|`, or `@~`—is stripped as layout and sets `EndsLine = true`.
+  `@`, `@|`, `@~`, or `@?`—is stripped as layout and sets `EndsLine = true`.
 - **Body and inner references:** In a block body, `@<` invokes `parseInnerRef`, which reads
   a qualified name and an optional `@|` filter pipeline up to `@>`. At the top level of the
-  body (outside `@<...@>`), `@|` starts the block's filter pipeline, `@~` starts the item
-  list, and an end control closes the block. Reaching an end control or EOF inside an
+  body (outside `@<...@>`), `@|` starts the block's filter pipeline, `@~` or `@?` starts the
+  item list, and an end control closes the block. Each item goes into `Items`; an item after
+  `@?` also goes into `Defines`. Reaching an end control or EOF inside an
   unclosed `@<...` reference fails with `unterminated block`.
 - **Command-line expressions:** Command-line arguments use the same qualified-name parser
   over the entire argument string. `-p` allows a filter pipeline and views; `-l`, `-e`, and
@@ -90,8 +93,10 @@ inheritance:
 `compose.go` loads compositions and manages their node graphs (see [syntax.md](syntax.md)
 for the `composer.json` schema and ground search path):
 
-- **Ground loading:** If `ground` is non-null, the ground composition is located on the
-  search path and loaded first (recursively). Its nodes precede the current file's nodes.
+- **Ground loading:** If `ground` is non-null, the ground composition is located, relative
+  to the directory of `composer.json` when `ground` starts with `.` or `..`, and on the search
+  path otherwise, and loaded first (recursively). Its nodes precede the current file's nodes,
+  and their mappings are marked `ReadOnly`.
   Cycles across grounds fail with `cycle in grounds: a -> b -> a`.
 - **Graph validation:** The combined node list must have a single root (`base: []`). Every
   non-root node's `base` must name an ancestor path already present in the list
@@ -103,6 +108,12 @@ for the `composer.json` schema and ground search path):
   in its chain with the `Mappings` inherited along its `base` chain. In a view expression,
   `@+name` adds every archive file and mapped file belonging to `name`. Defining the same
   path as both an archive file and a mapping is reported as an error when that file is used.
+- **Selection:** A node's `select` entries are parsed when the composer is read
+  (`invalid select entry '…'`) and written back as they were. `World.Visible` returns the
+  blocks a reader of a node sees: under the nearest node of the base chain that has a
+  `select` field, the blocks `selection` marks, the reserved-namespace blocks, and the own
+  blocks of that node and the nodes based on it; otherwise the whole chain. `selection` follows
+  the steps of [syntax.md](syntax.md#select) in `list.go`. Evaluation uses `World.Chain`.
 - **Locating an archive (`-f`):** `FindArchive` walks upward from the archive's directory
   looking for `composer.json`. The nearest `composer.json` that declares the archive as one
   of its own local nodes wins. If none matches, it returns the first composer load error
@@ -160,6 +171,9 @@ for the `composer.json` schema and ground search path):
   specialization of them.
 - **`-r` (reference):** Prints `Comment` + `Raw` for every block in the chain that carries
   the exact queried item.
+
+These flags read `World.Visible`, so a `select` field narrows them; `-p` evaluates on
+`World.Chain`.
 
 ```
 @<chunk 1@=
@@ -281,6 +295,7 @@ All resources, resource templates, and tools are registered at startup.
 | `blocks://effective/{composition}/{node}/{chunk}/{specialization}` | `application/json` | the blocks `-e` prints |
 | `blocks://depend/{composition}/{node}/{chunk}/{specialization}` | `application/json` | the blocks `-d` prints |
 | `blocks://refer/{composition}/{node}/{item}` | `application/json` | the blocks `-r` prints for that item |
+| `blocks://define/{composition}/{node}/{item}` | `application/json` | the blocks defining that item (`@?`) |
 | `blocks://specialization/{composition}/{node}/{labels}` | `application/json` | the blocks of the chain written under exactly that label path |
 | `file://{composition}/{node}/{path}` | `text/plain` or `application/octet-stream` | evaluated bytes of that file |
 
@@ -297,6 +312,9 @@ All resources, resource templates, and tools are registered at startup.
   text before it, trimmed, and is left out when empty. `node` is the ref of the node that owns
   the block, and is left out when that is the node of the URI.
   A chunk reference with no matching block gives an empty array.
+- `tree://` and `blocks://` resources, the resource list, and `search_blocks` read the blocks
+  a reader of the node sees (`World.Visible`); `file://` and `evaluate_expression` evaluate
+  with the whole chain.
 - Multiple compositions can be imported into one server. A ground composition appears in
   `list://composition` only if imported directly; its nodes inside a dependent composition
   can be inspected, evaluated, and used as bases, but attempting to edit them fails with
@@ -340,8 +358,8 @@ separated by zero bytes, so it depends on nothing but what the object is called:
 | Tool | Arguments | Effect |
 | --- | --- | --- |
 | `import_composition` | `path` | Load an existing `composer.json` (or its directory), again if already imported, and return its composition ref. |
-| `create_composition` | `path`, `ground` (required: name or `null`), `description` (optional) | Create `path/composer.json` if absent, import it, and return its composition ref. Removes the created file if `ground` cannot be loaded. |
-| `create_node` | `composition`, `name`, `archive`, `description`, `base` (required: parent node ref or `null` for root), `mappings` (optional: `path`, `origin`, `fileset` each) | Create a new empty archive file (fails with `archive '…' already exists` if present), add the node with its mappings to `composer.json`, and return the new node ref. A mapping that fails removes the node again. |
+| `create_composition` | `path`, `ground` (required: name, path relative to `path` starting with `.` or `..`, or `null`), `description` (optional) | Create `path/composer.json` if absent, import it, and return its composition ref. Removes the created file if `ground` cannot be loaded. |
+| `create_node` | `composition`, `name`, `archive`, `description`, `base` (required: parent node ref or `null` for root), `mappings` (optional: `path`, `origin`, `fileset` each), `select` (optional: functional units) | Create a new empty archive file (fails with `archive '…' already exists` if present), add the node with its mappings and its `select` field to `composer.json`, and return the new node ref. A mapping that fails removes the node again; an invalid `select` entry fails before anything is created. |
 | `map_file` | `composition`, `node`, `path`, `origin`, `fileset` (optional) | Add a mapping to the node: the file or directory `origin`, relative to the composition directory, appears at `path` (a directory when `path` ends with `/`). Fails with `mapping '…' already exists`. |
 | `delete_node` | `composition`, `node` | Delete the node, all descendant nodes based on it, and their archive files. Missing archive files are ignored; unremovable files are reported after saving `composer.json`. |
 | `delete_chunk` | `composition`, `node`, `chunk` | Remove all of the node's own blocks for that module and chunk (across all label specializations) and compact the archive. |
@@ -353,7 +371,7 @@ separated by zero bytes, so it depends on nothing but what the object is called:
 | `delete_block` | `composition`, `node`, `block` | Remove one of the node's own blocks and compact the archive. |
 | `move_block` | `composition`, `node`, `block`, `to` (node ref) | Take one own block, with its comment, to the end of another local node, and compact both archives; neither is written unless both can be. |
 | `describe` | `composition`, `node` (optional), `description` | Replace the description of the node, or of the composition when no node is given, and rewrite the composer file. Returns the ref of what was described. |
-| `search_blocks` | `composition`, `node`, `text` | Return, as a `blocks://` array, the blocks of the node's chain whose comment or text contains `text`. More than 100 matches is an error. |
+| `search_blocks` | `composition`, `node`, `text` | Return, as a `blocks://` array, the blocks a reader of the node sees whose comment or text contains `text`. More than 100 matches is an error. |
 
 `rename` and `operate_files` change names in place, so each block keeps its content and comment.
 They refuse a change that would lose or split something, and then leave every archive untouched:
@@ -421,7 +439,7 @@ every concrete resource URI that existed before or after the change.
 # Grounds and examples
 
 - `standard`: the standard library, one node `Standard` whose modules follow
-  `design/category.md`: `Tool` (shared filters, including `Tool@/Text Processing`),
+  the Category section of `design/litar.md`: `Tool` (shared filters, including `Tool@/Text Processing`),
   `Language@/C@/Module`, `Language@/Go@/File`, `Language@/Go@/Module`,
   `UI@/Command Line` (the invocation syntax, its generators for C and Go, and the acceptance test engine `Test`),
   and `Framework@/Light`.

@@ -1,6 +1,6 @@
 # litar authoring style
 
-A digest of the design files `style.md` and `category.md` of the litar project.
+A digest of the Authoring and Category sections of the design file `litar.md` of the litar project.
 
 ## Structure
 
@@ -90,8 +90,9 @@ Project@/litar@/options@/--agent
 Framework@/Light@/C@/macros@/LIGHT_TEST
 ```
 
-- Mark an item with `@~` when its context reaches beyond the current block, on the block
-  that defines it and on every block that uses it.
+- Mark an item when its context reaches beyond the current block: with `@?` on the block
+  that defines it, and with `@~` on every block that uses it. A topic, and usually a term,
+  has no defining block, so it is only marked with `@~`.
 - Do not mark items local to the block, common-sense items (standard library,
   well-known libraries), or items quoted in the chunk name.
 - Create an item only when it connects blocks: at least two carry it, or soon will.
@@ -106,5 +107,5 @@ void hello()
 {
     printf("Hello\n");
 }
-@~ Project@/hello@/C@/functions@/hello @
+@? Project@/hello@/C@/functions@/hello @
 ```

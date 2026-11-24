@@ -3416,8 +3416,8 @@ if err == nil || !strings.Contains(err.Error(), "not defined") {
 
 @<filter test@:litar@:Language@/Go@/File@/functions@+
 func TestFUSEView(t *testing.T) {
-if _, err := os.Stat("/dev/fuse"); err != nil {
-	t.Skip("no /dev/fuse")
+if !fuseAvailable() {
+	t.Skip("no FUSE")
 }
 src := "" +
 	@<Project@/litar@/Tests@/Filter@/blocks of the archive text in TestFUSEView@>
@@ -3431,7 +3431,7 @@ var (
 @<Project@/litar@/Tests@/Filter@/checks of the filters in TestFUSEView@>
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 
 The files of the set docs; show reads one of them through the whole set.
 @<Project@/litar@/Tests@/Filter@/blocks of the archive text in TestFUSEView@=
@@ -3452,7 +3452,7 @@ The files of the set docs; show reads one of them through the whole set.
 @<Project@/litar@/Tests@/Filter@/blocks of the archive text in TestFUSEView@+
 "@@<size@@=\n" +
 	"#!/bin/sh\n" +
-	"stat -c %s hello.txt\n" +
+	"stat -c %s hello.txt 2>/dev/null || stat -f %z hello.txt\n" +
 	"@@\n" +
 	"@@<sized@@=\n" +
 	"@@|size@@,hello.txt@@\n" +
@@ -3525,8 +3525,8 @@ The test may itself run in a filter view, which stays mounted for the whole test
 so it counts the views mounted before the evaluation and accepts no more afterwards.
 @<filter test@:litar@:Language@/Go@/File@/functions@+
 func TestFUSEViewOutlivedByBackgroundProcess(t *testing.T) {
-if _, err := os.Stat("/dev/fuse"); err != nil {
-	t.Skip("no /dev/fuse")
+if !fuseAvailable() {
+	t.Skip("no FUSE")
 }
 src := "" +
 	"@@<leave@@=\n" +
@@ -3538,15 +3538,15 @@ src := "" +
 	"@@|leave@@\n"
 blocks := mustArch(t, src)
 ev := NewEvaluator(blocks, nil, nil)
-before, _ := os.ReadFile("/proc/self/mounts")
+before, beforeOK := countLitarMounts()
 @<Project@/litar@/Tests@/Filter@/check that 'ev' returns msg before the background process ends@>
-mounts, err := os.ReadFile("/proc/self/mounts")
-if err == nil && strings.Count(string(mounts), "fuse.litar") > strings.Count(string(before), "fuse.litar") {
-	t.Fatalf("a filter view is still mounted:\n%s", mounts)
+after, afterOK := countLitarMounts()
+if beforeOK && afterOK && after > before {
+	t.Fatalf("a filter view is still mounted (%d > %d)", after, before)
 }
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch ~ Project@/litar@/Go@/functions@/litar.countLitarMounts ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 
 The background process sleeps 3 seconds; waiting at most 2 shows that evaluation does not wait for it.
 @<Project@/litar@/Tests@/Filter@/check that 'ev' returns msg before the background process ends@=
@@ -3571,8 +3571,8 @@ case <-time.After(2 * time.Second):
 
 @<filter test@:litar@:Language@/Go@/File@/functions@+
 func TestArchiveFileStatStable(t *testing.T) {
-if _, err := os.Stat("/dev/fuse"); err != nil {
-	t.Skip("no /dev/fuse")
+if !fuseAvailable() {
+	t.Skip("no FUSE")
 }
 src := "" +
 	"@@[hello.txt@@=\n" +
@@ -3595,13 +3595,19 @@ if err != nil {
 @<Project@/litar@/Tests@/Filter@/check the stats of hello.txt and doc/note.txt printed in 'got'@>
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 
 The probe prints the stats of both files, after checking that reading and copying
 change neither them nor the directory.
 @<Project@/litar@/Tests@/Filter@/lines of the probe script in TestArchiveFileStatStable@=
 "#!/bin/sh\n" +
-	"fields='%i %s %f %h %X %Y %Z'\n" +
+	"if stat -c %i hello.txt >/dev/null 2>&1; then\n" +
+	"  fstat() { stat -c '%i %s %f %h %X %Y %Z' \"$1\"; }\n" +
+	"  dino() { stat -c %i \"$1\"; }\n" +
+	"else\n" +
+	"  fstat() { stat -f '%i %z %Xp %l %a %m %c' \"$1\"; }\n" +
+	"  dino() { stat -f %i \"$1\"; }\n" +
+	"fi\n" +
 	@<Project@/litar@/Tests@/Filter@/probe lines that stat the files around reads and a copy@>
 	@<Project@/litar@/Tests@/Filter@/probe lines that fail if a stat changed or hello.txt can be modified@>
 	"echo \"$s1\"\n" +
@@ -3609,17 +3615,17 @@ change neither them nor the directory.
 @
 
 @<Project@/litar@/Tests@/Filter@/probe lines that stat the files around reads and a copy@=
-"s1=$(stat -c \"$fields\" hello.txt)\n" +
+"s1=$(fstat hello.txt)\n" +
 	"cat hello.txt >/dev/null\n" +
 	"out=$(mktemp)\n" +
 	"cp hello.txt \"$out\" || exit 1\n" +
 	"cmp hello.txt \"$out\" || exit 1\n" +
 	"rm -f \"$out\"\n" +
-	"s2=$(stat -c \"$fields\" hello.txt)\n" +
-	"d1=$(stat -c %i doc)\n" +
+	"s2=$(fstat hello.txt)\n" +
+	"d1=$(dino doc)\n" +
 	"cat doc/note.txt >/dev/null\n" +
-	"d2=$(stat -c %i doc)\n" +
-	"n1=$(stat -c \"$fields\" doc/note.txt)\n" +
+	"d2=$(dino doc)\n" +
+	"n1=$(fstat doc/note.txt)\n" +
 @
 
 Both touch and chmod must fail, and the failed attempts must not change the stats either.
@@ -3632,7 +3638,7 @@ Both touch and chmod must fail, and the failed attempts must not change the stat
 	"  echo mutable\n" +
 	"  exit 1\n" +
 	"fi\n" +
-	"s3=$(stat -c \"$fields\" hello.txt)\n" +
+	"s3=$(fstat hello.txt)\n" +
 	"if [ \"$s1\" != \"$s3\" ]; then\n" +
 	"  echo \"meta $s1 $s3\"\n" +
 	"  exit 1\n" +
@@ -3679,8 +3685,8 @@ func mustPrint(t *testing.T, s string) (ChunkRef, []Filter) {
 
 @<filter test@:litar@:Language@/Go@/File@/functions@+
 func TestMappedFileAndCycle(t *testing.T) {
-if _, err := os.Stat("/dev/fuse"); err != nil {
-	t.Skip("no /dev/fuse")
+if !fuseAvailable() {
+	t.Skip("no FUSE")
 }
 dir := t.TempDir()
 origin := filepath.Join(dir, "origin.txt")
@@ -3697,12 +3703,12 @@ ev := NewEvaluator(blocks, []Mapping{{
 @<Project@/litar@/Tests@/Filter@/check that data.txt as both an archive file and a mapping fails@>
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/types@/litar.Mapping @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/types@/litar.Mapping ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 
 @<filter test@:litar@:Language@/Go@/File@/functions@+
 func TestFileCache(t *testing.T) {
-if _, err := os.Stat("/dev/fuse"); err != nil {
-	t.Skip("no /dev/fuse")
+if !fuseAvailable() {
+	t.Skip("no FUSE")
 }
 count := filepath.Join(t.TempDir(), "count")
 src := "" +
@@ -3712,7 +3718,7 @@ blocks := mustArch(t, src)
 @<Project@/litar@/Tests@/Filter@/check that extending part runs the counting filter again for copy.txt and cached.txt@>
 }
 
-@~ Project@/litar@/Go@/functions@/litar.mustArch @
+@~ Project@/litar@/Go@/functions@/litar.mustArch ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 
 The filter tally appends a line to count and prints how many lines count has,
 so its output tells how often it ran. copy.txt shows cached.txt to a filter.
@@ -3762,8 +3768,8 @@ for _, name := range []string{"copy.txt", "cached.txt"} {
 
 @<filter test@:litar@:Language@/Go@/File@/functions@+
 func TestMappedDirectory(t *testing.T) {
-if _, err := os.Stat("/dev/fuse"); err != nil {
-	t.Skip("no /dev/fuse")
+if !fuseAvailable() {
+	t.Skip("no FUSE")
 }
 out := filepath.Join(t.TempDir(), "out")
 src := "" +
@@ -3780,7 +3786,7 @@ if err != nil || string(data) != "made\n" {
 @<Project@/litar@/Tests@/Filter@/check that an archive file below out makes the view of shadow invalid@>
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/types@/litar.Mapping @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/types@/litar.Mapping ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 
 The directory out does not exist yet, so the view creates it.
 shadow adds the archive file out/x, which collides with the mapped directory.
@@ -3855,8 +3861,9 @@ The FUSE view that shows a filter the files of its view.
 
 @<fuse@:litar@:Language@/Go@/File@/import paths@+
 "context"
+"io"
+"log"
 "os"
-"os/exec"
 "path/filepath"
 "sort"
 "sync"
@@ -4063,20 +4070,6 @@ func (m *mount) close() {
 
 @~ Project@/litar@/Go@/functions@/litar.detach @? Project@/litar@/Go@/methods@/litar.mount.close @~ Project@/litar@/Go@/types@/litar.mount @~ Project@/litar@/Go@/variables@/litar.liveMounts @~ Project@/litar@/Go@/variables@/litar.liveMu @
 
-@<fuse@:litar@:Language@/Go@/File@/functions@+
-func detach(dir string, direct bool) {
-	if direct && syscall.Unmount(dir, syscall.MNT_DETACH) == nil {
-		return
-	}
-	for _, prog := range []string{"fusermount3", "fusermount"} {
-		if exec.Command(prog, "-u", "-z", dir).Run() == nil {
-			return
-		}
-	}
-}
-
-@? Project@/litar@/Go@/functions@/litar.detach @
-
 DetachMounts lazily unmounts every filter view that is still mounted. A process that exits without it leaves a dead mount in the temporary directory.
 @<fuse@:litar@:Language@/Go@/File@/functions@+
 func DetachMounts() {
@@ -4118,44 +4111,30 @@ return m, nil
 
 @~ Project@/litar@/Go@/functions@/litar.buildVTree @~ Project@/litar@/Go@/functions@/litar.fmtMount @? Project@/litar@/Go@/functions@/litar.mountView @~ Project@/litar@/Go@/types@/litar.mount @~ Project@/litar@/Go@/types@/litar.viewFile @~ Project@/litar@/Go@/variables@/litar.liveMounts @~ Project@/litar@/Go@/variables@/litar.liveMu @
 
-The kernel caches neither entries nor attributes, and NullPermissions leaves
-the permission bits as the nodes report them.
+The kernel caches neither entries nor attributes, NullPermissions leaves
+the permission bits as the nodes report them, and UID and GID default to the
+current user so macFUSE allows creating overlay files in the root directory.
+Discarding go-fuse logs keeps stderr clean for filter checks and MCP stdio.
 @<Project@/litar@/FUSE View@/mount 'tree' at 'dir' with new files in 'overlay', setting 'server' and 'direct'@=
 root := &dirNode{rel: "", spec: tree, overlay: overlay}
 zero := time.Duration(0)
+discard := log.New(io.Discard, "", 0)
 opts := &fs.Options{
 	EntryTimeout:    &zero,
 	AttrTimeout:     &zero,
 	NullPermissions: true,
+	UID:             uint32(os.Getuid()),
+	GID:             uint32(os.Getgid()),
+	Logger:          discard,
 }
 opts.FsName = "litar"
 opts.Name = "litar"
-@<Project@/litar@/FUSE View@/mount 'root' at 'dir' with 'opts', directly if allowed, else through fusermount@>
-@~ Project@/litar@/Go@/types@/litar.dirNode @
-
-A direct mount needs privileges. Without them the mount is tried again through
-fusermount, in a fresh directory and with a fresh root node.
-@<Project@/litar@/FUSE View@/mount 'root' at 'dir' with 'opts', directly if allowed, else through fusermount@=
-opts.DirectMount = true
-server, err = fs.Mount(dir, root, opts)
-direct = err == nil
+opts.MountOptions.Logger = discard
+dir, server, direct, err = mountFUSE(dir, root, opts, tree, overlay)
 if err != nil {
-	os.RemoveAll(dir)
-	dir, err = os.MkdirTemp("", "litar-mnt-*")
-	if err != nil {
-		os.RemoveAll(overlay)
-		return nil, fmtMount(err)
-	}
-	opts.DirectMount = false
-	root = &dirNode{rel: "", spec: tree, overlay: overlay}
-	server, err = fs.Mount(dir, root, opts)
+	return nil, err
 }
-if err != nil {
-	os.RemoveAll(dir)
-	os.RemoveAll(overlay)
-	return nil, fmtMount(err)
-}
-@~ Project@/litar@/Go@/functions@/litar.fmtMount @~ Project@/litar@/Go@/types@/litar.dirNode @
+@~ Project@/litar@/Go@/functions@/litar.mountFUSE @~ Project@/litar@/Go@/types@/litar.dirNode @
 
 @<fuse@:litar@:Language@/Go@/File@/functions@+
 func fmtMount(err error) error {
@@ -4535,13 +4514,15 @@ func (f *fileNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.Attr
 
 @~ Project@/litar@/Go@/functions@/litar.setFileAttr @~ Project@/litar@/Go@/types@/litar.fileNode @
 
+The file is already tangled and immutable, so its exact size is known
+and buffered reads work without FOPEN_DIRECT_IO, which breaks mmap on macFUSE.
 @<fuse@:litar@:Language@/Go@/File@/methods@+
 func (f *fileNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
 	acc := flags & syscall.O_ACCMODE
 	if acc == syscall.O_WRONLY || acc == syscall.O_RDWR || flags&syscall.O_TRUNC != 0 || flags&syscall.O_APPEND != 0 {
 		return nil, 0, syscall.EROFS
 	}
-	return &archiveFH{file: f.file}, fuse.FOPEN_DIRECT_IO, 0
+	return &archiveFH{file: f.file}, 0, 0
 }
 
 @~ Project@/litar@/Go@/types@/litar.archiveFH @~ Project@/litar@/Go@/types@/litar.fileNode @
@@ -9404,9 +9385,14 @@ var (
 
 @~ Project@/litar@/Go@/functions@/litar.composerDoc @~ Project@/litar@/Go@/functions@/litar.writeFile @
 
+Resolve symlinks in the temporary directory (such as /var -> /private/var on macOS),
+since FindArchive compares against canonical paths.
 @<cli test@:litar@:Language@/Go@/File@/functions@+
 func TestFindArchive(t *testing.T) {
-dir := t.TempDir()
+dir, err := filepath.EvalSymlinks(t.TempDir())
+if err != nil {
+	t.Fatal(err)
+}
 sub := filepath.Join(dir, "sub")
 @<Project@/litar@/Tests@/Command Line@/write a composition in 'dir' with a child archive under 'sub', and another composition in 'sub'@>
 
@@ -10183,8 +10169,8 @@ The pure run is started once and served from the cache the second time;
 the run with a mapped file and the run that writes to stderr are started every time.
 @<filter test@:litar@:Language@/Go@/File@/functions@+
 func TestFilterCache(t *testing.T) {
-if _, err := os.Stat("/dev/fuse"); err != nil {
-	t.Skip("no /dev/fuse")
+if !fuseAvailable() {
+	t.Skip("no FUSE")
 }
 filterCacheDir = t.TempDir()
 defer func() { filterCacheDir = "" }()
@@ -10214,7 +10200,7 @@ if data, err := os.ReadFile(count); err != nil || strings.Count(string(data), "\
 }
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/variables@/litar.filterCacheDir @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/variables@/litar.filterCacheDir ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 Renaming a chunk or a module and operating the files of a node: both rewrite names in place
 in every block that holds them, so the blocks keep their content and their comments.
 @[internal/litar/rewrite.go@`go module@=
@@ -15035,8 +15021,8 @@ func TestSelection(t *testing.T) {
 A filter reads a read-only mapped directory, but cannot create, change, or remove anything in it.
 @<filter test@:litar@:Language@/Go@/File@/functions@+
 func TestReadOnlyMappedDirectory(t *testing.T) {
-	if _, err := os.Stat("/dev/fuse"); err != nil {
-		t.Skip("no /dev/fuse")
+	if !fuseAvailable() {
+		t.Skip("no FUSE")
 	}
 	host := t.TempDir()
 	writeFile(t, filepath.Join(host, "kept.txt"), "kept\n")
@@ -15063,7 +15049,7 @@ func TestReadOnlyMappedDirectory(t *testing.T) {
 	}
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/types@/litar.Mapping @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/types@/litar.Mapping ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 A node created with a select field reads only what it selects, its meta chunks included,
 but evaluates the whole chain; blocks://define lists the blocks defining an item.
 Selecting 'word' shows 'word', 'msg', which contains it and refers to its item,
@@ -15113,3 +15099,147 @@ if got := f.tool("evaluate_expression", "expression", "msg"); got != "hello worl
 	t.Fatalf("msg %q", got)
 }
 @~ Project@/litar@/Go@/functions@/litar.readResource @~ Project@/litar@/Go@/methods@/litar.mcpFixture.read @~ Project@/litar@/Go@/methods@/litar.mcpFixture.ref @~ Project@/litar@/Go@/methods@/litar.mcpFixture.tool @~ Project@/litar@/Go@/types@/litar.blockJSON @
+Linux FUSE mount, detach, and availability checks.
+@[internal/litar/fuse_linux.go@`go module@=
+@<fuse linux@:litar@:Language@/Go@/File@/file@>@
+@<fuse linux@:litar@:Language@/Go@/File@/build constraints@=
+//go:build linux
+
+@
+@<fuse linux@:litar@:Language@/Go@/File@/import paths@+
+"os"
+"os/exec"
+"strings"
+"syscall"
+
+"github.com/hanwen/go-fuse/v2/fs"
+"github.com/hanwen/go-fuse/v2/fuse"
+@
+A direct mount needs privileges. Without them the mount is tried again through
+fusermount, in a fresh directory and with a fresh root node.
+@<fuse linux@:litar@:Language@/Go@/File@/functions@+
+func mountFUSE(dir string, root *dirNode, opts *fs.Options, tree *vdir, overlay string) (string, *fuse.Server, bool, error) {
+	opts.DirectMount = true
+	server, err := fs.Mount(dir, root, opts)
+	direct := err == nil
+	if err != nil {
+		os.RemoveAll(dir)
+		dir, err = os.MkdirTemp("", "litar-mnt-*")
+		if err != nil {
+			os.RemoveAll(overlay)
+			return "", nil, false, fmtMount(err)
+		}
+		opts.DirectMount = false
+		root = &dirNode{rel: "", spec: tree, overlay: overlay}
+		server, err = fs.Mount(dir, root, opts)
+	}
+	if err != nil {
+		os.RemoveAll(dir)
+		os.RemoveAll(overlay)
+		return "", nil, false, fmtMount(err)
+	}
+	return dir, server, direct, nil
+}
+
+@? Project@/litar@/Go@/functions@/litar.mountFUSE @~ Project@/litar@/Go@/functions@/litar.fmtMount @~ Project@/litar@/Go@/types@/litar.dirNode @~ Project@/litar@/Go@/types@/litar.vdir @
+@<fuse linux@:litar@:Language@/Go@/File@/functions@+
+func detach(dir string, direct bool) {
+	if direct && syscall.Unmount(dir, syscall.MNT_DETACH) == nil {
+		return
+	}
+	for _, prog := range []string{"fusermount3", "fusermount"} {
+		if exec.Command(prog, "-u", "-z", dir).Run() == nil {
+			return
+		}
+	}
+}
+
+@? Project@/litar@/Go@/functions@/litar.detach @
+@<fuse linux@:litar@:Language@/Go@/File@/functions@+
+func fuseAvailable() bool {
+	_, err := os.Stat("/dev/fuse")
+	return err == nil
+}
+
+@? Project@/litar@/Go@/functions@/litar.fuseAvailable @
+@<fuse linux@:litar@:Language@/Go@/File@/functions@+
+func countLitarMounts() (int, bool) {
+	data, err := os.ReadFile("/proc/self/mounts")
+	if err != nil {
+		return 0, false
+	}
+	return strings.Count(string(data), "fuse.litar"), true
+}
+
+@? Project@/litar@/Go@/functions@/litar.countLitarMounts @
+macOS (macFUSE) mount, detach, and availability checks.
+@[internal/litar/fuse_darwin.go@`go module@=
+@<fuse darwin@:litar@:Language@/Go@/File@/file@>@
+@<fuse darwin@:litar@:Language@/Go@/File@/build constraints@=
+//go:build darwin
+
+@
+@<fuse darwin@:litar@:Language@/Go@/File@/import paths@+
+"os"
+"os/exec"
+"strings"
+"syscall"
+
+"github.com/hanwen/go-fuse/v2/fs"
+"github.com/hanwen/go-fuse/v2/fuse"
+@
+MNT_FORCE from Darwin <sys/mount.h>, used to detach a busy FUSE mount.
+@<fuse darwin@:litar@:Language@/Go@/File@/constants@+
+const mntForce = 0x80000
+@
+nobrowse keeps ephemeral filter views out of Finder and Spotlight;
+noappledouble and noapplexattr keep macOS tools from creating ._ files or failing on xattrs.
+@<fuse darwin@:litar@:Language@/Go@/File@/functions@+
+func mountFUSE(dir string, root *dirNode, opts *fs.Options, _ *vdir, overlay string) (string, *fuse.Server, bool, error) {
+	opts.Options = append(opts.Options, "nobrowse", "noappledouble", "noapplexattr")
+	server, err := fs.Mount(dir, root, opts)
+	if err != nil {
+		os.RemoveAll(dir)
+		os.RemoveAll(overlay)
+		return "", nil, false, fmtMount(err)
+	}
+	return dir, server, false, nil
+}
+
+@? Project@/litar@/Go@/functions@/litar.mountFUSE @~ Project@/litar@/Go@/functions@/litar.fmtMount @~ Project@/litar@/Go@/types@/litar.dirNode @~ Project@/litar@/Go@/types@/litar.vdir @
+@<fuse darwin@:litar@:Language@/Go@/File@/functions@+
+func detach(dir string, _ bool) {
+	if syscall.Unmount(dir, mntForce) == nil {
+		return
+	}
+	if exec.Command("umount", "-f", dir).Run() == nil {
+		return
+	}
+	_ = exec.Command("diskutil", "unmount", "force", dir).Run()
+}
+
+@? Project@/litar@/Go@/functions@/litar.detach @
+@<fuse darwin@:litar@:Language@/Go@/File@/functions@+
+func fuseAvailable() bool {
+	for _, p := range []string{
+		"/Library/Filesystems/macfuse.fs/Contents/Resources/mount_macfuse",
+		"/Library/Filesystems/osxfuse.fs/Contents/Resources/mount_osxfuse",
+	} {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+@? Project@/litar@/Go@/functions@/litar.fuseAvailable @
+@<fuse darwin@:litar@:Language@/Go@/File@/functions@+
+func countLitarMounts() (int, bool) {
+	out, err := exec.Command("mount").Output()
+	if err != nil {
+		return 0, false
+	}
+	return strings.Count(string(out), "litar on "), true
+}
+
+@? Project@/litar@/Go@/functions@/litar.countLitarMounts @

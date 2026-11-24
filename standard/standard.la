@@ -6,14 +6,35 @@
 
 Executes the input as a script, the input must have a shebang,
 use the output of that script as the output.
-
+Parsing the shebang explicitly allows interpreters that are themselves scripts,
+which macOS does not execute through nested shebangs.
 @<Tool@/evaluate@=#!/bin/sh
 set -e
 temp_file=`mktemp`
-cat - > $temp_file
-chmod +x $temp_file
-$temp_file
-rm $temp_file
+trap 'rm -f "$temp_file"' EXIT
+cat - > "$temp_file"
+chmod +x "$temp_file"
+IFS= read -r first < "$temp_file" || true
+case "$first" in
+'#!'*)
+    line=${first#\#!}
+    cr=`printf '\r'`
+    line=${line%"$cr"}
+    while case "$line" in ' '*|'	'*) true;; *) false;; esac; do line=${line#?}; done
+    interp=${line%%[ 	]*}
+    rest=${line#"$interp"}
+    while case "$rest" in ' '*|'	'*) true;; *) false;; esac; do rest=${rest#?}; done
+    while case "$rest" in *' '|*'	') true;; *) false;; esac; do rest=${rest%?}; done
+    if [ -n "$rest" ]; then
+        "$interp" "$rest" "$temp_file"
+    else
+        "$interp" "$temp_file"
+    fi
+    ;;
+*)
+    "$temp_file"
+    ;;
+esac
 @
 @<Chunk@/Tool@/Text Processing@=
 {
@@ -132,7 +153,10 @@ cproto -s
 cproto -v -e @<-I flags@>
 @
 @<Language@/C@/Module@/Format@/format C code@=#!/bin/sh
-clang-format-19 -style=file
+if command -v clang-format-19 >/dev/null 2>&1; then
+    exec clang-format-19 -style=file
+fi
+exec clang-format -style=file
 @
 @<Language@/C@/Module@/Interface@/wrap with included flag@=
 @<Tool@/Text Processing@/basic python settings@>
@@ -2617,7 +2641,8 @@ from typing import Literal
 The interpreter of a script is the client of a background Python process.
 The client and the server are written to a directory named by their checksum,
 private to the user, so a changed client, server, or python3 gets its own server.
-The directory is moved into place whole, so a concurrent evaluation never sees it half written.
+The directory is moved into place whole with POSIX rename, so a concurrent evaluation
+never sees it half written and macOS BSD mv without -T is not needed.
 It lies in the filter cache of litar when there is one, because the cache keeps the output
 of this chunk, the path of the client, and both must go away together.
 @<Tool@/Text Processing@/Runtime@/path to python interpreter@=
@@ -2645,7 +2670,12 @@ LITAR_PYTHON_SERVER
 chmod +x "$temp/client"
 dir=$base/`cat "$temp/client" "$temp/server" | cksum | tr ' ' -`
 if [ ! -x "$dir/client" ]; then
-    mv -T "$temp" "$dir" 2>/dev/null || [ -x "$dir/client" ]
+    python3 -c 'import os, sys
+try:
+    os.rename(sys.argv[1], sys.argv[2])
+except OSError:
+    pass' "$temp" "$dir"
+    [ -x "$dir/client" ]
 fi
 echo "$dir/client"
 @|Tool@/evaluate@
@@ -2656,6 +2686,7 @@ When no server listens, it starts one in the background and runs this script its
 so only the first script pays for loading the dependencies.
 The server leaves the working directory, a view that is unmounted after the script,
 and closes the standard streams, which the evaluation reads until they close.
+Connecting through the relative name 'socket' in 'here' avoids the short Unix socket path limit on macOS.
 @<Tool@/Text Processing@/Runtime@/python client@=
 import json
 import os
@@ -2663,6 +2694,7 @@ import socket
 import sys
 
 here = os.path.dirname(os.path.abspath(__file__))
+cwd = os.getcwd()
 
 
 def start_server():
@@ -2678,13 +2710,17 @@ def start_server():
 
 try:
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    connection.connect(os.path.join(here, 'socket'))
+    os.chdir(here)
+    try:
+        connection.connect('socket')
+    finally:
+        os.chdir(cwd)
 except OSError:
     start_server()
     os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
 request = {
     'argv': [os.path.abspath(sys.argv[1]), *sys.argv[2:]],
-    'cwd': os.getcwd(),
+    'cwd': cwd,
     'env': dict(os.environ),
 }
 socket.send_fds(connection, [b'\0'], [0, 1, 2])
@@ -2700,6 +2736,7 @@ so each script starts from the same state and none sees what another changed.
 A lock keeps one server per directory; a second one exits at once.
 After ten idle minutes the server removes its socket, so clients start a new server,
 serves the connections already waiting, and exits.
+Binding the relative name 'socket' in 'here' avoids the short Unix socket path limit on macOS.
 @<Tool@/Text Processing@/Runtime@/python server@=
 @<.@/python dependencies@>
 import fcntl
@@ -2738,12 +2775,13 @@ def accept_all():
         connection.close()
 
 
-lock = open(os.path.join(here, 'lock'), 'w')
+os.chdir(here)
+lock = open('lock', 'w')
 try:
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 except OSError:
     sys.exit()
-path = os.path.join(here, 'socket')
+path = 'socket'
 if os.path.lexists(path):
     os.unlink(path)
 listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

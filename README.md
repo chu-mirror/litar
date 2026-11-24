@@ -34,8 +34,8 @@ Prerequisites:
   When `python3` cannot import `pydantic` and `jsonnet`, the filters run through
   [uv](https://docs.astral.sh/uv/), which downloads them on the first run.
   The filters run in a background Python process that loads them once.
-- FUSE (`/dev/fuse`) for the view tests.
-  Those tests skip when it is absent.
+- FUSE (`/dev/fuse` on Linux, or [macFUSE](https://macfuse.io/) on macOS) for filter views
+  and the view tests. Those tests skip when it is absent.
 
 The `Makefile` at the root builds litar from the composition `litar`.
 The build itself is the node `Litar Build` of that composition, based on the node `Litar`:

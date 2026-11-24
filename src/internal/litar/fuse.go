@@ -2,8 +2,9 @@ package litar
 
 import (
 	"context"
+	"io"
+	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -315,7 +316,7 @@ func (f *fileNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint3
 	if acc == syscall.O_WRONLY || acc == syscall.O_RDWR || flags&syscall.O_TRUNC != 0 || flags&syscall.O_APPEND != 0 {
 		return nil, 0, syscall.EROFS
 	}
-	return &archiveFH{file: f.file}, fuse.FOPEN_DIRECT_IO, 0
+	return &archiveFH{file: f.file}, 0, 0
 }
 
 func (f *fileNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
@@ -490,17 +491,6 @@ func splitSlash(p string) []string {
 	return out
 }
 
-func detach(dir string, direct bool) {
-	if direct && syscall.Unmount(dir, syscall.MNT_DETACH) == nil {
-		return
-	}
-	for _, prog := range []string{"fusermount3", "fusermount"} {
-		if exec.Command(prog, "-u", "-z", dir).Run() == nil {
-			return
-		}
-	}
-}
-
 func DetachMounts() {
 	liveMu.Lock()
 	defer liveMu.Unlock()
@@ -529,31 +519,21 @@ func mountView(files []viewFile) (*mount, error) {
 	)
 	root := &dirNode{rel: "", spec: tree, overlay: overlay}
 	zero := time.Duration(0)
+	discard := log.New(io.Discard, "", 0)
 	opts := &fs.Options{
 		EntryTimeout:    &zero,
 		AttrTimeout:     &zero,
 		NullPermissions: true,
+		UID:             uint32(os.Getuid()),
+		GID:             uint32(os.Getgid()),
+		Logger:          discard,
 	}
 	opts.FsName = "litar"
 	opts.Name = "litar"
-	opts.DirectMount = true
-	server, err = fs.Mount(dir, root, opts)
-	direct = err == nil
+	opts.MountOptions.Logger = discard
+	dir, server, direct, err = mountFUSE(dir, root, opts, tree, overlay)
 	if err != nil {
-		os.RemoveAll(dir)
-		dir, err = os.MkdirTemp("", "litar-mnt-*")
-		if err != nil {
-			os.RemoveAll(overlay)
-			return nil, fmtMount(err)
-		}
-		opts.DirectMount = false
-		root = &dirNode{rel: "", spec: tree, overlay: overlay}
-		server, err = fs.Mount(dir, root, opts)
-	}
-	if err != nil {
-		os.RemoveAll(dir)
-		os.RemoveAll(overlay)
-		return nil, fmtMount(err)
+		return nil, err
 	}
 	m := &mount{dir: dir, server: server, direct: direct, extra: []string{overlay}}
 	liveMu.Lock()

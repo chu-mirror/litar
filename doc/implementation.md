@@ -20,6 +20,7 @@ from the composition in `litar/`:
   - `list.go`: block and tree listings (`-l`, `-e`, `-d`, `-r`, modules, chunks, items)
   - `filter.go`: file catalog, view evaluation, tangling, and filter execution
   - `fuse.go`: FUSE filesystem for filter views
+  - `fuse_linux.go`, `fuse_darwin.go`: OS-specific FUSE mount, detach, and availability helpers
   - `cli.go`: command-line flag parsing and dispatch
   - `mcp.go`: MCP stdio server, resources, tools, and metadata evaluation
   - `rewrite.go`: renaming chunks, modules, items, and domains, the `rm` and `mv` of files, mappings,
@@ -231,13 +232,14 @@ Three implementation constraints govern the FUSE mount:
   the FUSE mount, Go's `vfork` child would `chdir` into a filesystem served by the parent Go
   process before `exec`, which can deadlock if the Go runtime initiates a garbage-collection
   stop-the-world.
-- **Lazy unmount fallback:** If normal unmounting fails after the filter exits (for example,
+- **Lazy / forced unmount fallback:** If normal unmounting fails after the filter exits (for example,
   because the filter left a background process running in the mount), the mount is detached
-  lazily (`MNT_DETACH` or `fusermount -u -z`) rather than waiting indefinitely.
+  rather than waiting indefinitely (`MNT_DETACH` or `fusermount -u -z` on Linux; `MNT_FORCE`,
+  `umount -f`, or `diskutil unmount force` on macOS).
 - **Signal handling:** `SIGINT`, `SIGTERM`, and `SIGHUP` caught by `litar` detach all live
   mounts before terminating.
 
-Tests that require FUSE skip automatically when `/dev/fuse` is absent.
+Tests that require FUSE skip automatically when `/dev/fuse` (Linux) or macFUSE (macOS) is absent.
 
 # Command line
 

@@ -30,7 +30,7 @@ write() {
 	mv "$dest/$2.litar-new" "$dest/$2"
 	echo "$2"
 }
-find . \( -path "./$dest" -o -path "./$mod" \) -prune -o -type f -printf '%P\n' | LC_ALL=C sort |
+find . \( -path "./$dest" -o -path "./$mod" \) -prune -o -type f -print | sed 's|^\./||' | LC_ALL=C sort |
 while IFS= read -r f; do
 	write "$f" "$f"
 done
@@ -531,10 +531,16 @@ fails status "filter 'die' exited with status 3" -f archive.la -p use2
 @<Project@/litar@/Tests@/case results@+
 @<.@/Cases@/fuse@>
 @
-A filter sees the files of its view, read-only below an overlay; the case needs /dev/fuse.
+A filter sees the files of its view, read-only below an overlay; the case needs FUSE.
 @<Project@/litar@/Tests@/Cases@/fuse@=
 test_case fuse tests/cases/fuse
-[ -e /dev/fuse ] || skip "no /dev/fuse"
+if [ "$(uname -s)" = Darwin ]; then
+	[ -x /Library/Filesystems/macfuse.fs/Contents/Resources/mount_macfuse ] ||
+	[ -x /Library/Filesystems/osxfuse.fs/Contents/Resources/mount_osxfuse ] ||
+	skip "no macFUSE"
+else
+	[ -e /dev/fuse ] || skip "no /dev/fuse"
+fi
 prints cat 'hello world' -f archive.la -p msg
 prints exe $'yes\n' -f archive.la -p ask
 prints overlay overlay -f archive.la -p made

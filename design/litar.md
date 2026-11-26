@@ -33,8 +33,8 @@ The traditional unit of text is the file; text of different types
 is saved in separate files. Creating a new file is sometimes cumbersome.
 Like, you want to insert build-time information into your code whenever you build
 your program. To do that, you might write a simple sed script and
-put that to Makefile. Here is a problem: sed operates on the whole
-file, so you want the sed script to leave the remaining alone.
+put that in a Makefile. Here is a problem: sed operates on the whole
+file, so you want the sed script to leave the rest alone.
 To solve this, you might move the code being modified to a new file,
 use a function to encapsulate it, or simply store the information
 in a macro or a variable, then pass it back to the original file.
@@ -217,8 +217,8 @@ int main(int argc, char **argv)
 @
 ```
 
-It does not work because all applying to the `general structure for C program`
-reflects on both programs. litar introduces specialization of chunks.
+It does not work because every block applied to the `general structure for C program`
+affects both programs. litar introduces specialization of chunks.
 
 ```
 @<general structure for C program@=
@@ -341,11 +341,11 @@ litar allows browsing among related blocks. For example,
 - all effective blocks of a chunk reference;
 - all blocks that depend on a chunk reference.
 
-These relations help with understanding of a litar archive,
+These relations help with understanding a litar archive,
 but litar does not have knowledge of text it manages.
 It does not recognize variable names or function names in programming languages.
 
-We can mark these concrete items explicitly to build underlying connection.
+We can mark these concrete items explicitly to build underlying connections.
 
 ```
 Variable 'times' saves the number of occurrences of an event.
@@ -472,7 +472,7 @@ The FUSE filesystem has several characteristics:
   and maps all writing to the temporary directory.
 
 In the end, litar shall notice and provide helpful information if a circular dependency occurs.
-Users can use the information to limit the files that an invocation relates.
+Users can use the information to limit the files that an invocation depends on.
 
 ## Reserved Namespaces
 
@@ -577,7 +577,7 @@ but as we see in the following guidelines, we can assume that they are trees fro
 ## Name a chunk with a phrase, whose grammatical role fits that structure
 
 First of all, because the name of a chunk is a phrase,
-**do not capitalize the first character and do not append a period at the end**.
+**do not capitalize the first character if the first word is not an acronym and do not append a period at the end**.
 And one principle is mandatory:
 **name a chunk with a short description of the encapsulated structure**.
 It might be unnecessary to stress this principle, but anyway, this principle is the most important.
@@ -635,7 +635,7 @@ printf("Hello\n");
 The chunk `includes` and `definitions` are in the same module as `module`,
 but `print hello to stdout` is in the submodule `Output`.
 Because the former two form a template, when another module use `module` to create
-a C module so it must access the two chunks directly, but `print hello to stdout`
+a C module, it must access the two chunks directly, but `print hello to stdout`
 is used only by the function `print_hello`, it's not supposed to be accessed outside the module.
 
 ## If a tree is big enough, divide it
@@ -733,7 +733,7 @@ Here are some rules:
   so the item tree works as a glossary;
 - **explain an item fully in the comment of the block that defines it**,
   every other block only refers to the item;
-- **define an item in one block, if it has a definition**,
+- **define an item in blocks, if it has a definition**,
   a function, a variable, or a concept is defined once,
   but a topic, and usually a term, has no defining block and is only referred to;
 - **create an item only when it connects blocks**,
@@ -747,8 +747,8 @@ and a definition marked with `@~` is taken for one more use.
 There are some cases we want to avoid cross-reference:
 
 - the items are from common sense, like standard library, well-known third-party libraries;
-- the items are quoted in the name of the chunk name, if a chunk's name is `add 'a' to 'b'`,
-  then even though 'a' and 'b' is not limited to current block, the name implies the reference
+- the items are quoted in the chunk name, if a chunk's name is `add 'a' to 'b'`,
+  then even though 'a' and 'b' are not limited to current block, the name implies the reference
   implicitly, so do not use cross-reference.
 
 ## Do not assign every tree with a chunk, use cross-referencing when appropriate
@@ -1059,7 +1059,7 @@ but it also means that a composition may contain too much unnecessary informatio
 The context is too big, for human, also for LLMs.
 
 A well defined context is the key to good understandability,
-it shall be as small as possible, but complete, moreover, intriguing.
+it shall be as small as possible, but complete.
 The flat structure of litar archives makes the management of contexts really easy:
 a context for litar is simply a set of blocks,
 then the question is reduced to how to select blocks for a task.
@@ -1096,8 +1096,8 @@ and somehow doing this actually intrigued the author to further improve the code
 
 Whether a task can be smoothly done highly depends on the context.
 An experienced programmer can quickly find out proper context to explore.
-The efficiency of most work in the world is influenced by the quality of context mostly
-rather than by the worker's IQ.
+The efficiency of most work in the world is influenced more by the quality of context
+than by the worker's IQ.
 
 litar provides a mechanism to shrink the context to fit a task's needs.
 The selection of blocks is based on a concept which is called functional unit.

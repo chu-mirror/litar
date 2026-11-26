@@ -1819,17 +1819,17 @@ so the usage is printed once, after the stream is known.
 No variable is declared here, so the main body may declare any name.
 @<UI@/Command Line@/Go@/parse command line arguments@=
 @<.@/register flags@>flag.Usage = func() {
-fmt.Fprint(flag.CommandLine.Output(), @<.@/usage literal@>)
+	fmt.Fprint(flag.CommandLine.Output(), @<.@/usage literal@>)
 }
 flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
 flag.CommandLine.Usage = func() {}
 if err := flag.CommandLine.Parse(os.Args[1:]); err == flag.ErrHelp {
-flag.CommandLine.SetOutput(os.Stdout)
-flag.Usage()
-os.Exit(0)
+	flag.CommandLine.SetOutput(os.Stdout)
+	flag.Usage()
+	os.Exit(0)
 } else if err != nil {
-flag.Usage()
-os.Exit(2)
+	flag.Usage()
+	os.Exit(2)
 }
 @<.@/store arguments@>@
 @<UI@/Command Line@/Go@/store arguments@=

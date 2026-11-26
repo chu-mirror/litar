@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "litar": {
+      "command": "sh",
+      "args": ["-c", "exec \"$0\" -a", "${PLUGIN_ROOT}/../../../bin/litar"],
+      "cwd": "${PLUGIN_ROOT}/../../..",
+      "env": {
+        "LITAR_LIBRARY": "${PLUGIN_ROOT}/../../.."
+      }
+    }
+  }
+}

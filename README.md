@@ -19,10 +19,10 @@ including the MCP server it opens for agents.
   - src/cmd/litar-web: the `litar-web` command, a browser interface for compositions;
   - src/internal/litar: the Go implementation;
 - standard: the standard library, a composition that other compositions ground on;
-- examples: example programs, composed by `examples/composer.json`;
+- examples: example programs, composed by `examples/c/composer.json` and `examples/go/composer.json`;
 - agent: skills for agents working on litar compositions (`litar-task` for editing,
   `litar-port` for porting a project, `litar-explain` for explaining), with their references,
-  linked from `.cursor/skills`.
+  linked from `.cursor/skills`, `.claude/skills`, and `.agents/plugins/litar/skills`.
 
 # Build and install
 

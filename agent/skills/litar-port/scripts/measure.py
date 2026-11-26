@@ -41,7 +41,7 @@ def content(block):
         nxt = block[k + 1:k + 2]
         if nxt == "<":
             j = block.index("@>", k + 2) + 2
-        elif nxt in ("|", "~", "") or nxt in " \t\r\n":
+        elif nxt in ("|", "~", "?", "") or nxt in " \t\r\n":
             break
         else:
             j = k + 2

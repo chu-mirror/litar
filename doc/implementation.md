@@ -10,8 +10,8 @@ The Go module `litar` (Go 1.25, formatted with `gofmt`) lives under `src/` and i
 from the composition in `litar/`:
 
 - `cmd/litar/main.go`: entry point that passes `os.Args` to `litar.Main`.
-- `cmd/litar-web/main.go`: web UI for browsing and editing that spawns `litar -a` and serves its MCP
-  resources over HTTP.
+- `cmd/litar-web/main.go`, `cmd/litar-web/index.html`: web UI for browsing and editing that spawns
+  `litar -a` and serves its MCP resources over HTTP.
 - `internal/litar/`: single package containing the implementation, split by concern:
   - `types.go`: core data structures and path/reference helpers
   - `parse.go`: archive and command-line expression parser
@@ -19,6 +19,7 @@ from the composition in `litar/`:
   - `eval.go`: chunk reference evaluation and cycle detection
   - `list.go`: block and tree listings (`-l`, `-e`, `-d`, `-r`, modules, chunks, items)
   - `filter.go`: file catalog, view evaluation, tangling, and filter execution
+  - `cache.go`: on-disk filter output cache keyed by script, input, and archive view files
   - `fuse.go`: FUSE filesystem for filter views
   - `fuse_linux.go`, `fuse_darwin.go`: OS-specific FUSE mount, detach, and availability helpers
   - `cli.go`: command-line flag parsing and dispatch
@@ -26,8 +27,9 @@ from the composition in `litar/`:
   - `rewrite.go`: renaming chunks, modules, items, and domains, the `rm` and `mv` of files, mappings,
     and the override, deletion, and move of single blocks
 
-External dependencies are limited to `github.com/hanwen/go-fuse/v2` (for filter view mounts)
-and `github.com/modelcontextprotocol/go-sdk` (for the MCP server).
+External dependencies are limited to `github.com/hanwen/go-fuse/v2` (for filter view mounts),
+`github.com/modelcontextprotocol/go-sdk` (for the MCP server), and
+`github.com/google/jsonschema-go` (for MCP tool input schemas).
 
 At the repository root, the `Makefile` evaluates the node `Litar Build` (`litar/build.la`),
 based on the node `Litar`; it maps `bin/` and `src/` of the repository into
@@ -224,6 +226,12 @@ and populate descriptions by evaluating those metadata chunks.
    host overlay directory that is visible through the mount during the invocation and
    discarded afterwards. The filter runs with the mount as its working directory while
    absolute host paths remain reachable.
+
+4. **Filter cache (`cache.go`):** Successful filter runs with no mapped files or directories in
+   their view and no output on `stderr` are cached under `$LITAR_CACHE/filters/<key[:2]>/<key>`
+   (defaulting to `<UserCacheDir>/litar`, disabled when `LITAR_CACHE` is empty or `off`).
+   The key is a SHA-256 digest of the filter script, input text, and each archive view file's
+   path, executable bit, and body. Filters receive `LITAR_CACHE` in their environment.
 
 Three implementation constraints govern the FUSE mount:
 
@@ -446,7 +454,8 @@ every concrete resource URI that existed before or after the change.
   `UI@/Command Line` (the invocation syntax, its generators for C and Go, and the acceptance test engine `Test`),
   and `Framework@/Light`.
 - `litar`: grounds on `standard` and adds `Litar`, whose chunks live under `Project@/litar`,
-  and `Litar Build`, based on `Litar`, whose chunks live under `Project@/litar@/Build`.
+  and `Litar Build`, based on `Litar`, whose chunks live under `Project@/litar@/Build` and
+  `Project@/litar@/Tests`.
 - `examples/c`: grounds on `standard` and adds `Program Hello` and `Test Light`.
 - `examples/go`: grounds on `standard` and adds `Program Hello` and `Project Hello`.
 

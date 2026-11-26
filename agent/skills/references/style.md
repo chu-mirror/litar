@@ -52,6 +52,10 @@ Modules form one tree; every chunk may refer to any other.
   from one declarative chunk through filters instead of keeping copies.
 - Put the build of a project in a node based on the project's, `Project@/<project>@/Build`:
   mappings to the real directories, build scripts, and what leaves the archive.
+- Indent block bodies in the archive itself according to the target language (tabs in Go,
+  spaces in C/Python/JS), even when a formatting filter (`gofmt`, `clang-format`) reformats
+  the evaluated file. Keep sub-chunks unindented at their own root level and indent their
+  `@<…@>` reference to match the enclosing code.
 
 ## Dividing a long block
 

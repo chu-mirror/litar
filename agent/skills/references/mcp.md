@@ -80,6 +80,16 @@ prefer `blocks://effective`, `blocks://refer`, or `blocks://specialization`
 - In a node with a `select` field (or based on one), trees, `blocks://`, and `search_blocks`
   show only the selected blocks; `file://` and `evaluate_expression` use every block.
 - After an edit, evaluate the changed chunk or file, then build or run the result.
+- **Bulk edits on large nodes:** Each `apply_block` call compacts the archive and emits
+  resource-update notifications, so hundreds of single-block `overrides` calls are slow.
+  Instead:
+  - append metadata blocks (`Chunk@/`, `Index@/`, `File@/`, `Specialization@/`) in batches
+    (e.g. 40–50 blocks per `apply_block` call);
+  - replace pure `@=` chunks (no `@+` blocks on the same `(module, chunk)`) in one
+    `apply_block` call, letting compaction drop the older `@=` blocks;
+  - for bulk changes to `@+` chunks (or chunks mixing `@=` and `@+`), snapshot all own
+    blocks of that `(module, chunk)` in order, call `delete_chunk` once, and re-apply them
+    together in one `apply_block` call.
 
 ## Compaction
 

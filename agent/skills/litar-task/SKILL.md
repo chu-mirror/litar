@@ -35,8 +35,12 @@ the current composition.
   `blocks://refer` of the items involved;
 - change an existing block with `apply_block` and `overrides`; a block of a base node is
   changed in that node;
-- put a comment before each block that carries a decision;
+- put a comment before every defining block (`@?`) explaining the item, and before any
+  other block that carries a decision;
 - mark the items each block defines (`@?`) or uses (`@~`), reusing the domains in `tree://item`;
+- add or update `Chunk@/`, `Index@/`, `File@/`, and `Specialization@/` descriptions when
+  introducing or changing chunks, items, files, or specializations, and keep existing
+  comments in sync with code changes;
 - evaluate the outputs and build or test them.
 
 **4. Digest.** See below.

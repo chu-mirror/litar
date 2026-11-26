@@ -39,28 +39,6 @@ for f in "$mod"/*; do
 done
 @
 
-The Makefile installs the MCP server for Cursor by passing this script to python3 -c
-with the configuration file, the litar binary, and the directory of the grounds.
-Only the litar entry is set, so other servers stay,
-and the file is replaced at once, so an interrupted run keeps the old file.
-@<Project@/litar@/Build@/MCP configuration script@=
-import json, os, sys
-path, litar, grounds = sys.argv[1:]
-try:
-    with open(path) as f:
-        text = f.read()
-except FileNotFoundError:
-    text = ''
-config = json.loads(text) if text.strip() else {}
-config.setdefault('mcpServers', {})['litar'] = {
-    'command': litar, 'args': ['-a'], 'env': {'LITAR_LIBRARY': grounds}}
-os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-with open(path + '.litar-new', 'w') as f:
-    json.dump(config, f, indent=2)
-    f.write('\n')
-os.replace(path + '.litar-new', path)
-@
-
 @<Chunk@/Project@/litar@/Build@=
 {"description": "What the Makefile of the repository evaluates to build, sync, and install litar."}
 @

@@ -20,9 +20,11 @@ including the MCP server it opens for agents.
   - src/internal/litar: the Go implementation;
 - standard: the standard library, a composition that other compositions ground on;
 - examples: example programs, composed by `examples/c/composer.json` and `examples/go/composer.json`;
-- agent: skills for agents working on litar compositions (`litar-task` for editing,
-  `litar-port` for porting a project, `litar-explain` for explaining), with their references,
-  linked from `.cursor/skills`, `.claude/skills`, and `.agents/plugins/litar/skills`.
+- agent: distributable agent plugin (Antigravity, Claude Code, and Cursor) bundling the `litar` MCP
+  server configuration (`litar -a` from `PATH`) and skills (`litar-task` for editing,
+  `litar-port` for porting a project, `litar-explain` for explaining), with their references.
+  In this workspace, `.agents/plugins/litar` links the same plugin metadata and skills while
+  pointing MCP to `bin/litar`.
 
 # Build and install
 
@@ -54,10 +56,14 @@ and each target evaluates one of its chunks.
 - `make install` installs `bin/litar` and `bin/litar-web` into `$(PREFIX)/bin`
   and the grounds under `$(PREFIX)/share/litar`; `PREFIX` defaults to `/usr/local`.
   It does not build, so run `make && sudo make install`.
-- `make install-cursor` then sets up Cursor for every workspace, as the user and with the same `PREFIX`:
-  it adds the `litar` MCP server, running the installed binary and grounds, to `~/.cursor/mcp.json`,
-  keeping the other servers, and copies the skills of `agent/skills` into `~/.cursor/skills`.
-  `install-mcp` and `install-skills` do each part; `CURSOR_DIR` changes `~/.cursor`.
+- `make install-cursor`, `make install-claude`, and `make install-antigravity` then install the
+  plugin in `agent` for each tool (giving it the `litar` MCP server from `PATH` and skills in every
+  workspace):
+  - `install-cursor` copies it into `~/.cursor/plugins/local/litar` (`CURSOR_DIR` changes `~/.cursor`).
+  - `install-claude` stages a local marketplace under `~/.claude/local-marketplaces/litar`
+    (`CLAUDE_DIR` changes `~/.claude`) and installs `litar@litar` via `claude plugin`.
+  - `install-antigravity` copies it into `~/.gemini/config/plugins/litar`
+    (`ANTIGRAVITY_DIR` changes `~/.gemini/config`).
 - `make clean` removes `bin` and `tmp/boot`.
 
 Edit the composition `litar`, not `src`; `make sync` overwrites the files it lists.

@@ -1,0 +1,9 @@
+{
+  "name": "litar",
+  "version": "1.0.0",
+  "description": "MCP server and agent skills for working with litar compositions",
+  "author": {
+    "name": "Chu"
+  },
+  "repository": "https://github.com/chu-mirror/litar"
+}

@@ -8,10 +8,10 @@
 #   make install          install $(BIN)/litar, $(BIN)/litar-web, and the grounds under $(PREFIX)
 #   make install-bin      install $(BIN)/litar and $(BIN)/litar-web into $(BINDIR)
 #   make install-grounds  copy each ground composition into $(GROUNDDIR)
-#   make install-cursor   install the MCP server and the agent skills for Cursor under $(CURSOR_DIR)
-#   make install-mcp      add the litar server, run as $(BINDIR)/litar, to $(MCP_CONFIG)
-#   make install-skills   copy each directory of $(SKILLS) into $(CURSOR_DIR)/skills
-#   make clean            remove $(BIN) and $(BOOT)
+#   make install-cursor       install the litar plugin for Cursor under $(CURSOR_DIR)/plugins/local/litar
+#   make install-claude       install the litar plugin for Claude Code via $(CLAUDE_DIR)/local-marketplaces/litar
+#   make install-antigravity  install the litar plugin for Antigravity under $(ANTIGRAVITY_DIR)/plugins/litar
+#   make clean                remove $(BIN) and $(BOOT)
 #
 # The build itself is the node Litar Build of that composition, based on the node Litar;
 # its mappings put $(BIN) and $(SRC) into the filter views, so each target here evaluates one chunk
@@ -33,10 +33,10 @@
 # for any other PREFIX, add $(GROUNDDIR) to LITAR_LIBRARY.
 # install does not build, so `make && sudo make install` compiles as the user.
 #
-# install-cursor writes to the home directory, so run it as the user, after install, with the same PREFIX.
-# The server entry names the installed binary and grounds, so it works in any workspace.
-# install-mcp replaces only the litar entry of $(MCP_CONFIG) and keeps the other servers.
-# The skills link to each other and to references by relative paths, so they are copied side by side.
+# install-cursor, install-claude, and install-antigravity install the plugin in $(PLUGIN),
+# dereferencing its internal symlinks. Run them as the user after `make install` (with `litar` on PATH).
+# Claude Code requires a marketplace to persist a local plugin, so install-claude stages a local one
+# under $(CLAUDE_DIR)/local-marketplaces/litar and registers it with `claude plugin`.
 
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
@@ -53,19 +53,19 @@ BOOT ?= tmp/boot/litar
 WEB_ADDR ?= 127.0.0.1:8080
 COMMANDS := $(addprefix $(BIN)/,litar litar-web)
 CURSOR_DIR ?= $(HOME)/.cursor
-MCP_CONFIG ?= $(CURSOR_DIR)/mcp.json
-SKILLS := agent/skills
+CLAUDE_DIR ?= $(HOME)/.claude
+ANTIGRAVITY_DIR ?= $(HOME)/.gemini/config
+PLUGIN := agent
 
 LITAR ?= $(or $(wildcard $(CURDIR)/$(BIN)/litar),$(abspath $(BOOT)))
 
-SKILL_NAMES := $(notdir $(wildcard $(SKILLS)/*))
 BOOT_SOURCES := $(SRC)/go.mod $(SRC)/go.sum $(shell find $(SRC)/cmd $(SRC)/internal -name '*.go' 2>/dev/null)
 EVAL = LITAR_LIBRARY=$(CURDIR) $(LITAR) -f $(abspath $(BUILD_ARCHIVE))
 # Build the bootstrap binary only when it is the one evaluating.
 EVALUATOR := $(filter $(abspath $(BOOT)),$(LITAR))
 
 .PHONY: all litar sync mod test boot web install install-bin install-grounds
-.PHONY: install-cursor install-mcp install-skills mcp clean
+.PHONY: install-cursor install-claude install-antigravity mcp clean
 
 all: litar
 
@@ -106,20 +106,32 @@ install-grounds:
 		cp -R "$$g/." "$(DESTDIR)$(GROUNDDIR)/$$g/" || exit 1; \
 	done
 
-install-cursor: install-mcp install-skills
+define install_plugin
+	rm -rf "$(1)"
+	install -d "$(1)"
+	cp -RL "$(PLUGIN)/." "$(1)/"
+	find "$(1)" -name __pycache__ -prune -exec rm -rf {} +
+endef
 
-install-mcp: $(EVALUATOR)
-	@test -x "$(abspath $(BINDIR))/litar" || { echo "$(abspath $(BINDIR))/litar is missing; run make install first" >&2; exit 1; }
-	script=$$($(EVAL) -p 'Project@/litar@/Build@/MCP configuration script') && \
-	python3 -c "$$script" "$(MCP_CONFIG)" "$(abspath $(BINDIR))/litar" "$(abspath $(GROUNDDIR))"
+install-cursor:
+	$(call install_plugin,$(CURSOR_DIR)/plugins/local/litar)
 
-install-skills:
-	for s in $(SKILL_NAMES); do \
-		rm -rf "$(CURSOR_DIR)/skills/$$s" && \
-		install -d "$(CURSOR_DIR)/skills/$$s" && \
-		cp -R "$(SKILLS)/$$s/." "$(CURSOR_DIR)/skills/$$s/" || exit 1; \
-	done
-	find "$(CURSOR_DIR)/skills" -name __pycache__ -prune -exec rm -rf {} +
+install-claude:
+	@command -v claude >/dev/null 2>&1 || { echo "claude is not on PATH" >&2; exit 1; }
+	$(call install_plugin,$(CLAUDE_DIR)/local-marketplaces/litar/litar)
+	install -d "$(CLAUDE_DIR)/local-marketplaces/litar/.claude-plugin"
+	printf '%s\n' \
+		'{' \
+		'  "name": "litar",' \
+		'  "owner": { "name": "Chu" },' \
+		'  "plugins": [{ "name": "litar", "source": "./litar" }]' \
+		'}' > "$(CLAUDE_DIR)/local-marketplaces/litar/.claude-plugin/marketplace.json"
+	claude plugin marketplace remove litar >/dev/null 2>&1 || true
+	claude plugin marketplace add "$(abspath $(CLAUDE_DIR)/local-marketplaces/litar)"
+	claude plugin install litar@litar
+
+install-antigravity:
+	$(call install_plugin,$(ANTIGRAVITY_DIR)/plugins/litar)
 
 mcp:
 	npx @modelcontextprotocol/inspector

@@ -134,11 +134,11 @@ type frame struct {
 
 @~ Project@/litar@/Go@/types@/litar.ChunkRef @? Project@/litar@/Go@/types@/litar.frame @
 
-Evaluator expands chunk references on one node chain. The mutex is held across in-memory expansion and released around filter execution, which may mount a filesystem and block. deps holds the dependencies of each file being expanded, innermost last.
+Evaluator expands chunk references on one node chain. The mutex is held across in-memory expansion and released around filter execution, which may mount a filesystem and block. byChunk indexes the chain by module and chunk name in chain order. deps holds the dependencies of each file being expanded, innermost last.
 @<eval@:litar@:Language@/Go@/File@/types@+
 type Evaluator struct {
 	mu      sync.Mutex
-	chain   []Block
+	byChunk map[string][]Block
 	cat     *catalog
 	stack   []frame
 	deps    []map[string]dependency
@@ -443,14 +443,14 @@ The MCP server: its tools, resources, and the trees it renders.
 "github.com/modelcontextprotocol/go-sdk/mcp"
 @
 
-Holds the state of the MCP server, including its mcp.Server instance, mutex, loaded composition worlds in insertion order, and last published resource URIs.
+Holds the state of the MCP server, including its mcp.Server instance, mutex, loaded composition worlds in insertion order, and subscribed resource URIs by session.
 @<mcp@:litar@:Language@/Go@/File@/types@+
 type agent struct {
-	server *mcp.Server
-	mu     sync.Mutex
-	worlds map[string]*World
-	order  []string
-	uris   []string
+	server     *mcp.Server
+	mu         sync.Mutex
+	worlds     map[string]*World
+	order      []string
+	subscribed map[string]map[*mcp.ServerSession]bool
 }
 
 @~ Project@/litar@/Go@/types@/litar.World @? Project@/litar@/Go@/types@/litar.agent @
@@ -658,6 +658,7 @@ Tests of mcp.go.
 "strconv"
 "strings"
 "testing"
+"time"
 
 "github.com/modelcontextprotocol/go-sdk/mcp"
 @
@@ -3346,10 +3347,6 @@ const mntForce = 0x80000
 {"description": "Checks e.stack for key and returns a cycleError tracing from the first occurrence to ref."}
 @
 
-@<Chunk@/Project@/litar@/Evaluator@/add the expansion of each block matching 'ref' to 'acc'@=
-{"description": "Iterates e.chain, expanding matching blocks and replacing acc on set or joining with a newline/concatenating on extend."}
-@
-
 @<Chunk@/Project@/litar@/Evaluator@/write each part of 'b' to 'sb', expanding its references@=
 {"description": "Writes literal parts and expands inner references with inherited labels, filters, and line indentation tracking."}
 @
@@ -4157,10 +4154,6 @@ const mntForce = 0x80000
 {"description": "Registers all fixed MCP resources and URI resource templates on the server, routing every read through a single URI-dispatching handler."}
 @
 
-@<Chunk@/Project@/litar@/MCP Server@/add to 'uris' the blocks of each chunk under each of its label paths@=
-{"description": "Iterates over chunk tree leaves and their specialization tree paths to append apply, effective, and depend blocks:// URIs to the list."}
-@
-
 @<Chunk@/Project@/litar@/MCP Server@/append to 't' the leaf of the entry 'e'@=
 {"description": "Constructs a leaf treeJSON node with its optional leaf description and appends it to the parent tree's subtrees."}
 @
@@ -4183,10 +4176,6 @@ const mntForce = 0x80000
 
 @<Chunk@/Project@/litar@/MCP Server@/collect in 'files' the paths of the file blocks of 'blocks'@=
 {"description": "Scans the block slice and records the path of every file block in the files lookup map."}
-@
-
-@<Chunk@/Project@/litar@/MCP Server@/create the MCP server of 'a'@=
-{"description": "Initializes the MCP server instance with tool and resource capabilities and no-op subscribe and unsubscribe handlers."}
 @
 @<Chunk@/Project@/litar@/MCP Server@/ensure the labels of every reference to 'chunk' in 'blocks'@=
 {"description": "Walks block headers, resolved inner chunk references, and resolved filter references to register every label path targeting the selected chunk (or all chunks)."}
@@ -4844,10 +4833,6 @@ const mntForce = 0x80000
 {"description": "Builds the node hierarchy of `w` as a `treeJSON` rooted at the composition's root node and assigns node refs to each entry."}
 @
 
-@<Index@/Project@/litar@/Go@/functions@/litar.nodeURIs@=
-{"description": "Lists all concrete MCP resource URIs under a node (trees, blocks, and files) visible to a reader of that node."}
-@
-
 @<Index@/Project@/litar@/Go@/functions@/litar.nodesFrom@=
 {"description": "Converts raw composer node records into loaded `Node` values by reading each archive, converting mappings, and validating selections."}
 @
@@ -5409,10 +5394,6 @@ const mntForce = 0x80000
 {"description": "MCP tool handler that loads an existing composition from `in.Path`, registers it in the agent, and returns its composition ref."}
 @
 
-@<Index@/Project@/litar@/Go@/methods@/litar.agent.listURIsLocked@=
-{"description": "Collects all concrete MCP resource URIs across all imported compositions and their nodes while `a.mu` is held."}
-@
-
 @<Index@/Project@/litar@/Go@/methods@/litar.agent.mapFile@=
 {"description": "MCP tool handler that adds a file or directory mapping to the target node, refreshes resources, and returns the mapped path."}
 @
@@ -5435,10 +5416,6 @@ const mntForce = 0x80000
 
 @<Index@/Project@/litar@/Go@/methods@/litar.agent.refParts@=
 {"description": "Splits a slash-delimited URI tail into `n` parts and resolves the composition from the first ref while `a.mu` is held."}
-@
-
-@<Index@/Project@/litar@/Go@/methods@/litar.agent.refresh@=
-{"description": "Recomputes the agent's concrete resource URI list and asynchronously sends `ResourceUpdated` notifications for the union of previous and new URIs."}
 @
 
 @<Index@/Project@/litar@/Go@/methods@/litar.agent.rename@=
@@ -5840,10 +5817,6 @@ const mntForce = 0x80000
 
 @<Index@/Project@/litar@/Go@/types@/litar.ViewOpKind@=
 {"description": "Enumeration identifying the kind of a filter view operation (such as adding or removing a file or file set)."}
-@
-
-@<Index@/Project@/litar@/Go@/types@/litar.agent@=
-{"description": "State of the litar MCP server holding the server instance, mutex, registered compositions in insertion order, and published resource URIs."}
 @
 
 @<Index@/Project@/litar@/Go@/types@/litar.applyIn@=
@@ -7850,20 +7823,25 @@ if err != nil || got != "xone" {
 }
 @~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.World.Chain @
 
-NewEvaluator creates an Evaluator for chain and mappings, discarding filter stderr when stderr is nil.
+NewEvaluator creates an Evaluator for chain and mappings, indexing chain by module and chunk name and discarding filter stderr when stderr is nil.
 @<eval@:litar@:Language@/Go@/File@/functions@+
 func NewEvaluator(chain []Block, mappings []Mapping, stderr io.Writer) *Evaluator {
 	if stderr == nil {
 		stderr = io.Discard
 	}
+	byChunk := make(map[string][]Block, len(chain))
+	for _, b := range chain {
+		k := chunkKey(b.Ref)
+		byChunk[k] = append(byChunk[k], b)
+	}
 	return &Evaluator{
-		chain:  chain,
-		cat:    buildCatalog(chain, mappings),
-		stderr: stderr,
+		byChunk: byChunk,
+		cat:     buildCatalog(chain, mappings),
+		stderr:  stderr,
 	}
 }
 
-@? Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.buildCatalog @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.Mapping @
+@? Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.buildCatalog @~ Project@/litar@/Go@/functions@/litar.chunkKey @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.Mapping @
 
 resolveBody resolves a body reference's labels (inheriting outerLabels if absent) and relative module path against header.
 @<eval@:litar@:Language@/Go@/File@/functions@+
@@ -9466,8 +9444,8 @@ Constructs an MCP agent, initializes its server, and registers all tools, fixed 
 @<mcp@:litar@:Language@/Go@/File@/functions@+
 func newAgent() *agent {
 	a := &agent{
-		worlds: map[string]*World{},
-		uris:   []string{"list://composition"},
+		worlds:     map[string]*World{},
+		subscribed: map[string]map[*mcp.ServerSession]bool{},
 	}
 	@<Project@/litar@/MCP Server@/create the MCP server of 'a'@>
 	@<Project@/litar@/MCP Server@/tools of the MCP server of 'a'@>
@@ -9476,21 +9454,6 @@ func newAgent() *agent {
 }
 
 @? Project@/litar@/Go@/functions@/litar.newAgent @~ Project@/litar@/Go@/types@/litar.World @~ Project@/litar@/Go@/types@/litar.agent @
-
-Subscriptions need no bookkeeping: refresh notifies every URI it lists, subscribed or not.
-@<Project@/litar@/MCP Server@/create the MCP server of 'a'@=
-a.server = mcp.NewServer(
-	&mcp.Implementation{Name: "litar", Version: "0.1.0"},
-	&mcp.ServerOptions{
-		SubscribeHandler:   func(context.Context, *mcp.SubscribeRequest) error { return nil },
-		UnsubscribeHandler: func(context.Context, *mcp.UnsubscribeRequest) error { return nil },
-		Capabilities: &mcp.ServerCapabilities{
-			Tools:     &mcp.ToolCapabilities{ListChanged: true},
-			Resources: &mcp.ResourceCapabilities{ListChanged: true, Subscribe: true},
-		},
-	},
-)
-@
 
 Every resource is read by one handler, which tells them apart by URI.
 @<Project@/litar@/MCP Server@/add the resources and resource templates of 'a'@=
@@ -9755,58 +9718,10 @@ func chunkTree(blocks []Block, maps []Mapping) (treeJSON, error) {
 	if err != nil {
 		return treeJSON{}, err
 	}
-	root := newNest()
-	@<Project@/litar@/MCP Server@/add the modules and chunks of 'blocks' outside the reserved namespaces to 'root'@>
-	tree := root.treeWith("/", meta.chunkDescription(nil), nil,
-		meta.chunkDescription,
-		func(path []Name, name string) string { return meta.chunkDescription(joinPath(path, name)) },
-	)
-	assignRefs(&tree, "module", "chunk", false)
-	return tree, nil
+	return chunkTreeWith(blocks, meta), nil
 }
 
-@? Project@/litar@/Go@/functions@/litar.chunkTree @~ Project@/litar@/Go@/functions@/litar.describe @~ Project@/litar@/Go@/functions@/litar.joinPath @~ Project@/litar@/Go@/functions@/litar.newNest @~ Project@/litar@/Go@/methods@/litar.metaInfo.chunkDescription @~ Project@/litar@/Go@/methods@/litar.nest.treeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.treeJSON @~ Project@/litar@/Go@/functions@/litar.assignRefs @
-
-A file block's chunk is its path in the root module. The chunk tree lists such a chunk
-below File, one branch for each directory, as the File meta chunks name it,
-so a file never looks like a chunk of the root module.
-@<Project@/litar@/MCP Server@/add the modules and chunks of 'blocks' outside the reserved namespaces to 'root'@=
-files := map[Name]bool{}
-@<Project@/litar@/MCP Server@/collect in 'files' the paths of the file blocks of 'blocks'@>
-for _, b := range blocks {
-	if _, reserved := reservedNamespace(b.Ref.Module); reserved {
-		continue
-	}
-	if len(b.Ref.Module) == 0 && files[b.Ref.Chunk] {
-		@<Project@/litar@/MCP Server@/add the file chunk of 'b' to 'root' below File@>
-		continue
-	}
-	cur := root
-	for _, part := range b.Ref.Module {
-		cur = cur.addSub(string(part))
-	}
-	if b.Ref.Chunk != "" {
-		cur.addLeaf(string(b.Ref.Chunk))
-	}
-}
-@~ Project@/litar@/Go@/functions@/litar.reservedNamespace @~ Project@/litar@/Go@/methods@/litar.nest.addLeaf @~ Project@/litar@/Go@/methods@/litar.nest.addSub @~ Project@/litar@/Go@/types@/litar.Name @
-
-@<Project@/litar@/MCP Server@/collect in 'files' the paths of the file blocks of 'blocks'@=
-for _, b := range blocks {
-	if b.IsFile {
-		files[b.Path] = true
-	}
-}
-@
-
-@<Project@/litar@/MCP Server@/add the file chunk of 'b' to 'root' below File@=
-cur := root.addSub("File")
-parts := strings.Split(string(b.Ref.Chunk), "/")
-for _, part := range parts[:len(parts)-1] {
-	cur = cur.addSub(part)
-}
-cur.addLeaf(parts[len(parts)-1])
-@~ Project@/litar@/Go@/methods@/litar.nest.addLeaf @~ Project@/litar@/Go@/methods@/litar.nest.addSub @
+@? Project@/litar@/Go@/functions@/litar.chunkTree @~ Project@/litar@/Go@/functions@/litar.chunkTreeWith @~ Project@/litar@/Go@/functions@/litar.describe @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.treeJSON @
 
 Builds the MCP file tree from the catalog of archive and mapped files, attaching descriptions and assigning directory and file refs.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
@@ -9815,59 +9730,10 @@ func fileTree(blocks []Block, mappings []Mapping) (treeJSON, error) {
 	if err != nil {
 		return treeJSON{}, err
 	}
-	cat := buildCatalog(blocks, mappings)
-	root := newNest()
-	@<Project@/litar@/MCP Server@/add each file of 'cat' to 'root', its directories as branches@>
-	tree := root.treeWith("/", meta.files[pathKey(nil)], nil,
-		func(path []Name) string { return meta.files[pathKey(path)] },
-		func(path []Name, name string) string { return meta.files[pathKey(joinPath(path, name))] },
-	)
-	assignRefs(&tree, "directory", "file", false)
-	return tree, nil
+	return fileTreeWith(blocks, mappings, meta), nil
 }
 
-@~ Project@/litar@/Go@/functions@/litar.buildCatalog @~ Project@/litar@/Go@/functions@/litar.describe @? Project@/litar@/Go@/functions@/litar.fileTree @~ Project@/litar@/Go@/functions@/litar.joinPath @~ Project@/litar@/Go@/functions@/litar.newNest @~ Project@/litar@/Go@/functions@/litar.pathKey @~ Project@/litar@/Go@/methods@/litar.nest.treeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.treeJSON @~ Project@/litar@/Go@/functions@/litar.assignRefs @
-
-A mapped directory is a branch, like the directory of an archive file; the files below it
-are listed from the host each time, since filters and other programs write them.
-@<Project@/litar@/MCP Server@/add each file of 'cat' to 'root', its directories as branches@=
-for _, path := range cat.order {
-	parts := strings.Split(path, "/")
-	cur := root
-	for _, part := range parts[:len(parts)-1] {
-		cur = cur.addSub(part)
-	}
-	last := parts[len(parts)-1]
-	f := cat.files[path]
-	if !f.dir || f.archive {
-		cur.addLeaf(last)
-		continue
-	}
-	@<Project@/litar@/MCP Server@/add the files below the origin of 'f' to the branch 'last' of 'cur'@>
-}
-@~ Project@/litar@/Go@/methods@/litar.nest.addLeaf @~ Project@/litar@/Go@/methods@/litar.nest.addSub @
-A directory that is missing or cannot be read is an empty branch: a filter creates it
-when it first runs, and the tree must not fail before that.
-@<Project@/litar@/MCP Server@/add the files below the origin of 'f' to the branch 'last' of 'cur'@=
-dir := cur.addSub(last)
-_ = filepath.WalkDir(f.origin, func(p string, d os.DirEntry, err error) error {
-	rel, relErr := filepath.Rel(f.origin, p)
-	if err != nil || relErr != nil || rel == "." {
-		return nil
-	}
-	names := strings.Split(filepath.ToSlash(rel), "/")
-	at := dir
-	for _, name := range names[:len(names)-1] {
-		at = at.addSub(name)
-	}
-	if d.IsDir() {
-		at.addSub(names[len(names)-1])
-	} else {
-		at.addLeaf(names[len(names)-1])
-	}
-	return nil
-})
-@~ Project@/litar@/Go@/methods@/litar.nest.addLeaf @~ Project@/litar@/Go@/methods@/litar.nest.addSub @
+@~ Project@/litar@/Go@/functions@/litar.describe @? Project@/litar@/Go@/functions@/litar.fileTree @~ Project@/litar@/Go@/functions@/litar.fileTreeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.treeJSON @
 
 Builds the MCP item tree grouped by domain from all items referenced or defined in the blocks, attaching descriptions and refs.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
@@ -9876,32 +9742,10 @@ func itemTree(blocks []Block, maps []Mapping) (treeJSON, error) {
 	if err != nil {
 		return treeJSON{}, err
 	}
-	root := newNest()
-	@<Project@/litar@/MCP Server@/add each item of 'blocks' to 'root', its domains as branches@>
-	tree := root.treeWith("/", meta.items[pathKey(nil)], nil,
-		func(path []Name) string { return meta.items[pathKey(path)] },
-		func(path []Name, name string) string { return meta.items[pathKey(joinPath(path, name))] },
-	)
-	assignRefs(&tree, "domain", "item", false)
-	return tree, nil
+	return itemTreeWith(blocks, meta), nil
 }
 
-@~ Project@/litar@/Go@/functions@/litar.describe @? Project@/litar@/Go@/functions@/litar.itemTree @~ Project@/litar@/Go@/functions@/litar.joinPath @~ Project@/litar@/Go@/functions@/litar.newNest @~ Project@/litar@/Go@/functions@/litar.pathKey @~ Project@/litar@/Go@/methods@/litar.nest.treeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.treeJSON @~ Project@/litar@/Go@/functions@/litar.assignRefs @
-
-@<Project@/litar@/MCP Server@/add each item of 'blocks' to 'root', its domains as branches@=
-for _, b := range blocks {
-	for _, it := range b.Items {
-		cur := root
-		for i, name := range it {
-			if i == len(it)-1 {
-				cur.addLeaf(string(name))
-				break
-			}
-			cur = cur.addSub(string(name))
-		}
-	}
-}
-@~ Project@/litar@/Go@/methods@/litar.nest.addLeaf @~ Project@/litar@/Go@/methods@/litar.nest.addSub @
+@~ Project@/litar@/Go@/functions@/litar.describe @? Project@/litar@/Go@/functions@/litar.itemTree @~ Project@/litar@/Go@/functions@/litar.itemTreeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.treeJSON @
 
 Builds the MCP node hierarchy tree for a composition world from its root node downward and assigns node refs.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
@@ -9956,90 +9800,10 @@ func specializationTree(blocks []Block, maps []Mapping, only *ChunkRef) (treeJSO
 	if err != nil {
 		return treeJSON{}, err
 	}
-	type specNode struct {
-		name  string
-		path  []string
-		kids  []*specNode
-		index map[string]*specNode
-	}
-	root := &specNode{name: "/", index: map[string]*specNode{}}
-	ensure := func(labels []Name) {
-		@<Project@/litar@/MCP Server@/add the label path of 'labels' under 'root', the last label first@>
-	}
-	@<Project@/litar@/MCP Server@/ensure the labels of every reference to 'chunk' in 'blocks'@>
-	var build func(*specNode) treeJSON
-	build = func(n *specNode) treeJSON {
-		@<Project@/litar@/MCP Server@/build the tree of the specialization 'n', described from 'meta'@>
-	}
-	tree := build(root)
-	assignRefs(&tree, "labels", "labels", false)
-	return tree, nil
+	return specializationTreeWith(blocks, only, meta), nil
 }
 
-@~ Project@/litar@/Go@/functions@/litar.describe @? Project@/litar@/Go@/functions@/litar.specializationTree @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.treeJSON @~ Project@/litar@/Go@/functions@/litar.assignRefs @
-
-Labels are written most specific first, so the walk from the root reads them backward.
-@<Project@/litar@/MCP Server@/add the label path of 'labels' under 'root', the last label first@=
-cur := root
-for i := len(labels) - 1; i >= 0; i-- {
-	name := string(labels[i])
-	child := cur.index[name]
-	if child == nil {
-		path := append(append([]string{}, cur.path...), name)
-		child = &specNode{name: name, path: path, index: map[string]*specNode{}}
-		cur.index[name] = child
-		cur.kids = append(cur.kids, child)
-	}
-	cur = child
-}
-@
-
-The description key is the specialization as written, most specific label first.
-@<Project@/litar@/MCP Server@/build the tree of the specialization 'n', described from 'meta'@=
-key := ""
-if len(n.path) > 0 {
-	rev := make([]string, len(n.path))
-	for i, part := range n.path {
-		rev[len(n.path)-1-i] = part
-	}
-	key = strings.Join(rev, "@@:")
-}
-t := treeJSON{
-	Name:        n.name,
-	Description: meta.specs[key],
-	SubTrees:    emptySub(),
-	Leaf:        true,
-}
-for _, c := range n.kids {
-	t.SubTrees = append(t.SubTrees, build(c))
-}
-return t
-@~ Project@/litar@/Go@/functions@/litar.emptySub @~ Project@/litar@/Go@/types@/litar.treeJSON @
-A reference is resolved as evaluation resolves it: an inner reference inherits the labels
-of its block, and a filter the labels of what it filters.
-@<Project@/litar@/MCP Server@/ensure the labels of every reference to 'chunk' in 'blocks'@=
-note := func(ref ChunkRef) {
-	if only == nil || ref.Chunk == only.Chunk && modulesEqual(ref.Module, only.Module) {
-		ensure(ref.Labels)
-	}
-}
-for _, b := range blocks {
-	note(b.Ref)
-	for _, part := range b.Parts {
-		if part.Ref == nil {
-			continue
-		}
-		resolved := resolveBody(part.Ref.ChunkRef, b.Ref.Labels, b.Ref.Module)
-		note(resolved)
-		for _, f := range part.Ref.Filters {
-			note(resolveFilter(f.Ref, resolved.Labels))
-		}
-	}
-	for _, f := range b.Filters {
-		note(resolveFilter(f.Ref, b.Ref.Labels))
-	}
-}
-@~ Project@/litar@/Go@/functions@/litar.modulesEqual @~ Project@/litar@/Go@/functions@/litar.resolveBody @~ Project@/litar@/Go@/functions@/litar.resolveFilter @~ Project@/litar@/Go@/types@/litar.ChunkRef @
+@~ Project@/litar@/Go@/functions@/litar.describe @? Project@/litar@/Go@/functions@/litar.specializationTree @~ Project@/litar@/Go@/functions@/litar.specializationTreeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.treeJSON @
 
 indexTree maps each ref to its path. includeRoot puts the root object's name on that path. Chunk, file, item, and specialization trees leave it off, so the wrapper named "/" does not appear in the path. The wrapper's own ref is still present, with an empty path.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
@@ -12594,22 +12358,6 @@ if sawFile {
 }
 @~ Project@/litar@/Go@/functions@/litar.FindArchive @
 
-The agent serves until its input ends or it is cancelled; neither is an error.
-@<Project@/litar@/Command Line@/serve agents in agent mode@=
-if mode == "agent" {
-	ag := newAgent()
-	if world != nil {
-		ag.addWorld(world)
-		ag.refresh()
-	}
-	err := ag.serve(context.Background())
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
-		return fail("%s", err.Error())
-	}
-	return 0
-}
-@~ Project@/litar@/Go@/functions@/litar.newAgent @~ Project@/litar@/Go@/methods@/litar.agent.addWorld @~ Project@/litar@/Go@/methods@/litar.agent.refresh @~ Project@/litar@/Go@/methods@/litar.agent.serve @
-
 @<Project@/litar@/Command Line@/dispatch 'mode' and write the result to 'stdout'@=
 text, err := dispatch(world, node, mode, operand, stderr)
 if err != nil {
@@ -13151,60 +12899,6 @@ func TestOperateFilesRefused(t *testing.T) {
 
 @~ Project@/litar@/Go@/constants@/litar.filesChild @? Project@/litar@/Go@/functions@/litar.TestOperateFilesRefused @~ Project@/litar@/Go@/functions@/litar.archiveText @~ Project@/litar@/Go@/functions@/litar.rewriteWorld @~ Project@/litar@/Go@/functions@/litar.wantError @~ Project@/litar@/Go@/methods@/litar.World.OperateFiles @~ Project@/litar@/Go@/variables@/litar.filesRoot @
 
-nodeURIs lists the URIs below one node. A chunk is paired only with the label paths it is used with, although any label path of the node is accepted.
-Only what a worker reads of the node is listed: a select field narrows it.
-@<mcp@:litar@:Language@/Go@/File@/functions@+
-func nodeURIs(w *World, cs string, n *Node) []string {
-	tail := cs + "/" + nodeRef(*n)
-	uris := []string{
-		"tree://chunk/" + tail, "tree://item/" + tail, "tree://file/" + tail,
-		"tree://specialization/" + tail, "blocks://node/" + tail,
-	}
-	np := formatNodePath(nodePath(*n))
-	chain, err := w.Visible(np)
-	if err != nil {
-		return uris
-	}
-	maps, err := w.Mappings(np)
-	if err != nil {
-		return uris
-	}
-	leaves := func(build func([]Block, []Mapping) (treeJSON, error), each func(string, treePlace)) {
-		tree, err := build(chain, maps)
-		if err != nil {
-			return
-		}
-		for ref, place := range indexTree(tree, false) {
-			if place.leaf {
-				each(ref, place)
-			}
-		}
-	}
-	@<Project@/litar@/MCP Server@/add to 'uris' the blocks of each chunk under each of its label paths@>
-	leaves(itemTree, func(ref string, _ treePlace) {
-		uris = append(uris, "blocks://refer/"+tail+"/"+ref, "blocks://define/"+tail+"/"+ref)
-	})
-	leaves(fileTree, func(ref string, _ treePlace) { uris = append(uris, "file://"+tail+"/"+ref) })
-	leaves(labelTree, func(ref string, _ treePlace) { uris = append(uris, "blocks://specialization/"+tail+"/"+ref) })
-	return uris
-}
-
-@~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.indexTree @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/functions@/litar.nodeRef @? Project@/litar@/Go@/functions@/litar.nodeURIs @~ Project@/litar@/Go@/methods@/litar.World.Mappings @~ Project@/litar@/Go@/methods@/litar.World.Visible @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Node @~ Project@/litar@/Go@/types@/litar.World @~ Project@/litar@/Go@/types@/litar.treeJSON @~ Project@/litar@/Go@/types@/litar.treePlace @
-@<Project@/litar@/MCP Server@/add to 'uris' the blocks of each chunk under each of its label paths@=
-leaves(chunkTree, func(ref string, place treePlace) {
-	chunk := chunkRefOf(place)
-	spec, err := specializationTree(chain, maps, &chunk)
-	if err != nil {
-		return
-	}
-	for ss := range indexTree(spec, false) {
-		for _, kind := range []string{"apply", "effective", "depend"} {
-			uris = append(uris, "blocks://"+kind+"/"+tail+"/"+ref+"/"+ss)
-		}
-	}
-})
-@~ Project@/litar@/Go@/functions@/litar.chunkRefOf @~ Project@/litar@/Go@/functions@/litar.indexTree @~ Project@/litar@/Go@/functions@/litar.specializationTree @~ Project@/litar@/Go@/types@/litar.treePlace @
-
 selectBlocks picks from the chain the blocks that refs ask for: an item, a label path, or a chunk followed by a label path.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
 func selectBlocks(kind string, chain []Block, maps []Mapping, refs []string) ([]Block, error) {
@@ -13417,10 +13111,7 @@ func nodeByRef(w *World, ref string) (*Node, error) {
 Resolves a chunk ref against the node's chunk tree and returns the corresponding ChunkRef, rejecting non-leaf or unknown refs.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
 func chunkByRef(blocks []Block, maps []Mapping, ref string) (ChunkRef, error) {
-	tree, err := chunkTree(blocks, maps)
-	if err != nil {
-		return ChunkRef{}, err
-	}
+	tree := chunkTreeWith(blocks, metaInfo{})
 	place, ok := indexTree(tree, false)[ref]
 	if !ok || !place.leaf {
 		return ChunkRef{}, fmt.Errorf("unknown chunk '%s'", ref)
@@ -13428,15 +13119,12 @@ func chunkByRef(blocks []Block, maps []Mapping, ref string) (ChunkRef, error) {
 	return chunkRefOf(place), nil
 }
 
-@? Project@/litar@/Go@/functions@/litar.chunkByRef @~ Project@/litar@/Go@/functions@/litar.chunkRefOf @~ Project@/litar@/Go@/functions@/litar.chunkTree @~ Project@/litar@/Go@/functions@/litar.indexTree @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Mapping @
+@? Project@/litar@/Go@/functions@/litar.chunkByRef @~ Project@/litar@/Go@/functions@/litar.chunkRefOf @~ Project@/litar@/Go@/functions@/litar.chunkTreeWith @~ Project@/litar@/Go@/functions@/litar.indexTree @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.metaInfo @
 
 Resolves a file ref against the node's file tree and returns its slash-separated file path, rejecting directories or unknown refs.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
 func fileByRef(blocks []Block, maps []Mapping, ref string) (string, error) {
-	tree, err := fileTree(blocks, maps)
-	if err != nil {
-		return "", err
-	}
+	tree := fileTreeWith(blocks, maps, metaInfo{})
 	place, ok := indexTree(tree, false)[ref]
 	if !ok || !place.leaf {
 		return "", fmt.Errorf("unknown file '%s'", ref)
@@ -13444,15 +13132,12 @@ func fileByRef(blocks []Block, maps []Mapping, ref string) (string, error) {
 	return strings.Join(place.names, "/"), nil
 }
 
-@? Project@/litar@/Go@/functions@/litar.fileByRef @~ Project@/litar@/Go@/functions@/litar.fileTree @~ Project@/litar@/Go@/functions@/litar.indexTree @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @
+@? Project@/litar@/Go@/functions@/litar.fileByRef @~ Project@/litar@/Go@/functions@/litar.fileTreeWith @~ Project@/litar@/Go@/functions@/litar.indexTree @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.metaInfo @
 
 Resolves an item ref against the node's item tree and returns its qualified item name path, rejecting domains or unknown refs.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
 func itemByRef(blocks []Block, maps []Mapping, ref string) ([]Name, error) {
-	tree, err := itemTree(blocks, maps)
-	if err != nil {
-		return nil, err
-	}
+	tree := itemTreeWith(blocks, metaInfo{})
 	place, ok := indexTree(tree, false)[ref]
 	if !ok || !place.leaf {
 		return nil, fmt.Errorf("unknown item '%s'", ref)
@@ -13460,7 +13145,7 @@ func itemByRef(blocks []Block, maps []Mapping, ref string) ([]Name, error) {
 	return toNames(place.names), nil
 }
 
-@~ Project@/litar@/Go@/functions@/litar.indexTree @? Project@/litar@/Go@/functions@/litar.itemByRef @~ Project@/litar@/Go@/functions@/litar.itemTree @~ Project@/litar@/Go@/functions@/litar.toNames @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Name @
+@~ Project@/litar@/Go@/functions@/litar.indexTree @? Project@/litar@/Go@/functions@/litar.itemByRef @~ Project@/litar@/Go@/functions@/litar.itemTreeWith @~ Project@/litar@/Go@/functions@/litar.toNames @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.metaInfo @
 
 Converts a slice of strings into a slice of Name values.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
@@ -13477,10 +13162,7 @@ func toNames(names []string) []Name {
 labelsByRef resolves a ref of the specialization tree to labels, the most specific first, as a reference writes them.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
 func labelsByRef(blocks []Block, maps []Mapping, ref string) ([]Name, error) {
-	tree, err := labelTree(blocks, maps)
-	if err != nil {
-		return nil, err
-	}
+	tree := specializationTreeWith(blocks, nil, metaInfo{})
 	place, ok := indexTree(tree, false)[ref]
 	if !ok {
 		return nil, fmt.Errorf("unknown specialization '%s'", ref)
@@ -13492,7 +13174,7 @@ func labelsByRef(blocks []Block, maps []Mapping, ref string) ([]Name, error) {
 	return labels, nil
 }
 
-@~ Project@/litar@/Go@/functions@/litar.indexTree @~ Project@/litar@/Go@/functions@/litar.labelTree @? Project@/litar@/Go@/functions@/litar.labelsByRef @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Name @
+@~ Project@/litar@/Go@/functions@/litar.indexTree @? Project@/litar@/Go@/functions@/litar.labelsByRef @~ Project@/litar@/Go@/functions@/litar.specializationTreeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.metaInfo @
 
 unmap takes the mapping of the path of arg away from maps.
 @<rewrite@:litar@:Language@/Go@/File@/functions@+
@@ -15292,29 +14974,6 @@ for i, fr := range e.stack {
 }
 @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.cycleError @
 
-A set block replaces what came before. An extension whose content ended with a line break
-is joined with a line feed, unless nothing came before; otherwise it is concatenated.
-@<Project@/litar@/Evaluator@/add the expansion of each block matching 'ref' to 'acc'@=
-for _, b := range e.chain {
-	if !matchRef(b.Ref, ref) {
-		continue
-	}
-	matched = true
-	text, err := e.expandBlock(b, ref)
-	if err != nil {
-		return "", err
-	}
-	switch {
-	case b.Op == OpSet:
-		acc = text
-	case b.EndsLine && acc != "":
-		acc += "\n" + text
-	default:
-		acc += text
-	}
-}
-@~ Project@/litar@/Go@/constants@/litar.OpSet @~ Project@/litar@/Go@/functions@/litar.matchRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.expandBlock @
-
 isArchiveFile reports whether ref names a file of the archive: a chunk of the root module, without labels, that a file block defines.
 @<eval@:litar@:Language@/Go@/File@/methods@+
 func (e *Evaluator) isArchiveFile(ref ChunkRef) bool {
@@ -15403,7 +15062,7 @@ or a block added or removed, changes the digest of the chunk.
 @<eval@:litar@:Language@/Go@/File@/methods@+
 func (e *Evaluator) chunkSum(ref ChunkRef) [sha256.Size]byte {
 	h := sha256.New()
-	for _, b := range e.chain {
+	for _, b := range e.byChunk[chunkKey(ref)] {
 		if matchRef(b.Ref, ref) {
 			fmt.Fprintf(h, "%d:%s", len(b.Raw), b.Raw)
 		}
@@ -15413,7 +15072,7 @@ func (e *Evaluator) chunkSum(ref ChunkRef) [sha256.Size]byte {
 	return sum
 }
 
-@~ Project@/litar@/Go@/functions@/litar.matchRef @? Project@/litar@/Go@/methods@/litar.Evaluator.chunkSum @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Evaluator @
+@~ Project@/litar@/Go@/functions@/litar.chunkKey @~ Project@/litar@/Go@/functions@/litar.matchRef @? Project@/litar@/Go@/methods@/litar.Evaluator.chunkSum @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Evaluator @
 
 The digest of a view covers what the filter sees of each file besides its bytes,
 and the error of a view that cannot be built.
@@ -16318,54 +15977,45 @@ func (a *agent) handle(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.
 
 @? Project@/litar@/Go@/methods@/litar.agent.handle @~ Project@/litar@/Go@/methods@/litar.agent.render @~ Project@/litar@/Go@/types@/litar.agent @
 
-Recomputes the set of resource URIs and asynchronously sends ResourceUpdated notifications for the union of previous and current URIs with a two-second timeout.
+Asynchronously sends ResourceUpdated notifications for all currently subscribed resource URIs with a two-second timeout, pruning closed sessions from the subscription map.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
 func (a *agent) refresh() {
 	a.mu.Lock()
-	next := a.listURIsLocked()
-	prev := a.uris
-	a.uris = next
-	a.mu.Unlock()
-
-	prevSet := map[string]bool{}
-	for _, u := range prev {
-		prevSet[u] = true
+	if len(a.subscribed) == 0 {
+		a.mu.Unlock()
+		return
 	}
-	union := append([]string{}, prev...)
-	for _, u := range next {
-		if !prevSet[u] {
-			union = append(union, u)
+	live := map[*mcp.ServerSession]bool{}
+	for s := range a.server.Sessions() {
+		live[s] = true
+	}
+	uris := make([]string, 0, len(a.subscribed))
+	for u, sessions := range a.subscribed {
+		for s := range sessions {
+			if !live[s] {
+				delete(sessions, s)
+			}
 		}
+		if len(sessions) == 0 {
+			delete(a.subscribed, u)
+			continue
+		}
+		uris = append(uris, u)
 	}
-	if len(union) == 0 {
+	a.mu.Unlock()
+	if len(uris) == 0 {
 		return
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		for _, u := range union {
+		for _, u := range uris {
 			_ = a.server.ResourceUpdated(ctx, &mcp.ResourceUpdatedNotificationParams{URI: u})
 		}
 	}()
 }
 
-@~ Project@/litar@/Go@/methods@/litar.agent.listURIsLocked @? Project@/litar@/Go@/methods@/litar.agent.refresh @~ Project@/litar@/Go@/types@/litar.agent @
-
-listURIsLocked lists concrete URIs whose contents may have changed. list://composition is the registered resource. Every other URI is a read of a resource template. Template variables are the refs of that list or tree.
-@<mcp@:litar@:Language@/Go@/File@/methods@+
-func (a *agent) listURIsLocked() []string {
-	uris := []string{"list://composition"}
-	for _, w := range a.compositions() {
-		cs := compositionRef(w)
-		uris = append(uris, "tree://node/"+cs)
-		for i := range w.Nodes {
-			uris = append(uris, nodeURIs(w, cs, &w.Nodes[i])...)
-		}
-	}
-	return uris
-}
-
-@~ Project@/litar@/Go@/functions@/litar.compositionRef @~ Project@/litar@/Go@/functions@/litar.nodeURIs @~ Project@/litar@/Go@/methods@/litar.agent.compositions @? Project@/litar@/Go@/methods@/litar.agent.listURIsLocked @~ Project@/litar@/Go@/types@/litar.agent @
+@? Project@/litar@/Go@/methods@/litar.agent.refresh @~ Project@/litar@/Go@/types@/litar.agent @
 
 Dispatches an MCP resource URI to the appropriate list, tree, block, or file renderer and returns its serialized content and MIME type.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
@@ -18138,16 +17788,12 @@ func (a *agent) renameLocked(in renameIn, to ModulePath) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	chain, maps, err := a.nodeChain(w, in.Node)
+	chain, _, err := a.nodeChain(w, in.Node)
 	if err != nil {
 		return "", err
 	}
 	r := renaming{to: to}
-	for _, build := range []func([]Block, []Mapping) (treeJSON, error){chunkTree, itemTree} {
-		tree, err := build(chain, maps)
-		if err != nil {
-			return "", err
-		}
+	for _, tree := range []treeJSON{chunkTreeWith(chain, metaInfo{}), itemTreeWith(chain, metaInfo{})} {
 		if place, ok := indexTree(tree, false)[in.Object]; ok && len(place.names) > 0 {
 			r.from, r.module = toNames(place.names), !place.leaf
 			return formatModule(ModulePath(r.from)), w.Rename(formatNodePath(nodePath(*n)), r)
@@ -18157,7 +17803,7 @@ func (a *agent) renameLocked(in renameIn, to ModulePath) (string, error) {
 	return "", fmt.Errorf("unknown object '%s'", in.Object)
 }
 
-@~ Project@/litar@/Go@/functions@/litar.formatModule @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.indexTree @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/functions@/litar.toNames @~ Project@/litar@/Go@/methods@/litar.World.Rename @~ Project@/litar@/Go@/methods@/litar.agent.nodeChain @? Project@/litar@/Go@/methods@/litar.agent.renameLocked @~ Project@/litar@/Go@/methods@/litar.agent.worldNode @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.ModulePath @~ Project@/litar@/Go@/types@/litar.agent @~ Project@/litar@/Go@/types@/litar.renameIn @~ Project@/litar@/Go@/types@/litar.renaming @~ Project@/litar@/Go@/types@/litar.treeJSON @
+@~ Project@/litar@/Go@/functions@/litar.chunkTreeWith @~ Project@/litar@/Go@/functions@/litar.formatModule @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.indexTree @~ Project@/litar@/Go@/functions@/litar.itemTreeWith @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/functions@/litar.toNames @~ Project@/litar@/Go@/methods@/litar.World.Rename @~ Project@/litar@/Go@/methods@/litar.agent.nodeChain @? Project@/litar@/Go@/methods@/litar.agent.renameLocked @~ Project@/litar@/Go@/methods@/litar.agent.worldNode @~ Project@/litar@/Go@/types@/litar.ModulePath @~ Project@/litar@/Go@/types@/litar.agent @~ Project@/litar@/Go@/types@/litar.metaInfo @~ Project@/litar@/Go@/types@/litar.renameIn @~ Project@/litar@/Go@/types@/litar.renaming @~ Project@/litar@/Go@/types@/litar.treeJSON @
 
 items reads the items up to the end control. The caller has consumed "@@~" or "@@?",
 and either may introduce each further item.
@@ -18889,4 +18535,508 @@ case '(':
             {"name":"root","archive":"./a.la","description":"","mappings":[],"base":[]},
             {"name":"child","archive":"./a.la","description":"","mappings":[],"base":["root"]}
         ]`, "share archive"},
+@
+Track resource subscriptions per session so refresh only notifies URIs that a client has actually subscribed to.
+@<Project@/litar@/MCP Server@/create the MCP server of 'a'@=
+a.server = mcp.NewServer(
+	&mcp.Implementation{Name: "litar", Version: "0.1.0"},
+	&mcp.ServerOptions{
+		SubscribeHandler: func(_ context.Context, req *mcp.SubscribeRequest) error {
+			a.mu.Lock()
+			sessions := a.subscribed[req.Params.URI]
+			if sessions == nil {
+				sessions = map[*mcp.ServerSession]bool{}
+				a.subscribed[req.Params.URI] = sessions
+			}
+			sessions[req.Session] = true
+			a.mu.Unlock()
+			return nil
+		},
+		UnsubscribeHandler: func(_ context.Context, req *mcp.UnsubscribeRequest) error {
+			a.mu.Lock()
+			if sessions := a.subscribed[req.Params.URI]; sessions != nil {
+				delete(sessions, req.Session)
+				if len(sessions) == 0 {
+					delete(a.subscribed, req.Params.URI)
+				}
+			}
+			a.mu.Unlock()
+			return nil
+		},
+		Capabilities: &mcp.ServerCapabilities{
+			Tools:     &mcp.ToolCapabilities{ListChanged: true},
+			Resources: &mcp.ResourceCapabilities{ListChanged: true, Subscribe: true},
+		},
+	},
+)
+@
+
+The agent serves until its input ends or it is cancelled; neither is an error.
+@<Project@/litar@/Command Line@/serve agents in agent mode@=
+if mode == "agent" {
+	ag := newAgent()
+	if world != nil {
+		ag.addWorld(world)
+	}
+	err := ag.serve(context.Background())
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
+		return fail("%s", err.Error())
+	}
+	return 0
+}
+@~ Project@/litar@/Go@/functions@/litar.newAgent @~ Project@/litar@/Go@/methods@/litar.agent.addWorld @~ Project@/litar@/Go@/methods@/litar.agent.serve @
+
+@<Chunk@/Project@/litar@/MCP Server@/create the MCP server of 'a'@=
+{"description": "Initializes the MCP server instance with tool and resource capabilities and subscribe/unsubscribe handlers that track active URI subscriptions per session."}
+@
+
+@<Index@/Project@/litar@/Go@/types@/litar.agent@=
+{"description": "State of the litar MCP server holding the server instance, mutex, registered compositions in insertion order, and subscribed resource URIs by session."}
+@
+
+@<Index@/Project@/litar@/Go@/methods@/litar.agent.refresh@=
+{"description": "Asynchronously sends `ResourceUpdated` notifications for all currently subscribed resource URIs."}
+@
+Builds the MCP chunk tree organized by module, attaching descriptions from meta and assigning module and chunk refs.
+@<mcp@:litar@:Language@/Go@/File@/functions@+
+func chunkTreeWith(blocks []Block, meta metaInfo) treeJSON {
+	root := newNest()
+	@<Project@/litar@/MCP Server@/add the modules and chunks of 'blocks' outside the reserved namespaces to 'root'@>
+	tree := root.treeWith("/", meta.chunkDescription(nil), nil,
+		meta.chunkDescription,
+		func(path []Name, name string) string { return meta.chunkDescription(joinPath(path, name)) },
+	)
+	assignRefs(&tree, "module", "chunk", false)
+	return tree
+}
+
+@~ Project@/litar@/Go@/functions@/litar.assignRefs @? Project@/litar@/Go@/functions@/litar.chunkTreeWith @~ Project@/litar@/Go@/functions@/litar.joinPath @~ Project@/litar@/Go@/functions@/litar.newNest @~ Project@/litar@/Go@/methods@/litar.metaInfo.chunkDescription @~ Project@/litar@/Go@/methods@/litar.nest.treeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.metaInfo @~ Project@/litar@/Go@/types@/litar.treeJSON @
+
+A file block's chunk is its path in the root module. The chunk tree lists such a chunk
+below File, one branch for each directory, as the File meta chunks name it,
+so a file never looks like a chunk of the root module.
+@<Project@/litar@/MCP Server@/add the modules and chunks of 'blocks' outside the reserved namespaces to 'root'@=
+files := map[Name]bool{}
+@<Project@/litar@/MCP Server@/collect in 'files' the paths of the file blocks of 'blocks'@>
+for _, b := range blocks {
+	if _, reserved := reservedNamespace(b.Ref.Module); reserved {
+		continue
+	}
+	if len(b.Ref.Module) == 0 && files[b.Ref.Chunk] {
+		@<Project@/litar@/MCP Server@/add the file chunk of 'b' to 'root' below File@>
+		continue
+	}
+	cur := root
+	for _, part := range b.Ref.Module {
+		cur = cur.addSub(string(part))
+	}
+	if b.Ref.Chunk != "" {
+		cur.addLeaf(string(b.Ref.Chunk))
+	}
+}
+@~ Project@/litar@/Go@/functions@/litar.reservedNamespace @~ Project@/litar@/Go@/methods@/litar.nest.addLeaf @~ Project@/litar@/Go@/methods@/litar.nest.addSub @~ Project@/litar@/Go@/types@/litar.Name @
+
+@<Project@/litar@/MCP Server@/collect in 'files' the paths of the file blocks of 'blocks'@=
+for _, b := range blocks {
+	if b.IsFile {
+		files[b.Path] = true
+	}
+}
+@
+
+@<Project@/litar@/MCP Server@/add the file chunk of 'b' to 'root' below File@=
+cur := root.addSub("File")
+parts := strings.Split(string(b.Ref.Chunk), "/")
+for _, part := range parts[:len(parts)-1] {
+	cur = cur.addSub(part)
+}
+cur.addLeaf(parts[len(parts)-1])
+@~ Project@/litar@/Go@/methods@/litar.nest.addLeaf @~ Project@/litar@/Go@/methods@/litar.nest.addSub @
+
+Builds the MCP file tree from the catalog of archive and mapped files, attaching descriptions from meta and assigning directory and file refs.
+@<mcp@:litar@:Language@/Go@/File@/functions@+
+func fileTreeWith(blocks []Block, mappings []Mapping, meta metaInfo) treeJSON {
+	cat := buildCatalog(blocks, mappings)
+	root := newNest()
+	@<Project@/litar@/MCP Server@/add each file of 'cat' to 'root', its directories as branches@>
+	tree := root.treeWith("/", meta.files[pathKey(nil)], nil,
+		func(path []Name) string { return meta.files[pathKey(path)] },
+		func(path []Name, name string) string { return meta.files[pathKey(joinPath(path, name))] },
+	)
+	assignRefs(&tree, "directory", "file", false)
+	return tree
+}
+
+@~ Project@/litar@/Go@/functions@/litar.assignRefs @~ Project@/litar@/Go@/functions@/litar.buildCatalog @? Project@/litar@/Go@/functions@/litar.fileTreeWith @~ Project@/litar@/Go@/functions@/litar.joinPath @~ Project@/litar@/Go@/functions@/litar.newNest @~ Project@/litar@/Go@/functions@/litar.pathKey @~ Project@/litar@/Go@/methods@/litar.nest.treeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.metaInfo @~ Project@/litar@/Go@/types@/litar.treeJSON @
+
+A mapped directory is a branch, like the directory of an archive file; the files below it
+are listed from the host each time, since filters and other programs write them.
+@<Project@/litar@/MCP Server@/add each file of 'cat' to 'root', its directories as branches@=
+for _, path := range cat.order {
+	parts := strings.Split(path, "/")
+	cur := root
+	for _, part := range parts[:len(parts)-1] {
+		cur = cur.addSub(part)
+	}
+	last := parts[len(parts)-1]
+	f := cat.files[path]
+	if !f.dir || f.archive {
+		cur.addLeaf(last)
+		continue
+	}
+	@<Project@/litar@/MCP Server@/add the files below the origin of 'f' to the branch 'last' of 'cur'@>
+}
+@~ Project@/litar@/Go@/methods@/litar.nest.addLeaf @~ Project@/litar@/Go@/methods@/litar.nest.addSub @
+A directory that is missing or cannot be read is an empty branch: a filter creates it
+when it first runs, and the tree must not fail before that.
+@<Project@/litar@/MCP Server@/add the files below the origin of 'f' to the branch 'last' of 'cur'@=
+dir := cur.addSub(last)
+_ = filepath.WalkDir(f.origin, func(p string, d os.DirEntry, err error) error {
+	rel, relErr := filepath.Rel(f.origin, p)
+	if err != nil || relErr != nil || rel == "." {
+		return nil
+	}
+	names := strings.Split(filepath.ToSlash(rel), "/")
+	at := dir
+	for _, name := range names[:len(names)-1] {
+		at = at.addSub(name)
+	}
+	if d.IsDir() {
+		at.addSub(names[len(names)-1])
+	} else {
+		at.addLeaf(names[len(names)-1])
+	}
+	return nil
+})
+@~ Project@/litar@/Go@/methods@/litar.nest.addLeaf @~ Project@/litar@/Go@/methods@/litar.nest.addSub @
+
+Builds the MCP item tree grouped by domain from all items referenced or defined in the blocks, attaching descriptions from meta and refs.
+@<mcp@:litar@:Language@/Go@/File@/functions@+
+func itemTreeWith(blocks []Block, meta metaInfo) treeJSON {
+	root := newNest()
+	@<Project@/litar@/MCP Server@/add each item of 'blocks' to 'root', its domains as branches@>
+	tree := root.treeWith("/", meta.items[pathKey(nil)], nil,
+		func(path []Name) string { return meta.items[pathKey(path)] },
+		func(path []Name, name string) string { return meta.items[pathKey(joinPath(path, name))] },
+	)
+	assignRefs(&tree, "domain", "item", false)
+	return tree
+}
+
+@~ Project@/litar@/Go@/functions@/litar.assignRefs @? Project@/litar@/Go@/functions@/litar.itemTreeWith @~ Project@/litar@/Go@/functions@/litar.joinPath @~ Project@/litar@/Go@/functions@/litar.newNest @~ Project@/litar@/Go@/functions@/litar.pathKey @~ Project@/litar@/Go@/methods@/litar.nest.treeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.metaInfo @~ Project@/litar@/Go@/types@/litar.treeJSON @
+
+@<Project@/litar@/MCP Server@/add each item of 'blocks' to 'root', its domains as branches@=
+for _, b := range blocks {
+	for _, it := range b.Items {
+		cur := root
+		for i, name := range it {
+			if i == len(it)-1 {
+				cur.addLeaf(string(name))
+				break
+			}
+			cur = cur.addSub(string(name))
+		}
+	}
+}
+@~ Project@/litar@/Go@/methods@/litar.nest.addLeaf @~ Project@/litar@/Go@/methods@/litar.nest.addSub @
+
+Builds the specialization tree of one chunk (or every chunk when only is nil), attaching descriptions from meta and assigning refs.
+@<mcp@:litar@:Language@/Go@/File@/functions@+
+func specializationTreeWith(blocks []Block, only *ChunkRef, meta metaInfo) treeJSON {
+	type specNode struct {
+		name  string
+		path  []string
+		kids  []*specNode
+		index map[string]*specNode
+	}
+	root := &specNode{name: "/", index: map[string]*specNode{}}
+	ensure := func(labels []Name) {
+		@<Project@/litar@/MCP Server@/add the label path of 'labels' under 'root', the last label first@>
+	}
+	@<Project@/litar@/MCP Server@/ensure the labels of every reference to 'chunk' in 'blocks'@>
+	var build func(*specNode) treeJSON
+	build = func(n *specNode) treeJSON {
+		@<Project@/litar@/MCP Server@/build the tree of the specialization 'n', described from 'meta'@>
+	}
+	tree := build(root)
+	assignRefs(&tree, "labels", "labels", false)
+	return tree
+}
+
+@~ Project@/litar@/Go@/functions@/litar.assignRefs @? Project@/litar@/Go@/functions@/litar.specializationTreeWith @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Name @~ Project@/litar@/Go@/types@/litar.metaInfo @~ Project@/litar@/Go@/types@/litar.treeJSON @
+
+Labels are written most specific first, so the walk from the root reads them backward.
+@<Project@/litar@/MCP Server@/add the label path of 'labels' under 'root', the last label first@=
+cur := root
+for i := len(labels) - 1; i >= 0; i-- {
+	name := string(labels[i])
+	child := cur.index[name]
+	if child == nil {
+		path := append(append([]string{}, cur.path...), name)
+		child = &specNode{name: name, path: path, index: map[string]*specNode{}}
+		cur.index[name] = child
+		cur.kids = append(cur.kids, child)
+	}
+	cur = child
+}
+@
+
+The description key is the specialization as written, most specific label first.
+@<Project@/litar@/MCP Server@/build the tree of the specialization 'n', described from 'meta'@=
+key := ""
+if len(n.path) > 0 {
+	rev := make([]string, len(n.path))
+	for i, part := range n.path {
+		rev[len(n.path)-1-i] = part
+	}
+	key = strings.Join(rev, "@@:")
+}
+t := treeJSON{
+	Name:        n.name,
+	Description: meta.specs[key],
+	SubTrees:    emptySub(),
+	Leaf:        true,
+}
+for _, c := range n.kids {
+	t.SubTrees = append(t.SubTrees, build(c))
+}
+return t
+@~ Project@/litar@/Go@/functions@/litar.emptySub @~ Project@/litar@/Go@/types@/litar.treeJSON @
+A reference is resolved as evaluation resolves it: an inner reference inherits the labels
+of its block, and a filter the labels of what it filters.
+@<Project@/litar@/MCP Server@/ensure the labels of every reference to 'chunk' in 'blocks'@=
+note := func(ref ChunkRef) {
+	if only == nil || ref.Chunk == only.Chunk && modulesEqual(ref.Module, only.Module) {
+		ensure(ref.Labels)
+	}
+}
+for _, b := range blocks {
+	note(b.Ref)
+	for _, part := range b.Parts {
+		if part.Ref == nil {
+			continue
+		}
+		resolved := resolveBody(part.Ref.ChunkRef, b.Ref.Labels, b.Ref.Module)
+		note(resolved)
+		for _, f := range part.Ref.Filters {
+			note(resolveFilter(f.Ref, resolved.Labels))
+		}
+	}
+	for _, f := range b.Filters {
+		note(resolveFilter(f.Ref, b.Ref.Labels))
+	}
+}
+@~ Project@/litar@/Go@/functions@/litar.modulesEqual @~ Project@/litar@/Go@/functions@/litar.resolveBody @~ Project@/litar@/Go@/functions@/litar.resolveFilter @~ Project@/litar@/Go@/types@/litar.ChunkRef @
+
+@<Index@/Project@/litar@/Go@/functions@/litar.chunkTreeWith@=
+{"description": "Builds the MCP chunk tree with refs and descriptions taken from the supplied `metaInfo`, avoiding metadata evaluation when descriptions are not needed."}
+@
+
+@<Index@/Project@/litar@/Go@/functions@/litar.fileTreeWith@=
+{"description": "Builds the MCP file tree with refs and descriptions taken from the supplied `metaInfo`, avoiding metadata evaluation when descriptions are not needed."}
+@
+
+@<Index@/Project@/litar@/Go@/functions@/litar.itemTreeWith@=
+{"description": "Builds the MCP item tree with refs and descriptions taken from the supplied `metaInfo`, avoiding metadata evaluation when descriptions are not needed."}
+@
+
+@<Index@/Project@/litar@/Go@/functions@/litar.specializationTreeWith@=
+{"description": "Builds the MCP specialization tree with refs and descriptions taken from the supplied `metaInfo`, avoiding metadata evaluation when descriptions are not needed."}
+@
+
+@<Chunk@/Project@/litar@/Evaluator@/add the expansion of each block matching 'ref' to 'acc'@=
+{"description": "Iterates e.byChunk[chunkKey(ref)], expanding matching blocks and replacing acc on set or joining with a newline/concatenating on extend."}
+@
+A set block replaces what came before. An extension whose content ended with a line break
+is joined with a line feed, unless nothing came before; otherwise it is concatenated.
+@<Project@/litar@/Evaluator@/add the expansion of each block matching 'ref' to 'acc'@=
+for _, b := range e.byChunk[chunkKey(ref)] {
+	if !matchRef(b.Ref, ref) {
+		continue
+	}
+	matched = true
+	text, err := e.expandBlock(b, ref)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case b.Op == OpSet:
+		acc = text
+	case b.EndsLine && acc != "":
+		acc += "\n" + text
+	default:
+		acc += text
+	}
+}
+@~ Project@/litar@/Go@/constants@/litar.OpSet @~ Project@/litar@/Go@/functions@/litar.chunkKey @~ Project@/litar@/Go@/functions@/litar.matchRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.expandBlock @
+
+Verifies that MCP resource subscriptions track clients per session, deliver ResourceUpdated notifications only to subscribed URIs, and stop notifying after unsubscribe.
+@<mcp test@:litar@:Language@/Go@/File@/functions@+
+func TestMCPSubscriptions(t *testing.T) {
+	ctx := context.Background()
+	ag := newAgent()
+	listenDone := make(chan struct{}, 8)
+	ag.server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			res, err := next(ctx, method, req)
+			if method == "subscriptions/listen" {
+				listenDone <- struct{}{}
+			}
+			return res, err
+		}
+	})
+	connect := func() (*mcp.ClientSession, *mcp.ServerSession, chan string, chan struct{}) {
+		ch := make(chan string, 8)
+		acked := make(chan struct{}, 8)
+		client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, &mcp.ClientOptions{
+			ResourceUpdatedHandler: func(_ context.Context, req *mcp.ResourceUpdatedNotificationRequest) {
+				ch <- req.Params.URI
+			},
+		})
+		client.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+			return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+				res, err := next(ctx, method, req)
+				if method == "notifications/subscriptions/acknowledged" {
+					acked <- struct{}{}
+				}
+				return res, err
+			}
+		})
+		serverT, clientT := mcp.NewInMemoryTransports()
+		serverSession, err := ag.server.Connect(ctx, serverT, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		session, err := client.Connect(ctx, clientT, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { session.Close() })
+		return session, serverSession, ch, acked
+	}
+	s1, _, ch1, ack1 := connect()
+	s2, _, ch2, ack2 := connect()
+
+	waitSignal := func(ch <-chan struct{}, what string) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for %s", what)
+		}
+	}
+	subscribe := func(s *mcp.ClientSession, acked <-chan struct{}, u string) {
+		t.Helper()
+		if err := s.Subscribe(ctx, &mcp.SubscribeParams{URI: u}); err != nil {
+			t.Fatal(err)
+		}
+		if res := s.InitializeResult(); res != nil && res.ProtocolVersion >= "2026-07-28" {
+			waitSignal(acked, "subscribe acknowledgement")
+		}
+	}
+	unsubscribe := func(s *mcp.ClientSession, u string) {
+		t.Helper()
+		if err := s.Unsubscribe(ctx, &mcp.UnsubscribeParams{URI: u}); err != nil {
+			t.Fatal(err)
+		}
+		if res := s.InitializeResult(); res != nil && res.ProtocolVersion >= "2026-07-28" {
+			waitSignal(listenDone, "unsubscribe completion")
+		}
+	}
+
+	dir := filepath.Join(t.TempDir(), "archive")
+	c := callTool(t, ctx, s1, "create_composition", map[string]any{"path": dir, "ground": nil})
+	n := callTool(t, ctx, s1, "create_node", map[string]any{
+		"composition": c, "name": "root", "archive": "a.la", "description": "", "base": nil,
+	})
+	uri := "tree://chunk/" + c + "/" + n
+
+	expect := func(ch chan string, want string) {
+		t.Helper()
+		select {
+		case got := <-ch:
+			if got != want {
+				t.Fatalf("got notification %q, want %q", got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for notification %q", want)
+		}
+	}
+	expectNone := func(ch chan string) {
+		t.Helper()
+		select {
+		case got := <-ch:
+			t.Fatalf("unexpected notification %q", got)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	subscribe(s1, ack1, uri)
+	if err := s1.Subscribe(ctx, &mcp.SubscribeParams{URI: uri}); err != nil {
+		t.Fatal(err)
+	}
+	subscribe(s2, ack2, uri)
+
+	callTool(t, ctx, s1, "apply_block", map[string]any{
+		"composition": c, "node": n, "text": "@@<a@@=one@@\n",
+	})
+	expect(ch1, uri)
+	expect(ch2, uri)
+
+	unsubscribe(s1, uri)
+	if err := s1.Unsubscribe(ctx, &mcp.UnsubscribeParams{URI: "tree://chunk/missing/node"}); err != nil {
+		t.Fatal(err)
+	}
+	callTool(t, ctx, s1, "apply_block", map[string]any{
+		"composition": c, "node": n, "text": "@@<b@@=two@@\n",
+	})
+	expect(ch2, uri)
+	expectNone(ch1)
+
+	unsubscribe(s2, uri)
+	ag.mu.Lock()
+	left := len(ag.subscribed)
+	ag.mu.Unlock()
+	if left != 0 {
+		t.Fatalf("expected no remaining subscriptions, got %d", left)
+	}
+	callTool(t, ctx, s1, "apply_block", map[string]any{
+		"composition": c, "node": n, "text": "@@<c@@=three@@\n",
+	})
+	expectNone(ch1)
+	expectNone(ch2)
+
+	// Closing a subscribed session cleans up its subscription, and refresh prunes any closed session left in subscribed.
+	s3, ss3, _, ack3 := connect()
+	subscribe(s3, ack3, uri)
+	if err := s3.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if res := s3.InitializeResult(); res != nil && res.ProtocolVersion >= "2026-07-28" {
+		waitSignal(listenDone, "close unsubscribe completion")
+	}
+	_ = ss3.Wait()
+	ag.mu.Lock()
+	if len(ag.subscribed) != 0 {
+		left := len(ag.subscribed)
+		ag.mu.Unlock()
+		t.Fatalf("expected closed session subscription to be removed, got %d", left)
+	}
+	ag.subscribed[uri] = map[*mcp.ServerSession]bool{ss3: true}
+	ag.mu.Unlock()
+	callTool(t, ctx, s1, "apply_block", map[string]any{
+		"composition": c, "node": n, "text": "@@<d@@=four@@\n",
+	})
+	ag.mu.Lock()
+	left = len(ag.subscribed)
+	ag.mu.Unlock()
+	if left != 0 {
+		t.Fatalf("expected closed session subscription to be pruned on refresh, got %d", left)
+	}
+}
+
+@? Project@/litar@/Go@/functions@/litar.TestMCPSubscriptions @~ Project@/litar@/Go@/functions@/litar.callTool @~ Project@/litar@/Go@/functions@/litar.newAgent @
+
+@<Index@/Project@/litar@/Go@/functions@/litar.TestMCPSubscriptions@=
+{"description": "Tests per-session MCP resource subscription tracking, ResourceUpdated notifications on mutation, and cleanup on unsubscribe."}
 @

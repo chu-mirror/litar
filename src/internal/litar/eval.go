@@ -24,7 +24,7 @@ type frame struct {
 
 type Evaluator struct {
 	mu      sync.Mutex
-	chain   []Block
+	byChunk map[string][]Block
 	cat     *catalog
 	stack   []frame
 	deps    []map[string]dependency
@@ -138,7 +138,7 @@ func (e *Evaluator) expandChunkLocked(ref ChunkRef, missingErr bool) (string, er
 
 	var acc string
 	matched := false
-	for _, b := range e.chain {
+	for _, b := range e.byChunk[chunkKey(ref)] {
 		if !matchRef(b.Ref, ref) {
 			continue
 		}
@@ -226,7 +226,7 @@ func (e *Evaluator) unchanged(deps map[string]dependency) bool {
 
 func (e *Evaluator) chunkSum(ref ChunkRef) [sha256.Size]byte {
 	h := sha256.New()
-	for _, b := range e.chain {
+	for _, b := range e.byChunk[chunkKey(ref)] {
 		if matchRef(b.Ref, ref) {
 			fmt.Fprintf(h, "%d:%s", len(b.Raw), b.Raw)
 		}
@@ -326,10 +326,15 @@ func NewEvaluator(chain []Block, mappings []Mapping, stderr io.Writer) *Evaluato
 	if stderr == nil {
 		stderr = io.Discard
 	}
+	byChunk := make(map[string][]Block, len(chain))
+	for _, b := range chain {
+		k := chunkKey(b.Ref)
+		byChunk[k] = append(byChunk[k], b)
+	}
 	return &Evaluator{
-		chain:  chain,
-		cat:    buildCatalog(chain, mappings),
-		stderr: stderr,
+		byChunk: byChunk,
+		cat:     buildCatalog(chain, mappings),
+		stderr:  stderr,
 	}
 }
 

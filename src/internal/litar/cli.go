@@ -90,7 +90,6 @@ func run(opts Options, stdout, stderr io.Writer) int {
 		ag := newAgent()
 		if world != nil {
 			ag.addWorld(world)
-			ag.refresh()
 		}
 		err := ag.serve(context.Background())
 		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {

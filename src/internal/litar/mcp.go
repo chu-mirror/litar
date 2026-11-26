@@ -45,11 +45,11 @@ var resourceTemplates = []struct {
 }
 
 type agent struct {
-	server *mcp.Server
-	mu     sync.Mutex
-	worlds map[string]*World
-	order  []string
-	uris   []string
+	server     *mcp.Server
+	mu         sync.Mutex
+	worlds     map[string]*World
+	order      []string
+	subscribed map[string]map[*mcp.ServerSession]bool
 }
 
 type importIn struct {
@@ -431,43 +431,38 @@ func (a *agent) handle(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.
 
 func (a *agent) refresh() {
 	a.mu.Lock()
-	next := a.listURIsLocked()
-	prev := a.uris
-	a.uris = next
-	a.mu.Unlock()
-
-	prevSet := map[string]bool{}
-	for _, u := range prev {
-		prevSet[u] = true
+	if len(a.subscribed) == 0 {
+		a.mu.Unlock()
+		return
 	}
-	union := append([]string{}, prev...)
-	for _, u := range next {
-		if !prevSet[u] {
-			union = append(union, u)
+	live := map[*mcp.ServerSession]bool{}
+	for s := range a.server.Sessions() {
+		live[s] = true
+	}
+	uris := make([]string, 0, len(a.subscribed))
+	for u, sessions := range a.subscribed {
+		for s := range sessions {
+			if !live[s] {
+				delete(sessions, s)
+			}
 		}
+		if len(sessions) == 0 {
+			delete(a.subscribed, u)
+			continue
+		}
+		uris = append(uris, u)
 	}
-	if len(union) == 0 {
+	a.mu.Unlock()
+	if len(uris) == 0 {
 		return
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		for _, u := range union {
+		for _, u := range uris {
 			_ = a.server.ResourceUpdated(ctx, &mcp.ResourceUpdatedNotificationParams{URI: u})
 		}
 	}()
-}
-
-func (a *agent) listURIsLocked() []string {
-	uris := []string{"list://composition"}
-	for _, w := range a.compositions() {
-		cs := compositionRef(w)
-		uris = append(uris, "tree://node/"+cs)
-		for i := range w.Nodes {
-			uris = append(uris, nodeURIs(w, cs, &w.Nodes[i])...)
-		}
-	}
-	return uris
 }
 
 func (a *agent) render(uri string) (text, mime string, blob []byte, err error) {
@@ -817,16 +812,12 @@ func (a *agent) renameLocked(in renameIn, to ModulePath) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	chain, maps, err := a.nodeChain(w, in.Node)
+	chain, _, err := a.nodeChain(w, in.Node)
 	if err != nil {
 		return "", err
 	}
 	r := renaming{to: to}
-	for _, build := range []func([]Block, []Mapping) (treeJSON, error){chunkTree, itemTree} {
-		tree, err := build(chain, maps)
-		if err != nil {
-			return "", err
-		}
+	for _, tree := range []treeJSON{chunkTreeWith(chain, metaInfo{}), itemTreeWith(chain, metaInfo{})} {
 		if place, ok := indexTree(tree, false)[in.Object]; ok && len(place.names) > 0 {
 			r.from, r.module = toNames(place.names), !place.leaf
 			return formatModule(ModulePath(r.from)), w.Rename(formatNodePath(nodePath(*n)), r)
@@ -906,14 +897,34 @@ func (a *agent) readChain(w *World, ref string) ([]Block, []Mapping, error) {
 
 func newAgent() *agent {
 	a := &agent{
-		worlds: map[string]*World{},
-		uris:   []string{"list://composition"},
+		worlds:     map[string]*World{},
+		subscribed: map[string]map[*mcp.ServerSession]bool{},
 	}
 	a.server = mcp.NewServer(
 		&mcp.Implementation{Name: "litar", Version: "0.1.0"},
 		&mcp.ServerOptions{
-			SubscribeHandler:   func(context.Context, *mcp.SubscribeRequest) error { return nil },
-			UnsubscribeHandler: func(context.Context, *mcp.UnsubscribeRequest) error { return nil },
+			SubscribeHandler: func(_ context.Context, req *mcp.SubscribeRequest) error {
+				a.mu.Lock()
+				sessions := a.subscribed[req.Params.URI]
+				if sessions == nil {
+					sessions = map[*mcp.ServerSession]bool{}
+					a.subscribed[req.Params.URI] = sessions
+				}
+				sessions[req.Session] = true
+				a.mu.Unlock()
+				return nil
+			},
+			UnsubscribeHandler: func(_ context.Context, req *mcp.UnsubscribeRequest) error {
+				a.mu.Lock()
+				if sessions := a.subscribed[req.Params.URI]; sessions != nil {
+					delete(sessions, req.Session)
+					if len(sessions) == 0 {
+						delete(a.subscribed, req.Params.URI)
+					}
+				}
+				a.mu.Unlock()
+				return nil
+			},
 			Capabilities: &mcp.ServerCapabilities{
 				Tools:     &mcp.ToolCapabilities{ListChanged: true},
 				Resources: &mcp.ResourceCapabilities{ListChanged: true, Subscribe: true},
@@ -1169,40 +1180,7 @@ func chunkTree(blocks []Block, maps []Mapping) (treeJSON, error) {
 	if err != nil {
 		return treeJSON{}, err
 	}
-	root := newNest()
-	files := map[Name]bool{}
-	for _, b := range blocks {
-		if b.IsFile {
-			files[b.Path] = true
-		}
-	}
-	for _, b := range blocks {
-		if _, reserved := reservedNamespace(b.Ref.Module); reserved {
-			continue
-		}
-		if len(b.Ref.Module) == 0 && files[b.Ref.Chunk] {
-			cur := root.addSub("File")
-			parts := strings.Split(string(b.Ref.Chunk), "/")
-			for _, part := range parts[:len(parts)-1] {
-				cur = cur.addSub(part)
-			}
-			cur.addLeaf(parts[len(parts)-1])
-			continue
-		}
-		cur := root
-		for _, part := range b.Ref.Module {
-			cur = cur.addSub(string(part))
-		}
-		if b.Ref.Chunk != "" {
-			cur.addLeaf(string(b.Ref.Chunk))
-		}
-	}
-	tree := root.treeWith("/", meta.chunkDescription(nil), nil,
-		meta.chunkDescription,
-		func(path []Name, name string) string { return meta.chunkDescription(joinPath(path, name)) },
-	)
-	assignRefs(&tree, "module", "chunk", false)
-	return tree, nil
+	return chunkTreeWith(blocks, meta), nil
 }
 
 func fileTree(blocks []Block, mappings []Mapping) (treeJSON, error) {
@@ -1210,45 +1188,7 @@ func fileTree(blocks []Block, mappings []Mapping) (treeJSON, error) {
 	if err != nil {
 		return treeJSON{}, err
 	}
-	cat := buildCatalog(blocks, mappings)
-	root := newNest()
-	for _, path := range cat.order {
-		parts := strings.Split(path, "/")
-		cur := root
-		for _, part := range parts[:len(parts)-1] {
-			cur = cur.addSub(part)
-		}
-		last := parts[len(parts)-1]
-		f := cat.files[path]
-		if !f.dir || f.archive {
-			cur.addLeaf(last)
-			continue
-		}
-		dir := cur.addSub(last)
-		_ = filepath.WalkDir(f.origin, func(p string, d os.DirEntry, err error) error {
-			rel, relErr := filepath.Rel(f.origin, p)
-			if err != nil || relErr != nil || rel == "." {
-				return nil
-			}
-			names := strings.Split(filepath.ToSlash(rel), "/")
-			at := dir
-			for _, name := range names[:len(names)-1] {
-				at = at.addSub(name)
-			}
-			if d.IsDir() {
-				at.addSub(names[len(names)-1])
-			} else {
-				at.addLeaf(names[len(names)-1])
-			}
-			return nil
-		})
-	}
-	tree := root.treeWith("/", meta.files[pathKey(nil)], nil,
-		func(path []Name) string { return meta.files[pathKey(path)] },
-		func(path []Name, name string) string { return meta.files[pathKey(joinPath(path, name))] },
-	)
-	assignRefs(&tree, "directory", "file", false)
-	return tree, nil
+	return fileTreeWith(blocks, mappings, meta), nil
 }
 
 func itemTree(blocks []Block, maps []Mapping) (treeJSON, error) {
@@ -1256,25 +1196,7 @@ func itemTree(blocks []Block, maps []Mapping) (treeJSON, error) {
 	if err != nil {
 		return treeJSON{}, err
 	}
-	root := newNest()
-	for _, b := range blocks {
-		for _, it := range b.Items {
-			cur := root
-			for i, name := range it {
-				if i == len(it)-1 {
-					cur.addLeaf(string(name))
-					break
-				}
-				cur = cur.addSub(string(name))
-			}
-		}
-	}
-	tree := root.treeWith("/", meta.items[pathKey(nil)], nil,
-		func(path []Name) string { return meta.items[pathKey(path)] },
-		func(path []Name, name string) string { return meta.items[pathKey(joinPath(path, name))] },
-	)
-	assignRefs(&tree, "domain", "item", false)
-	return tree, nil
+	return itemTreeWith(blocks, meta), nil
 }
 
 func nodeTree(w *World) treeJSON {
@@ -1315,72 +1237,7 @@ func specializationTree(blocks []Block, maps []Mapping, only *ChunkRef) (treeJSO
 	if err != nil {
 		return treeJSON{}, err
 	}
-	type specNode struct {
-		name  string
-		path  []string
-		kids  []*specNode
-		index map[string]*specNode
-	}
-	root := &specNode{name: "/", index: map[string]*specNode{}}
-	ensure := func(labels []Name) {
-		cur := root
-		for i := len(labels) - 1; i >= 0; i-- {
-			name := string(labels[i])
-			child := cur.index[name]
-			if child == nil {
-				path := append(append([]string{}, cur.path...), name)
-				child = &specNode{name: name, path: path, index: map[string]*specNode{}}
-				cur.index[name] = child
-				cur.kids = append(cur.kids, child)
-			}
-			cur = child
-		}
-	}
-	note := func(ref ChunkRef) {
-		if only == nil || ref.Chunk == only.Chunk && modulesEqual(ref.Module, only.Module) {
-			ensure(ref.Labels)
-		}
-	}
-	for _, b := range blocks {
-		note(b.Ref)
-		for _, part := range b.Parts {
-			if part.Ref == nil {
-				continue
-			}
-			resolved := resolveBody(part.Ref.ChunkRef, b.Ref.Labels, b.Ref.Module)
-			note(resolved)
-			for _, f := range part.Ref.Filters {
-				note(resolveFilter(f.Ref, resolved.Labels))
-			}
-		}
-		for _, f := range b.Filters {
-			note(resolveFilter(f.Ref, b.Ref.Labels))
-		}
-	}
-	var build func(*specNode) treeJSON
-	build = func(n *specNode) treeJSON {
-		key := ""
-		if len(n.path) > 0 {
-			rev := make([]string, len(n.path))
-			for i, part := range n.path {
-				rev[len(n.path)-1-i] = part
-			}
-			key = strings.Join(rev, "@:")
-		}
-		t := treeJSON{
-			Name:        n.name,
-			Description: meta.specs[key],
-			SubTrees:    emptySub(),
-			Leaf:        true,
-		}
-		for _, c := range n.kids {
-			t.SubTrees = append(t.SubTrees, build(c))
-		}
-		return t
-	}
-	tree := build(root)
-	assignRefs(&tree, "labels", "labels", false)
-	return tree, nil
+	return specializationTreeWith(blocks, only, meta), nil
 }
 
 func indexTree(t treeJSON, includeRoot bool) map[string]treePlace {
@@ -1413,52 +1270,6 @@ func chunkRefOf(p treePlace) ChunkRef {
 		mod[i] = Name(name)
 	}
 	return ChunkRef{Module: mod, Chunk: Name(p.names[len(p.names)-1])}
-}
-
-func nodeURIs(w *World, cs string, n *Node) []string {
-	tail := cs + "/" + nodeRef(*n)
-	uris := []string{
-		"tree://chunk/" + tail, "tree://item/" + tail, "tree://file/" + tail,
-		"tree://specialization/" + tail, "blocks://node/" + tail,
-	}
-	np := formatNodePath(nodePath(*n))
-	chain, err := w.Visible(np)
-	if err != nil {
-		return uris
-	}
-	maps, err := w.Mappings(np)
-	if err != nil {
-		return uris
-	}
-	leaves := func(build func([]Block, []Mapping) (treeJSON, error), each func(string, treePlace)) {
-		tree, err := build(chain, maps)
-		if err != nil {
-			return
-		}
-		for ref, place := range indexTree(tree, false) {
-			if place.leaf {
-				each(ref, place)
-			}
-		}
-	}
-	leaves(chunkTree, func(ref string, place treePlace) {
-		chunk := chunkRefOf(place)
-		spec, err := specializationTree(chain, maps, &chunk)
-		if err != nil {
-			return
-		}
-		for ss := range indexTree(spec, false) {
-			for _, kind := range []string{"apply", "effective", "depend"} {
-				uris = append(uris, "blocks://"+kind+"/"+tail+"/"+ref+"/"+ss)
-			}
-		}
-	})
-	leaves(itemTree, func(ref string, _ treePlace) {
-		uris = append(uris, "blocks://refer/"+tail+"/"+ref, "blocks://define/"+tail+"/"+ref)
-	})
-	leaves(fileTree, func(ref string, _ treePlace) { uris = append(uris, "file://"+tail+"/"+ref) })
-	leaves(labelTree, func(ref string, _ treePlace) { uris = append(uris, "blocks://specialization/"+tail+"/"+ref) })
-	return uris
 }
 
 func selectBlocks(kind string, chain []Block, maps []Mapping, refs []string) ([]Block, error) {
@@ -1620,10 +1431,7 @@ func nodeByRef(w *World, ref string) (*Node, error) {
 }
 
 func chunkByRef(blocks []Block, maps []Mapping, ref string) (ChunkRef, error) {
-	tree, err := chunkTree(blocks, maps)
-	if err != nil {
-		return ChunkRef{}, err
-	}
+	tree := chunkTreeWith(blocks, metaInfo{})
 	place, ok := indexTree(tree, false)[ref]
 	if !ok || !place.leaf {
 		return ChunkRef{}, fmt.Errorf("unknown chunk '%s'", ref)
@@ -1632,10 +1440,7 @@ func chunkByRef(blocks []Block, maps []Mapping, ref string) (ChunkRef, error) {
 }
 
 func fileByRef(blocks []Block, maps []Mapping, ref string) (string, error) {
-	tree, err := fileTree(blocks, maps)
-	if err != nil {
-		return "", err
-	}
+	tree := fileTreeWith(blocks, maps, metaInfo{})
 	place, ok := indexTree(tree, false)[ref]
 	if !ok || !place.leaf {
 		return "", fmt.Errorf("unknown file '%s'", ref)
@@ -1644,10 +1449,7 @@ func fileByRef(blocks []Block, maps []Mapping, ref string) (string, error) {
 }
 
 func itemByRef(blocks []Block, maps []Mapping, ref string) ([]Name, error) {
-	tree, err := itemTree(blocks, maps)
-	if err != nil {
-		return nil, err
-	}
+	tree := itemTreeWith(blocks, metaInfo{})
 	place, ok := indexTree(tree, false)[ref]
 	if !ok || !place.leaf {
 		return nil, fmt.Errorf("unknown item '%s'", ref)
@@ -1664,10 +1466,7 @@ func toNames(names []string) []Name {
 }
 
 func labelsByRef(blocks []Block, maps []Mapping, ref string) ([]Name, error) {
-	tree, err := labelTree(blocks, maps)
-	if err != nil {
-		return nil, err
-	}
+	tree := specializationTreeWith(blocks, nil, metaInfo{})
 	place, ok := indexTree(tree, false)[ref]
 	if !ok {
 		return nil, fmt.Errorf("unknown specialization '%s'", ref)
@@ -1677,4 +1476,174 @@ func labelsByRef(blocks []Block, maps []Mapping, ref string) ([]Name, error) {
 		labels[len(place.names)-1-i] = Name(name)
 	}
 	return labels, nil
+}
+
+func chunkTreeWith(blocks []Block, meta metaInfo) treeJSON {
+	root := newNest()
+	files := map[Name]bool{}
+	for _, b := range blocks {
+		if b.IsFile {
+			files[b.Path] = true
+		}
+	}
+	for _, b := range blocks {
+		if _, reserved := reservedNamespace(b.Ref.Module); reserved {
+			continue
+		}
+		if len(b.Ref.Module) == 0 && files[b.Ref.Chunk] {
+			cur := root.addSub("File")
+			parts := strings.Split(string(b.Ref.Chunk), "/")
+			for _, part := range parts[:len(parts)-1] {
+				cur = cur.addSub(part)
+			}
+			cur.addLeaf(parts[len(parts)-1])
+			continue
+		}
+		cur := root
+		for _, part := range b.Ref.Module {
+			cur = cur.addSub(string(part))
+		}
+		if b.Ref.Chunk != "" {
+			cur.addLeaf(string(b.Ref.Chunk))
+		}
+	}
+	tree := root.treeWith("/", meta.chunkDescription(nil), nil,
+		meta.chunkDescription,
+		func(path []Name, name string) string { return meta.chunkDescription(joinPath(path, name)) },
+	)
+	assignRefs(&tree, "module", "chunk", false)
+	return tree
+}
+
+func fileTreeWith(blocks []Block, mappings []Mapping, meta metaInfo) treeJSON {
+	cat := buildCatalog(blocks, mappings)
+	root := newNest()
+	for _, path := range cat.order {
+		parts := strings.Split(path, "/")
+		cur := root
+		for _, part := range parts[:len(parts)-1] {
+			cur = cur.addSub(part)
+		}
+		last := parts[len(parts)-1]
+		f := cat.files[path]
+		if !f.dir || f.archive {
+			cur.addLeaf(last)
+			continue
+		}
+		dir := cur.addSub(last)
+		_ = filepath.WalkDir(f.origin, func(p string, d os.DirEntry, err error) error {
+			rel, relErr := filepath.Rel(f.origin, p)
+			if err != nil || relErr != nil || rel == "." {
+				return nil
+			}
+			names := strings.Split(filepath.ToSlash(rel), "/")
+			at := dir
+			for _, name := range names[:len(names)-1] {
+				at = at.addSub(name)
+			}
+			if d.IsDir() {
+				at.addSub(names[len(names)-1])
+			} else {
+				at.addLeaf(names[len(names)-1])
+			}
+			return nil
+		})
+	}
+	tree := root.treeWith("/", meta.files[pathKey(nil)], nil,
+		func(path []Name) string { return meta.files[pathKey(path)] },
+		func(path []Name, name string) string { return meta.files[pathKey(joinPath(path, name))] },
+	)
+	assignRefs(&tree, "directory", "file", false)
+	return tree
+}
+
+func itemTreeWith(blocks []Block, meta metaInfo) treeJSON {
+	root := newNest()
+	for _, b := range blocks {
+		for _, it := range b.Items {
+			cur := root
+			for i, name := range it {
+				if i == len(it)-1 {
+					cur.addLeaf(string(name))
+					break
+				}
+				cur = cur.addSub(string(name))
+			}
+		}
+	}
+	tree := root.treeWith("/", meta.items[pathKey(nil)], nil,
+		func(path []Name) string { return meta.items[pathKey(path)] },
+		func(path []Name, name string) string { return meta.items[pathKey(joinPath(path, name))] },
+	)
+	assignRefs(&tree, "domain", "item", false)
+	return tree
+}
+
+func specializationTreeWith(blocks []Block, only *ChunkRef, meta metaInfo) treeJSON {
+	type specNode struct {
+		name  string
+		path  []string
+		kids  []*specNode
+		index map[string]*specNode
+	}
+	root := &specNode{name: "/", index: map[string]*specNode{}}
+	ensure := func(labels []Name) {
+		cur := root
+		for i := len(labels) - 1; i >= 0; i-- {
+			name := string(labels[i])
+			child := cur.index[name]
+			if child == nil {
+				path := append(append([]string{}, cur.path...), name)
+				child = &specNode{name: name, path: path, index: map[string]*specNode{}}
+				cur.index[name] = child
+				cur.kids = append(cur.kids, child)
+			}
+			cur = child
+		}
+	}
+	note := func(ref ChunkRef) {
+		if only == nil || ref.Chunk == only.Chunk && modulesEqual(ref.Module, only.Module) {
+			ensure(ref.Labels)
+		}
+	}
+	for _, b := range blocks {
+		note(b.Ref)
+		for _, part := range b.Parts {
+			if part.Ref == nil {
+				continue
+			}
+			resolved := resolveBody(part.Ref.ChunkRef, b.Ref.Labels, b.Ref.Module)
+			note(resolved)
+			for _, f := range part.Ref.Filters {
+				note(resolveFilter(f.Ref, resolved.Labels))
+			}
+		}
+		for _, f := range b.Filters {
+			note(resolveFilter(f.Ref, b.Ref.Labels))
+		}
+	}
+	var build func(*specNode) treeJSON
+	build = func(n *specNode) treeJSON {
+		key := ""
+		if len(n.path) > 0 {
+			rev := make([]string, len(n.path))
+			for i, part := range n.path {
+				rev[len(n.path)-1-i] = part
+			}
+			key = strings.Join(rev, "@:")
+		}
+		t := treeJSON{
+			Name:        n.name,
+			Description: meta.specs[key],
+			SubTrees:    emptySub(),
+			Leaf:        true,
+		}
+		for _, c := range n.kids {
+			t.SubTrees = append(t.SubTrees, build(c))
+		}
+		return t
+	}
+	tree := build(root)
+	assignRefs(&tree, "labels", "labels", false)
+	return tree
 }

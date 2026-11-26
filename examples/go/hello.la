@@ -5,10 +5,12 @@ A classic example at the beginning of learning programming, written in Go.
 @<hello@:command@:Language@/Go@/File@/file@>
 @
 
+Provide the package doc comment for command hello.
 @<hello@:command@:Language@/Go@/File@/package comment@=
 // Command hello prints a greeting.
 @
 
+Print the greeting to standard output.
 @<hello@:command@:Language@/Go@/File@/main body@=
 fmt.Println("Hello, World!")
 @~ Project@/hello@/topics@/output @
@@ -17,4 +19,22 @@ The command takes no flags and no positional arguments.
 {
     name: 'hello',
 }
+@
+@<File@/hello.go@=
+{"description": "Go source file of the hello command."}
+@
+@<Index@/Project@=
+{"description": "Project-specific index entries."}
+@
+@<Index@/Project@/hello@=
+{"description": "Index entries for the hello program."}
+@
+@<Index@/Project@/hello@/topics@=
+{"description": "Topic markers for the hello program."}
+@
+@<Index@/Project@/hello@/topics@/output@=
+{"description": "Code that writes the program's greeting output."}
+@
+@<Specialization@/command@/hello@=
+{"description": "The hello Go command."}
 @

@@ -37,10 +37,10 @@ case "$first" in
 esac
 @
 @<Chunk@/Tool@/Text Processing@=
-{
-    "description": "Text processing based on python."
-}
+{"description": "Text processing based on Python."}
 @
+Joins input lines with single spaces, dropping one trailing newline so the result
+fits on one line without a trailing space.
 @<Tool@/Text Processing@/remove newlines@=
 @<.@/basic python settings@>
 lines = sys.stdin.buffer.read().split(b'\n')
@@ -127,7 +127,7 @@ def bold_option(opt):
 {"description": "Top-level variables and constants."}
 @
 @<Index@/UI@/Command Line@/Python@/classes@/InvocationSyntax@=
-{"description": "pydantic model of the invocation syntax of a command: its name and its usages."}
+{"description": "Pydantic model of the invocation syntax of a command: its name and its usages."}
 @
 @<Index@/Tool@/Python@/functions@/configuration@=
 {"description": "Evaluates a Jsonnet source and validates it with a pydantic model, failing the evaluation on an error."}
@@ -139,9 +139,7 @@ def bold_option(opt):
 {"description": "Two hyphens, the prefix of a long option name in usage lines and the manpage."}
 @
 @<Chunk@/Language@/C@/Module@=
-{
-    "description": "Common structures in C programming"
-}
+{"description": "Common structures in C programming."}
 @
 
 @<Language@/C@/Module@/Interface@/extract function declarations@=
@@ -152,12 +150,16 @@ cproto -s
 @<Language@/C@/Module@/Interface@/extract global declarations@=#!/bin/sh
 cproto -v -e @<-I flags@>
 @
+Prefers clang-format-19 when available and falls back to clang-format,
+reading formatting rules from the view's .clang-format file.
 @<Language@/C@/Module@/Format@/format C code@=#!/bin/sh
 if command -v clang-format-19 >/dev/null 2>&1; then
     exec clang-format-19 -style=file
 fi
 exec clang-format -style=file
 @
+Wraps stdin in #ifndef/#define/#endif header guards formatted from
+included_flag_format and the uppercased module name.
 @<Language@/C@/Module@/Interface@/wrap with included flag@=
 @<Tool@/Text Processing@/basic python settings@>
 
@@ -197,19 +199,16 @@ print(usage.replace('\\', r'\\').replace('"', r'\"').replace('\n', r'\n'), end='
 @|Tool@/evaluate@
 Light reflects the author's preferences and customs,
 which includes how to format code,
-how to manage memory, how to handle exception, etc.
+how to manage memory, how to handle exceptions, etc.
 It also supports some common data structures.
 
 - `light.h`: the generated header;
 - `light.c`: the generated implementation;
 - `light options`: compile-time options;
-- `light@@:executable@@:C Structure@@/module`: an executable using the framework;
-- `light-single@@:executable@@:C Structure@@/module`: a single-file executable using the framework.
-
+- `light@@:executable@@:Language@@/C@@/Module@@/module`: an executable using the framework;
+- `light-single@@:executable@@:Language@@/C@@/Module@@/module`: a single-file executable using the framework.
 @<Chunk@/Framework@/Light@=
-{
-    "description": "Light is a framework mainly for C programming"
-}
+{"description": "Light is a framework mainly for C programming."}
 @
 @<Framework@/Light@/light.h@=
 @<lightlib@:Language@/C@/Module@/module interface@>
@@ -1624,7 +1623,7 @@ do {
 name: 'light',
 @
 @<Chunk@/Language@/Go@/File@=
-{"description": "Common structures in Go programming"}
+{"description": "Common structures in Go programming."}
 @
 
 gofmt reads a Go source file on stdin and writes the formatted file on stdout.
@@ -1698,7 +1697,7 @@ gofmt
 @
 
 @<Chunk@/UI@/Command Line@/Go@/register flags@=
-{"description": "flag.Var calls for the invocation syntax."}
+{"description": "Typed flag.*Var calls (BoolVar, StringVar, etc.) for the invocation syntax."}
 @
 
 @<Chunk@/UI@/Command Line@/Go@/store arguments@=
@@ -1811,7 +1810,7 @@ if usage.options or usage.arguments:
 {"description": "Go field names, Go literals, and the Go limits on the shared invocation syntax."}
 @
 @<Chunk@/UI@/Command Line@/Go@/usage literal@=
-{"description": "Go string literal of the shared usage lines."}
+{"description": "Go string literal of the shared usage lines, help flag, and option summary."}
 @
 Help that is asked for goes to stdout and exits 0;
 a parse error goes to stderr, followed by the usage, and exits 2.
@@ -1963,7 +1962,7 @@ A structure rejects the features its language does not support.
 @~ UI@/Command Line@/Python@/classes@/InvocationSyntax @
 The generators include this chunk as one fragment, on top of the shared models,
 so an option name becomes the same Go field in each of them.
-The Go field is the name in camel case; hyphens and spaces separate words.
+The Go field is the name in camel case; hyphens, underscores, and spaces separate words.
 @<UI@/Command Line@/Go@/flag syntax helpers@=
 @<UI@/Command Line@/invocation syntax helpers@>
 
@@ -2160,7 +2159,7 @@ Replace module meta information to name the other files in the node.
 That replacement does not rename the command.
 @<command@:Language@/Go@/File@/Meta@/package name@=main@
 @<Chunk@/Language@/Go@/Module@=
-{"description": "Structures of a whole Go module"}
+{"description": "Structures of a whole Go module."}
 @
 
 @<Language@/Go@/Module@/Go Command@/build packages@=#!/bin/sh
@@ -2396,6 +2395,8 @@ else
 	miss script "syntax error" "$work/syntax"
 fi
 @~ UI@/Command Line@/Bash@/functions@/miss @
+test_case names the case and optionally enters its fixture directory (failing immediately if missing);
+skip records the reason and ends the case without running further checks.
 @<UI@/Command Line@/Test@/checks@+
 # test_case NAME [DIRECTORY]: name the case, and enter the directory of its fixtures.
 test_case() {
@@ -2412,6 +2413,8 @@ skip() {
 	finish
 }
 @~ UI@/Command Line@/Bash@/functions@/finish @~ UI@/Command Line@/Bash@/functions@/miss @
+Runs the command under test, increments the check count,
+captures stdout and stderr in $work/out and $work/err, and records its exit status in $status.
 @<UI@/Command Line@/Test@/checks@+
 # run ARGUMENT...: run the command; its output goes to $work/out and $work/err,
 # its exit status to $status.
@@ -2931,4 +2934,289 @@ def configuration(model, source):
 @? Tool@/Python@/functions@/configuration @? Tool@/Python@/functions@/fail @
 @<Chunk@/Language@/Go@/File@/Header@/imports@=
 {"description": "Import declaration, omitted when there are no paths."}
+@
+@<Chunk@/Tool@/evaluate@=
+{"description": "Filter that executes stdin as a script with a shebang and outputs its stdout."}
+@
+@<Chunk@/Tool@/Text Processing@/remove newlines@=
+{"description": "Filter that joins input lines with spaces, dropping a trailing newline."}
+@
+@<Chunk@/Tool@/Text Processing@/remove ending newlines@=
+{"description": "Filter that strips trailing CR and LF characters from stdin."}
+@
+@<Chunk@/Tool@/Text Processing@/basic python settings@=
+{"description": "Preamble for Python text-processing scripts with interpreter shebang, imports, and configuration helpers."}
+@
+@<Chunk@/Tool@/Text Processing@/Runtime@=
+{"description": "Background Python server and client runtime for text-processing scripts."}
+@
+@<Chunk@/Tool@/Text Processing@/Runtime@/path to python interpreter@=
+{"description": "Evaluates to the path of the cached Python client script used as the script interpreter."}
+@
+@<Chunk@/Tool@/Text Processing@/Runtime@/python client@=
+{"description": "Client script that forwards execution to the background Python server or starts it."}
+@
+@<Chunk@/Tool@/Text Processing@/Runtime@/python server@=
+{"description": "Persistent Unix-socket server that preloads dependencies and forks per script request."}
+@
+@<Chunk@/Tool@/Text Processing@/Runtime@/python dependencies@=
+{"description": "PEP 723 inline script metadata declaring Python version and jsonnet/pydantic dependencies."}
+@
+@<Chunk@/Tool@/Text Processing@/Runtime@/import dependencies@=
+{"description": "Imports _jsonnet and pydantic, re-executing through uv run if unavailable."}
+@
+@<Chunk@/Tool@/Text Processing@/Runtime@/serve a connection@=
+{"description": "Handles a single client connection by restoring fds, cwd, env, and argv and running the script."}
+@
+@<Chunk@/Tool@/Text Processing@/Runtime@/run a script@=
+{"description": "Executes a Python script via runpy and maps SystemExit or exceptions to an exit status."}
+@
+@<Chunk@/Tool@/Text Processing@/Runtime@/preload pydantic@=
+{"description": "Warms up pydantic model construction and JSON validation in the server before forking."}
+@
+@<Chunk@/Tool@/Text Processing@/Runtime@/cache jsonnet@=
+{"description": "Wraps _jsonnet.evaluate_snippet with an on-disk SHA-256 cache for pure snippets."}
+@
+@<Chunk@/Tool@/Text Processing@/Runtime@/configuration helpers@=
+{"description": "Defines fail and configuration helpers for evaluating and validating Jsonnet configs."}
+@
+@<Chunk@/UI@/Command Line@/manpage synopsis@=
+{"description": "Generates the roff synopsis section of a manpage from the invocation syntax."}
+@
+@<Chunk@/UI@/Command Line@/manpage options@=
+{"description": "Generates the roff .TP option entries of a manpage from the invocation syntax."}
+@
+@<Chunk@/UI@/Command Line@/Manpage@=
+{"description": "Helpers for formatting command-line documentation in roff."}
+@
+@<Chunk@/UI@/Command Line@/Manpage@/manpage helpers@=
+{"description": "Defines roff escaping and bold/italic formatting helpers for manpages."}
+@
+@<Chunk@/UI@/Command Line@/C@/command line usage@=
+{"description": "Shared usage lines escaped for embedding in a C string literal."}
+@
+@<Chunk@/UI@/Command Line@/C@/parse command line arguments@=
+{"description": "C statement block that parses argv with getopt_long and dispatches options and arguments."}
+@
+@<Chunk@/UI@/Command Line@/C@/usage enumeration@=
+{"description": "Comma-separated C enum constants for the usages of the invocation syntax."}
+@
+@<Chunk@/UI@/Command Line@/C@/command line options@=
+{"description": "C struct fields storing parsed option values (int or const char *)."}
+@
+@<Chunk@/UI@/Command Line@/C@/command line arguments@=
+{"description": "C struct fields storing parsed positional arguments as const char *."}
+@
+@<Chunk@/UI@/Command Line@/C@/getopt long options@=
+{"description": "Initializer entries for struct option long_options[], terminated by a zero entry."}
+@
+@<Chunk@/UI@/Command Line@/C@/getopt string@=
+{"description": "Short-option specification string passed to getopt_long."}
+@
+@<Chunk@/UI@/Command Line@/C@/handle long option of index "idx"@=
+{"description": "C statements matching long-only options by long_options[idx].name."}
+@
+@<Chunk@/UI@/Command Line@/C@/cases for short options@=
+{"description": "C switch cases recording options that have a short name."}
+@
+@<Chunk@/UI@/Command Line@/C@/choose usage and store arguments@=
+{"description": "C statements selecting command.usage from options or argument count and storing positional arguments."}
+@
+@<Chunk@/UI@/Command Line@/C@/invocation syntax helpers@=
+{"description": "Pydantic CSyntax validator and C identifier naming helpers on top of the shared syntax helpers."}
+@
+@<Chunk@/UI@/Command Line@/option summary@=
+{"description": "Generates one-line descriptions of all options, including non-empty defaults."}
+@
+@<Chunk@/UI@/Command Line@/command line usage@=
+{"description": "Generates the Usage: lines for every usage in the invocation syntax."}
+@
+@<Chunk@/UI@/Command Line@/invocation syntax@=
+{"description": "Jsonnet object defining a command's name, usages, options, and positional arguments."}
+@
+@<Chunk@/UI@/Command Line@/invocation syntax helpers@=
+{"description": "Shared pydantic models and formatting helpers for command-line invocation syntax."}
+@
+@<Chunk@/UI@/Command Line@/Test@/Runner@=
+{"description": "Internal runner state, reporting, and script execution for acceptance test cases."}
+@
+@<Chunk@/UI@/Command Line@/Test@/Runner@/state of the case@=
+{"description": "Initializes per-case shell variables and a temporary work directory cleaned up on exit."}
+@
+@<Chunk@/UI@/Command Line@/Test@/Runner@/result@=
+{"description": "Defines finish and miss shell functions for recording failures and printing the case verdict."}
+@
+@<Chunk@/UI@/Command Line@/Test@/Runner@/run the script on stdin@=
+{"description": "Saves the case script from stdin, syntax-checks it with bash -n, and sources it."}
+@
+@<Chunk@/Language@/C@/Module@/Interface@=
+{"description": "Filters and helpers that assemble and guard a C module's header interface."}
+@
+@<Chunk@/Language@/C@/Module@/Interface@/extract function declarations@=
+{"description": "Filter that runs cproto -s to extract static and non-static function prototypes."}
+@
+@<Chunk@/Language@/C@/Module@/Interface@/extract global declarations@=
+{"description": "Filter that runs cproto -v -e to extract extern variable and function declarations."}
+@
+@<Chunk@/Language@/C@/Module@/Interface@/wrap with included flag@=
+{"description": "Filter that wraps stdin in #ifndef/#define/#endif header guards derived from module meta information."}
+@
+@<Chunk@/Language@/C@/Module@/Interface@/global declarations@=
+{"description": "Extracted extern declarations of global variables and functions for the module header."}
+@
+@<Chunk@/Language@/C@/Module@/Format@=
+{"description": "Formatting filter for C source and header files."}
+@
+@<Chunk@/Language@/C@/Module@/Format@/format C code@=
+{"description": "Filter that formats C code on stdin with clang-format using the view's .clang-format file."}
+@
+@<Chunk@/Language@/C@/Module@/Meta@=
+{"description": "Metadata configuration for a C module."}
+@
+@<Chunk@/Language@/C@/Module@/Meta@/module meta information@=
+{"description": "C module name and include-guard format, as a Jsonnet object."}
+@
+@<Chunk@/Language@/C@/Module@/module interface@=
+{"description": "Complete C header file assembled from exported sections, include guards, and formatting."}
+@
+@<Chunk@/Language@/C@/Module@/module@=
+{"description": "Complete C source file assembled from includes, declarations, definitions, and formatting."}
+@
+@<Chunk@/Language@/C@/Module@/includes@=
+{"description": "Header #include directives for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/data types@=
+{"description": "Struct, union, and enum definitions for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/static inline functions@=
+{"description": "Static inline function definitions for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/function declarations@=
+{"description": "Forward function prototypes extracted for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/macros@=
+{"description": "Preprocessor #define macros for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/data type declarations@=
+{"description": "Typedef and forward type declarations for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/global variables@=
+{"description": "Global variable definitions for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/functions@=
+{"description": "Function definitions for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/exported macros@=
+{"description": "Macros exported in the module header and also included in the implementation."}
+@
+@<Chunk@/Language@/C@/Module@/exported data types@=
+{"description": "Type definitions exported in the module header and also included in the implementation."}
+@
+@<Chunk@/Language@/C@/Module@/exported static inline functions@=
+{"description": "Static inline functions exported in the module header and also included in the implementation."}
+@
+@<Chunk@/Language@/C@/Module@/exported data type declarations@=
+{"description": "Typedefs and forward type declarations exported in the module header and implementation."}
+@
+@<Chunk@/Language@/C@/Module@/interface required includes@=
+{"description": "Header #include directives required by the module interface and implementation."}
+@
+@<Chunk@/Language@/C@/Module@/include flags@=
+{"description": "Feature-test or option macros placed before #include directives in a C module."}
+@
+@<Chunk@/Language@/C@/Module@/main body@=
+{"description": "Statements inside main() for an executable C module."}
+@
+@<Chunk@/Language@/C@/Module@/module properties@=
+{"description": "Jsonnet fields that override the C module meta information."}
+@
+@<Chunk@/Language@/Go@/File@/Header@=
+{"description": "Package clause and import declaration at the top of a Go source file."}
+@
+@<Chunk@/Language@/Go@/File@/Meta@=
+{"description": "Metadata configuration for a Go source file's package."}
+@
+@<Chunk@/Language@/Go@/Module@/Meta@=
+{"description": "Metadata configuration for a Go module."}
+@
+@<Chunk@/Framework@/Light@/light.h@=
+{"description": "Generated header file of the Light C framework."}
+@
+@<Chunk@/Framework@/Light@/light.c@=
+{"description": "Generated implementation file of the Light C framework."}
+@
+@<Chunk@/Framework@/Light@/light options@=
+{"description": "Default compile-time configuration macros for the Light framework."}
+@
+@<Index@/UI@=
+{"description": "Index of user-interface symbols."}
+@
+@<Index@/UI@/Command Line@=
+{"description": "Index of command-line generator and test runner symbols."}
+@
+@<Index@/UI@/Command Line@/Python@/classes@/Option@=
+{"description": "Pydantic model of one command-line option, its type, default, and display metadata."}
+@
+@<Index@/UI@/Command Line@/Python@/classes@/Usage@=
+{"description": "Pydantic model of one invocation form of a command: its name, options, and arguments."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/bold_option@=
+{"description": "Formats an option and its value placeholder in roff bold and italic."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/italic@=
+{"description": "Wraps roff-escaped text in italic font escapes."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/placeholder@=
+{"description": "Converts a name to an uppercase underscore-separated usage placeholder."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/roff@=
+{"description": "Escapes backslashes and hyphens in text for roff output."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/all_options@=
+{"description": "Returns a flat list of all options across every usage of an InvocationSyntax."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/option_names@=
+{"description": "Returns the list of display names for an option, short name first when present."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/option_name@=
+{"description": "Returns the primary display name of an option: its short name if set, otherwise its long name."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/option_with_value@=
+{"description": "Formats an option's display name followed by its value placeholder for non-boolean options."}
+@
+@<Index@/UI@/Command Line@/Bash@=
+{"description": "Bash symbols of the command-line acceptance test runner."}
+@
+@<Index@/UI@/Command Line@/Bash@/functions@/finish@=
+{"description": "Prints the case verdict (ok, skip, or FAIL) without a trailing newline and exits 0."}
+@
+@<Index@/UI@/Command Line@/Bash@/functions@/miss@=
+{"description": "Records a failed check message and optional indented detail file in the failure log."}
+@
+@<Index@/UI@/Command Line@/Bash@/functions@/run@=
+{"description": "Runs the command under test, increments checks, and captures stdout, stderr, and exit status."}
+@
+@<Index@/Tool@=
+{"description": "Index of shared tool symbols."}
+@
+@<Index@/Tool@/Python@/functions@/fail@=
+{"description": "Aborts script execution by calling sys.exit with an error message."}
+@
+@<File@/.clang-format@=
+{"description": "Clang-format configuration file used to format generated C modules."}
+@
+@<Specialization@/lightlib@=
+{"description": "C module specialization implementing the Light framework library (light.h and light.c)."}
+@
+@<Specialization@/executable@=
+{"description": "C module specialization adding main() and getopt_long command-line parsing."}
+@
+@<Specialization@/executable@/light@=
+{"description": "Executable C module specialization that links against the Light library via light.h."}
+@
+@<Specialization@/executable@/light-single@=
+{"description": "Single-file executable C module specialization that embeds the Light library directly."}
+@
+@<Specialization@/command@=
+{"description": "Go file specialization for a main package with flag parsing and func main."}
 @

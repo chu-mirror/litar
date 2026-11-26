@@ -13,15 +13,19 @@ lib is the label of its source file, test the label of its test file.
 @[greet/greet.go@`go module@=
 @<lib@:greet@:Language@/Go@/File@/file@>@
 
+Emit the test file for the greet package.
 @[greet/greet_test.go@`go module@=
 @<test@:greet@:Language@/Go@/File@/file@>@
 
+Place the greet package in the greet directory.
 @<greet@:Language@/Go@/Module@/package directory@=greet@
 
+Provide the package doc comment for package greet.
 @<lib@:greet@:Language@/Go@/File@/package comment@=
 // Package greet builds greetings.
 @
 
+Define Greeting to format a greeting for a given name.
 @<lib@:greet@:Language@/Go@/File@/functions@+
 // Greeting returns the greeting for name.
 func Greeting(name string) string {
@@ -29,10 +33,12 @@ func Greeting(name string) string {
 }
 @
 
+Import the testing package for greet unit tests.
 @<test@:greet@:Language@/Go@/File@/import paths@+
 "testing"
 @
 
+Test that Greeting returns the expected greeting for World.
 @<test@:greet@:Language@/Go@/File@/functions@+
 func TestGreeting(t *testing.T) {
 	if got, want := Greeting("World"), "Hello, World!"; got != want {
@@ -45,23 +51,29 @@ The command hello takes the name to greet from the flag -name.
 @[cmd/hello/main.go@`go module@=
 @<hello@:command@:Language@/Go@/File@/file@>@
 
+Provide the package doc comment for command hello.
 @<hello@:command@:Language@/Go@/File@/package comment@=
 // Command hello prints a greeting.
 @
 
+Import the greet library package by its module import path.
 @<hello@:command@:Language@/Go@/File@/import paths@+
 "@<greet@:Language@/Go@/Module@/import path@>"
 @
 
+Print the greeting for the name passed via the -name flag.
 @<hello@:command@:Language@/Go@/File@/main body@=
 fmt.Println(greet.Greeting(command.flags.name))
 @~ Project@/hello@/topics@/output @
+Set the Go module path to example.com/hello.
 @<Language@/Go@/Module@/project properties@+
 module: 'example.com/hello',
 @
+Set the Go package name of the greet specialization to greet.
 @<greet@:Language@/Go@/File@/module properties@+
 name: 'greet',
 @
+Declare the hello command and its -name string flag.
 @<hello@:command@:UI@/Command Line@/invocation syntax@=
 {
     name: 'hello',
@@ -74,4 +86,52 @@ name: 'greet',
         },
     ],
 }
+@
+@<File@/greet@=
+{"description": "Source directory of the greet library package."}
+@
+@<File@/greet@/greet.go@=
+{"description": "Library package greet implementing Greeting."}
+@
+@<File@/greet@/greet_test.go@=
+{"description": "Unit tests for the greet package."}
+@
+@<File@/cmd@=
+{"description": "Directory of command binaries in the module."}
+@
+@<File@/cmd@/hello@=
+{"description": "Directory of the hello command binary."}
+@
+@<File@/cmd@/hello@/main.go@=
+{"description": "Main entry point of the hello command."}
+@
+@<File@/mod@=
+{"description": "Mapped directory holding the Go module definition."}
+@
+@<File@/mod@/go.mod@=
+{"description": "Go module manifest for example.com/hello."}
+@
+@<Index@/Project@=
+{"description": "Project-specific index entries."}
+@
+@<Index@/Project@/hello@=
+{"description": "Index entries for the hello project."}
+@
+@<Index@/Project@/hello@/topics@=
+{"description": "Topic markers for the hello project."}
+@
+@<Index@/Project@/hello@/topics@/output@=
+{"description": "Code that writes the program's greeting output."}
+@
+@<Specialization@/command@/hello@=
+{"description": "The hello Go command."}
+@
+@<Specialization@/greet@=
+{"description": "The greet Go library package."}
+@
+@<Specialization@/greet@/lib@=
+{"description": "Library source file of the greet package."}
+@
+@<Specialization@/greet@/test@=
+{"description": "Test source file of the greet package."}
 @

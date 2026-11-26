@@ -39,7 +39,7 @@ for f in "$mod"/*; do
 done
 @
 
-The Makefile installs the MCP server for Cursor by piping this script to python3
+The Makefile installs the MCP server for Cursor by passing this script to python3 -c
 with the configuration file, the litar binary, and the directory of the grounds.
 Only the litar entry is set, so other servers stay,
 and the file is replaced at once, so an interrupted run keeps the old file.
@@ -68,7 +68,7 @@ os.replace(path + '.litar-new', path)
 {"description": "Build litar and litar-web into bin of the repository."}
 @
 @<Chunk@/Project@/litar@/Build@/source files@=
-{"description": "Write every file of the composition into src of the repository."}
+{"description": "Write the source and build files of the composition into src of the repository, excluding Go tests and test fixtures."}
 @
 @<Chunk@/Project@/litar@/Build@/Sync@/source directory@=
 {"description": "Directory of the view that receives the source tree."}
@@ -623,3 +623,165 @@ prints other AD -f archive.la -p 's2@@:c'
 prints effective $'@@<s2@@:s1@@:c@@=Z@@\n' -f archive.la -e 's2@@:s1@@:c'
 prints literal $'@@<c@@+A@@\n@@<s1@@:c@@+B@@\n@@<s2@@:s1@@:c@@+C@@\n@@<s2@@:s1@@:c@@=Z@@\n' -f archive.la -l 's2@@:s1@@:c'
 @| litar command@:UI@/Command Line@/Test@/run case@+binaries@+test fixtures @
+@<Chunk@/Project@/litar@/Build@/Sync@=
+{"description": "Chunks that write the source tree of the composition into src of the repository."}
+@
+@<Chunk@/Project@/litar@/Tests@/Cases@/blocks@=
+{"description": "Acceptance case for the file and print option forms and nested chunk evaluation."}
+@
+@<Chunk@/Project@/litar@/Tests@/Cases@/compose@=
+{"description": "Acceptance case for node base composition order and missing archive errors."}
+@
+@<Chunk@/Project@/litar@/Tests@/Cases@/errors@=
+{"description": "Acceptance case for command-line option errors and missing chunk errors."}
+@
+@<Chunk@/Project@/litar@/Tests@/Cases@/filter@=
+{"description": "Acceptance case for filter execution, missing shebang errors, and nonzero exit statuses."}
+@
+@<Chunk@/Project@/litar@/Tests@/Cases@/fuse@=
+{"description": "Acceptance case for FUSE view file access, executable mode, overlay writes, and path errors."}
+@
+@<Chunk@/Project@/litar@/Tests@/Cases@/help@=
+{"description": "Acceptance case for the -h and --help usage output."}
+@
+@<Chunk@/Project@/litar@/Tests@/Cases@/list@=
+{"description": "Acceptance case for literal and dependent block listings."}
+@
+@<Chunk@/Project@/litar@/Tests@/Cases@/missing chunk@=
+{"description": "Acceptance case for evaluating an undefined chunk."}
+@
+@<Chunk@/Project@/litar@/Tests@/Cases@/modules@=
+{"description": "Acceptance case for item reference listings."}
+@
+@<Chunk@/Project@/litar@/Tests@/Cases@/print@=
+{"description": "Acceptance case for printing a chunk without a trailing line break."}
+@
+@<Chunk@/Project@/litar@/Tests@/Cases@/spec@=
+{"description": "Acceptance case for specialized chunk evaluation and effective and literal listings."}
+@
+@<Specialization@/litar command@=
+{"description": "Specializes the command-line test harness for the built litar binary."}
+@
+@<File@/bin@=
+{"description": "Host-mapped repository bin directory that receives the built binaries."}
+@
+@<File@/src@=
+{"description": "Host-mapped repository src directory that receives the synced source tree."}
+@
+@<File@/tests@/cases@=
+{"description": "Fixture compositions and expected outputs for the acceptance cases."}
+@
+@<File@/tests@/cases@/blocks@=
+{"description": "Fixture composition for the blocks acceptance case."}
+@
+@<File@/tests@/cases@/blocks@/archive.la@=
+{"description": "Fixture archive with multiline, single-line, and nested chunks."}
+@
+@<File@/tests@/cases@/blocks@/composer.json@=
+{"description": "Composer configuration for the blocks fixture composition."}
+@
+@<File@/tests@/cases@/compose@=
+{"description": "Fixture composition for the compose acceptance case."}
+@
+@<File@/tests@/cases@/compose@/base.la@=
+{"description": "Base node archive defining the msg chunk."}
+@
+@<File@/tests@/cases@/compose@/child.la@=
+{"description": "Child node archive appending to the msg chunk."}
+@
+@<File@/tests@/cases@/compose@/composer.json@=
+{"description": "Composer configuration defining the base and child nodes."}
+@
+@<File@/tests@/cases@/errors@=
+{"description": "Fixture composition for the errors acceptance case."}
+@
+@<File@/tests@/cases@/errors@/archive.la@=
+{"description": "Fixture archive with a single msg chunk for error checks."}
+@
+@<File@/tests@/cases@/errors@/composer.json@=
+{"description": "Composer configuration for the errors fixture composition."}
+@
+@<File@/tests@/cases@/filter@=
+{"description": "Fixture composition for the filter acceptance case."}
+@
+@<File@/tests@/cases@/filter@/archive.la@=
+{"description": "Fixture archive with working, shebang-less, and failing filters."}
+@
+@<File@/tests@/cases@/filter@/composer.json@=
+{"description": "Composer configuration for the filter fixture composition."}
+@
+@<File@/tests@/cases@/fuse@=
+{"description": "Fixture composition for the fuse acceptance case."}
+@
+@<File@/tests@/cases@/fuse@/archive.la@=
+{"description": "Fixture archive with regular and executable files and filters that read and write the FUSE view."}
+@
+@<File@/tests@/cases@/fuse@/composer.json@=
+{"description": "Composer configuration for the fuse fixture composition."}
+@
+@<File@/tests@/cases@/list@=
+{"description": "Fixture compositions and expected outputs for the list acceptance case."}
+@
+@<File@/tests@/cases@/list@/depend@=
+{"description": "Fixture composition for dependent block listing checks."}
+@
+@<File@/tests@/cases@/list@/depend@/composer.json@=
+{"description": "Composer configuration for the depend fixture composition."}
+@
+@<File@/tests@/cases@/list@/depend@/depend.la@=
+{"description": "Fixture archive with chunks connected by chunk reference and filter dependencies."}
+@
+@<File@/tests@/cases@/list@/depend-1.out@=
+{"description": "Expected dependent listing output for chunk 1."}
+@
+@<File@/tests@/cases@/list@/depend-2.out@=
+{"description": "Expected dependent listing output for chunk 2."}
+@
+@<File@/tests@/cases@/list@/literal@=
+{"description": "Fixture composition for literal block listing checks."}
+@
+@<File@/tests@/cases@/list@/literal@/composer.json@=
+{"description": "Composer configuration for the literal fixture composition."}
+@
+@<File@/tests@/cases@/list@/literal@/literal.la@=
+{"description": "Fixture archive with modular chunks and a labeled block extension."}
+@
+@<File@/tests@/cases@/list@/literal.out@=
+{"description": "Expected literal listing output for the labeled module/chunk1 reference."}
+@
+@<File@/tests@/cases@/missing-chunk@=
+{"description": "Fixture composition for the missing chunk acceptance case."}
+@
+@<File@/tests@/cases@/missing-chunk@/archive.la@=
+{"description": "Fixture archive defining msg so looking up missing fails."}
+@
+@<File@/tests@/cases@/missing-chunk@/composer.json@=
+{"description": "Composer configuration for the missing-chunk fixture composition."}
+@
+@<File@/tests@/cases@/modules@=
+{"description": "Fixture composition for the modules acceptance case."}
+@
+@<File@/tests@/cases@/modules@/archive.la@=
+{"description": "Fixture archive with modular chunks, item references, and a file block."}
+@
+@<File@/tests@/cases@/modules@/composer.json@=
+{"description": "Composer configuration for the modules fixture composition."}
+@
+@<File@/tests@/cases@/print@=
+{"description": "Fixture composition for the print acceptance case."}
+@
+@<File@/tests@/cases@/print@/archive.la@=
+{"description": "Fixture archive with a single msg chunk."}
+@
+@<File@/tests@/cases@/print@/composer.json@=
+{"description": "Composer configuration for the print fixture composition."}
+@
+@<File@/tests@/cases@/spec@=
+{"description": "Fixture composition for the spec acceptance case."}
+@
+@<File@/tests@/cases@/spec@/archive.la@=
+{"description": "Fixture archive with plain and specialized blocks on chunk c."}
+@
+@<File@/tests@/cases@/spec@/composer.json@=
+{"description": "Composer configuration for the spec fixture composition."}
+@

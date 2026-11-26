@@ -5,6 +5,7 @@ A classic example at the beginning of learning programming.
 @<hello@:executable@:Language@/C@/Module@/module@>
 @
 
+Print the greeting to standard output.
 @<hello@:executable@:Language@/C@/Module@/main body@=
 printf("Hello World!\n");
 @~ Project@/hello@/topics@/output @
@@ -13,4 +14,22 @@ The command has a single usage without options or arguments.
 {
     name: 'hello',
 }
+@
+@<File@/hello.c@=
+{"description": "C source file of the hello executable."}
+@
+@<Index@/Project@=
+{"description": "Project-specific index entries."}
+@
+@<Index@/Project@/hello@=
+{"description": "Index entries for the hello program."}
+@
+@<Index@/Project@/hello@/topics@=
+{"description": "Topic markers for the hello program."}
+@
+@<Index@/Project@/hello@/topics@/output@=
+{"description": "Code that writes the program's greeting output."}
+@
+@<Specialization@/executable@/hello@=
+{"description": "The hello executable C module."}
 @

@@ -5,18 +5,22 @@ Test cases for light.
 @<test-light.c@=
 @<test light@:light-single@:executable@:Language@/C@/Module@/module@>
 @
+Include assert.h for test assertions.
 @<test light@:light-single@:executable@:Language@/C@/Module@/includes@+
 #include <assert.h>
 @
+Configure Light with an 8 MiB main context and INFO logging.
 @<test light@:light-single@:executable@:Framework@/Light@/light options@=
 #define light_option_context_main_size (1<<23)
 #define light_option_logging_level INFO
 @
+Run all Light test cases and log start and completion.
 @<test light@:light-single@:executable@:Framework@/Light@/main body@=
 light_log(INFO, "Testing light");
 @<test cases@>
 light_log(INFO, "All test passed");
 @
+Test frame memory allocation and reclaiming on nested frame exit.
 @<test cases@=
 do {
     enter_frame();
@@ -41,12 +45,14 @@ do {
     exit_frame();
 } while (0);
 @
+Define struct id_card for testing complex frame returns.
 @<test light@:light-single@:executable@:Language@/C@/Module@/data types@+
 struct id_card {
     const char *name;
     int age;
 } *card;
 @
+Serialize struct id_card and its name string for frame_return_complex.
 @<test light@:light-single@:executable@:Language@/C@/Module@/functions@+
 void *id_card_serialize(const void *card, size_t *size, const void *base_addr)
 {
@@ -68,6 +74,7 @@ void *id_card_serialize(const void *card, size_t *size, const void *base_addr)
     return obj;
 }
 @
+Test returning a serialized struct id_card across a frame exit.
 @<test cases@+
 do {
     struct id_card *card;
@@ -84,6 +91,7 @@ do {
     light_log(INFO, "Passed frame_return_complex");
 } while (0);
 @
+Test fixed-size heap allocation, freeing, reuse, and exhaustion.
 @<test cases@+
 do {
     int i;
@@ -118,6 +126,7 @@ do {
     exit_frame();
 } while (0);
 @
+Test singly linked list construction, length, and traversal.
 @<test cases@+
 do {
     enter_frame();
@@ -148,6 +157,7 @@ do {
     exit_frame();
 } while (0);
 @
+Test doubly linked list insertion and iteration.
 @<test cases@+
 do {
     enter_frame();
@@ -176,6 +186,7 @@ do {
     exit_frame();
 } while (0);
 @
+Test segmented buffer append, random access, flattening, and resizing.
 @<test cases@+
 do {
     enter_frame();
@@ -209,6 +220,7 @@ do {
     exit_frame();
 } while (0);
 @
+Test segmented string appending and conversion to a C string.
 @<test cases@+
 do {
     enter_frame();
@@ -228,6 +240,7 @@ do {
     exit_frame();
 } while (0);
 @
+Test string hash table mapping, unmapping, and nested frame scoping.
 @<test cases@+
 do {
     enter_frame();
@@ -263,6 +276,7 @@ do {
     exit_frame();
 } while (0);
 @
+Test string set insertion, removal, and nested frame scoping.
 @<test cases@+
 do {
     enter_frame();
@@ -295,6 +309,7 @@ do {
     exit_frame();
 } while (0);
 @
+Test LIFO stack and FIFO queue operations on a deque.
 @<test cases@+
 do {
     enter_frame();
@@ -338,6 +353,7 @@ do {
     exit_frame();
 } while (0);
 @
+Declare the test-light command-line usages, options, and arguments.
 @<test light@:light-single@:executable@:UI@/Command Line@/invocation syntax@=
 {
     name: 'test-light',
@@ -369,4 +385,16 @@ do {
         },
     ],
 }
+@
+@<Chunk@/Framework@/Light@/main body@=
+{"description": "Body of the Light framework main function."}
+@
+@<Chunk@/test-light.c@=
+{"description": "C source chunk for the Light test executable."}
+@
+@<Chunk@/test cases@=
+{"description": "Sequential test blocks exercising Light framework features."}
+@
+@<Specialization@/executable@/light-single@/test light@=
+{"description": "Single-file Light executable running the Light test suite."}
 @

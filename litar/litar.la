@@ -3431,7 +3431,9 @@ var (
 @<Project@/litar@/Tests@/Filter@/checks of the filters in TestFUSEView@>
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator
+@~ Project@/litar@/Go@/functions@/litar.mustArch
+@~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 
 The files of the set docs; show reads one of them through the whole set.
 @<Project@/litar@/Tests@/Filter@/blocks of the archive text in TestFUSEView@=
@@ -3546,7 +3548,8 @@ if beforeOK && afterOK && after > before {
 }
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch ~ Project@/litar@/Go@/functions@/litar.countLitarMounts ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch
+@~ Project@/litar@/Go@/functions@/litar.countLitarMounts @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 
 The background process sleeps 3 seconds; waiting at most 2 shows that evaluation does not wait for it.
 @<Project@/litar@/Tests@/Filter@/check that 'ev' returns msg before the background process ends@=
@@ -3595,7 +3598,8 @@ if err != nil {
 @<Project@/litar@/Tests@/Filter@/check the stats of hello.txt and doc/note.txt printed in 'got'@>
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval
+@~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 
 The probe prints the stats of both files, after checking that reading and copying
 change neither them nor the directory.
@@ -3703,7 +3707,7 @@ ev := NewEvaluator(blocks, []Mapping{{
 @<Project@/litar@/Tests@/Filter@/check that data.txt as both an archive file and a mapping fails@>
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/types@/litar.Mapping ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 
 @<filter test@:litar@:Language@/Go@/File@/functions@+
 func TestFileCache(t *testing.T) {
@@ -3718,7 +3722,7 @@ blocks := mustArch(t, src)
 @<Project@/litar@/Tests@/Filter@/check that extending part runs the counting filter again for copy.txt and cached.txt@>
 }
 
-@~ Project@/litar@/Go@/functions@/litar.mustArch ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
+@~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 
 The filter tally appends a line to count and prints how many lines count has,
 so its output tells how often it ran. copy.txt shows cached.txt to a filter.
@@ -3786,7 +3790,7 @@ if err != nil || string(data) != "made\n" {
 @<Project@/litar@/Tests@/Filter@/check that an archive file below out makes the view of shadow invalid@>
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/types@/litar.Mapping ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 
 The directory out does not exist yet, so the view creates it.
 shadow adds the archive file out/x, which collides with the mapped directory.
@@ -10200,7 +10204,7 @@ if data, err := os.ReadFile(count); err != nil || strings.Count(string(data), "\
 }
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/variables@/litar.filterCacheDir ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/variables@/litar.filterCacheDir @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 Renaming a chunk or a module and operating the files of a node: both rewrite names in place
 in every block that holds them, so the blocks keep their content and their comments.
 @[internal/litar/rewrite.go@`go module@=
@@ -15049,7 +15053,7 @@ func TestReadOnlyMappedDirectory(t *testing.T) {
 	}
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/types@/litar.Mapping ~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/functions@/litar.writeFile @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @
 A node created with a select field reads only what it selects, its meta chunks included,
 but evaluates the whole chain; blocks://define lists the blocks defining an item.
 Selecting 'word' shows 'word', 'msg', which contains it and refers to its item,

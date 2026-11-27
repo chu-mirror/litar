@@ -363,12 +363,19 @@ func (a *agent) evaluate(ctx context.Context, _ *mcp.CallToolRequest, in evalIn)
 		a.mu.Unlock()
 		return toolErr(err)
 	}
+	n, err := nodeByRef(w, in.Node)
+	if err != nil {
+		a.mu.Unlock()
+		return toolErr(err)
+	}
+	composer := w.Composer
+	node := formatNodePath(nodePath(*n))
 	chain, maps, err := a.nodeChain(w, in.Node)
 	a.mu.Unlock()
 	if err != nil {
 		return toolErr(err)
 	}
-	text, err := evalReporting(chain, maps, ref, filters)
+	text, err := evalReporting(composer, node, chain, maps, ref, filters)
 	if err != nil {
 		return toolErr(err)
 	}
@@ -606,8 +613,13 @@ func (a *agent) renderFile(uri, mime string) (string, string, []byte, error) {
 			return "", "", nil, err
 		}
 	} else {
+		composer := w.Composer
+		node := ""
+		if n, nerr := nodeByRef(w, refs[1]); nerr == nil {
+			node = formatNodePath(nodePath(*n))
+		}
 		a.mu.Unlock()
-		text, err := evalReporting(chain, maps, ChunkRef{Chunk: Name(path)}, nil)
+		text, err := evalReporting(composer, node, chain, maps, ChunkRef{Chunk: Name(path)}, nil)
 		a.mu.Lock()
 		if err != nil {
 			return "", "", nil, err
@@ -1042,9 +1054,10 @@ func toolText(text string) (*mcp.CallToolResult, any, error) {
 	}, map[string]any{"text": text}, nil
 }
 
-func evalReporting(chain []Block, maps []Mapping, ref ChunkRef, filters []Filter) (string, error) {
+func evalReporting(composer, node string, chain []Block, maps []Mapping, ref ChunkRef, filters []Filter) (string, error) {
 	var stderr bytes.Buffer
 	ev := NewEvaluator(chain, maps, &stderr)
+	ev.setIdentity(composer, node)
 	text, err := ev.Eval(ref, filters)
 	if err != nil {
 		if msg := strings.TrimRight(stderr.String(), "\n"); msg != "" {

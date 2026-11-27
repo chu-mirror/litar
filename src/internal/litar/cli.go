@@ -135,6 +135,7 @@ func dispatch(world *World, node, mode, operand string, stderr io.Writer) (strin
 			return "", err
 		}
 		ev := NewEvaluator(chain, maps, stderr)
+		ev.setIdentity(world.Composer, node)
 		return ev.Eval(ref, filters)
 	case "literal":
 		ref, err := ParseChunkRef(operand)

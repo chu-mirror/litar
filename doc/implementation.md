@@ -220,12 +220,21 @@ and populate descriptions by evaluating those metadata chunks.
    - an archive file is evaluated as a root-module chunk on the current visit stack;
    - a mapped file is read from its host `origin` path.
    Any circular dependency or unreadable file aborts the invocation before the process starts.
-3. **FUSE mount and overlay:** The tangled files are mounted as a read-only FUSE filesystem
-   (`go-fuse/v2`) whose file stats (mode, size, inode, link count, timestamps) are fixed at
-   tangle time. Any files or directories created by the filter are written to a temporary
-   host overlay directory that is visible through the mount during the invocation and
-   discarded afterwards. The filter runs with the mount as its working directory while
-   absolute host paths remain reachable.
+3. **Shared FUSE daemon, fixed view paths, and overlay:** An on-demand per-user FUSE daemon
+   (re-execed via `LITAR_FUSE_DAEMON_DIR` and controlled over a Unix domain socket under
+   `<TempDir>/litar-<uid>`, overridable via `LITAR_FUSE_DIR`) mounts a single shared FUSE
+   filesystem (`go-fuse/v2`) at `<base>/mnt` across concurrent and nested `litar` executions,
+   unmounting cleanly when the last client session closes. Each filter invocation is mounted as
+   a subdirectory `<base>/mnt/<slot>` whose name is hashed from invocation identity (composer
+   path, node, filter ref, view ops, and mapped origins) rather than archive file contents, so
+   absolute paths stay fixed across source edits and separate runs (e.g., for CMake caches);
+   concurrent runs targeting the same slot are serialized while distinct slots run in parallel.
+   Any files or directories created by the filter go to a per-invocation temporary overlay
+   directory discarded on unmount. For views containing a writable mapped directory, regular
+   view files (archive files and single mapped files) receive content-tracked `mtime`s
+   persisted per slot (`path -> (hash, mtime)`) so unchanged files keep their previous `mtime`
+   and edited files get a fresh `mtime` for incremental builds; pure/cacheable and read-only
+   views keep `fixedStatTime = 0`.
 
 4. **Filter cache (`cache.go`):** Successful filter runs with no mapped files or directories in
    their view and no output on `stderr` are cached under `$LITAR_CACHE/filters/<key[:2]>/<key>`

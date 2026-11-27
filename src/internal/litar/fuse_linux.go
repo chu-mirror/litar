@@ -12,27 +12,18 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
-func mountFUSE(dir string, root *dirNode, opts *fs.Options, tree *vdir, overlay string) (string, *fuse.Server, bool, error) {
+func mountFUSE(dir string, newRoot func() fs.InodeEmbedder, opts *fs.Options) (*fuse.Server, bool, error) {
 	opts.DirectMount = true
-	server, err := fs.Mount(dir, root, opts)
+	server, err := fs.Mount(dir, newRoot(), opts)
 	direct := err == nil
 	if err != nil {
-		os.RemoveAll(dir)
-		dir, err = os.MkdirTemp("", "litar-mnt-*")
-		if err != nil {
-			os.RemoveAll(overlay)
-			return "", nil, false, fmtMount(err)
-		}
 		opts.DirectMount = false
-		root = &dirNode{rel: "", spec: tree, overlay: overlay}
-		server, err = fs.Mount(dir, root, opts)
+		server, err = fs.Mount(dir, newRoot(), opts)
 	}
 	if err != nil {
-		os.RemoveAll(dir)
-		os.RemoveAll(overlay)
-		return "", nil, false, fmtMount(err)
+		return nil, false, fmtMount(err)
 	}
-	return dir, server, direct, nil
+	return server, direct, nil
 }
 
 func detach(dir string, direct bool) {

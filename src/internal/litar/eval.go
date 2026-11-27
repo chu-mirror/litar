@@ -23,13 +23,16 @@ type frame struct {
 }
 
 type Evaluator struct {
-	mu      sync.Mutex
-	byChunk map[string][]Block
-	cat     *catalog
-	stack   []frame
-	deps    []map[string]dependency
-	fuseErr error
-	stderr  io.Writer
+	mu       sync.Mutex
+	byChunk  map[string][]Block
+	cat      *catalog
+	stack    []frame
+	deps     []map[string]dependency
+	fuseErr  error
+	stderr   io.Writer
+	composer string
+	node     string
+	fuse     *fuseClient
 }
 
 type cachedFile struct {
@@ -68,7 +71,14 @@ func (e *Evaluator) takeFuseErr() error {
 
 func (e *Evaluator) Eval(ref ChunkRef, filters []Filter) (string, error) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
+	defer func() {
+		fc := e.fuse
+		e.fuse = nil
+		e.mu.Unlock()
+		if fc != nil {
+			fc.close()
+		}
+	}()
 	return e.evalLocked(ref, filters)
 }
 
@@ -320,6 +330,39 @@ func (e *Evaluator) readChunk(chunk Name) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(text), nil
+}
+
+func (e *Evaluator) setIdentity(composer, node string) {
+	if composer != "" {
+		if ident, err := identityPath(composer); err == nil {
+			composer = ident
+		}
+	}
+	e.composer = composer
+	e.node = node
+}
+
+func (e *Evaluator) fuseSession() (*fuseClient, error) {
+	e.mu.Lock()
+	fc := e.fuse
+	e.mu.Unlock()
+	if fc != nil {
+		return fc, nil
+	}
+	fc, err := connectFuseDaemon()
+	if err != nil {
+		return nil, err
+	}
+	e.mu.Lock()
+	if e.fuse == nil {
+		e.fuse = fc
+		e.mu.Unlock()
+		return fc, nil
+	}
+	existing := e.fuse
+	e.mu.Unlock()
+	fc.close()
+	return existing, nil
 }
 
 func NewEvaluator(chain []Block, mappings []Mapping, stderr io.Writer) *Evaluator {

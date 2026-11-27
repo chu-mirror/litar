@@ -134,19 +134,22 @@ type frame struct {
 
 @~ Project@/litar@/Go@/types@/litar.ChunkRef @? Project@/litar@/Go@/types@/litar.frame @
 
-Evaluator expands chunk references on one node chain. The mutex is held across in-memory expansion and released around filter execution, which may mount a filesystem and block. byChunk indexes the chain by module and chunk name in chain order. deps holds the dependencies of each file being expanded, innermost last.
+Evaluator expands chunk references on one node chain. The mutex is held across in-memory expansion and released around filter execution, which may mount a filesystem and block. byChunk indexes the chain by module and chunk name in chain order. deps holds the dependencies of each file being expanded, innermost last. composer and node identify the evaluation context for fixed FUSE view paths; fuse holds the session to the shared FUSE daemon for the duration of an Eval call.
 @<eval@:litar@:Language@/Go@/File@/types@+
 type Evaluator struct {
-	mu      sync.Mutex
-	byChunk map[string][]Block
-	cat     *catalog
-	stack   []frame
-	deps    []map[string]dependency
-	fuseErr error
-	stderr  io.Writer
+	mu       sync.Mutex
+	byChunk  map[string][]Block
+	cat      *catalog
+	stack    []frame
+	deps     []map[string]dependency
+	fuseErr  error
+	stderr   io.Writer
+	composer string
+	node     string
+	fuse     *fuseClient
 }
 
-@~ Project@/litar@/Go@/types@/litar.Block @? Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.catalog @~ Project@/litar@/Go@/types@/litar.dependency @~ Project@/litar@/Go@/types@/litar.frame @
+@~ Project@/litar@/Go@/types@/litar.Block @? Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.catalog @~ Project@/litar@/Go@/types@/litar.dependency @~ Project@/litar@/Go@/types@/litar.frame @~ Project@/litar@/Go@/types@/litar.fuseClient @
 
 fileCache holds the files evaluated in this process, by path.
 An evaluated file is kept for the rest of the process,
@@ -235,7 +238,7 @@ type catalog struct {
 
 @~ Project@/litar@/Go@/types@/litar.catFile @? Project@/litar@/Go@/types@/litar.catalog @
 
-Represents a file materialized into a filter's mounted view, including its path, flags, content body, and a stable inode number assigned once for the mount.
+Represents a file materialized into a filter's mounted view, including its path, flags, content body, a stable inode number assigned once for the mount, and an optional content-tracked modification time.
 @<filter@:litar@:Language@/Go@/File@/types@+
 type viewFile struct {
 	path       string
@@ -245,6 +248,7 @@ type viewFile struct {
 	dir        bool
 	readOnly   bool
 	body       []byte
+	mtime      time.Time
 	// ino is assigned once for the mount. A fresh number on each
 	// lookup makes tools treat the file as replaced mid-invocation.
 	ino uint64
@@ -270,12 +274,22 @@ The FUSE view that shows a filter the files of its view.
 @<fuse@:litar@:Language@/Go@/File@/file@>@
 
 @<fuse@:litar@:Language@/Go@/File@/import paths@+
+"bufio"
 "context"
+"crypto/sha256"
+"encoding/hex"
+"encoding/json"
+"errors"
+"fmt"
 "io"
 "log"
+"net"
 "os"
+"os/exec"
+"os/signal"
 "path/filepath"
 "sort"
+"strings"
 "sync"
 "syscall"
 "time"
@@ -313,25 +327,24 @@ type pathUseError struct{ path string }
 
 @? Project@/litar@/Go@/types@/litar.pathUseError @
 
-Tracks an active FUSE mount, including its mount point directory, FUSE server handle, direct-mount flag, and extra temporary directories to remove on close.
+Tracks an active mounted filter view slot on the shared FUSE daemon.
 @<fuse@:litar@:Language@/Go@/File@/types@+
 type mount struct {
 	dir    string
-	server *fuse.Server
-	direct bool
-	extra  []string
+	slot   string
+	client *fuseClient
 }
 
-@? Project@/litar@/Go@/types@/litar.mount @
+@? Project@/litar@/Go@/types@/litar.mount @~ Project@/litar@/Go@/types@/litar.fuseClient @
 
-Guards and tracks the set of currently active FUSE mounts so they can be cleaned up on shutdown.
+Guards and tracks active FUSE daemon client sessions so they can be closed cleanly on signal shutdown.
 @<fuse@:litar@:Language@/Go@/File@/variables@+
 var (
-	liveMu     sync.Mutex
-	liveMounts = map[*mount]struct{}{}
+	liveMu      sync.Mutex
+	liveClients = map[*fuseClient]struct{}{}
 )
 
-@~ Project@/litar@/Go@/types@/litar.mount @? Project@/litar@/Go@/variables@/litar.liveMounts @? Project@/litar@/Go@/variables@/litar.liveMu @
+@~ Project@/litar@/Go@/types@/litar.fuseClient @? Project@/litar@/Go@/variables@/litar.liveClients @? Project@/litar@/Go@/variables@/litar.liveMu @
 
 Error type wrapping failures encountered while setting up a FUSE mount.
 @<fuse@:litar@:Language@/Go@/File@/types@+
@@ -3396,10 +3409,6 @@ const mntForce = 0x80000
 
 @<Chunk@/Project@/litar@/FUSE View@/number the children of 'd' from 'next' in name order, walking into directories@=
 {"description": "Assigns deterministic sequential inode numbers to sorted children of d recursively."}
-@
-
-@<Chunk@/Project@/litar@/FUSE View@/mount 'tree' at 'dir' with new files in 'overlay', setting 'server' and 'direct'@=
-{"description": "Configures go-fuse options with zero timeouts, current UID/GID, and discarded logging, then calls mountFUSE."}
 @
 
 @<Chunk@/Project@/litar@/FUSE View@/return the inode of the view entry 'ch'@=
@@ -8821,9 +8830,9 @@ func newVdir() *vdir {
 
 @? Project@/litar@/Go@/functions@/litar.newVdir @~ Project@/litar@/Go@/types@/litar.vdir @~ Project@/litar@/Go@/types@/litar.ventry @
 
-Builds the virtual FUSE directory tree from a slice of view files and assigns stable inode numbers across the tree.
+Builds the virtual FUSE directory tree from a slice of view files and assigns stable, monotonically increasing inode numbers starting at startIno.
 @<fuse@:litar@:Language@/Go@/File@/functions@+
-func buildVTree(files []viewFile) (*vdir, error) {
+func buildVTree(files []viewFile, startIno uint64) (*vdir, uint64, error) {
 	root := newVdir()
 	for i := range files {
 		f := &files[i]
@@ -8833,8 +8842,8 @@ func buildVTree(files []viewFile) (*vdir, error) {
 			@<Project@/litar@/FUSE View@/add 'part' of the path of 'f' under 'dir'@>
 		}
 	}
-	assignInos(root)
-	return root, nil
+	next := assignInos(root, startIno)
+	return root, next, nil
 }
 
 @~ Project@/litar@/Go@/functions@/litar.assignInos @? Project@/litar@/Go@/functions@/litar.buildVTree @~ Project@/litar@/Go@/functions@/litar.newVdir @~ Project@/litar@/Go@/functions@/litar.stringsSplit @~ Project@/litar@/Go@/types@/litar.vdir @~ Project@/litar@/Go@/types@/litar.viewFile @
@@ -8846,7 +8855,7 @@ last := i == len(parts)-1
 cur := dir.kids[part]
 if last {
 	if cur != nil {
-		return nil, errPath(f.path)
+		return nil, 0, errPath(f.path)
 	}
 	if f.dir {
 		dir.kids[part] = &ventry{host: f.origin, readOnly: f.readOnly}
@@ -8856,7 +8865,7 @@ if last {
 	continue
 }
 if cur != nil && cur.dir == nil {
-	return nil, errPath(f.path)
+	return nil, 0, errPath(f.path)
 }
 if cur == nil {
 	cur = &ventry{dir: newVdir()}
@@ -8865,15 +8874,17 @@ if cur == nil {
 dir = cur.dir
 @~ Project@/litar@/Go@/functions@/litar.errPath @~ Project@/litar@/Go@/functions@/litar.newVdir @~ Project@/litar@/Go@/types@/litar.ventry @
 
-assignInos gives every archive path one inode number for this mount. Entry timeouts are zero, so the kernel may look the name up again between stat and open. The same number keeps the stat stable.
+assignInos gives every archive path and directory one inode number for this mount generation, starting from start and returning the next unused number.
 @<fuse@:litar@:Language@/Go@/File@/functions@+
-func assignInos(root *vdir) {
-	next := uint64(2)
+func assignInos(root *vdir, start uint64) uint64 {
+	root.ino = start
+	next := start + 1
 	var walk func(*vdir)
 	walk = func(d *vdir) {
 		@<Project@/litar@/FUSE View@/number the children of 'd' from 'next' in name order, walking into directories@>
 	}
 	walk(root)
+	return next
 }
 
 @? Project@/litar@/Go@/functions@/litar.assignInos @~ Project@/litar@/Go@/types@/litar.vdir @
@@ -8936,72 +8947,21 @@ func splitSlash(p string) []string {
 
 @? Project@/litar@/Go@/functions@/litar.splitSlash @
 
-DetachMounts lazily unmounts every filter view that is still mounted. A process that exits without it leaves a dead mount in the temporary directory.
+DetachMounts closes every active FUSE daemon client session so the daemon releases this process's views and unmounts cleanly if no other litar process is connected.
 @<fuse@:litar@:Language@/Go@/File@/functions@+
 func DetachMounts() {
 	liveMu.Lock()
-	defer liveMu.Unlock()
-	for m := range liveMounts {
-		detach(m.dir, m.direct)
+	clients := make([]*fuseClient, 0, len(liveClients))
+	for c := range liveClients {
+		clients = append(clients, c)
 	}
-}
-
-@? Project@/litar@/Go@/functions@/litar.DetachMounts @~ Project@/litar@/Go@/functions@/litar.detach @~ Project@/litar@/Go@/variables@/litar.liveMounts @~ Project@/litar@/Go@/variables@/litar.liveMu @
-
-Builds a virtual tree for the given view files, creates temporary mount and overlay directories, mounts the FUSE filesystem, and registers the live mount.
-@<fuse@:litar@:Language@/Go@/File@/functions@+
-func mountView(files []viewFile) (*mount, error) {
-	tree, err := buildVTree(files)
-	if err != nil {
-		return nil, err
-	}
-	dir, err := os.MkdirTemp("", "litar-mnt-*")
-	if err != nil {
-		return nil, fmtMount(err)
-	}
-	overlay, err := os.MkdirTemp("", "litar-ovl-*")
-	if err != nil {
-		os.RemoveAll(dir)
-		return nil, fmtMount(err)
-	}
-	var (
-		server *fuse.Server
-		direct bool
-	)
-	@<Project@/litar@/FUSE View@/mount 'tree' at 'dir' with new files in 'overlay', setting 'server' and 'direct'@>
-	m := &mount{dir: dir, server: server, direct: direct, extra: []string{overlay}}
-	liveMu.Lock()
-	liveMounts[m] = struct{}{}
 	liveMu.Unlock()
-	return m, nil
+	for _, c := range clients {
+		c.close()
+	}
 }
 
-@~ Project@/litar@/Go@/functions@/litar.buildVTree @~ Project@/litar@/Go@/functions@/litar.fmtMount @? Project@/litar@/Go@/functions@/litar.mountView @~ Project@/litar@/Go@/types@/litar.mount @~ Project@/litar@/Go@/types@/litar.viewFile @~ Project@/litar@/Go@/variables@/litar.liveMounts @~ Project@/litar@/Go@/variables@/litar.liveMu @
-
-The kernel caches neither entries nor attributes, NullPermissions leaves
-the permission bits as the nodes report them, and UID and GID default to the
-current user so macFUSE allows creating overlay files in the root directory.
-Discarding go-fuse logs keeps stderr clean for filter checks and MCP stdio.
-@<Project@/litar@/FUSE View@/mount 'tree' at 'dir' with new files in 'overlay', setting 'server' and 'direct'@=
-root := &dirNode{rel: "", spec: tree, overlay: overlay}
-zero := time.Duration(0)
-discard := log.New(io.Discard, "", 0)
-opts := &fs.Options{
-	EntryTimeout:    &zero,
-	AttrTimeout:     &zero,
-	NullPermissions: true,
-	UID:             uint32(os.Getuid()),
-	GID:             uint32(os.Getgid()),
-	Logger:          discard,
-}
-opts.FsName = "litar"
-opts.Name = "litar"
-opts.MountOptions.Logger = discard
-dir, server, direct, err = mountFUSE(dir, root, opts, tree, overlay)
-if err != nil {
-	return nil, err
-}
-@~ Project@/litar@/Go@/functions@/litar.mountFUSE @~ Project@/litar@/Go@/types@/litar.dirNode @
+@? Project@/litar@/Go@/functions@/litar.DetachMounts @~ Project@/litar@/Go@/methods@/litar.fuseClient.close @~ Project@/litar@/Go@/types@/litar.fuseClient @~ Project@/litar@/Go@/variables@/litar.liveClients @~ Project@/litar@/Go@/variables@/litar.liveMu @
 
 Wraps an underlying error in a mountError.
 @<fuse@:litar@:Language@/Go@/File@/functions@+
@@ -9013,12 +8973,13 @@ func fmtMount(err error) error {
 
 A loopback node of go-fuse resolves its paths from the root node of its data;
 making the node that root lets it sit anywhere below the root of the view.
-The device of the data is left zero, so the inode numbers of host files keep
-their device in the high bits, apart from the small numbers of the view.
+Setting Dev to the mapped directory's unique mount-generation inode keeps host file
+inode numbers distinct across view generations and concurrent slots on the shared
+FUSE mount, and apart from the small virtual inode numbers of the view.
 A read-only directory wraps the root node, and the wrapper wraps every child it creates.
 @<fuse@:litar@:Language@/Go@/File@/functions@+
-func hostNode(dir string, readOnly bool) fs.InodeEmbedder {
-	data := &fs.LoopbackRoot{Path: dir}
+func hostNode(dir string, ino uint64, readOnly bool) fs.InodeEmbedder {
+	data := &fs.LoopbackRoot{Path: dir, Dev: ino}
 	node := &fs.LoopbackNode{RootData: data}
 	data.RootNode = node
 	if readOnly {
@@ -9041,12 +9002,16 @@ func modeOf(f *viewFile) uint32 {
 
 @? Project@/litar@/Go@/functions@/litar.modeOf @~ Project@/litar@/Go@/types@/litar.viewFile @
 
-Populates FUSE file attributes including mode, link count, fixed timestamps, and byte size from a viewFile.
+Populates FUSE file attributes including mode, link count, timestamps (content-tracked mtime when set, otherwise fixedStatTime), and byte size from a viewFile.
 @<fuse@:litar@:Language@/Go@/File@/functions@+
 func setFileAttr(f *viewFile, out *fuse.Attr) {
 	out.Mode = modeOf(f)
 	out.Nlink = 1
-	out.SetTimes(&fixedStatTime, &fixedStatTime, &fixedStatTime)
+	t := fixedStatTime
+	if f != nil && !f.mtime.IsZero() {
+		t = f.mtime
+	}
+	out.SetTimes(&t, &t, &t)
 	if f != nil {
 		out.Size = uint64(len(f.body))
 	}
@@ -9518,9 +9483,10 @@ func toolText(text string) (*mcp.CallToolResult, any, error) {
 
 evalReporting runs without a.mu, since a filter may run for long; chain and maps are copies taken under it. A failed evaluation carries the stderr of its filters, which is the only report a client sees.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
-func evalReporting(chain []Block, maps []Mapping, ref ChunkRef, filters []Filter) (string, error) {
+func evalReporting(composer, node string, chain []Block, maps []Mapping, ref ChunkRef, filters []Filter) (string, error) {
 	var stderr bytes.Buffer
 	ev := NewEvaluator(chain, maps, &stderr)
+	ev.setIdentity(composer, node)
 	text, err := ev.Eval(ref, filters)
 	if err != nil {
 		if msg := strings.TrimRight(stderr.String(), "\n"); msg != "" {
@@ -9531,7 +9497,7 @@ func evalReporting(chain []Block, maps []Mapping, ref ChunkRef, filters []Filter
 	return text, nil
 }
 
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @? Project@/litar@/Go@/functions@/litar.evalReporting @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Filter @~ Project@/litar@/Go@/types@/litar.Mapping @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @? Project@/litar@/Go@/functions@/litar.evalReporting @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.Evaluator.setIdentity @~ Project@/litar@/Go@/types@/litar.Block @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Filter @~ Project@/litar@/Go@/types@/litar.Mapping @
 
 Returns text/plain for file: URIs and application/json for all other MCP resource URIs.
 @<mcp@:litar@:Language@/Go@/File@/functions@+
@@ -12195,7 +12161,8 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 	var scriptPath string
 	@<Project@/litar@/Filter@/write 'script' to the temporary file 'scriptPath'@>
 
-	mnt, err := mountView(files)
+	slot := viewSlotKey(ev.composer, ev.node, ref, view, files)
+	mnt, err := ev.mountView(slot, files)
 	if err != nil {
 		return "", err
 	}
@@ -12208,7 +12175,7 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 	@<Project@/litar@/Filter@/run 'args' in the view mounted at 'mnt' with 'input' on stdin@>
 }
 
-@? Project@/litar@/Go@/functions@/litar.executeFilter @~ Project@/litar@/Go@/functions@/litar.filterKey @~ Project@/litar@/Go@/functions@/litar.mountView @~ Project@/litar@/Go@/functions@/litar.parseShebang @~ Project@/litar@/Go@/functions@/litar.readCachedOutput @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @~ Project@/litar@/Go@/methods@/litar.Evaluator.tangle @~ Project@/litar@/Go@/methods@/litar.catalog.apply @~ Project@/litar@/Go@/methods@/litar.mount.close @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.ViewOp @
+@? Project@/litar@/Go@/functions@/litar.executeFilter @~ Project@/litar@/Go@/functions@/litar.filterKey @~ Project@/litar@/Go@/functions@/litar.parseShebang @~ Project@/litar@/Go@/functions@/litar.readCachedOutput @~ Project@/litar@/Go@/functions@/litar.viewSlotKey @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @~ Project@/litar@/Go@/methods@/litar.Evaluator.mountView @~ Project@/litar@/Go@/methods@/litar.Evaluator.tangle @~ Project@/litar@/Go@/methods@/litar.catalog.apply @~ Project@/litar@/Go@/methods@/litar.mount.close @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.ViewOp @
 
 The script is passed to the interpreter as a file, so its stdin stays free for the input.
 A failure to write it is reported as a filter that exited with status 1.
@@ -12448,8 +12415,9 @@ case "print":
 		return "", err
 	}
 	ev := NewEvaluator(chain, maps, stderr)
+	ev.setIdentity(world.Composer, node)
 	return ev.Eval(ref, filters)
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.ParsePrint @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.World.Mappings @
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.ParsePrint @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.Evaluator.setIdentity @~ Project@/litar@/Go@/methods@/litar.World.Mappings @
 
 @<Project@/litar@/Command Line@/cases of 'mode' in 'dispatch'@+
 case "literal":
@@ -14183,32 +14151,23 @@ if got := f.tool("evaluate_expression", "expression", "msg"); got != "hello worl
 @~ Project@/litar@/Go@/functions@/litar.readResource @~ Project@/litar@/Go@/methods@/litar.mcpFixture.read @~ Project@/litar@/Go@/methods@/litar.mcpFixture.ref @~ Project@/litar@/Go@/methods@/litar.mcpFixture.tool @~ Project@/litar@/Go@/types@/litar.blockJSON @
 
 A direct mount needs privileges. Without them the mount is tried again through
-fusermount, in a fresh directory and with a fresh root node.
+fusermount at the same fixed directory with a fresh root node.
 @<fuse linux@:litar@:Language@/Go@/File@/functions@+
-func mountFUSE(dir string, root *dirNode, opts *fs.Options, tree *vdir, overlay string) (string, *fuse.Server, bool, error) {
+func mountFUSE(dir string, newRoot func() fs.InodeEmbedder, opts *fs.Options) (*fuse.Server, bool, error) {
 	opts.DirectMount = true
-	server, err := fs.Mount(dir, root, opts)
+	server, err := fs.Mount(dir, newRoot(), opts)
 	direct := err == nil
 	if err != nil {
-		os.RemoveAll(dir)
-		dir, err = os.MkdirTemp("", "litar-mnt-*")
-		if err != nil {
-			os.RemoveAll(overlay)
-			return "", nil, false, fmtMount(err)
-		}
 		opts.DirectMount = false
-		root = &dirNode{rel: "", spec: tree, overlay: overlay}
-		server, err = fs.Mount(dir, root, opts)
+		server, err = fs.Mount(dir, newRoot(), opts)
 	}
 	if err != nil {
-		os.RemoveAll(dir)
-		os.RemoveAll(overlay)
-		return "", nil, false, fmtMount(err)
+		return nil, false, fmtMount(err)
 	}
-	return dir, server, direct, nil
+	return server, direct, nil
 }
 
-@? Project@/litar@/Go@/functions@/litar.mountFUSE @~ Project@/litar@/Go@/functions@/litar.fmtMount @~ Project@/litar@/Go@/types@/litar.dirNode @~ Project@/litar@/Go@/types@/litar.vdir @
+@? Project@/litar@/Go@/functions@/litar.mountFUSE @~ Project@/litar@/Go@/functions@/litar.fmtMount @
 
 Performs a lazy unmount of a Linux FUSE mount point, trying syscall.Unmount with MNT_DETACH for direct mounts before falling back to fusermount3 or fusermount.
 @<fuse linux@:litar@:Language@/Go@/File@/functions@+
@@ -14249,18 +14208,16 @@ func countLitarMounts() (int, bool) {
 nobrowse keeps ephemeral filter views out of Finder and Spotlight;
 noappledouble and noapplexattr keep macOS tools from creating ._ files or failing on xattrs.
 @<fuse darwin@:litar@:Language@/Go@/File@/functions@+
-func mountFUSE(dir string, root *dirNode, opts *fs.Options, _ *vdir, overlay string) (string, *fuse.Server, bool, error) {
+func mountFUSE(dir string, newRoot func() fs.InodeEmbedder, opts *fs.Options) (*fuse.Server, bool, error) {
 	opts.Options = append(opts.Options, "nobrowse", "noappledouble", "noapplexattr")
-	server, err := fs.Mount(dir, root, opts)
+	server, err := fs.Mount(dir, newRoot(), opts)
 	if err != nil {
-		os.RemoveAll(dir)
-		os.RemoveAll(overlay)
-		return "", nil, false, fmtMount(err)
+		return nil, false, fmtMount(err)
 	}
-	return dir, server, false, nil
+	return server, false, nil
 }
 
-@? Project@/litar@/Go@/functions@/litar.mountFUSE @~ Project@/litar@/Go@/functions@/litar.fmtMount @~ Project@/litar@/Go@/types@/litar.dirNode @~ Project@/litar@/Go@/types@/litar.vdir @
+@? Project@/litar@/Go@/functions@/litar.mountFUSE @~ Project@/litar@/Go@/functions@/litar.fmtMount @
 
 Force-unmounts a macOS FUSE mount point, trying syscall.Unmount, then umount -f, and finally diskutil unmount force.
 @<fuse darwin@:litar@:Language@/Go@/File@/functions@+
@@ -14865,15 +14822,22 @@ func (e *Evaluator) takeFuseErr() error {
 
 @? Project@/litar@/Go@/methods@/litar.Evaluator.takeFuseErr @~ Project@/litar@/Go@/types@/litar.Evaluator @
 
-Eval evaluates a print expression. A missing chunk is an error. An empty chunk with a pipeline is the empty input of that pipeline.
+Eval evaluates a print expression. A missing chunk is an error. An empty chunk with a pipeline is the empty input of that pipeline. Any FUSE daemon session opened during evaluation is closed when Eval returns.
 @<eval@:litar@:Language@/Go@/File@/methods@+
 func (e *Evaluator) Eval(ref ChunkRef, filters []Filter) (string, error) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
+	defer func() {
+		fc := e.fuse
+		e.fuse = nil
+		e.mu.Unlock()
+		if fc != nil {
+			fc.close()
+		}
+	}()
 	return e.evalLocked(ref, filters)
 }
 
-@? Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.Evaluator.evalLocked @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.Filter @
+@? Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.Evaluator.evalLocked @~ Project@/litar@/Go@/methods@/litar.fuseClient.close @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.Filter @
 
 evalLocked expands ref (or starts with empty text for a bare pipeline) and runs any attached filters.
 @<eval@:litar@:Language@/Go@/File@/methods@+
@@ -15329,33 +15293,17 @@ func (e *pathUseError) Error() string {
 
 @~ Project@/litar@/Go@/types@/litar.pathUseError @
 
-Unregisters and tears down a FUSE mount, falling back to a lazy detach if normal unmount fails because a process still holds it, then removes the mount point and overlay directories.
+Unmounts a filter view slot from the shared FUSE daemon.
 @<fuse@:litar@:Language@/Go@/File@/methods@+
 func (m *mount) close() {
-	if m == nil {
+	if m == nil || m.client == nil || m.slot == "" {
 		return
 	}
-	liveMu.Lock()
-	delete(liveMounts, m)
-	liveMu.Unlock()
-	if m.server != nil {
-		// Unmount gives up while a process the filter left behind
-		// still uses the mount, and Wait would then block forever.
-		// A lazy unmount removes the mount now; the server stops
-		// when the kernel drops the last use.
-		if err := m.server.Unmount(); err != nil {
-			detach(m.dir, m.direct)
-		}
-	}
-	if m.dir != "" {
-		_ = os.RemoveAll(m.dir)
-	}
-	for _, p := range m.extra {
-		_ = os.RemoveAll(p)
-	}
+	_, _ = m.client.roundTrip(fuseReq{Op: "unmount", Slot: m.slot})
+	m.slot = ""
 }
 
-@~ Project@/litar@/Go@/functions@/litar.detach @? Project@/litar@/Go@/methods@/litar.mount.close @~ Project@/litar@/Go@/types@/litar.mount @~ Project@/litar@/Go@/variables@/litar.liveMounts @~ Project@/litar@/Go@/variables@/litar.liveMu @
+@? Project@/litar@/Go@/methods@/litar.mount.close @~ Project@/litar@/Go@/methods@/litar.fuseClient.roundTrip @~ Project@/litar@/Go@/types@/litar.fuseReq @~ Project@/litar@/Go@/types@/litar.mount @
 
 @<fuse@:litar@:Language@/Go@/File@/methods@+
 func (e *mountError) Error() string {
@@ -15375,7 +15323,8 @@ func (d *dirNode) lookupHost(ctx context.Context, ch *ventry, out *fuse.EntryOut
 		return nil, fs.ToErrno(err)
 	}
 	out.Attr.FromStat(&st)
-	return d.NewInode(ctx, hostNode(ch.host, ch.readOnly), fs.StableAttr{Mode: syscall.S_IFDIR, Ino: ch.ino}), 0
+	out.Attr.Ino = ch.ino
+	return d.NewInode(ctx, hostNode(ch.host, ch.ino, ch.readOnly), fs.StableAttr{Mode: syscall.S_IFDIR, Ino: ch.ino}), 0
 }
 
 @~ Project@/litar@/Go@/functions@/litar.hostNode @? Project@/litar@/Go@/methods@/litar.dirNode.lookupHost @~ Project@/litar@/Go@/types@/litar.dirNode @~ Project@/litar@/Go@/types@/litar.ventry @
@@ -15897,19 +15846,26 @@ func (a *agent) evaluate(ctx context.Context, _ *mcp.CallToolRequest, in evalIn)
 		a.mu.Unlock()
 		return toolErr(err)
 	}
+	n, err := nodeByRef(w, in.Node)
+	if err != nil {
+		a.mu.Unlock()
+		return toolErr(err)
+	}
+	composer := w.Composer
+	node := formatNodePath(nodePath(*n))
 	chain, maps, err := a.nodeChain(w, in.Node)
 	a.mu.Unlock()
 	if err != nil {
 		return toolErr(err)
 	}
-	text, err := evalReporting(chain, maps, ref, filters)
+	text, err := evalReporting(composer, node, chain, maps, ref, filters)
 	if err != nil {
 		return toolErr(err)
 	}
 	return toolText(text)
 }
 
-@~ Project@/litar@/Go@/functions@/litar.ParsePrint @~ Project@/litar@/Go@/functions@/litar.evalReporting @~ Project@/litar@/Go@/functions@/litar.toolErr @~ Project@/litar@/Go@/functions@/litar.toolText @~ Project@/litar@/Go@/methods@/litar.agent.compositionByRef @? Project@/litar@/Go@/methods@/litar.agent.evaluate @~ Project@/litar@/Go@/methods@/litar.agent.nodeChain @~ Project@/litar@/Go@/types@/litar.agent @~ Project@/litar@/Go@/types@/litar.evalIn @
+@~ Project@/litar@/Go@/functions@/litar.ParsePrint @~ Project@/litar@/Go@/functions@/litar.evalReporting @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.nodeByRef @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/functions@/litar.toolErr @~ Project@/litar@/Go@/functions@/litar.toolText @~ Project@/litar@/Go@/methods@/litar.agent.compositionByRef @? Project@/litar@/Go@/methods@/litar.agent.evaluate @~ Project@/litar@/Go@/methods@/litar.agent.nodeChain @~ Project@/litar@/Go@/types@/litar.agent @~ Project@/litar@/Go@/types@/litar.evalIn @
 
 applyBlock answers with the refs of the blocks of the text, one per line, so that a later call can address them without reading the node again.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
@@ -16196,15 +16152,20 @@ if f.mapping && !f.archive {
 		return "", "", nil, err
 	}
 } else {
+	composer := w.Composer
+	node := ""
+	if n, nerr := nodeByRef(w, refs[1]); nerr == nil {
+		node = formatNodePath(nodePath(*n))
+	}
 	a.mu.Unlock()
-	text, err := evalReporting(chain, maps, ChunkRef{Chunk: Name(path)}, nil)
+	text, err := evalReporting(composer, node, chain, maps, ChunkRef{Chunk: Name(path)}, nil)
 	a.mu.Lock()
 	if err != nil {
 		return "", "", nil, err
 	}
 	data = []byte(text)
 }
-@~ Project@/litar@/Go@/functions@/litar.evalReporting @~ Project@/litar@/Go@/functions@/litar.readOrigin @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Name @
+@~ Project@/litar@/Go@/functions@/litar.evalReporting @~ Project@/litar@/Go@/functions@/litar.formatNodePath @~ Project@/litar@/Go@/functions@/litar.nodeByRef @~ Project@/litar@/Go@/functions@/litar.nodePath @~ Project@/litar@/Go@/functions@/litar.readOrigin @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.Name @
 
 Records a leaf name in the nest if not already present, preserving first-seen order.
 @<mcp@:litar@:Language@/Go@/File@/methods@+
@@ -19040,3 +19001,1405 @@ func TestMCPSubscriptions(t *testing.T) {
 @<Index@/Project@/litar@/Go@/functions@/litar.TestMCPSubscriptions@=
 {"description": "Tests per-session MCP resource subscription tracking, ResourceUpdated notifications on mutation, and cleanup on unsubscribe."}
 @
+Records the canonical composition and node identity used to key fixed FUSE view paths for filter invocations.
+@<eval@:litar@:Language@/Go@/File@/methods@+
+func (e *Evaluator) setIdentity(composer, node string) {
+	if composer != "" {
+		if ident, err := identityPath(composer); err == nil {
+			composer = ident
+		}
+	}
+	e.composer = composer
+	e.node = node
+}
+
+@? Project@/litar@/Go@/methods@/litar.Evaluator.setIdentity @~ Project@/litar@/Go@/functions@/litar.identityPath @~ Project@/litar@/Go@/types@/litar.Evaluator @
+
+Returns the Evaluator's active FUSE daemon session, opening one lazily on the first filter invocation.
+@<eval@:litar@:Language@/Go@/File@/methods@+
+func (e *Evaluator) fuseSession() (*fuseClient, error) {
+	e.mu.Lock()
+	fc := e.fuse
+	e.mu.Unlock()
+	if fc != nil {
+		return fc, nil
+	}
+	fc, err := connectFuseDaemon()
+	if err != nil {
+		return nil, err
+	}
+	e.mu.Lock()
+	if e.fuse == nil {
+		e.fuse = fc
+		e.mu.Unlock()
+		return fc, nil
+	}
+	existing := e.fuse
+	e.mu.Unlock()
+	fc.close()
+	return existing, nil
+}
+
+@? Project@/litar@/Go@/methods@/litar.Evaluator.fuseSession @~ Project@/litar@/Go@/functions@/litar.connectFuseDaemon @~ Project@/litar@/Go@/methods@/litar.fuseClient.close @~ Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.fuseClient @
+@<filter@:litar@:Language@/Go@/File@/import paths@+
+"crypto/sha256"
+"encoding/hex"
+"time"
+@
+Computes a deterministic directory name under the shared FUSE mount root from invocation identity (composition, node, filter ref, view ops, and mapped origins) rather than file contents, so absolute paths stay fixed across edits and executions.
+@<filter@:litar@:Language@/Go@/File@/functions@+
+func viewSlotKey(composer, node string, ref ChunkRef, view []ViewOp, files []viewFile) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "litar view 1\n%d:%s\n%d:%s\n%d:%s\n",
+		len(composer), composer, len(node), node, len(ref.String()), ref.String())
+	for _, op := range view {
+		fmt.Fprintf(h, "%d:%d:%s\n", op.Kind, len(op.Name), op.Name)
+	}
+	for _, f := range files {
+		if !f.archive {
+			fmt.Fprintf(h, "map:%d:%s:%d:%s:%t:%t\n",
+				len(f.path), f.path, len(f.origin), f.origin, f.dir, f.readOnly)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))[:24]
+}
+
+@? Project@/litar@/Go@/functions@/litar.viewSlotKey @~ Project@/litar@/Go@/methods@/litar.ChunkRef.String @~ Project@/litar@/Go@/types@/litar.ChunkRef @~ Project@/litar@/Go@/types@/litar.ViewOp @~ Project@/litar@/Go@/types@/litar.viewFile @
+Constants for the shared FUSE daemon environment handoff and wire protocol version.
+@<fuse@:litar@:Language@/Go@/File@/constants@+
+const (
+	fuseDaemonEnv    = "LITAR_FUSE_DAEMON_DIR"
+	fuseProtoVersion = 1
+)
+@
+
+Starts the shared FUSE daemon when re-executed with LITAR_FUSE_DAEMON_DIR set, before main or test runners execute.
+@<fuse@:litar@:Language@/Go@/File@/functions@+
+func init() {
+	if dir := os.Getenv(fuseDaemonEnv); dir != "" {
+		_ = os.Unsetenv(fuseDaemonEnv)
+		runFuseDaemon(dir)
+		os.Exit(0)
+	}
+}
+
+@~ Project@/litar@/Go@/functions@/litar.runFuseDaemon @
+Shared FUSE filesystem root node exposing active filter views as subdirectories keyed by invocation identity.
+@<fuse@:litar@:Language@/Go@/File@/types@+
+type rootNode struct {
+	fs.Inode
+	mu    sync.RWMutex
+	slots map[string]*viewSlot
+}
+
+@? Project@/litar@/Go@/types@/litar.rootNode @~ Project@/litar@/Go@/types@/litar.viewSlot @
+
+Represents one mounted filter view directory under the shared FUSE root.
+@<fuse@:litar@:Language@/Go@/File@/types@+
+type viewSlot struct {
+	tree    *vdir
+	overlay string
+}
+
+@? Project@/litar@/Go@/types@/litar.viewSlot @~ Project@/litar@/Go@/types@/litar.vdir @
+
+Wire request sent from a litar client to the shared FUSE daemon over the Unix domain socket.
+@<fuse@:litar@:Language@/Go@/File@/types@+
+type fuseReq struct {
+	Op       string         `json:"op"`
+	Version  int            `json:"version,omitempty"`
+	Slot     string         `json:"slot,omitempty"`
+	MtimeDir string         `json:"mtime_dir,omitempty"`
+	Files    []wireViewFile `json:"files,omitempty"`
+}
+
+@? Project@/litar@/Go@/types@/litar.fuseReq @~ Project@/litar@/Go@/types@/litar.wireViewFile @
+
+Serializable representation of a viewFile transmitted over the daemon socket.
+@<fuse@:litar@:Language@/Go@/File@/types@+
+type wireViewFile struct {
+	Path       string `json:"path"`
+	Executable bool   `json:"executable,omitempty"`
+	Origin     string `json:"origin,omitempty"`
+	Archive    bool   `json:"archive,omitempty"`
+	Dir        bool   `json:"dir,omitempty"`
+	ReadOnly   bool   `json:"read_only,omitempty"`
+	Body       []byte `json:"body,omitempty"`
+}
+
+@? Project@/litar@/Go@/types@/litar.wireViewFile @
+
+Wire response returned by the shared FUSE daemon.
+@<fuse@:litar@:Language@/Go@/File@/types@+
+type fuseResp struct {
+	OK    bool   `json:"ok"`
+	Dir   string `json:"dir,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+@? Project@/litar@/Go@/types@/litar.fuseResp @
+
+Persisted content hash and nanosecond mtime for an archive file in a writable-mapping view.
+@<fuse@:litar@:Language@/Go@/File@/types@+
+type mtimeRecord struct {
+	Hash    string `json:"hash"`
+	MtimeNS int64  `json:"mtime_ns"`
+}
+
+@? Project@/litar@/Go@/types@/litar.mtimeRecord @
+
+Client session connected to the shared FUSE daemon over its Unix domain socket.
+@<fuse@:litar@:Language@/Go@/File@/types@+
+type fuseClient struct {
+	mu      sync.Mutex
+	conn    net.Conn
+	enc     *json.Encoder
+	dec     *json.Decoder
+	baseDir string
+	closed  bool
+}
+
+@? Project@/litar@/Go@/types@/litar.fuseClient @
+
+Tracks ownership and wait notification for one identity slot in the shared FUSE daemon.
+@<fuse@:litar@:Language@/Go@/File@/types@+
+type slotState struct {
+	owner *daemonClient
+	slot  *viewSlot
+	done  chan struct{}
+}
+
+@? Project@/litar@/Go@/types@/litar.slotState @~ Project@/litar@/Go@/types@/litar.daemonClient @~ Project@/litar@/Go@/types@/litar.viewSlot @
+
+Represents one connected litar client inside the shared FUSE daemon.
+@<fuse@:litar@:Language@/Go@/File@/types@+
+type daemonClient struct {
+	mu     sync.Mutex
+	slots  map[string]struct{}
+	closed chan struct{}
+}
+
+@? Project@/litar@/Go@/types@/litar.daemonClient @
+
+Holds the runtime state of the on-demand shared FUSE daemon process.
+@<fuse@:litar@:Language@/Go@/File@/types@+
+type fuseDaemon struct {
+	baseDir  string
+	mntDir   string
+	sockPath string
+	lockPath string
+	root     *rootNode
+	server   *fuse.Server
+	direct   bool
+	ln       net.Listener
+	done     chan struct{}
+	exitOnce sync.Once
+
+	mu            sync.Mutex
+	clients       int
+	everConnected bool
+	closing       bool
+	nextIno       uint64
+	slots         map[string]*slotState
+}
+
+@? Project@/litar@/Go@/types@/litar.fuseDaemon @~ Project@/litar@/Go@/types@/litar.rootNode @~ Project@/litar@/Go@/types@/litar.slotState @
+Looks up an active view slot subdirectory under the shared FUSE mount root.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (r *rootNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	r.mu.RLock()
+	slot := r.slots[name]
+	r.mu.RUnlock()
+	if slot == nil {
+		return nil, syscall.ENOENT
+	}
+	setDirAttr(slot.tree, &out.Attr)
+	node := &dirNode{rel: "", spec: slot.tree, overlay: slot.overlay}
+	return r.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFDIR, Ino: slot.tree.ino}), 0
+}
+
+@? Project@/litar@/Go@/methods@/litar.rootNode.Lookup @~ Project@/litar@/Go@/functions@/litar.setDirAttr @~ Project@/litar@/Go@/types@/litar.dirNode @~ Project@/litar@/Go@/types@/litar.rootNode @
+
+Lists active view slot subdirectories under the shared FUSE mount root.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (r *rootNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	r.mu.RLock()
+	names := make([]string, 0, len(r.slots))
+	for name := range r.slots {
+		names = append(names, name)
+	}
+	r.mu.RUnlock()
+	sort.Strings(names)
+	list := make([]fuse.DirEntry, 0, len(names)+2)
+	list = append(list,
+		fuse.DirEntry{Name: ".", Mode: syscall.S_IFDIR},
+		fuse.DirEntry{Name: "..", Mode: syscall.S_IFDIR},
+	)
+	for _, name := range names {
+		list = append(list, fuse.DirEntry{Name: name, Mode: syscall.S_IFDIR})
+	}
+	return fs.NewListDirStream(list), 0
+}
+
+@? Project@/litar@/Go@/methods@/litar.rootNode.Readdir @~ Project@/litar@/Go@/types@/litar.rootNode @
+
+Reports attributes for the shared FUSE mount root directory.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (r *rootNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	r.mu.RLock()
+	n := len(r.slots)
+	r.mu.RUnlock()
+	out.Mode = syscall.S_IFDIR | 0o755
+	out.Nlink = uint32(2 + n)
+	out.SetTimes(&fixedStatTime, &fixedStatTime, &fixedStatTime)
+	return 0
+}
+
+@? Project@/litar@/Go@/methods@/litar.rootNode.Getattr @~ Project@/litar@/Go@/types@/litar.rootNode @~ Project@/litar@/Go@/variables@/litar.fixedStatTime @
+
+Installs a view slot under the shared FUSE root.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (r *rootNode) setSlot(name string, s *viewSlot) {
+	r.mu.Lock()
+	r.slots[name] = s
+	r.mu.Unlock()
+}
+
+@? Project@/litar@/Go@/methods@/litar.rootNode.setSlot @~ Project@/litar@/Go@/types@/litar.rootNode @~ Project@/litar@/Go@/types@/litar.viewSlot @
+
+Removes a view slot from the shared FUSE root and drops its cached inode child.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (r *rootNode) delSlot(name string) {
+	r.mu.Lock()
+	delete(r.slots, name)
+	r.mu.Unlock()
+	r.RmChild(name)
+}
+
+@? Project@/litar@/Go@/methods@/litar.rootNode.delSlot @~ Project@/litar@/Go@/types@/litar.rootNode @
+Returns the canonical per-user runtime directory for the shared FUSE daemon, mount root, and socket.
+@<fuse@:litar@:Language@/Go@/File@/functions@+
+func fuseBaseDir() (string, error) {
+	dir := os.Getenv("LITAR_FUSE_DIR")
+	if dir == "" {
+		dir = filepath.Join(os.TempDir(), fmt.Sprintf("litar-%d", os.Getuid()))
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmtMount(err)
+	}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	return dir, nil
+}
+
+@? Project@/litar@/Go@/functions@/litar.fuseBaseDir @~ Project@/litar@/Go@/functions@/litar.fmtMount @
+
+Returns the directory where per-slot content-tracked mtime tables are persisted.
+@<fuse@:litar@:Language@/Go@/File@/functions@+
+func mtimeStateDir(baseDir string) string {
+	if filterCacheDir != "" {
+		return filepath.Join(filterCacheDir, "mtimes")
+	}
+	if base, err := os.UserCacheDir(); err == nil && base != "" {
+		return filepath.Join(base, "litar", "mtimes")
+	}
+	return filepath.Join(baseDir, "mtimes")
+}
+
+@? Project@/litar@/Go@/functions@/litar.mtimeStateDir @~ Project@/litar@/Go@/variables@/litar.filterCacheDir @
+
+Updates regular view file mtimes (archive files and single mapped files) using persisted content hashes when the view contains a writable mapped directory, preserving mtimes for unchanged files and advancing mtime for edited or new files.
+@<fuse@:litar@:Language@/Go@/File@/functions@+
+func applyTrackedMtimes(mtimeDir, slot string, files []viewFile) {
+	hasWritableDir := false
+	for _, f := range files {
+		if f.dir && !f.readOnly {
+			hasWritableDir = true
+			break
+		}
+	}
+	if !hasWritableDir || mtimeDir == "" {
+		return
+	}
+	statePath := filepath.Join(mtimeDir, slot+".json")
+	prev := map[string]mtimeRecord{}
+	if data, err := os.ReadFile(statePath); err == nil {
+		_ = json.Unmarshal(data, &prev)
+	}
+	now := time.Now().UnixNano()
+	next := map[string]mtimeRecord{}
+	changed := false
+	for i := range files {
+		if files[i].dir {
+			continue
+		}
+		h := sha256.New()
+		fmt.Fprintf(h, "%t:", files[i].executable)
+		h.Write(files[i].body)
+		sum := hex.EncodeToString(h.Sum(nil))
+		rec, ok := prev[files[i].path]
+		if ok && rec.Hash == sum && rec.MtimeNS > 0 {
+			files[i].mtime = time.Unix(0, rec.MtimeNS)
+			next[files[i].path] = rec
+		} else {
+			ts := now
+			if ok && ts <= rec.MtimeNS {
+				ts = rec.MtimeNS + 1
+			}
+			files[i].mtime = time.Unix(0, ts)
+			next[files[i].path] = mtimeRecord{Hash: sum, MtimeNS: ts}
+			changed = true
+		}
+	}
+	if len(next) != len(prev) {
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	if err := os.MkdirAll(mtimeDir, 0o755); err != nil {
+		return
+	}
+	raw, err := json.Marshal(next)
+	if err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(mtimeDir, slot+".*")
+	if err != nil {
+		return
+	}
+	_, err = tmp.Write(raw)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil || os.Rename(tmp.Name(), statePath) != nil {
+		_ = os.Remove(tmp.Name())
+	}
+}
+
+@? Project@/litar@/Go@/functions@/litar.applyTrackedMtimes @~ Project@/litar@/Go@/types@/litar.mtimeRecord @~ Project@/litar@/Go@/types@/litar.viewFile @
+
+Acquires an exclusive advisory flock on path and returns a function that releases it.
+@<fuse@:litar@:Language@/Go@/File@/functions@+
+func lockFuseFile(path string) (func(), error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+	}, nil
+}
+
+@? Project@/litar@/Go@/functions@/litar.lockFuseFile @
+Sends one JSON request to the shared FUSE daemon and waits for its response.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (c *fuseClient) roundTrip(req fuseReq) (fuseResp, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return fuseResp{}, errors.New("fuse client closed")
+	}
+	if err := c.enc.Encode(req); err != nil {
+		return fuseResp{}, err
+	}
+	var resp fuseResp
+	if err := c.dec.Decode(&resp); err != nil {
+		return fuseResp{}, err
+	}
+	return resp, nil
+}
+
+@? Project@/litar@/Go@/methods@/litar.fuseClient.roundTrip @~ Project@/litar@/Go@/types@/litar.fuseClient @~ Project@/litar@/Go@/types@/litar.fuseReq @~ Project@/litar@/Go@/types@/litar.fuseResp @
+
+Closes the client session to the shared FUSE daemon, sending bye so the daemon unmounts cleanly if this was the last connected client.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (c *fuseClient) close() {
+	if c == nil {
+		return
+	}
+	liveMu.Lock()
+	delete(liveClients, c)
+	liveMu.Unlock()
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return
+	}
+	c.closed = true
+	_ = c.conn.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = c.enc.Encode(fuseReq{Op: "bye"})
+	var resp fuseResp
+	_ = c.dec.Decode(&resp)
+	_ = c.conn.Close()
+	c.mu.Unlock()
+}
+
+@? Project@/litar@/Go@/methods@/litar.fuseClient.close @~ Project@/litar@/Go@/types@/litar.fuseClient @~ Project@/litar@/Go@/types@/litar.fuseReq @~ Project@/litar@/Go@/types@/litar.fuseResp @~ Project@/litar@/Go@/variables@/litar.liveClients @~ Project@/litar@/Go@/variables@/litar.liveMu @
+
+Connects to an already running shared FUSE daemon and completes the hello handshake.
+@<fuse@:litar@:Language@/Go@/File@/functions@+
+func dialFuseDaemon(baseDir, sockPath string) (*fuseClient, error) {
+	conn, err := net.DialTimeout("unix", sockPath, 2*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	c := &fuseClient{
+		conn:    conn,
+		enc:     json.NewEncoder(conn),
+		dec:     json.NewDecoder(conn),
+		baseDir: baseDir,
+	}
+	resp, err := c.roundTrip(fuseReq{Op: "hello", Version: fuseProtoVersion})
+	if err != nil || !resp.OK {
+		_ = conn.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New(resp.Error)
+	}
+	liveMu.Lock()
+	liveClients[c] = struct{}{}
+	liveMu.Unlock()
+	return c, nil
+}
+
+@? Project@/litar@/Go@/functions@/litar.dialFuseDaemon @~ Project@/litar@/Go@/methods@/litar.fuseClient.roundTrip @~ Project@/litar@/Go@/types@/litar.fuseClient @~ Project@/litar@/Go@/types@/litar.fuseReq @~ Project@/litar@/Go@/variables@/litar.liveClients @~ Project@/litar@/Go@/variables@/litar.liveMu @
+
+Spawns the on-demand shared FUSE daemon in a detached session and waits for its startup handshake.
+@<fuse@:litar@:Language@/Go@/File@/functions@+
+func spawnFuseDaemon(baseDir string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmtMount(err)
+	}
+	cmd := exec.Command(exe)
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, fuseDaemonEnv+"=") {
+			env = append(env, kv)
+		}
+	}
+	cmd.Env = append(env, fuseDaemonEnv+"="+baseDir)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmtMount(err)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmtMount(err)
+	}
+	scanner := bufio.NewScanner(stdout)
+	var line string
+	if scanner.Scan() {
+		line = scanner.Text()
+	}
+	_ = stdout.Close()
+	if line == "OK" {
+		go func() { _ = cmd.Wait() }()
+		return nil
+	}
+	_ = cmd.Wait()
+	if msg, ok := strings.CutPrefix(line, "ERR:"); ok {
+		return errors.New(msg)
+	}
+	return fmtMount(errors.New("shared FUSE daemon exited before ready"))
+}
+
+@? Project@/litar@/Go@/functions@/litar.spawnFuseDaemon @~ Project@/litar@/Go@/functions@/litar.fmtMount @
+
+Connects to the shared FUSE daemon, starting it on demand under an advisory lock if none is running.
+@<fuse@:litar@:Language@/Go@/File@/functions@+
+func connectFuseDaemon() (*fuseClient, error) {
+	baseDir, err := fuseBaseDir()
+	if err != nil {
+		return nil, err
+	}
+	sockPath := fuseSocketPath(baseDir)
+	lockPath := filepath.Join(baseDir, "fuse.lock")
+	if c, err := dialFuseDaemon(baseDir, sockPath); err == nil {
+		return c, nil
+	}
+	unlock, err := lockFuseFile(lockPath)
+	if err != nil {
+		return nil, fmtMount(err)
+	}
+	defer unlock()
+	if c, err := dialFuseDaemon(baseDir, sockPath); err == nil {
+		return c, nil
+	}
+	if err := spawnFuseDaemon(baseDir); err != nil {
+		return nil, err
+	}
+	c, err := dialFuseDaemon(baseDir, sockPath)
+	if err != nil {
+		return nil, fmtMount(err)
+	}
+	return c, nil
+}
+
+@? Project@/litar@/Go@/functions@/litar.connectFuseDaemon @~ Project@/litar@/Go@/functions@/litar.dialFuseDaemon @~ Project@/litar@/Go@/functions@/litar.fmtMount @~ Project@/litar@/Go@/functions@/litar.fuseBaseDir @~ Project@/litar@/Go@/functions@/litar.fuseSocketPath @~ Project@/litar@/Go@/functions@/litar.lockFuseFile @~ Project@/litar@/Go@/functions@/litar.spawnFuseDaemon @~ Project@/litar@/Go@/types@/litar.fuseClient @
+
+Validates the view tree and registers the filter view under its fixed identity slot on the shared FUSE daemon.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (e *Evaluator) mountView(slot string, files []viewFile) (*mount, error) {
+	if _, _, err := buildVTree(files, 2); err != nil {
+		return nil, err
+	}
+	fc, err := e.fuseSession()
+	if err != nil {
+		return nil, err
+	}
+	wire := make([]wireViewFile, len(files))
+	for i, f := range files {
+		wire[i] = wireViewFile{
+			Path:       f.path,
+			Executable: f.executable,
+			Origin:     f.origin,
+			Archive:    f.archive,
+			Dir:        f.dir,
+			ReadOnly:   f.readOnly,
+			Body:       f.body,
+		}
+	}
+	resp, err := fc.roundTrip(fuseReq{
+		Op:       "mount",
+		Slot:     slot,
+		MtimeDir: mtimeStateDir(fc.baseDir),
+		Files:    wire,
+	})
+	if err != nil {
+		return nil, fmtMount(err)
+	}
+	if !resp.OK {
+		return nil, errors.New(resp.Error)
+	}
+	return &mount{dir: resp.Dir, slot: slot, client: fc}, nil
+}
+
+@? Project@/litar@/Go@/methods@/litar.Evaluator.mountView @~ Project@/litar@/Go@/functions@/litar.buildVTree @~ Project@/litar@/Go@/functions@/litar.fmtMount @~ Project@/litar@/Go@/functions@/litar.mtimeStateDir @~ Project@/litar@/Go@/methods@/litar.Evaluator.fuseSession @~ Project@/litar@/Go@/methods@/litar.fuseClient.roundTrip @~ Project@/litar@/Go@/types@/litar.Evaluator @~ Project@/litar@/Go@/types@/litar.fuseReq @~ Project@/litar@/Go@/types@/litar.mount @~ Project@/litar@/Go@/types@/litar.viewFile @~ Project@/litar@/Go@/types@/litar.wireViewFile @
+Runs the on-demand shared FUSE daemon: mounts the shared FUSE root at baseDir/mnt, listens on the control Unix socket, signals readiness on stdout, and serves client requests until all clients disconnect or startup idles out.
+@<fuse@:litar@:Language@/Go@/File@/functions@+
+func runFuseDaemon(baseDir string) {
+	mntDir := filepath.Join(baseDir, "mnt")
+	sockPath := fuseSocketPath(baseDir)
+	lockPath := filepath.Join(baseDir, "fuse.lock")
+	if _, err := os.Stat(mntDir); err != nil && !os.IsNotExist(err) {
+		detach(mntDir, true)
+	}
+	if err := os.MkdirAll(mntDir, 0o700); err != nil {
+		_, _ = fmt.Fprintf(os.Stdout, "ERR:%s\n", fmtMount(err).Error())
+		return
+	}
+	var root *rootNode
+	newRoot := func() fs.InodeEmbedder {
+		root = &rootNode{slots: map[string]*viewSlot{}}
+		return root
+	}
+	zero := time.Duration(0)
+	discard := log.New(io.Discard, "", 0)
+	opts := &fs.Options{
+		EntryTimeout:    &zero,
+		AttrTimeout:     &zero,
+		NullPermissions: true,
+		UID:             uint32(os.Getuid()),
+		GID:             uint32(os.Getgid()),
+		Logger:          discard,
+	}
+	opts.FsName = "litar"
+	opts.Name = "litar"
+	opts.MountOptions.Logger = discard
+	server, direct, err := mountFUSE(mntDir, newRoot, opts)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stdout, "ERR:%s\n", err.Error())
+		return
+	}
+	_ = os.Remove(sockPath)
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		if server.Unmount() != nil {
+			detach(mntDir, direct)
+		}
+		_, _ = fmt.Fprintf(os.Stdout, "ERR:%s\n", fmtMount(err).Error())
+		return
+	}
+	_ = os.Chmod(sockPath, 0o600)
+	d := &fuseDaemon{
+		baseDir:  baseDir,
+		mntDir:   mntDir,
+		sockPath: sockPath,
+		lockPath: lockPath,
+		root:     root,
+		server:   server,
+		direct:   direct,
+		ln:       ln,
+		done:     make(chan struct{}),
+		nextIno:  2,
+		slots:    map[string]*slotState{},
+	}
+	_, _ = fmt.Fprintln(os.Stdout, "OK")
+	_ = os.Stdout.Close()
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigs
+		d.forceShutdown()
+	}()
+	go func() {
+		timer := time.NewTimer(5 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			d.mu.Lock()
+			idle := !d.everConnected && !d.closing
+			d.mu.Unlock()
+			if idle {
+				d.forceShutdown()
+			}
+		case <-d.done:
+		}
+	}()
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			<-d.done
+			return
+		}
+		go d.handleConn(conn)
+	}
+}
+
+@? Project@/litar@/Go@/functions@/litar.runFuseDaemon @~ Project@/litar@/Go@/functions@/litar.detach @~ Project@/litar@/Go@/functions@/litar.fmtMount @~ Project@/litar@/Go@/functions@/litar.fuseSocketPath @~ Project@/litar@/Go@/functions@/litar.mountFUSE @~ Project@/litar@/Go@/methods@/litar.fuseDaemon.forceShutdown @~ Project@/litar@/Go@/methods@/litar.fuseDaemon.handleConn @~ Project@/litar@/Go@/types@/litar.fuseDaemon @~ Project@/litar@/Go@/types@/litar.rootNode @~ Project@/litar@/Go@/types@/litar.slotState @~ Project@/litar@/Go@/types@/litar.viewSlot @
+
+Serves one client Unix socket connection in the shared FUSE daemon, cleaning up owned slots and shutting down when the last client leaves.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (d *fuseDaemon) handleConn(conn net.Conn) {
+	defer conn.Close()
+	enc := json.NewEncoder(conn)
+	dec := json.NewDecoder(conn)
+	client := &daemonClient{
+		slots:  map[string]struct{}{},
+		closed: make(chan struct{}),
+	}
+	reqCh := make(chan fuseReq, 1)
+	go func() {
+		defer close(client.closed)
+		defer close(reqCh)
+		for {
+			var req fuseReq
+			if err := dec.Decode(&req); err != nil {
+				return
+			}
+			reqCh <- req
+		}
+	}()
+	registered := false
+	defer func() {
+		d.releaseClientSlots(client)
+		if registered {
+			d.disconnectClient(enc, conn, false)
+		}
+	}()
+	for req := range reqCh {
+		switch req.Op {
+		case "hello":
+			if req.Version != fuseProtoVersion {
+				_ = enc.Encode(fuseResp{Error: "incompatible FUSE daemon protocol"})
+				return
+			}
+			d.mu.Lock()
+			if d.closing {
+				d.mu.Unlock()
+				_ = enc.Encode(fuseResp{Error: "daemon shutting down"})
+				return
+			}
+			if !registered {
+				d.clients++
+				d.everConnected = true
+				registered = true
+			}
+			d.mu.Unlock()
+			_ = enc.Encode(fuseResp{OK: true})
+		case "mount":
+			if !registered {
+				_ = enc.Encode(fuseResp{Error: "not registered"})
+				return
+			}
+			resp := d.handleMount(client, req)
+			_ = enc.Encode(resp)
+		case "unmount":
+			d.releaseSlot(client, req.Slot)
+			_ = enc.Encode(fuseResp{OK: true})
+		case "bye":
+			d.releaseClientSlots(client)
+			if registered {
+				registered = false
+				d.disconnectClient(enc, conn, true)
+			} else {
+				_ = enc.Encode(fuseResp{OK: true})
+			}
+			return
+		default:
+			_ = enc.Encode(fuseResp{Error: "unknown op"})
+		}
+	}
+}
+
+@? Project@/litar@/Go@/methods@/litar.fuseDaemon.handleConn @~ Project@/litar@/Go@/methods@/litar.fuseDaemon.disconnectClient @~ Project@/litar@/Go@/methods@/litar.fuseDaemon.handleMount @~ Project@/litar@/Go@/methods@/litar.fuseDaemon.releaseClientSlots @~ Project@/litar@/Go@/methods@/litar.fuseDaemon.releaseSlot @~ Project@/litar@/Go@/types@/litar.daemonClient @~ Project@/litar@/Go@/types@/litar.fuseDaemon @~ Project@/litar@/Go@/types@/litar.fuseReq @~ Project@/litar@/Go@/types@/litar.fuseResp @
+
+Acquires the requested identity slot (serializing concurrent runs on the same slot), updates content-tracked mtimes, builds the view tree, and mounts it under the shared FUSE root.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (d *fuseDaemon) handleMount(client *daemonClient, req fuseReq) fuseResp {
+	if req.Slot == "" {
+		return fuseResp{Error: "empty view slot"}
+	}
+	var st *slotState
+	for {
+		d.mu.Lock()
+		if d.closing {
+			d.mu.Unlock()
+			return fuseResp{Error: "daemon shutting down"}
+		}
+		cur := d.slots[req.Slot]
+		if cur == nil {
+			st = &slotState{owner: client, done: make(chan struct{})}
+			d.slots[req.Slot] = st
+			d.mu.Unlock()
+			break
+		}
+		waitCh := cur.done
+		d.mu.Unlock()
+		select {
+		case <-waitCh:
+		case <-client.closed:
+			return fuseResp{Error: "client closed"}
+		}
+	}
+	abort := func(err error) fuseResp {
+		d.mu.Lock()
+		if d.slots[req.Slot] == st {
+			delete(d.slots, req.Slot)
+			close(st.done)
+		}
+		d.mu.Unlock()
+		return fuseResp{Error: err.Error()}
+	}
+	files := make([]viewFile, len(req.Files))
+	for i, wf := range req.Files {
+		files[i] = viewFile{
+			path:       wf.Path,
+			executable: wf.Executable,
+			origin:     wf.Origin,
+			archive:    wf.Archive,
+			dir:        wf.Dir,
+			readOnly:   wf.ReadOnly,
+			body:       wf.Body,
+		}
+	}
+	applyTrackedMtimes(req.MtimeDir, req.Slot, files)
+	d.mu.Lock()
+	startIno := d.nextIno
+	tree, nextIno, err := buildVTree(files, startIno)
+	if err == nil {
+		d.nextIno = nextIno
+	}
+	d.mu.Unlock()
+	if err != nil {
+		return abort(err)
+	}
+	overlay, err := os.MkdirTemp("", "litar-ovl-*")
+	if err != nil {
+		return abort(fmtMount(err))
+	}
+	slot := &viewSlot{tree: tree, overlay: overlay}
+	d.mu.Lock()
+	if d.closing || d.slots[req.Slot] != st {
+		d.mu.Unlock()
+		_ = os.RemoveAll(overlay)
+		return abort(errors.New("daemon shutting down"))
+	}
+	st.slot = slot
+	d.mu.Unlock()
+	client.mu.Lock()
+	client.slots[req.Slot] = struct{}{}
+	client.mu.Unlock()
+	d.root.setSlot(req.Slot, slot)
+	return fuseResp{OK: true, Dir: filepath.Join(d.mntDir, req.Slot)}
+}
+
+@? Project@/litar@/Go@/methods@/litar.fuseDaemon.handleMount @~ Project@/litar@/Go@/functions@/litar.applyTrackedMtimes @~ Project@/litar@/Go@/functions@/litar.buildVTree @~ Project@/litar@/Go@/functions@/litar.fmtMount @~ Project@/litar@/Go@/methods@/litar.rootNode.setSlot @~ Project@/litar@/Go@/types@/litar.daemonClient @~ Project@/litar@/Go@/types@/litar.fuseDaemon @~ Project@/litar@/Go@/types@/litar.fuseReq @~ Project@/litar@/Go@/types@/litar.fuseResp @~ Project@/litar@/Go@/types@/litar.slotState @~ Project@/litar@/Go@/types@/litar.viewFile @~ Project@/litar@/Go@/types@/litar.viewSlot @
+
+Unmounts one identity slot owned by client, removes its temporary overlay, and wakes any concurrent waiter.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (d *fuseDaemon) releaseSlot(client *daemonClient, name string) {
+	client.mu.Lock()
+	_, owned := client.slots[name]
+	delete(client.slots, name)
+	client.mu.Unlock()
+	if !owned {
+		return
+	}
+	d.root.delSlot(name)
+	d.mu.Lock()
+	st := d.slots[name]
+	if st != nil && st.owner == client {
+		delete(d.slots, name)
+		close(st.done)
+	}
+	d.mu.Unlock()
+	if st != nil && st.slot != nil && st.slot.overlay != "" {
+		_ = os.RemoveAll(st.slot.overlay)
+	}
+}
+
+@? Project@/litar@/Go@/methods@/litar.fuseDaemon.releaseSlot @~ Project@/litar@/Go@/methods@/litar.rootNode.delSlot @~ Project@/litar@/Go@/types@/litar.daemonClient @~ Project@/litar@/Go@/types@/litar.fuseDaemon @
+
+Releases every view slot still owned by client when it disconnects.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (d *fuseDaemon) releaseClientSlots(client *daemonClient) {
+	client.mu.Lock()
+	names := make([]string, 0, len(client.slots))
+	for name := range client.slots {
+		names = append(names, name)
+	}
+	client.mu.Unlock()
+	for _, name := range names {
+		d.releaseSlot(client, name)
+	}
+}
+
+@? Project@/litar@/Go@/methods@/litar.fuseDaemon.releaseClientSlots @~ Project@/litar@/Go@/methods@/litar.fuseDaemon.releaseSlot @~ Project@/litar@/Go@/types@/litar.daemonClient @~ Project@/litar@/Go@/types@/litar.fuseDaemon @
+
+Decrements the active client count and, when the last client leaves, atomically shuts down the listener, removes the socket, and unmounts the shared FUSE root under the daemon lock.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (d *fuseDaemon) disconnectClient(enc *json.Encoder, conn net.Conn, replyBye bool) {
+	d.mu.Lock()
+	if d.clients > 1 {
+		d.clients--
+		d.mu.Unlock()
+		if replyBye {
+			_ = enc.Encode(fuseResp{OK: true})
+		}
+		return
+	}
+	d.mu.Unlock()
+
+	unlock, err := lockFuseFile(d.lockPath)
+	d.mu.Lock()
+	if d.closing {
+		d.mu.Unlock()
+		if err == nil {
+			unlock()
+		}
+		if replyBye {
+			_ = enc.Encode(fuseResp{OK: true})
+		}
+		return
+	}
+	if d.clients > 1 {
+		d.clients--
+		d.mu.Unlock()
+		if err == nil {
+			unlock()
+		}
+		if replyBye {
+			_ = enc.Encode(fuseResp{OK: true})
+		}
+		return
+	}
+	d.clients = 0
+	d.closing = true
+	d.mu.Unlock()
+
+	_ = d.ln.Close()
+	_ = os.Remove(d.sockPath)
+	if d.server != nil {
+		if d.server.Unmount() != nil {
+			detach(d.mntDir, d.direct)
+		}
+	}
+	if replyBye {
+		_ = enc.Encode(fuseResp{OK: true})
+	}
+	_ = conn.Close()
+	if err == nil {
+		unlock()
+	}
+	d.exitOnce.Do(func() { close(d.done) })
+}
+
+@? Project@/litar@/Go@/methods@/litar.fuseDaemon.disconnectClient @~ Project@/litar@/Go@/functions@/litar.detach @~ Project@/litar@/Go@/functions@/litar.lockFuseFile @~ Project@/litar@/Go@/types@/litar.fuseDaemon @~ Project@/litar@/Go@/types@/litar.fuseResp @
+
+Cleans up socket, overlay directories, and the FUSE mount under the daemon lock when the daemon receives a termination signal or idles out before any client connects.
+@<fuse@:litar@:Language@/Go@/File@/methods@+
+func (d *fuseDaemon) forceShutdown() {
+	unlock, err := lockFuseFile(d.lockPath)
+	d.mu.Lock()
+	if d.closing {
+		d.mu.Unlock()
+		if err == nil {
+			unlock()
+		}
+		return
+	}
+	d.closing = true
+	var overlays []string
+	for name, st := range d.slots {
+		if st.slot != nil && st.slot.overlay != "" {
+			overlays = append(overlays, st.slot.overlay)
+		}
+		delete(d.slots, name)
+		close(st.done)
+	}
+	d.mu.Unlock()
+	_ = d.ln.Close()
+	_ = os.Remove(d.sockPath)
+	if d.server != nil {
+		if d.server.Unmount() != nil {
+			detach(d.mntDir, d.direct)
+		}
+	}
+	if err == nil {
+		unlock()
+	}
+	for _, o := range overlays {
+		_ = os.RemoveAll(o)
+	}
+	d.exitOnce.Do(func() { close(d.done) })
+}
+
+@? Project@/litar@/Go@/methods@/litar.fuseDaemon.forceShutdown @~ Project@/litar@/Go@/functions@/litar.detach @~ Project@/litar@/Go@/functions@/litar.lockFuseFile @~ Project@/litar@/Go@/types@/litar.fuseDaemon @
+@<filter test@:litar@:Language@/Go@/File@/import paths@+
+"sync"
+@
+Verifies that multiple filters in one evaluation reuse a single shared FUSE mount, that the mount is cleaned up on return, and that separate evaluations with the same invocation identity get the exact same absolute path even after archive source edits.
+@<filter test@:litar@:Language@/Go@/File@/functions@+
+func TestSharedFUSEFixedPathAndSingleMount(t *testing.T) {
+	if !fuseAvailable() {
+		t.Skip("no FUSE")
+	}
+	t.Setenv("LITAR_FUSE_DIR", t.TempDir())
+	before, beforeOK := countLitarMounts()
+	srcV1 := "" +
+		"@@[src/main.txt@@`src@@=version1\n@@\n" +
+		"@@<inspect@@=\n" +
+		"#!/bin/sh\n" +
+		"pwd\n" +
+		"cat src/main.txt\n" +
+		"@@\n" +
+		"@@<run@@=\n" +
+		"@@|inspect@@+src@@\n" +
+		"@@<two@@=\n" +
+		"@@<run@@>\n" +
+		"@@<run@@>\n" +
+		"@@\n"
+	ev1 := NewEvaluator(mustArch(t, srcV1), nil, nil)
+	ev1.setIdentity("/fake/proj/composer.json", "Build")
+	got1, err := ev1.Eval(mustRef(t, "two"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines1 := strings.Split(strings.TrimSpace(got1), "\n")
+	if len(lines1) != 4 || lines1[0] != lines1[2] || lines1[1] != "version1" || lines1[3] != "version1" {
+		t.Fatalf("unexpected v1 output: %q", got1)
+	}
+	after1, after1OK := countLitarMounts()
+	if beforeOK && after1OK && after1 != before {
+		t.Fatalf("expected clean unmount after Eval: before=%d after=%d", before, after1)
+	}
+
+	srcV2 := strings.ReplaceAll(srcV1, "version1", "version2-edited")
+	ev2 := NewEvaluator(mustArch(t, srcV2), nil, nil)
+	ev2.setIdentity("/fake/proj/composer.json", "Build")
+	got2, err := ev2.Eval(mustRef(t, "run"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines2 := strings.Split(strings.TrimSpace(got2), "\n")
+	if len(lines2) != 2 || lines2[0] != lines1[0] || lines2[1] != "version2-edited" {
+		t.Fatalf("expected same fixed path %q and updated content, got %q", lines1[0], got2)
+	}
+}
+
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.countLitarMounts @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.Evaluator.setIdentity @
+
+Verifies that concurrent runs targeting the same identity slot are serialized while runs targeting different slots execute concurrently on the same shared FUSE mount.
+@<filter test@:litar@:Language@/Go@/File@/functions@+
+func TestSharedFUSESlotSerializationAndConcurrency(t *testing.T) {
+	if !fuseAvailable() {
+		t.Skip("no FUSE")
+	}
+	t.Setenv("LITAR_FUSE_DIR", t.TempDir())
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "events.log")
+	src := "" +
+		"@@[a.txt@@`s@@=a@@\n" +
+		"@@<same@@=\n" +
+		"#!/bin/sh\n" +
+		"echo enter >> '" + logFile + "'\n" +
+		"sleep 0.15\n" +
+		"echo leave >> '" + logFile + "'\n" +
+		"pwd\n" +
+		"@@\n" +
+		"@@<run@@=@@|same@@+s@@\n"
+	blocks := mustArch(t, src)
+	var (
+		wg    sync.WaitGroup
+		paths [2]string
+		errs  [2]error
+	)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			ev := NewEvaluator(blocks, nil, nil)
+			ev.setIdentity("/fake/serial/composer.json", "Build")
+			paths[idx], errs[idx] = ev.Eval(mustRef(t, "run"), nil)
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("worker %d: %v", i, err)
+		}
+	}
+	if paths[0] != paths[1] || strings.TrimSpace(paths[0]) == "" {
+		t.Fatalf("expected identical paths, got %q and %q", paths[0], paths[1])
+	}
+	raw, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(raw)); got != "enter\nleave\nenter\nleave" {
+		t.Fatalf("same-slot runs overlapped: %q", got)
+	}
+
+	// Distinct slots must run concurrently without blocking each other.
+	r1 := filepath.Join(dir, "ready1")
+	r2 := filepath.Join(dir, "ready2")
+	parSrc := "" +
+		"@@<f1@@=\n" +
+		"#!/bin/sh\n" +
+		": > '" + r1 + "'\n" +
+		"i=0; while [ ! -f '" + r2 + "' ] && [ $i -lt 50 ]; do sleep 0.05; i=$((i+1)); done\n" +
+		"test -f '" + r2 + "'\n" +
+		"pwd\n" +
+		"@@\n" +
+		"@@<f2@@=\n" +
+		"#!/bin/sh\n" +
+		": > '" + r2 + "'\n" +
+		"i=0; while [ ! -f '" + r1 + "' ] && [ $i -lt 50 ]; do sleep 0.05; i=$((i+1)); done\n" +
+		"test -f '" + r1 + "'\n" +
+		"pwd\n" +
+		"@@\n" +
+		"@@<r1@@=@@|f1@@\n" +
+		"@@<r2@@=@@|f2@@\n"
+	parBlocks := mustArch(t, parSrc)
+	var pPaths [2]string
+	var pErrs [2]error
+	for i, name := range []string{"r1", "r2"} {
+		wg.Add(1)
+		go func(idx int, chunk string) {
+			defer wg.Done()
+			ev := NewEvaluator(parBlocks, nil, nil)
+			ev.setIdentity("/fake/parallel/composer.json", "Build")
+			pPaths[idx], pErrs[idx] = ev.Eval(mustRef(t, chunk), nil)
+		}(i, name)
+	}
+	wg.Wait()
+	for i, err := range pErrs {
+		if err != nil {
+			t.Fatalf("parallel worker %d: %v", i, err)
+		}
+	}
+	if pPaths[0] == pPaths[1] || filepath.Dir(strings.TrimSpace(pPaths[0])) != filepath.Dir(strings.TrimSpace(pPaths[1])) {
+		t.Fatalf("expected distinct slots under same mount root, got %q and %q", pPaths[0], pPaths[1])
+	}
+}
+
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.Evaluator.setIdentity @
+
+Verifies that archive files and single mapped files in a view with a writable mapped directory receive persisted content-tracked mtimes (unchanged files keep their mtime, edited files get a newer mtime), while read-only mapped directory views keep fixedStatTime 0.
+@<filter test@:litar@:Language@/Go@/File@/functions@+
+func TestTrackedMtimeForWritableMappedDir(t *testing.T) {
+	if !fuseAvailable() {
+		t.Skip("no FUSE")
+	}
+	t.Setenv("LITAR_FUSE_DIR", t.TempDir())
+	oldCache := filterCacheDir
+	filterCacheDir = t.TempDir()
+	defer func() { filterCacheDir = oldCache }()
+
+	work := t.TempDir()
+	buildDir := filepath.Join(work, "build")
+	mappedFile := filepath.Join(work, "mapped.txt")
+	if err := os.WriteFile(mappedFile, []byte("m-v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	probe := "" +
+		"@@<probe@@=\n" +
+		"#!/bin/sh\n" +
+		"if stat -c %y a.txt >/dev/null 2>&1; then\n" +
+		"  stat -c '%Y %y' a.txt\n" +
+		"  stat -c '%Y %y' b.txt\n" +
+		"  stat -c '%Y %y' mapped.txt\n" +
+		"else\n" +
+		"  stat -f '%m %Fm' a.txt\n" +
+		"  stat -f '%m %Fm' b.txt\n" +
+		"  stat -f '%m %Fm' mapped.txt\n" +
+		"fi\n" +
+		"@@\n" +
+		"@@<run@@=@@|probe@@+src@@+build@@\n"
+	mkSrc := func(a, b string) string {
+		return "@@[a.txt@@`src@@=" + a + "@@\n@@[b.txt@@`src@@=" + b + "@@\n" + probe
+	}
+	writableMaps := []Mapping{
+		{Path: "mapped.txt", FileSet: []string{"src"}, Origin: mappedFile},
+		{Path: "build/", FileSet: []string{"build"}, Origin: buildDir},
+	}
+	evalOnce := func(src string, maps []Mapping) (string, string, string) {
+		ev := NewEvaluator(mustArch(t, src), maps, nil)
+		ev.setIdentity("/fake/cmake/composer.json", "Build")
+		got, err := ev.Eval(mustRef(t, "run"), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(got), "\n")
+		if len(lines) != 3 {
+			t.Fatalf("unexpected stat output: %q", got)
+		}
+		return lines[0], lines[1], lines[2]
+	}
+
+	a1, b1, m1 := evalOnce(mkSrc("a-v1", "b-v1"), writableMaps)
+	if strings.HasPrefix(a1, "0 ") || strings.HasPrefix(b1, "0 ") || strings.HasPrefix(m1, "0 ") {
+		t.Fatalf("expected non-zero tracked mtimes, got a=%s b=%s m=%s", a1, b1, m1)
+	}
+	time.Sleep(10 * time.Millisecond)
+	a2, b2, m2 := evalOnce(mkSrc("a-v1", "b-v1"), writableMaps)
+	if a2 != a1 || b2 != b1 || m2 != m1 {
+		t.Fatalf("unchanged files changed mtime: a %s->%s, b %s->%s, m %s->%s", a1, a2, b1, b2, m1, m2)
+	}
+	time.Sleep(10 * time.Millisecond)
+	if err := os.WriteFile(mappedFile, []byte("m-v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a3, b3, m3 := evalOnce(mkSrc("a-v2", "b-v1"), writableMaps)
+	if a3 == a1 {
+		t.Fatalf("edited archive file did not advance mtime: a=%s", a3)
+	}
+	if b3 != b1 {
+		t.Fatalf("unchanged archive file changed mtime: b %s->%s", b1, b3)
+	}
+	if m3 == m1 {
+		t.Fatalf("edited mapped single file did not advance mtime: m=%s", m3)
+	}
+
+	roMaps := []Mapping{
+		{Path: "mapped.txt", FileSet: []string{"src"}, Origin: mappedFile},
+		{Path: "build/", FileSet: []string{"build"}, Origin: buildDir, ReadOnly: true},
+	}
+	aro, bro, mro := evalOnce(mkSrc("a-v2", "b-v1"), roMaps)
+	if !strings.HasPrefix(aro, "0 ") || !strings.HasPrefix(bro, "0 ") || !strings.HasPrefix(mro, "0 ") {
+		t.Fatalf("read-only mapped dir should keep fixedStatTime 0, got a=%s b=%s m=%s", aro, bro, mro)
+	}
+}
+
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.Evaluator.setIdentity @~ Project@/litar@/Go@/types@/litar.Mapping @~ Project@/litar@/Go@/variables@/litar.filterCacheDir @
+@<Index@/Project@/litar@/Go@/functions@/litar.viewSlotKey@=
+{"description": "Computes a deterministic view directory slot name from invocation identity (composer, node, filter ref, view ops, and mapped origins) rather than archive file contents."}
+@
+
+@<Index@/Project@/litar@/Go@/functions@/litar.fuseBaseDir@=
+{"description": "Returns the canonical per-user runtime directory holding the shared FUSE mount root, Unix socket, and lock file."}
+@
+
+@<Index@/Project@/litar@/Go@/functions@/litar.mtimeStateDir@=
+{"description": "Returns the directory where per-slot content-tracked mtime JSON tables are persisted."}
+@
+
+@<Index@/Project@/litar@/Go@/functions@/litar.applyTrackedMtimes@=
+{"description": "Assigns persisted content-tracked mtimes to archive files in views containing a writable mapped directory."}
+@
+
+@<Index@/Project@/litar@/Go@/functions@/litar.lockFuseFile@=
+{"description": "Acquires an exclusive advisory flock on a lock file and returns a release closure."}
+@
+
+@<Index@/Project@/litar@/Go@/functions@/litar.dialFuseDaemon@=
+{"description": "Connects to a running shared FUSE daemon over its Unix domain socket and completes the hello handshake."}
+@
+
+@<Index@/Project@/litar@/Go@/functions@/litar.spawnFuseDaemon@=
+{"description": "Spawns the on-demand shared FUSE daemon in a detached session and waits for its readiness handshake."}
+@
+
+@<Index@/Project@/litar@/Go@/functions@/litar.connectFuseDaemon@=
+{"description": "Connects to the shared FUSE daemon, starting it on demand under an advisory lock if needed."}
+@
+
+@<Index@/Project@/litar@/Go@/functions@/litar.runFuseDaemon@=
+{"description": "Runs the shared FUSE daemon process, mounting the fixed FUSE root and serving client slot requests over a Unix domain socket."}
+@
+
+@<Index@/Project@/litar@/Go@/methods@/litar.Evaluator.setIdentity@=
+{"description": "Sets the composition path and node name on an Evaluator for invocation-keyed FUSE view paths."}
+@
+
+@<Index@/Project@/litar@/Go@/methods@/litar.Evaluator.fuseSession@=
+{"description": "Lazily opens and returns the Evaluator's client session to the shared FUSE daemon."}
+@
+
+@<Index@/Project@/litar@/Go@/methods@/litar.Evaluator.mountView@=
+{"description": "Validates and mounts a filter view under its fixed identity slot on the shared FUSE daemon."}
+@
+
+@<Index@/Project@/litar@/Go@/variables@/litar.liveClients@=
+{"description": "Set of active FUSE daemon client sessions tracked for signal cleanup, guarded by liveMu."}
+@
+
+@<Index@/Project@/litar@/Go@/types@/litar.rootNode@=
+{"description": "FUSE root inode of the shared mount exposing active filter views as identity-keyed subdirectories."}
+@
+
+@<Index@/Project@/litar@/Go@/types@/litar.viewSlot@=
+{"description": "Active mounted filter view tree and overlay directory for one identity slot."}
+@
+
+@<Index@/Project@/litar@/Go@/types@/litar.fuseReq@=
+{"description": "JSON request message sent by a litar client to the shared FUSE daemon."}
+@
+
+@<Index@/Project@/litar@/Go@/types@/litar.wireViewFile@=
+{"description": "JSON-serializable viewFile payload sent over the shared FUSE daemon socket."}
+@
+
+@<Index@/Project@/litar@/Go@/types@/litar.fuseResp@=
+{"description": "JSON response message returned by the shared FUSE daemon."}
+@
+
+@<Index@/Project@/litar@/Go@/types@/litar.mtimeRecord@=
+{"description": "Persisted content hash and nanosecond mtime for one archive file path."}
+@
+
+@<Index@/Project@/litar@/Go@/types@/litar.fuseClient@=
+{"description": "Client connection to the shared FUSE daemon over its Unix domain socket."}
+@
+
+@<Index@/Project@/litar@/Go@/types@/litar.slotState@=
+{"description": "Daemon-side ownership and wait channel for serializing concurrent runs on one view slot."}
+@
+
+@<Index@/Project@/litar@/Go@/types@/litar.daemonClient@=
+{"description": "Daemon-side state for one connected litar client and the view slots it owns."}
+@
+
+@<Index@/Project@/litar@/Go@/types@/litar.fuseDaemon@=
+{"description": "Runtime state of the on-demand shared FUSE daemon process."}
+@
+Returns the Unix domain socket path for a FUSE daemon base directory, falling back to a short hashed path under /tmp when baseDir/fuse.sock would exceed OS sun_path limits.
+@<fuse@:litar@:Language@/Go@/File@/functions@+
+func fuseSocketPath(baseDir string) string {
+	p := filepath.Join(baseDir, "fuse.sock")
+	if len(p) <= 96 {
+		return p
+	}
+	sum := sha256.Sum256([]byte(baseDir))
+	return filepath.Join("/tmp", "litar-"+hex.EncodeToString(sum[:8])+".sock")
+}
+
+@? Project@/litar@/Go@/functions@/litar.fuseSocketPath @
+@<Index@/Project@/litar@/Go@/functions@/litar.fuseSocketPath@=
+Returns the Unix domain socket path for a FUSE daemon base directory, using a short /tmp fallback when the path would exceed OS sun_path limits.
+@
+Verifies that a long LITAR_FUSE_DIR exceeding OS sun_path limits works via the short socket path fallback, that relative vs absolute composer paths yield the same fixed view path, and that rapid concurrent connect/disconnect cycles leave no errors or leaked mounts.
+@<filter test@:litar@:Language@/Go@/File@/functions@+
+func TestSharedFUSEEdgeCasesAndStress(t *testing.T) {
+	if !fuseAvailable() {
+		t.Skip("no FUSE")
+	}
+
+	// 1. Long LITAR_FUSE_DIR (>108 bytes sun_path limit).
+	longBase := filepath.Join(t.TempDir(), strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 30))
+	t.Setenv("LITAR_FUSE_DIR", longBase)
+	src := "@@[a.txt@@`s@@=ok@@\n@@<p@@=\n#!/bin/sh\npwd\ncat a.txt\n@@\n@@<r@@=@@|p@@+s@@\n"
+	blocks := mustArch(t, src)
+	ev := NewEvaluator(blocks, nil, nil)
+	ev.setIdentity("/fake/long/composer.json", "App")
+	got, err := ev.Eval(mustRef(t, "r"), nil)
+	if err != nil {
+		t.Fatalf("long LITAR_FUSE_DIR failed: %v", err)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(got), "ok") {
+		t.Fatalf("unexpected output: %q", got)
+	}
+
+	// 2. Canonical composer identity: relative path vs absolute path yield identical mount paths.
+	t.Setenv("LITAR_FUSE_DIR", t.TempDir())
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relComp := "fake-rel-composer.json"
+	absComp := filepath.Join(wd, relComp)
+	evRel := NewEvaluator(blocks, nil, nil)
+	evRel.setIdentity(relComp, "App")
+	outRel, err := evRel.Eval(mustRef(t, "r"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evAbs := NewEvaluator(blocks, nil, nil)
+	evAbs.setIdentity(absComp, "App")
+	outAbs, err := evAbs.Eval(mustRef(t, "r"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outRel != outAbs {
+		t.Fatalf("relative and absolute composer paths produced different views: %q vs %q", outRel, outAbs)
+	}
+
+	// 3. Rapid concurrent connect/disconnect lifecycle stress.
+	stressBase := t.TempDir()
+	t.Setenv("LITAR_FUSE_DIR", stressBase)
+	before, beforeOK := countLitarMounts()
+	var wg sync.WaitGroup
+	errCh := make(chan error, 40)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			for j := 0; j < 5; j++ {
+				e := NewEvaluator(blocks, nil, nil)
+				e.setIdentity("/fake/stress/composer.json", "W"+string(rune('0'+(worker%4))))
+				out, err := e.Eval(mustRef(t, "r"), nil)
+				if err != nil {
+					errCh <- err
+					return
+				}
+				if !strings.HasSuffix(strings.TrimSpace(out), "ok") {
+					errCh <- err
+					return
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("concurrent lifecycle stress failed: %v", err)
+		}
+	}
+	after, afterOK := countLitarMounts()
+	if beforeOK && afterOK && after > before {
+		t.Fatalf("leaked mount after concurrent stress (%d > %d)", after, before)
+	}
+}
+
+@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.countLitarMounts @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.Evaluator.setIdentity @

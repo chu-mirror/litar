@@ -1,12 +1,22 @@
 package litar
 
 import (
+	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -15,9 +25,14 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
+const (
+	fuseDaemonEnv    = "LITAR_FUSE_DAEMON_DIR"
+	fuseProtoVersion = 1
+)
+
 var (
-	liveMu     sync.Mutex
-	liveMounts = map[*mount]struct{}{}
+	liveMu      sync.Mutex
+	liveClients = map[*fuseClient]struct{}{}
 )
 
 var fixedStatTime = time.Unix(0, 0)
@@ -58,9 +73,8 @@ type pathUseError struct{ path string }
 
 type mount struct {
 	dir    string
-	server *fuse.Server
-	direct bool
-	extra  []string
+	slot   string
+	client *fuseClient
 }
 
 type mountError struct{ err error }
@@ -91,32 +105,97 @@ type readOnlyNode struct {
 	*fs.LoopbackNode
 }
 
+type rootNode struct {
+	fs.Inode
+	mu    sync.RWMutex
+	slots map[string]*viewSlot
+}
+
+type viewSlot struct {
+	tree    *vdir
+	overlay string
+}
+
+type fuseReq struct {
+	Op       string         `json:"op"`
+	Version  int            `json:"version,omitempty"`
+	Slot     string         `json:"slot,omitempty"`
+	MtimeDir string         `json:"mtime_dir,omitempty"`
+	Files    []wireViewFile `json:"files,omitempty"`
+}
+
+type wireViewFile struct {
+	Path       string `json:"path"`
+	Executable bool   `json:"executable,omitempty"`
+	Origin     string `json:"origin,omitempty"`
+	Archive    bool   `json:"archive,omitempty"`
+	Dir        bool   `json:"dir,omitempty"`
+	ReadOnly   bool   `json:"read_only,omitempty"`
+	Body       []byte `json:"body,omitempty"`
+}
+
+type fuseResp struct {
+	OK    bool   `json:"ok"`
+	Dir   string `json:"dir,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+type mtimeRecord struct {
+	Hash    string `json:"hash"`
+	MtimeNS int64  `json:"mtime_ns"`
+}
+
+type fuseClient struct {
+	mu      sync.Mutex
+	conn    net.Conn
+	enc     *json.Encoder
+	dec     *json.Decoder
+	baseDir string
+	closed  bool
+}
+
+type slotState struct {
+	owner *daemonClient
+	slot  *viewSlot
+	done  chan struct{}
+}
+
+type daemonClient struct {
+	mu     sync.Mutex
+	slots  map[string]struct{}
+	closed chan struct{}
+}
+
+type fuseDaemon struct {
+	baseDir  string
+	mntDir   string
+	sockPath string
+	lockPath string
+	root     *rootNode
+	server   *fuse.Server
+	direct   bool
+	ln       net.Listener
+	done     chan struct{}
+	exitOnce sync.Once
+
+	mu            sync.Mutex
+	clients       int
+	everConnected bool
+	closing       bool
+	nextIno       uint64
+	slots         map[string]*slotState
+}
+
 func (e *pathUseError) Error() string {
 	return "invalid file path '" + e.path + "'"
 }
 
 func (m *mount) close() {
-	if m == nil {
+	if m == nil || m.client == nil || m.slot == "" {
 		return
 	}
-	liveMu.Lock()
-	delete(liveMounts, m)
-	liveMu.Unlock()
-	if m.server != nil {
-		// Unmount gives up while a process the filter left behind
-		// still uses the mount, and Wait would then block forever.
-		// A lazy unmount removes the mount now; the server stops
-		// when the kernel drops the last use.
-		if err := m.server.Unmount(); err != nil {
-			detach(m.dir, m.direct)
-		}
-	}
-	if m.dir != "" {
-		_ = os.RemoveAll(m.dir)
-	}
-	for _, p := range m.extra {
-		_ = os.RemoveAll(p)
-	}
+	_, _ = m.client.roundTrip(fuseReq{Op: "unmount", Slot: m.slot})
+	m.slot = ""
 }
 
 func (e *mountError) Error() string {
@@ -129,7 +208,8 @@ func (d *dirNode) lookupHost(ctx context.Context, ch *ventry, out *fuse.EntryOut
 		return nil, fs.ToErrno(err)
 	}
 	out.Attr.FromStat(&st)
-	return d.NewInode(ctx, hostNode(ch.host, ch.readOnly), fs.StableAttr{Mode: syscall.S_IFDIR, Ino: ch.ino}), 0
+	out.Attr.Ino = ch.ino
+	return d.NewInode(ctx, hostNode(ch.host, ch.ino, ch.readOnly), fs.StableAttr{Mode: syscall.S_IFDIR, Ino: ch.ino}), 0
 }
 
 func (d *dirNode) hostDir() string {
@@ -404,11 +484,412 @@ func (n *readOnlyNode) Setxattr(context.Context, string, []byte, uint32) syscall
 
 func (n *readOnlyNode) Removexattr(context.Context, string) syscall.Errno { return syscall.EROFS }
 
+func (r *rootNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	r.mu.RLock()
+	slot := r.slots[name]
+	r.mu.RUnlock()
+	if slot == nil {
+		return nil, syscall.ENOENT
+	}
+	setDirAttr(slot.tree, &out.Attr)
+	node := &dirNode{rel: "", spec: slot.tree, overlay: slot.overlay}
+	return r.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFDIR, Ino: slot.tree.ino}), 0
+}
+
+func (r *rootNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	r.mu.RLock()
+	names := make([]string, 0, len(r.slots))
+	for name := range r.slots {
+		names = append(names, name)
+	}
+	r.mu.RUnlock()
+	sort.Strings(names)
+	list := make([]fuse.DirEntry, 0, len(names)+2)
+	list = append(list,
+		fuse.DirEntry{Name: ".", Mode: syscall.S_IFDIR},
+		fuse.DirEntry{Name: "..", Mode: syscall.S_IFDIR},
+	)
+	for _, name := range names {
+		list = append(list, fuse.DirEntry{Name: name, Mode: syscall.S_IFDIR})
+	}
+	return fs.NewListDirStream(list), 0
+}
+
+func (r *rootNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	r.mu.RLock()
+	n := len(r.slots)
+	r.mu.RUnlock()
+	out.Mode = syscall.S_IFDIR | 0o755
+	out.Nlink = uint32(2 + n)
+	out.SetTimes(&fixedStatTime, &fixedStatTime, &fixedStatTime)
+	return 0
+}
+
+func (r *rootNode) setSlot(name string, s *viewSlot) {
+	r.mu.Lock()
+	r.slots[name] = s
+	r.mu.Unlock()
+}
+
+func (r *rootNode) delSlot(name string) {
+	r.mu.Lock()
+	delete(r.slots, name)
+	r.mu.Unlock()
+	r.RmChild(name)
+}
+
+func (c *fuseClient) roundTrip(req fuseReq) (fuseResp, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return fuseResp{}, errors.New("fuse client closed")
+	}
+	if err := c.enc.Encode(req); err != nil {
+		return fuseResp{}, err
+	}
+	var resp fuseResp
+	if err := c.dec.Decode(&resp); err != nil {
+		return fuseResp{}, err
+	}
+	return resp, nil
+}
+
+func (c *fuseClient) close() {
+	if c == nil {
+		return
+	}
+	liveMu.Lock()
+	delete(liveClients, c)
+	liveMu.Unlock()
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return
+	}
+	c.closed = true
+	_ = c.conn.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = c.enc.Encode(fuseReq{Op: "bye"})
+	var resp fuseResp
+	_ = c.dec.Decode(&resp)
+	_ = c.conn.Close()
+	c.mu.Unlock()
+}
+
+func (e *Evaluator) mountView(slot string, files []viewFile) (*mount, error) {
+	if _, _, err := buildVTree(files, 2); err != nil {
+		return nil, err
+	}
+	fc, err := e.fuseSession()
+	if err != nil {
+		return nil, err
+	}
+	wire := make([]wireViewFile, len(files))
+	for i, f := range files {
+		wire[i] = wireViewFile{
+			Path:       f.path,
+			Executable: f.executable,
+			Origin:     f.origin,
+			Archive:    f.archive,
+			Dir:        f.dir,
+			ReadOnly:   f.readOnly,
+			Body:       f.body,
+		}
+	}
+	resp, err := fc.roundTrip(fuseReq{
+		Op:       "mount",
+		Slot:     slot,
+		MtimeDir: mtimeStateDir(fc.baseDir),
+		Files:    wire,
+	})
+	if err != nil {
+		return nil, fmtMount(err)
+	}
+	if !resp.OK {
+		return nil, errors.New(resp.Error)
+	}
+	return &mount{dir: resp.Dir, slot: slot, client: fc}, nil
+}
+
+func (d *fuseDaemon) handleConn(conn net.Conn) {
+	defer conn.Close()
+	enc := json.NewEncoder(conn)
+	dec := json.NewDecoder(conn)
+	client := &daemonClient{
+		slots:  map[string]struct{}{},
+		closed: make(chan struct{}),
+	}
+	reqCh := make(chan fuseReq, 1)
+	go func() {
+		defer close(client.closed)
+		defer close(reqCh)
+		for {
+			var req fuseReq
+			if err := dec.Decode(&req); err != nil {
+				return
+			}
+			reqCh <- req
+		}
+	}()
+	registered := false
+	defer func() {
+		d.releaseClientSlots(client)
+		if registered {
+			d.disconnectClient(enc, conn, false)
+		}
+	}()
+	for req := range reqCh {
+		switch req.Op {
+		case "hello":
+			if req.Version != fuseProtoVersion {
+				_ = enc.Encode(fuseResp{Error: "incompatible FUSE daemon protocol"})
+				return
+			}
+			d.mu.Lock()
+			if d.closing {
+				d.mu.Unlock()
+				_ = enc.Encode(fuseResp{Error: "daemon shutting down"})
+				return
+			}
+			if !registered {
+				d.clients++
+				d.everConnected = true
+				registered = true
+			}
+			d.mu.Unlock()
+			_ = enc.Encode(fuseResp{OK: true})
+		case "mount":
+			if !registered {
+				_ = enc.Encode(fuseResp{Error: "not registered"})
+				return
+			}
+			resp := d.handleMount(client, req)
+			_ = enc.Encode(resp)
+		case "unmount":
+			d.releaseSlot(client, req.Slot)
+			_ = enc.Encode(fuseResp{OK: true})
+		case "bye":
+			d.releaseClientSlots(client)
+			if registered {
+				registered = false
+				d.disconnectClient(enc, conn, true)
+			} else {
+				_ = enc.Encode(fuseResp{OK: true})
+			}
+			return
+		default:
+			_ = enc.Encode(fuseResp{Error: "unknown op"})
+		}
+	}
+}
+
+func (d *fuseDaemon) handleMount(client *daemonClient, req fuseReq) fuseResp {
+	if req.Slot == "" {
+		return fuseResp{Error: "empty view slot"}
+	}
+	var st *slotState
+	for {
+		d.mu.Lock()
+		if d.closing {
+			d.mu.Unlock()
+			return fuseResp{Error: "daemon shutting down"}
+		}
+		cur := d.slots[req.Slot]
+		if cur == nil {
+			st = &slotState{owner: client, done: make(chan struct{})}
+			d.slots[req.Slot] = st
+			d.mu.Unlock()
+			break
+		}
+		waitCh := cur.done
+		d.mu.Unlock()
+		select {
+		case <-waitCh:
+		case <-client.closed:
+			return fuseResp{Error: "client closed"}
+		}
+	}
+	abort := func(err error) fuseResp {
+		d.mu.Lock()
+		if d.slots[req.Slot] == st {
+			delete(d.slots, req.Slot)
+			close(st.done)
+		}
+		d.mu.Unlock()
+		return fuseResp{Error: err.Error()}
+	}
+	files := make([]viewFile, len(req.Files))
+	for i, wf := range req.Files {
+		files[i] = viewFile{
+			path:       wf.Path,
+			executable: wf.Executable,
+			origin:     wf.Origin,
+			archive:    wf.Archive,
+			dir:        wf.Dir,
+			readOnly:   wf.ReadOnly,
+			body:       wf.Body,
+		}
+	}
+	applyTrackedMtimes(req.MtimeDir, req.Slot, files)
+	d.mu.Lock()
+	startIno := d.nextIno
+	tree, nextIno, err := buildVTree(files, startIno)
+	if err == nil {
+		d.nextIno = nextIno
+	}
+	d.mu.Unlock()
+	if err != nil {
+		return abort(err)
+	}
+	overlay, err := os.MkdirTemp("", "litar-ovl-*")
+	if err != nil {
+		return abort(fmtMount(err))
+	}
+	slot := &viewSlot{tree: tree, overlay: overlay}
+	d.mu.Lock()
+	if d.closing || d.slots[req.Slot] != st {
+		d.mu.Unlock()
+		_ = os.RemoveAll(overlay)
+		return abort(errors.New("daemon shutting down"))
+	}
+	st.slot = slot
+	d.mu.Unlock()
+	client.mu.Lock()
+	client.slots[req.Slot] = struct{}{}
+	client.mu.Unlock()
+	d.root.setSlot(req.Slot, slot)
+	return fuseResp{OK: true, Dir: filepath.Join(d.mntDir, req.Slot)}
+}
+
+func (d *fuseDaemon) releaseSlot(client *daemonClient, name string) {
+	client.mu.Lock()
+	_, owned := client.slots[name]
+	delete(client.slots, name)
+	client.mu.Unlock()
+	if !owned {
+		return
+	}
+	d.root.delSlot(name)
+	d.mu.Lock()
+	st := d.slots[name]
+	if st != nil && st.owner == client {
+		delete(d.slots, name)
+		close(st.done)
+	}
+	d.mu.Unlock()
+	if st != nil && st.slot != nil && st.slot.overlay != "" {
+		_ = os.RemoveAll(st.slot.overlay)
+	}
+}
+
+func (d *fuseDaemon) releaseClientSlots(client *daemonClient) {
+	client.mu.Lock()
+	names := make([]string, 0, len(client.slots))
+	for name := range client.slots {
+		names = append(names, name)
+	}
+	client.mu.Unlock()
+	for _, name := range names {
+		d.releaseSlot(client, name)
+	}
+}
+
+func (d *fuseDaemon) disconnectClient(enc *json.Encoder, conn net.Conn, replyBye bool) {
+	d.mu.Lock()
+	if d.clients > 1 {
+		d.clients--
+		d.mu.Unlock()
+		if replyBye {
+			_ = enc.Encode(fuseResp{OK: true})
+		}
+		return
+	}
+	d.mu.Unlock()
+
+	unlock, err := lockFuseFile(d.lockPath)
+	d.mu.Lock()
+	if d.closing {
+		d.mu.Unlock()
+		if err == nil {
+			unlock()
+		}
+		if replyBye {
+			_ = enc.Encode(fuseResp{OK: true})
+		}
+		return
+	}
+	if d.clients > 1 {
+		d.clients--
+		d.mu.Unlock()
+		if err == nil {
+			unlock()
+		}
+		if replyBye {
+			_ = enc.Encode(fuseResp{OK: true})
+		}
+		return
+	}
+	d.clients = 0
+	d.closing = true
+	d.mu.Unlock()
+
+	_ = d.ln.Close()
+	_ = os.Remove(d.sockPath)
+	if d.server != nil {
+		if d.server.Unmount() != nil {
+			detach(d.mntDir, d.direct)
+		}
+	}
+	if replyBye {
+		_ = enc.Encode(fuseResp{OK: true})
+	}
+	_ = conn.Close()
+	if err == nil {
+		unlock()
+	}
+	d.exitOnce.Do(func() { close(d.done) })
+}
+
+func (d *fuseDaemon) forceShutdown() {
+	unlock, err := lockFuseFile(d.lockPath)
+	d.mu.Lock()
+	if d.closing {
+		d.mu.Unlock()
+		if err == nil {
+			unlock()
+		}
+		return
+	}
+	d.closing = true
+	var overlays []string
+	for name, st := range d.slots {
+		if st.slot != nil && st.slot.overlay != "" {
+			overlays = append(overlays, st.slot.overlay)
+		}
+		delete(d.slots, name)
+		close(st.done)
+	}
+	d.mu.Unlock()
+	_ = d.ln.Close()
+	_ = os.Remove(d.sockPath)
+	if d.server != nil {
+		if d.server.Unmount() != nil {
+			detach(d.mntDir, d.direct)
+		}
+	}
+	if err == nil {
+		unlock()
+	}
+	for _, o := range overlays {
+		_ = os.RemoveAll(o)
+	}
+	d.exitOnce.Do(func() { close(d.done) })
+}
+
 func newVdir() *vdir {
 	return &vdir{kids: map[string]*ventry{}}
 }
 
-func buildVTree(files []viewFile) (*vdir, error) {
+func buildVTree(files []viewFile, startIno uint64) (*vdir, uint64, error) {
 	root := newVdir()
 	for i := range files {
 		f := &files[i]
@@ -419,7 +900,7 @@ func buildVTree(files []viewFile) (*vdir, error) {
 			cur := dir.kids[part]
 			if last {
 				if cur != nil {
-					return nil, errPath(f.path)
+					return nil, 0, errPath(f.path)
 				}
 				if f.dir {
 					dir.kids[part] = &ventry{host: f.origin, readOnly: f.readOnly}
@@ -429,7 +910,7 @@ func buildVTree(files []viewFile) (*vdir, error) {
 				continue
 			}
 			if cur != nil && cur.dir == nil {
-				return nil, errPath(f.path)
+				return nil, 0, errPath(f.path)
 			}
 			if cur == nil {
 				cur = &ventry{dir: newVdir()}
@@ -438,12 +919,13 @@ func buildVTree(files []viewFile) (*vdir, error) {
 			dir = cur.dir
 		}
 	}
-	assignInos(root)
-	return root, nil
+	next := assignInos(root, startIno)
+	return root, next, nil
 }
 
-func assignInos(root *vdir) {
-	next := uint64(2)
+func assignInos(root *vdir, start uint64) uint64 {
+	root.ino = start
+	next := start + 1
 	var walk func(*vdir)
 	walk = func(d *vdir) {
 		names := make([]string, 0, len(d.kids))
@@ -468,6 +950,7 @@ func assignInos(root *vdir) {
 		}
 	}
 	walk(root)
+	return next
 }
 
 func errPath(p string) error {
@@ -493,61 +976,22 @@ func splitSlash(p string) []string {
 
 func DetachMounts() {
 	liveMu.Lock()
-	defer liveMu.Unlock()
-	for m := range liveMounts {
-		detach(m.dir, m.direct)
+	clients := make([]*fuseClient, 0, len(liveClients))
+	for c := range liveClients {
+		clients = append(clients, c)
 	}
-}
-
-func mountView(files []viewFile) (*mount, error) {
-	tree, err := buildVTree(files)
-	if err != nil {
-		return nil, err
-	}
-	dir, err := os.MkdirTemp("", "litar-mnt-*")
-	if err != nil {
-		return nil, fmtMount(err)
-	}
-	overlay, err := os.MkdirTemp("", "litar-ovl-*")
-	if err != nil {
-		os.RemoveAll(dir)
-		return nil, fmtMount(err)
-	}
-	var (
-		server *fuse.Server
-		direct bool
-	)
-	root := &dirNode{rel: "", spec: tree, overlay: overlay}
-	zero := time.Duration(0)
-	discard := log.New(io.Discard, "", 0)
-	opts := &fs.Options{
-		EntryTimeout:    &zero,
-		AttrTimeout:     &zero,
-		NullPermissions: true,
-		UID:             uint32(os.Getuid()),
-		GID:             uint32(os.Getgid()),
-		Logger:          discard,
-	}
-	opts.FsName = "litar"
-	opts.Name = "litar"
-	opts.MountOptions.Logger = discard
-	dir, server, direct, err = mountFUSE(dir, root, opts, tree, overlay)
-	if err != nil {
-		return nil, err
-	}
-	m := &mount{dir: dir, server: server, direct: direct, extra: []string{overlay}}
-	liveMu.Lock()
-	liveMounts[m] = struct{}{}
 	liveMu.Unlock()
-	return m, nil
+	for _, c := range clients {
+		c.close()
+	}
 }
 
 func fmtMount(err error) error {
 	return &mountError{err}
 }
 
-func hostNode(dir string, readOnly bool) fs.InodeEmbedder {
-	data := &fs.LoopbackRoot{Path: dir}
+func hostNode(dir string, ino uint64, readOnly bool) fs.InodeEmbedder {
+	data := &fs.LoopbackRoot{Path: dir, Dev: ino}
 	node := &fs.LoopbackNode{RootData: data}
 	data.RootNode = node
 	if readOnly {
@@ -567,7 +1011,11 @@ func modeOf(f *viewFile) uint32 {
 func setFileAttr(f *viewFile, out *fuse.Attr) {
 	out.Mode = modeOf(f)
 	out.Nlink = 1
-	out.SetTimes(&fixedStatTime, &fixedStatTime, &fixedStatTime)
+	t := fixedStatTime
+	if f != nil && !f.mtime.IsZero() {
+		t = f.mtime
+	}
+	out.SetTimes(&t, &t, &t)
 	if f != nil {
 		out.Size = uint64(len(f.body))
 	}
@@ -603,4 +1051,307 @@ func window(data, dest []byte, off int64) []byte {
 	out := make([]byte, len(data))
 	copy(out, data)
 	return out
+}
+
+func init() {
+	if dir := os.Getenv(fuseDaemonEnv); dir != "" {
+		_ = os.Unsetenv(fuseDaemonEnv)
+		runFuseDaemon(dir)
+		os.Exit(0)
+	}
+}
+
+func fuseBaseDir() (string, error) {
+	dir := os.Getenv("LITAR_FUSE_DIR")
+	if dir == "" {
+		dir = filepath.Join(os.TempDir(), fmt.Sprintf("litar-%d", os.Getuid()))
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmtMount(err)
+	}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	return dir, nil
+}
+
+func mtimeStateDir(baseDir string) string {
+	if filterCacheDir != "" {
+		return filepath.Join(filterCacheDir, "mtimes")
+	}
+	if base, err := os.UserCacheDir(); err == nil && base != "" {
+		return filepath.Join(base, "litar", "mtimes")
+	}
+	return filepath.Join(baseDir, "mtimes")
+}
+
+func applyTrackedMtimes(mtimeDir, slot string, files []viewFile) {
+	hasWritableDir := false
+	for _, f := range files {
+		if f.dir && !f.readOnly {
+			hasWritableDir = true
+			break
+		}
+	}
+	if !hasWritableDir || mtimeDir == "" {
+		return
+	}
+	statePath := filepath.Join(mtimeDir, slot+".json")
+	prev := map[string]mtimeRecord{}
+	if data, err := os.ReadFile(statePath); err == nil {
+		_ = json.Unmarshal(data, &prev)
+	}
+	now := time.Now().UnixNano()
+	next := map[string]mtimeRecord{}
+	changed := false
+	for i := range files {
+		if files[i].dir {
+			continue
+		}
+		h := sha256.New()
+		fmt.Fprintf(h, "%t:", files[i].executable)
+		h.Write(files[i].body)
+		sum := hex.EncodeToString(h.Sum(nil))
+		rec, ok := prev[files[i].path]
+		if ok && rec.Hash == sum && rec.MtimeNS > 0 {
+			files[i].mtime = time.Unix(0, rec.MtimeNS)
+			next[files[i].path] = rec
+		} else {
+			ts := now
+			if ok && ts <= rec.MtimeNS {
+				ts = rec.MtimeNS + 1
+			}
+			files[i].mtime = time.Unix(0, ts)
+			next[files[i].path] = mtimeRecord{Hash: sum, MtimeNS: ts}
+			changed = true
+		}
+	}
+	if len(next) != len(prev) {
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	if err := os.MkdirAll(mtimeDir, 0o755); err != nil {
+		return
+	}
+	raw, err := json.Marshal(next)
+	if err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(mtimeDir, slot+".*")
+	if err != nil {
+		return
+	}
+	_, err = tmp.Write(raw)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil || os.Rename(tmp.Name(), statePath) != nil {
+		_ = os.Remove(tmp.Name())
+	}
+}
+
+func lockFuseFile(path string) (func(), error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+	}, nil
+}
+
+func dialFuseDaemon(baseDir, sockPath string) (*fuseClient, error) {
+	conn, err := net.DialTimeout("unix", sockPath, 2*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	c := &fuseClient{
+		conn:    conn,
+		enc:     json.NewEncoder(conn),
+		dec:     json.NewDecoder(conn),
+		baseDir: baseDir,
+	}
+	resp, err := c.roundTrip(fuseReq{Op: "hello", Version: fuseProtoVersion})
+	if err != nil || !resp.OK {
+		_ = conn.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New(resp.Error)
+	}
+	liveMu.Lock()
+	liveClients[c] = struct{}{}
+	liveMu.Unlock()
+	return c, nil
+}
+
+func spawnFuseDaemon(baseDir string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmtMount(err)
+	}
+	cmd := exec.Command(exe)
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, fuseDaemonEnv+"=") {
+			env = append(env, kv)
+		}
+	}
+	cmd.Env = append(env, fuseDaemonEnv+"="+baseDir)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmtMount(err)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmtMount(err)
+	}
+	scanner := bufio.NewScanner(stdout)
+	var line string
+	if scanner.Scan() {
+		line = scanner.Text()
+	}
+	_ = stdout.Close()
+	if line == "OK" {
+		go func() { _ = cmd.Wait() }()
+		return nil
+	}
+	_ = cmd.Wait()
+	if msg, ok := strings.CutPrefix(line, "ERR:"); ok {
+		return errors.New(msg)
+	}
+	return fmtMount(errors.New("shared FUSE daemon exited before ready"))
+}
+
+func connectFuseDaemon() (*fuseClient, error) {
+	baseDir, err := fuseBaseDir()
+	if err != nil {
+		return nil, err
+	}
+	sockPath := fuseSocketPath(baseDir)
+	lockPath := filepath.Join(baseDir, "fuse.lock")
+	if c, err := dialFuseDaemon(baseDir, sockPath); err == nil {
+		return c, nil
+	}
+	unlock, err := lockFuseFile(lockPath)
+	if err != nil {
+		return nil, fmtMount(err)
+	}
+	defer unlock()
+	if c, err := dialFuseDaemon(baseDir, sockPath); err == nil {
+		return c, nil
+	}
+	if err := spawnFuseDaemon(baseDir); err != nil {
+		return nil, err
+	}
+	c, err := dialFuseDaemon(baseDir, sockPath)
+	if err != nil {
+		return nil, fmtMount(err)
+	}
+	return c, nil
+}
+
+func runFuseDaemon(baseDir string) {
+	mntDir := filepath.Join(baseDir, "mnt")
+	sockPath := fuseSocketPath(baseDir)
+	lockPath := filepath.Join(baseDir, "fuse.lock")
+	if _, err := os.Stat(mntDir); err != nil && !os.IsNotExist(err) {
+		detach(mntDir, true)
+	}
+	if err := os.MkdirAll(mntDir, 0o700); err != nil {
+		_, _ = fmt.Fprintf(os.Stdout, "ERR:%s\n", fmtMount(err).Error())
+		return
+	}
+	var root *rootNode
+	newRoot := func() fs.InodeEmbedder {
+		root = &rootNode{slots: map[string]*viewSlot{}}
+		return root
+	}
+	zero := time.Duration(0)
+	discard := log.New(io.Discard, "", 0)
+	opts := &fs.Options{
+		EntryTimeout:    &zero,
+		AttrTimeout:     &zero,
+		NullPermissions: true,
+		UID:             uint32(os.Getuid()),
+		GID:             uint32(os.Getgid()),
+		Logger:          discard,
+	}
+	opts.FsName = "litar"
+	opts.Name = "litar"
+	opts.MountOptions.Logger = discard
+	server, direct, err := mountFUSE(mntDir, newRoot, opts)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stdout, "ERR:%s\n", err.Error())
+		return
+	}
+	_ = os.Remove(sockPath)
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		if server.Unmount() != nil {
+			detach(mntDir, direct)
+		}
+		_, _ = fmt.Fprintf(os.Stdout, "ERR:%s\n", fmtMount(err).Error())
+		return
+	}
+	_ = os.Chmod(sockPath, 0o600)
+	d := &fuseDaemon{
+		baseDir:  baseDir,
+		mntDir:   mntDir,
+		sockPath: sockPath,
+		lockPath: lockPath,
+		root:     root,
+		server:   server,
+		direct:   direct,
+		ln:       ln,
+		done:     make(chan struct{}),
+		nextIno:  2,
+		slots:    map[string]*slotState{},
+	}
+	_, _ = fmt.Fprintln(os.Stdout, "OK")
+	_ = os.Stdout.Close()
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigs
+		d.forceShutdown()
+	}()
+	go func() {
+		timer := time.NewTimer(5 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			d.mu.Lock()
+			idle := !d.everConnected && !d.closing
+			d.mu.Unlock()
+			if idle {
+				d.forceShutdown()
+			}
+		case <-d.done:
+		}
+	}()
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			<-d.done
+			return
+		}
+		go d.handleConn(conn)
+	}
+}
+
+func fuseSocketPath(baseDir string) string {
+	p := filepath.Join(baseDir, "fuse.sock")
+	if len(p) <= 96 {
+		return p
+	}
+	sum := sha256.Sum256([]byte(baseDir))
+	return filepath.Join("/tmp", "litar-"+hex.EncodeToString(sum[:8])+".sock")
 }

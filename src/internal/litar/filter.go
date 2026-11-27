@@ -2,6 +2,8 @@ package litar
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 )
 
 type catFile struct {
@@ -37,6 +40,7 @@ type viewFile struct {
 	dir        bool
 	readOnly   bool
 	body       []byte
+	mtime      time.Time
 	// ino is assigned once for the mount. A fresh number on each
 	// lookup makes tools treat the file as replaced mid-invocation.
 	ino uint64
@@ -291,7 +295,8 @@ func executeFilter(ev *Evaluator, script, input string, ref ChunkRef, view []Vie
 	scriptFile.Close()
 	defer os.Remove(scriptPath)
 
-	mnt, err := mountView(files)
+	slot := viewSlotKey(ev.composer, ev.node, ref, view, files)
+	mnt, err := ev.mountView(slot, files)
 	if err != nil {
 		return "", err
 	}
@@ -358,4 +363,20 @@ func exitStatus(err error) int {
 		}
 	}
 	return code
+}
+
+func viewSlotKey(composer, node string, ref ChunkRef, view []ViewOp, files []viewFile) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "litar view 1\n%d:%s\n%d:%s\n%d:%s\n",
+		len(composer), composer, len(node), node, len(ref.String()), ref.String())
+	for _, op := range view {
+		fmt.Fprintf(h, "%d:%d:%s\n", op.Kind, len(op.Name), op.Name)
+	}
+	for _, f := range files {
+		if !f.archive {
+			fmt.Fprintf(h, "map:%d:%s:%d:%s:%t:%t\n",
+				len(f.path), f.path, len(f.origin), f.origin, f.dir, f.readOnly)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))[:24]
 }

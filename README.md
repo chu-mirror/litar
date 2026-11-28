@@ -3,7 +3,7 @@
 This project proposes a system named litar,
 which is defined in [litar.md](design/litar.md):
 its Authoring section explains the construction of a litar archive,
-its Category section gives the strategy to classify chunks and items,
+its Category section gives the strategy to classify chunks, items, and files,
 and its Context and Workflow sections divide a task among workers.
 [implementation.md](doc/implementation.md) describes the command line tool for handling litar archives,
 including the MCP server it opens for agents.
@@ -107,7 +107,7 @@ when the window gets the focus again, or with Reload.
 
 - `make test` runs `go test ./...` in a filter view of the composition.
   The Go test files live only in the composition; `make sync` does not write them into `src`.
-  The view maps `examples` and `standard` into `internal/litar/testdata` for the tests that read them.
+  The view maps `examples` and `standard` into `litar/internal/litar/testdata` for the tests that read them.
 - `make test` then runs the acceptance cases on `bin/litar`, which it builds first.
   A case is a chunk of the node `Litar Build` under `Project@/litar@/Tests@/Cases`: its content is a script of checks,
   and the filter `UI@/Command Line@/Test@/run case` of the ground `standard` turns it into its result,

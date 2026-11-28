@@ -113,3 +113,7 @@ void hello()
 }
 @? Project@/hello@/C@/functions@/hello @
 ```
+
+## Files
+
+- Give each project its own home directory (e.g. `litar/...`, `mtlab/...`) for all of its archive files and mappings.

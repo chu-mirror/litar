@@ -2493,7 +2493,7 @@ The module files are edited before the settings copy go.mod to the module root,
 so the copy carries the new Go version.
 @<Language@/Go@/Module@/Go Command@/tidy module files@=#!/bin/sh
 set -e
-mod='@<..@/module file directory@>/go.mod'
+mod='@<..@/module directory@>/@<..@/module file directory@>/go.mod'
 [ -s "$mod" ] || printf 'module %s\n' '@<..@/Meta@/module path@>' > "$mod"
 set --
 while IFS= read -r flag; do
@@ -2516,7 +2516,7 @@ print(meta.module, end='')
 @|Tool@/evaluate@
 
 Each check runs the go command in a view of the file set go module,
-so the module root is the working directory.
+after entering the module directory.
 GOTOOLCHAIN=local keeps the go command from downloading another toolchain,
 and GOWORK=off ignores a workspace file outside the view.
 -modfile makes the go command read and write go.mod in the module file directory,
@@ -2527,6 +2527,7 @@ The build cache and the module cache stay at their host locations.
 A failed check fails the evaluation, and the go command reports on stderr.
 @<Language@/Go@/Module@/Go Command@/go command settings@=
 set -e
+cd '@<..@/module directory@>'
 export GOTOOLCHAIN=local
 export GOWORK=off
 export GOFLAGS='-modfile=@<..@/module file directory@>/go.mod'
@@ -3219,4 +3220,12 @@ def configuration(model, source):
 @
 @<Specialization@/command@=
 {"description": "Go file specialization for a main package with flag parsing and func main."}
+@
+The module directory is the directory of the view that holds the Go module.
+Projects that live in their own home directory set it to that directory;
+the default is the root of the view.
+@<Language@/Go@/Module@/module directory@=.@
+
+@<Chunk@/Language@/Go@/Module@/module directory@=
+{"description": "Directory of the view that holds the Go module."}
 @

@@ -785,7 +785,8 @@ void hello()
 The Authoring section gives general advice about
 how to create chunks and items and when to put a chunk under a module,
 but that's not the whole story.
-The chunks and items are categorized under modules and domains.
+The chunks and items are categorized under modules and domains,
+and the files are under directories.
 When the scale expands, a firm strategy to classify them becomes important.
 
 The examples above are simplified, so they should not be used as models.
@@ -874,6 +875,14 @@ Project@/litar@/options@/--agent
 Framework@/Light@/C@/macros@/LIGHT_TEST
 Language@/Go@/concepts@/build constraint
 ```
+
+## Files
+
+A composition may contain many independent projects,
+which means a lot of files. Just like chunks and items,
+we shall be careful to manage all these files.
+
+A project shall have its own home directory.
 
 # Composing
 

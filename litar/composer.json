@@ -8,25 +8,25 @@
             "description": "The litar tool: archive parser, composer, evaluator, filters, CLI, FUSE view, and MCP server, with its unit tests and build files.",
             "mappings": [
                 {
-                    "path": "internal/litar/testdata/examples/",
+                    "path": "litar/mod/",
+                    "fileset": [
+                        "go module"
+                    ],
+                    "origin": "mod"
+                },
+                {
+                    "path": "litar/internal/litar/testdata/examples/",
                     "fileset": [
                         "test data"
                     ],
                     "origin": "../examples"
                 },
                 {
-                    "path": "internal/litar/testdata/grounds/standard/",
+                    "path": "litar/internal/litar/testdata/grounds/standard/",
                     "fileset": [
                         "test data"
                     ],
                     "origin": "../standard"
-                },
-                {
-                    "path": "mod/",
-                    "fileset": [
-                        "go module"
-                    ],
-                    "origin": "mod"
                 }
             ],
             "base": [
@@ -39,14 +39,14 @@
             "description": "Map the build directories of the repository, write the binaries and the source tree into them, and run the tests on them.",
             "mappings": [
                 {
-                    "path": "bin/",
+                    "path": "litar/bin/",
                     "fileset": [
                         "binaries"
                     ],
                     "origin": "../bin"
                 },
                 {
-                    "path": "src/",
+                    "path": "litar/src/",
                     "fileset": [
                         "source tree"
                     ],

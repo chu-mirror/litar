@@ -19,7 +19,7 @@ var modeOrder = []string{
 @? Project@/litar@/Go@/variables@/litar.modeOrder @
 
 Tests of cli.go.
-@[internal/litar/cli_test.go@`go module@`go tests@=
+@[litar/internal/litar/cli_test.go@`go module@`go tests@=
 @<cli test@:litar@:Language@/Go@/File@/file@>@
 
 @<cli test@:litar@:Language@/Go@/File@/import paths@+
@@ -31,7 +31,7 @@ Tests of cli.go.
 @
 
 Compositions: composer.json, grounds, the node graph, and archive edits with compaction.
-@[internal/litar/compose.go@`go module@=
+@[litar/internal/litar/compose.go@`go module@=
 @<compose@:litar@:Language@/Go@/File@/file@>@
 
 @<compose@:litar@:Language@/Go@/File@/import paths@+
@@ -96,7 +96,7 @@ type groundFrame struct {
 @? Project@/litar@/Go@/types@/litar.groundFrame @
 
 Tests of compose.go.
-@[internal/litar/compose_test.go@`go module@`go tests@=
+@[litar/internal/litar/compose_test.go@`go module@`go tests@=
 @<compose test@:litar@:Language@/Go@/File@/file@>@
 
 @<compose test@:litar@:Language@/Go@/File@/import paths@+
@@ -107,7 +107,7 @@ Tests of compose.go.
 @
 
 The evaluator: expands references through specialization, detects cycles, and runs filters.
-@[internal/litar/eval.go@`go module@=
+@[litar/internal/litar/eval.go@`go module@=
 @<eval@:litar@:Language@/Go@/File@/file@>@
 
 @<eval@:litar@:Language@/Go@/File@/import paths@+
@@ -190,7 +190,7 @@ type dependency struct {
 @
 
 Tests of eval.go.
-@[internal/litar/eval_test.go@`go module@`go tests@=
+@[litar/internal/litar/eval_test.go@`go module@`go tests@=
 @<eval test@:litar@:Language@/Go@/File@/file@>@
 
 @<eval test@:litar@:Language@/Go@/File@/import paths@+
@@ -199,7 +199,7 @@ Tests of eval.go.
 @
 
 Filters: the file catalog and views, shebang parsing, and running filter scripts.
-@[internal/litar/filter.go@`go module@=
+@[litar/internal/litar/filter.go@`go module@=
 @<filter@:litar@:Language@/Go@/File@/file@>@
 
 @<filter@:litar@:Language@/Go@/File@/import paths@+
@@ -257,7 +257,7 @@ type viewFile struct {
 @? Project@/litar@/Go@/types@/litar.viewFile @
 
 Tests of filter.go.
-@[internal/litar/filter_test.go@`go module@`go tests@=
+@[litar/internal/litar/filter_test.go@`go module@`go tests@=
 @<filter test@:litar@:Language@/Go@/File@/file@>@
 
 @<filter test@:litar@:Language@/Go@/File@/import paths@+
@@ -270,7 +270,7 @@ Tests of filter.go.
 @
 
 The FUSE view that shows a filter the files of its view.
-@[internal/litar/fuse.go@`go module@=
+@[litar/internal/litar/fuse.go@`go module@=
 @<fuse@:litar@:Language@/Go@/File@/file@>@
 
 @<fuse@:litar@:Language@/Go@/File@/import paths@+
@@ -417,7 +417,7 @@ var (
 @~ Project@/litar@/Go@/types@/litar.archiveFH @~ Project@/litar@/Go@/types@/litar.dirNode @~ Project@/litar@/Go@/types@/litar.fileNode @~ Project@/litar@/Go@/types@/litar.overlayNode @
 
 Listings: literal, effective, depend, and reference outputs, and module, chunk, and item trees.
-@[internal/litar/list.go@`go module@=
+@[litar/internal/litar/list.go@`go module@=
 @<list@:litar@:Language@/Go@/File@/file@>@
 
 @<list@:litar@:Language@/Go@/File@/import paths@+
@@ -436,7 +436,7 @@ type namedLine struct {
 @? Project@/litar@/Go@/types@/litar.namedLine @
 
 The MCP server: its tools, resources, and the trees it renders.
-@[internal/litar/mcp.go@`go module@=
+@[litar/internal/litar/mcp.go@`go module@=
 @<mcp@:litar@:Language@/Go@/File@/file@>@
 
 @<mcp@:litar@:Language@/Go@/File@/import paths@+
@@ -659,7 +659,7 @@ type treePlace struct {
 @? Project@/litar@/Go@/types@/litar.treePlace @
 
 Tests of mcp.go.
-@[internal/litar/mcp_test.go@`go module@`go tests@=
+@[litar/internal/litar/mcp_test.go@`go module@`go tests@=
 @<mcp test@:litar@:Language@/Go@/File@/file@>@
 
 @<mcp test@:litar@:Language@/Go@/File@/import paths@+
@@ -677,7 +677,7 @@ Tests of mcp.go.
 @
 
 Tests of meta.go.
-@[internal/litar/meta_test.go@`go module@`go tests@=
+@[litar/internal/litar/meta_test.go@`go module@`go tests@=
 @<meta test@:litar@:Language@/Go@/File@/file@>@
 
 @<meta test@:litar@:Language@/Go@/File@/import paths@+
@@ -691,7 +691,7 @@ Tests of meta.go.
 @
 
 The parser of archives, expressions, module paths, and items.
-@[internal/litar/parse.go@`go module@=
+@[litar/internal/litar/parse.go@`go module@=
 @<parse@:litar@:Language@/Go@/File@/file@>@
 
 @<parse@:litar@:Language@/Go@/File@/import paths@+
@@ -745,7 +745,7 @@ type body struct {
 @~ Project@/litar@/Go@/types@/litar.Filter @~ Project@/litar@/Go@/types@/litar.Item @~ Project@/litar@/Go@/types@/litar.Part @? Project@/litar@/Go@/types@/litar.body @
 
 Tests of parse.go.
-@[internal/litar/parse_test.go@`go module@`go tests@=
+@[litar/internal/litar/parse_test.go@`go module@`go tests@=
 @<parse test@:litar@:Language@/Go@/File@/file@>@
 
 @<parse test@:litar@:Language@/Go@/File@/import paths@+
@@ -754,7 +754,7 @@ Tests of parse.go.
 @
 
 Core types: names, chunk references, blocks, nodes, worlds, and their helpers.
-@[internal/litar/types.go@`go module@=
+@[litar/internal/litar/types.go@`go module@=
 @<types@:litar@:Language@/Go@/File@/file@>@
 
 @<types@:litar@:Language@/Go@/File@/import paths@+
@@ -977,11 +977,11 @@ The command litar-web serves a browser interface for compositions.
 It runs litar -a and reads everything through that MCP server,
 so the browser sees the same resources and tools as an agent,
 and the command line of litar stays as the design defines it.
-@[cmd/litar-web/main.go@`go module@=
+@[litar/cmd/litar-web/main.go@`go module@=
 @<litar-web@:command@:Language@/Go@/File@/file@>@
 
 The page is embedded beside the program, so the command is one file to install.
-@[cmd/litar-web/index.html@`go module@=
+@[litar/cmd/litar-web/index.html@`go module@=
 @<Project@/litar@/Web@/page@>
 
 @
@@ -1045,7 +1045,7 @@ name: 'litar',
 @
 The command litar is a command of the Go file structure:
 the flag package parses its invocation syntax, and the main body hands the flags to litar.Main.
-@[cmd/litar/main.go@`go module@=
+@[litar/cmd/litar/main.go@`go module@=
 @<litar command@:command@:Language@/Go@/File@/file@>@
 
 @<litar command@:command@:Language@/Go@/File@/package comment@=
@@ -1188,11 +1188,11 @@ An action is chosen by giving its operand; agent takes none.
 }
 @
 The parsed command line: choosing the action, and dispatch to the print, listing, and agent modes.
-@[internal/litar/cli.go@`go module@=
+@[litar/internal/litar/cli.go@`go module@=
 @<cli@:litar@:Language@/Go@/File@/file@>@
 The filter cache: the output of a filter run kept on disk under everything the run reads,
 so a later run with the same script, input, and view files is not started again.
-@[internal/litar/cache.go@`go module@=
+@[litar/internal/litar/cache.go@`go module@=
 @<cache@:litar@:Language@/Go@/File@/file@>@
 
 @<cache@:litar@:Language@/Go@/File@/import paths@+
@@ -1222,7 +1222,7 @@ type countingWriter struct {
 @? Project@/litar@/Go@/types@/litar.countingWriter @
 Renaming a chunk or a module and operating the files of a node: both rewrite names in place
 in every block that holds them, so the blocks keep their content and their comments.
-@[internal/litar/rewrite.go@`go module@=
+@[litar/internal/litar/rewrite.go@`go module@=
 @<rewrite@:litar@:Language@/Go@/File@/file@>@
 @<rewrite@:litar@:Language@/Go@/File@/import paths@+
 "fmt"
@@ -1322,7 +1322,7 @@ type filesIn struct {
 
 @~ Project@/litar@/Go@/types@/litar.Node @? Project@/litar@/Go@/types@/litar.filesIn @
 Tests of rewrite.go.
-@[internal/litar/rewrite_test.go@`go module@`go tests@=
+@[litar/internal/litar/rewrite_test.go@`go module@`go tests@=
 @<rewrite test@:litar@:Language@/Go@/File@/file@>@
 @<rewrite test@:litar@:Language@/Go@/File@/import paths@+
 "os"
@@ -2895,7 +2895,7 @@ var selectionArchive = "" +
 
 @? Project@/litar@/Go@/variables@/litar.selectionArchive @
 Linux FUSE mount, detach, and availability checks.
-@[internal/litar/fuse_linux.go@`go module@=
+@[litar/internal/litar/fuse_linux.go@`go module@=
 @<fuse linux@:litar@:Language@/Go@/File@/file@>@
 @<fuse linux@:litar@:Language@/Go@/File@/build constraints@=
 //go:build linux
@@ -2911,7 +2911,7 @@ Linux FUSE mount, detach, and availability checks.
 "github.com/hanwen/go-fuse/v2/fuse"
 @
 macOS (macFUSE) mount, detach, and availability checks.
-@[internal/litar/fuse_darwin.go@`go module@=
+@[litar/internal/litar/fuse_darwin.go@`go module@=
 @<fuse darwin@:litar@:Language@/Go@/File@/file@>@
 @<fuse darwin@:litar@:Language@/Go@/File@/build constraints@=
 //go:build darwin
@@ -2930,186 +2930,186 @@ MNT_FORCE from Darwin <sys/mount.h>, used to detach a busy FUSE mount.
 @<fuse darwin@:litar@:Language@/Go@/File@/constants@+
 const mntForce = 0x80000
 @
-@<File@/internal@=
+@<File@/litar@/internal@=
 {"description": "Internal Go packages of the litar module."}
 @
 
-@<File@/internal@/litar@=
+@<File@/litar@/internal@/litar@=
 {"description": "Core Go package implementing parsing, composition, evaluation, filtering, FUSE views, rewriting, CLI, and MCP server."}
 @
 
-@<File@/internal@/litar@/cli_test.go@=
+@<File@/litar@/internal@/litar@/cli_test.go@=
 {"description": "Tests for CLI option validation, archive discovery, dispatch modes, and inherited-label dependency checks."}
 @
 
-@<File@/internal@/litar@/compose.go@=
+@<File@/litar@/internal@/litar@/compose.go@=
 {"description": "Loading, validating, creating, saving, and compacting composer files, grounds, nodes, and archives."}
 @
 
-@<File@/internal@/litar@/compose_test.go@=
+@<File@/litar@/internal@/litar@/compose_test.go@=
 {"description": "Tests for composer loading, ground resolution, node deletion, archive creation, compaction, and block ordering."}
 @
 
-@<File@/internal@/litar@/eval.go@=
+@<File@/litar@/internal@/litar@/eval.go@=
 {"description": "Chunk reference expansion, indentation handling, filter pipeline invocation, and in-memory file evaluation caching."}
 @
 
-@<File@/internal@/litar@/eval_test.go@=
+@<File@/litar@/internal@/litar@/eval_test.go@=
 {"description": "Tests for suffix matching, extension joining, label inheritance, cycle detection, listings, indentation, and selection."}
 @
 
-@<File@/internal@/litar@/filter.go@=
+@<File@/litar@/internal@/litar@/filter.go@=
 {"description": "Filter file-view catalog construction, shebang parsing, and external filter process execution."}
 @
 
-@<File@/internal@/litar@/filter_test.go@=
+@<File@/litar@/internal@/litar@/filter_test.go@=
 {"description": "Tests for filter execution, FUSE views, archive file stat stability, and on-disk filter output caching."}
 @
 
-@<File@/internal@/litar@/fuse.go@=
+@<File@/litar@/internal@/litar@/fuse.go@=
 {"description": "FUSE virtual filesystem mounting a filter's archive files, mapped files, and writable overlay directory."}
 @
 
-@<File@/internal@/litar@/list.go@=
+@<File@/litar@/internal@/litar@/list.go@=
 {"description": "Listing and query functions for literal, effective, dependent, and referring blocks, modules, chunks, items, and node selection."}
 @
 
-@<File@/internal@/litar@/mcp.go@=
+@<File@/litar@/internal@/litar@/mcp.go@=
 {"description": "MCP server implementation exposing composition resources, trees, block queries, evaluation, and editing tools."}
 @
 
-@<File@/internal@/litar@/mcp_test.go@=
+@<File@/litar@/internal@/litar@/mcp_test.go@=
 {"description": "Tests for the MCP server resources, tools, refs, block editing, renaming, mappings, and search."}
 @
 
-@<File@/internal@/litar@/meta_test.go@=
+@<File@/litar@/internal@/litar@/meta_test.go@=
 {"description": "Tests for reserved meta namespaces (Chunk, Index, File, Specialization), tree descriptions, and aligned listings."}
 @
 
-@<File@/internal@/litar@/parse.go@=
+@<File@/litar@/internal@/litar@/parse.go@=
 {"description": "Scanner and parser for litar archives and command-line chunk, module, item, and pipeline expressions."}
 @
 
-@<File@/internal@/litar@/parse_test.go@=
+@<File@/litar@/internal@/litar@/parse_test.go@=
 {"description": "Tests for archive round-tripping, layout newlines, names, parse errors, file blocks, and defining items."}
 @
 
-@<File@/internal@/litar@/types.go@=
+@<File@/litar@/internal@/litar@/types.go@=
 {"description": "Core data structures for names, chunk references, filters, blocks, archives, mappings, nodes, and worlds."}
 @
 
-@<File@/internal@/litar@/cli.go@=
+@<File@/litar@/internal@/litar@/cli.go@=
 {"description": "Command-line entry point, signal handling, mode selection, and dispatch for litar."}
 @
 
-@<File@/internal@/litar@/cache.go@=
+@<File@/litar@/internal@/litar@/cache.go@=
 {"description": "On-disk filter output cache keyed by script, input, and archive view files."}
 @
 
-@<File@/internal@/litar@/rewrite.go@=
+@<File@/litar@/internal@/litar@/rewrite.go@=
 {"description": "Rewriting chunks, modules, items, domains, files, mappings, and individual blocks across a node subtree."}
 @
 
-@<File@/internal@/litar@/rewrite_test.go@=
+@<File@/litar@/internal@/litar@/rewrite_test.go@=
 {"description": "Tests for renaming chunks, modules, and items, and moving or removing files across nodes."}
 @
 
-@<File@/internal@/litar@/fuse_linux.go@=
+@<File@/litar@/internal@/litar@/fuse_linux.go@=
 {"description": "Linux-specific FUSE mount, unmount, availability check, and active mount counting."}
 @
 
-@<File@/internal@/litar@/fuse_darwin.go@=
+@<File@/litar@/internal@/litar@/fuse_darwin.go@=
 {"description": "macOS-specific FUSE mount, unmount, availability check, and active mount counting."}
 @
 
-@<File@/internal@/litar@/testdata@=
+@<File@/litar@/internal@/litar@/testdata@=
 {"description": "Mapped test fixtures containing example compositions and the standard ground."}
 @
 
-@<File@/internal@/litar@/testdata@/examples@=
+@<File@/litar@/internal@/litar@/testdata@/examples@=
 {"description": "Example C and Go compositions used by tests."}
 @
 
-@<File@/internal@/litar@/testdata@/examples@/c@=
+@<File@/litar@/internal@/litar@/testdata@/examples@/c@=
 {"description": "Example C composition built on the standard ground."}
 @
 
-@<File@/internal@/litar@/testdata@/examples@/c@/composer.json@=
+@<File@/litar@/internal@/litar@/testdata@/examples@/c@/composer.json@=
 {"description": "Composer manifest for the C example nodes Program Hello and Test Light."}
 @
 
-@<File@/internal@/litar@/testdata@/examples@/c@/hello.la@=
+@<File@/litar@/internal@/litar@/testdata@/examples@/c@/hello.la@=
 {"description": "Archive for the C Program Hello example."}
 @
 
-@<File@/internal@/litar@/testdata@/examples@/c@/test-light.la@=
+@<File@/litar@/internal@/litar@/testdata@/examples@/c@/test-light.la@=
 {"description": "Archive for the C Light framework test example."}
 @
 
-@<File@/internal@/litar@/testdata@/examples@/go@=
+@<File@/litar@/internal@/litar@/testdata@/examples@/go@=
 {"description": "Example Go compositions built on the standard ground."}
 @
 
-@<File@/internal@/litar@/testdata@/examples@/go@/composer.json@=
+@<File@/litar@/internal@/litar@/testdata@/examples@/go@/composer.json@=
 {"description": "Composer manifest for the Go example nodes."}
 @
 
-@<File@/internal@/litar@/testdata@/examples@/go@/hello.la@=
+@<File@/litar@/internal@/litar@/testdata@/examples@/go@/hello.la@=
 {"description": "Archive for the Go Program Hello example."}
 @
 
-@<File@/internal@/litar@/testdata@/examples@/go@/project-hello@=
+@<File@/litar@/internal@/litar@/testdata@/examples@/go@/project-hello@=
 {"description": "Mapped module directory for the multi-package Go project-hello example."}
 @
 
-@<File@/internal@/litar@/testdata@/examples@/go@/project-hello@/go.mod@=
+@<File@/litar@/internal@/litar@/testdata@/examples@/go@/project-hello@/go.mod@=
 {"description": "Go module manifest for the example.com/hello example."}
 @
 
-@<File@/internal@/litar@/testdata@/examples@/go@/project-hello.la@=
+@<File@/litar@/internal@/litar@/testdata@/examples@/go@/project-hello.la@=
 {"description": "Archive for the multi-package Go project-hello example."}
 @
 
-@<File@/internal@/litar@/testdata@/grounds@=
+@<File@/litar@/internal@/litar@/testdata@/grounds@=
 {"description": "Mapped ground compositions used as LITAR_LIBRARY in tests."}
 @
 
-@<File@/internal@/litar@/testdata@/grounds@/standard@=
+@<File@/litar@/internal@/litar@/testdata@/grounds@/standard@=
 {"description": "Standard ground composition fixture."}
 @
 
-@<File@/internal@/litar@/testdata@/grounds@/standard@/.clang-format@=
+@<File@/litar@/internal@/litar@/testdata@/grounds@/standard@/.clang-format@=
 {"description": "Clang-format configuration mapped by the standard ground."}
 @
 
-@<File@/internal@/litar@/testdata@/grounds@/standard@/composer.json@=
+@<File@/litar@/internal@/litar@/testdata@/grounds@/standard@/composer.json@=
 {"description": "Composer manifest for the standard ground."}
 @
 
-@<File@/internal@/litar@/testdata@/grounds@/standard@/standard.la@=
+@<File@/litar@/internal@/litar@/testdata@/grounds@/standard@/standard.la@=
 {"description": "Archive of the standard ground library."}
 @
-@<File@/cmd@=
+@<File@/litar@/cmd@=
 {"description": "Executable command packages of the litar module."}
 @
 
-@<File@/cmd@/litar-web@=
+@<File@/litar@/cmd@/litar-web@=
 {"description": "Web UI server command package."}
 @
 
-@<File@/cmd@/litar-web@/main.go@=
+@<File@/litar@/cmd@/litar-web@/main.go@=
 {"description": "HTTP server bridging browser requests to a litar MCP subprocess and serving the embedded web UI."}
 @
 
-@<File@/cmd@/litar-web@/index.html@=
+@<File@/litar@/cmd@/litar-web@/index.html@=
 {"description": "Single-page web interface for browsing, evaluating, and editing litar compositions."}
 @
 
-@<File@/cmd@/litar@=
+@<File@/litar@/cmd@/litar@=
 {"description": "CLI command package for the litar binary."}
 @
 
-@<File@/cmd@/litar@/main.go@=
+@<File@/litar@/cmd@/litar@/main.go@=
 {"description": "Main entry point that parses command-line flags and delegates to litar.Main."}
 @
 
@@ -20326,7 +20326,7 @@ func fuseSocketPath(baseDir string) string {
 
 @? Project@/litar@/Go@/functions@/litar.fuseSocketPath @
 @<Index@/Project@/litar@/Go@/functions@/litar.fuseSocketPath@=
-Returns the Unix domain socket path for a FUSE daemon base directory, using a short /tmp fallback when the path would exceed OS sun_path limits.
+{"description": "Returns the Unix domain socket path for a FUSE daemon base directory, using a short /tmp fallback when the path would exceed OS sun_path limits."}
 @
 Verifies that a long LITAR_FUSE_DIR exceeding OS sun_path limits works via the short socket path fallback, that relative vs absolute composer paths yield the same fixed view path, and that rapid concurrent connect/disconnect cycles leave no errors or leaked mounts.
 @<filter test@:litar@:Language@/Go@/File@/functions@+
@@ -20413,6 +20413,7 @@ func TestSharedFUSEEdgeCasesAndStress(t *testing.T) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.countLitarMounts @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.Evaluator.setIdentity @
+
 Verifies that reusing the same view slot while the shared FUSE daemon remains
 mounted serves updated archive file contents rather than stale cached entries.
 @<filter test@:litar@:Language@/Go@/File@/functions@+
@@ -20464,3 +20465,22 @@ func TestSharedFUSESlotReuseWhileMounted(t *testing.T) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.connectFuseDaemon @~ Project@/litar@/Go@/functions@/litar.countLitarMounts @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.Evaluator.setIdentity @~ Project@/litar@/Go@/methods@/litar.fuseClient.close @
+
+The litar Go module lives in the project's home directory, litar.
+@<Language@/Go@/Module@/module directory@=litar@
+
+@<File@/litar@=
+{"description": "Home directory of the litar project."}
+@
+@<File@/litar@/mod@=
+{"description": "Mapped Go module manifest directory for the litar module."}
+@
+
+@<File@/litar@/mod@/go.mod@=
+{"description": "Go module definition and dependency requirements for litar."}
+@
+
+@<File@/litar@/mod@/go.sum@=
+{"description": "Cryptographic checksums of the Go module dependencies."}
+@
+

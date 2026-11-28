@@ -3,117 +3,11 @@
     "description": "Some common structures and filters."
 }
 @
-
-Executes the input as a script, the input must have a shebang,
-use the output of that script as the output.
-Parsing the shebang explicitly allows interpreters that are themselves scripts,
-which macOS does not execute through nested shebangs.
-@<Tool@/evaluate@=#!/bin/sh
-set -e
-temp_file=`mktemp`
-trap 'rm -f "$temp_file"' EXIT
-cat - > "$temp_file"
-chmod +x "$temp_file"
-IFS= read -r first < "$temp_file" || true
-case "$first" in
-'#!'*)
-    line=${first#\#!}
-    cr=`printf '\r'`
-    line=${line%"$cr"}
-    while case "$line" in ' '*|'	'*) true;; *) false;; esac; do line=${line#?}; done
-    interp=${line%%[ 	]*}
-    rest=${line#"$interp"}
-    while case "$rest" in ' '*|'	'*) true;; *) false;; esac; do rest=${rest#?}; done
-    while case "$rest" in *' '|*'	') true;; *) false;; esac; do rest=${rest%?}; done
-    if [ -n "$rest" ]; then
-        "$interp" "$rest" "$temp_file"
-    else
-        "$interp" "$temp_file"
-    fi
-    ;;
-*)
-    "$temp_file"
-    ;;
-esac
-@
-@<Chunk@/Tool@/Text Processing@=
-{"description": "Text processing based on Python."}
-@
-Joins input lines with single spaces, dropping one trailing newline so the result
-fits on one line without a trailing space.
-@<Tool@/Text Processing@/remove newlines@=
-@<.@/basic python settings@>
-lines = sys.stdin.buffer.read().split(b'\n')
-if lines[-1] == b'':
-    lines.pop()
-sys.stdout.buffer.write(b' '.join(lines))
-@
-Strip every newline at the end of the input, so the text joins the line after its reference.
-Carriage returns of CRLF endings are stripped too; other trailing whitespace is kept.
-
-@<Tool@/Text Processing@/remove ending newlines@=
-@<.@/basic python settings@>
-sys.stdout.buffer.write(sys.stdin.buffer.read().rstrip(b'\r\n'))
-@
 @<Chunk@/UI@/Command Line@=
 {
     "description": "Command line syntax shared by the structures of every language."
 }
 @
-The manpage synopsis shows the usage lines in roff, one paragraph line per usage.
-@<UI@/Command Line@/manpage synopsis@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-@<.@/Manpage@/manpage helpers@>
-
-
-def usage_lines(usage):
-    lines = [f'.B {roff(syntax.name)}']
-    lines += [f'[{bold_option(opt)}]' for opt in usage.options if not opt.hide]
-    lines += [italic(placeholder(arg)) for arg in usage.arguments]
-    return lines
-
-
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
-''')
-print('\n.br\n'.join('\n'.join(usage_lines(usage)) for usage in syntax.usages))
-@|Tool@/evaluate
-@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/functions@/bold_option @~ Tool@/Python@/functions@/configuration @~ UI@/Command Line@/Python@/functions@/italic @~ UI@/Command Line@/Python@/functions@/placeholder @~ UI@/Command Line@/Python@/functions@/roff @
-The manpage options describe every option in a tagged paragraph, hidden ones included.
-@<UI@/Command Line@/manpage options@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-@<.@/Manpage@/manpage helpers@>
-
-
-def option_entry(opt):
-    value = '' if opt.type == 'bool' else ' ' + italic(metavar(opt))
-    tag = ', '.join(rf'\fB{roff(name)}\fR' for name in option_names(opt)) + value
-    return f'.TP\n{tag}\n{roff(opt.description)}\n'
-
-
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
-''')
-print(''.join(map(option_entry, all_options(syntax))), end='')
-@|Tool@/evaluate
-@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/functions@/all_options @~ Tool@/Python@/functions@/configuration @~ UI@/Command Line@/Python@/functions@/italic @~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_names @~ UI@/Command Line@/Python@/functions@/roff @
-roff escapes a backslash as \e and a hyphen as \-,
-so option names render with minus signs that can be copied into a shell.
-@<UI@/Command Line@/Manpage@/manpage helpers@=
-def roff(text):
-    return text.replace('\\', r'\e').replace('-', r'\-')
-
-
-def italic(text):
-    return rf'\fI{roff(text)}\fR'
-
-
-def bold_option(opt):
-    text = rf'\fB{roff(option_name(opt))}\fR'
-    return text if opt.type == 'bool' else text + ' ' + italic(metavar(opt))
-@? UI@/Command Line@/Python@/functions@/bold_option @? UI@/Command Line@/Python@/functions@/italic @~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_name @? UI@/Command Line@/Python@/functions@/roff @
 @<Index@/Tool@/Python@=
 {"description": "Top-level names of the Python text processing scripts, shared by the blocks that build them."}
 @
@@ -158,45 +52,6 @@ if command -v clang-format-19 >/dev/null 2>&1; then
 fi
 exec clang-format -style=file
 @
-Wraps stdin in #ifndef/#define/#endif header guards formatted from
-included_flag_format and the uppercased module name.
-@<Language@/C@/Module@/Interface@/wrap with included flag@=
-@<Tool@/Text Processing@/basic python settings@>
-
-
-class ModuleMeta(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='allow')
-    name: str
-    included_flag_format: str
-
-
-meta = configuration(ModuleMeta, r'''
-@<..@/Meta@/module meta information@>
-''')
-flag = meta.included_flag_format % meta.name.upper()
-sys.stdout.write(f'#ifndef {flag}\n#define {flag}\n')
-sys.stdout.write(sys.stdin.read())
-sys.stdout.write('#endif\n')
-@
-The module meta information is a Jsonnet object.
-The module properties are the fields of a second object, which override these defaults;
-Jsonnet rejects a field given twice in the module properties.
-@<Language@/C@/Module@/Meta@/module meta information@=
-{
-    name: 'default',
-    included_flag_format: '_MODULE_%s',
-} + {
-    @<..@/module properties@>
-}
-@
-The command line usage is the shared usage lines escaped as the content of a C string literal.
-@<UI@/Command Line@/C@/command line usage@=
-@<Tool@/Text Processing@/basic python settings@>
-
-
-usage = r'''@<UI@/Command Line@/command line usage@>'''
-print(usage.replace('\\', r'\\').replace('"', r'\"').replace('\n', r'\n'), end='')
-@|Tool@/evaluate@
 Light reflects the author's preferences and customs,
 which includes how to format code,
 how to manage memory, how to handle exceptions, etc.
@@ -213,24 +68,6 @@ It also supports some common data structures.
 @<Framework@/Light@/light.h@=
 @<lightlib@:Language@/C@/Module@/module interface@>
 @
-
-@<Language@/C@/Module@/module interface@=
-@<.@/interface required includes@>
-@<.@/interface specific macros@>
-@<.@/exported macros@>
-@<.@/exported data type declarations@>
-@<.@/exported data types@>
-@<.@/Interface@/global declarations@>
-@<.@/exported static inline functions@>
-@|Language@/C@/Module@/Interface@/wrap with included flag
-@|Language@/C@/Module@/Format@/format C code@,.clang-format@
-
-@<Language@/C@/Module@/Interface@/global declarations@+
-@<..@/macros@>
-@<..@/data type declarations@>
-@<..@/global variables@>
-@<..@/functions@>
-@|Language@/C@/Module@/Interface@/extract global declarations@
 @<Framework@/Light@/light.c@=
 @<lightlib@:Language@/C@/Module@/module@>
 @
@@ -352,6 +189,1601 @@ static inline uint32_t calculate_index_for_key(
     return tbl->hash_func(key) & (st->number_slots-1);
 }
 @
+@<light@:executable@:Language@/C@/Module@/include flags@+
+@<Framework@/Light@/light options@>
+@
+@<light@:executable@:Language@/C@/Module@/includes@+
+#include "light.h"
+@
+@<light-single@:executable@:Language@/C@/Module@/include flags@+
+@<Framework@/Light@/light options@>
+@
+@<Framework@/Light@/light options@+
+#ifndef light_option_context_main_size
+#define light_option_context_main_size (1 << 20)  /* 1 MB */
+#endif
+
+#ifndef light_option_logging_level
+/* #define light_option_logging_level ERROR */
+#endif
+@
+@<light-single@:executable@:Language@/C@/Module@/includes@+
+@<lightlib@:Language@/C@/Module@/includes@>
+@
+@<light-single@:executable@:Language@/C@/Module@/data types@+
+@<lightlib@:Language@/C@/Module@/data types@>
+@
+@<light-single@:executable@:Language@/C@/Module@/function declarations@+
+@<lightlib@:Language@/C@/Module@/function declarations@>
+@
+@<light-single@:executable@:Language@/C@/Module@/static inline functions@+
+@<lightlib@:Language@/C@/Module@/static inline functions@>
+@
+@<Chunk@/Language@/Go@/File@=
+{"description": "Common structures in Go programming."}
+@
+
+gofmt reads a Go source file on stdin and writes the formatted file on stdout.
+The Go toolchain fixes the format, so this filter has no style file.
+@<Language@/Go@/File@/Format@/format Go code@=#!/bin/sh
+gofmt
+@
+
+@<Chunk@/Language@/Go@/File@/Format@=
+{"description": "Format a Go source file."}
+@
+
+@<Chunk@/UI@/Command Line@/Go@=
+{"description": "Flags and positional arguments of a command."}
+@
+
+@<Chunk@/Language@/Go@/File@/file@=
+{"description": "One Go source file."}
+@
+
+@<Chunk@/Language@/Go@/File@/Header@/package clause@=
+{"description": "Package comment followed by the package clause."}
+@
+
+@<Chunk@/Language@/Go@/File@/Meta@/package name@=
+{"description": "Package identifier from the module meta information."}
+@
+
+@<Chunk@/Language@/Go@/File@/package comment@=
+{"description": "Comment lines immediately above the package clause."}
+@
+
+@<Chunk@/Language@/Go@/File@/build constraints@=
+{"description": "go:build lines before the package clause."}
+@
+
+@<Chunk@/Language@/Go@/File@/import paths@=
+{"description": "Lines of the import declaration."}
+@
+
+@<Chunk@/Language@/Go@/File@/constants@=
+{"description": "Constant declarations."}
+@
+
+@<Chunk@/Language@/Go@/File@/variables@=
+{"description": "Variable declarations."}
+@
+
+@<Chunk@/Language@/Go@/File@/types@=
+{"description": "Type declarations."}
+@
+
+@<Chunk@/Language@/Go@/File@/methods@=
+{"description": "Method declarations."}
+@
+
+@<Chunk@/Language@/Go@/File@/functions@=
+{"description": "Function declarations."}
+@
+
+@<Chunk@/Language@/Go@/File@/main body@=
+{"description": "Statements of func main in a command."}
+@
+
+@<Chunk@/Language@/Go@/File@/Format@/format Go code@=
+{"description": "Format stdin as Go and write it to stdout."}
+@
+
+@<Chunk@/UI@/Command Line@/Go@/command variables@=
+{"description": "Variable command, when the command has flags or arguments."}
+@
+
+@<Chunk@/UI@/Command Line@/Go@/register flags@=
+{"description": "Typed flag.*Var calls (BoolVar, StringVar, etc.) for the invocation syntax."}
+@
+
+@<Chunk@/UI@/Command Line@/Go@/store arguments@=
+{"description": "Statements that check and store positional arguments."}
+@
+
+@<Chunk@/UI@/Command Line@/Go@/parse command line arguments@=
+{"description": "Register flags, parse the command line, and store arguments."}
+@
+
+A Go source file is one tree.  Build constraints come first,
+because the go command reads them only before the package clause.
+The package clause is next, then the import declaration,
+then constants, variables, types, methods, and functions.
+Methods follow types, and free functions follow methods,
+so a reader can list either sequence on its own.
+A type that must stay beside its methods belongs in one block.
+Extend a sequence by adding a block.
+One package may contain several files.
+A block with no label is part of every file.
+Put a shared label to the right of a more specific one:
+blocks labeled lib are part of a reference impl@@:lib.
+A block that belongs to one file carries that file's whole label list.
+The line break before the closing control of a block is not content,
+so a file block may close on the line after its reference.
+@<Language@/Go@/File@/file@=
+@<.@/build constraints@>
+@<.@/Header@/package clause@>
+@<.@/Header@/imports@>
+@<.@/constants@>
+@<.@/variables@>
+@<.@/types@>
+@<.@/methods@>
+@<.@/functions@>
+@|Language@/Go@/File@/Format@/format Go code@
+
+go doc attaches the comment that ends immediately above the package clause.
+Leave no blank line between that comment and the clause.
+@<Language@/Go@/File@/Header@/package clause@=
+@<..@/package comment@|Tool@/Text Processing@/remove ending newlines@>
+package @<..@/Meta@/package name@>
+@
+
+@<command@:Language@/Go@/File@/variables@+
+@<UI@/Command Line@/Go@/command variables@>
+@
+
+@<command@:Language@/Go@/File@/functions@+
+func main() {
+    @<UI@/Command Line@/Go@/parse command line arguments@>
+    @<.@/main body@>
+}
+@
+@<Chunk@/Language@/Go@/File@/Meta@/module meta information@=
+{"description": "Package name and other properties, as a Jsonnet object."}
+@
+@<Chunk@/Language@/Go@/File@/module properties@=
+{"description": "Jsonnet fields that override the module meta information."}
+@
+@<Chunk@/UI@/Command Line@/Go@/usage literal@=
+{"description": "Go string literal of the shared usage lines, help flag, and option summary."}
+@
+Help that is asked for goes to stdout and exits 0;
+a parse error goes to stderr, followed by the usage, and exits 2.
+The usage of flag.CommandLine is silenced while parsing,
+so the usage is printed once, after the stream is known.
+No variable is declared here, so the main body may declare any name.
+@<UI@/Command Line@/Go@/parse command line arguments@=
+@<.@/register flags@>flag.Usage = func() {
+	fmt.Fprint(flag.CommandLine.Output(), @<.@/usage literal@>)
+}
+flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
+flag.CommandLine.Usage = func() {}
+if err := flag.CommandLine.Parse(os.Args[1:]); err == flag.ErrHelp {
+	flag.CommandLine.SetOutput(os.Stdout)
+	flag.Usage()
+	os.Exit(0)
+} else if err != nil {
+	flag.Usage()
+	os.Exit(2)
+}
+@<.@/store arguments@>@
+@<Chunk@/Language@/Go@/Module@=
+{"description": "Structures of a whole Go module."}
+@
+
+@<Language@/Go@/Module@/Go Command@/build packages@=#!/bin/sh
+@<.@/go command settings@>
+go build ./...
+echo 'go build ./...: ok'
+@
+
+@<Language@/Go@/Module@/Go Command@/vet packages@=#!/bin/sh
+@<.@/go command settings@>
+go vet ./...
+echo 'go vet ./...: ok'
+@
+
+@<Chunk@/Language@/Go@/Module@/Go Command@=
+{"description": "Run the go command on the files of the project."}
+@
+
+@<Chunk@/Language@/Go@/Module@/Meta@/module path@=
+{"description": "Module path from the project meta information."}
+@
+
+@<Chunk@/Language@/Go@/Module@/requirements@=
+{"description": "Direct requirements of the project: a module path and a version on each line."}
+@
+
+@<Chunk@/Language@/Go@/Module@/module file edits@=
+{"description": "Flags of go mod edit that set the module path, the Go version, and the requirements."}
+@
+
+@<Chunk@/Language@/Go@/Module@/package directory@=
+{"description": "Directory of a package below the module root."}
+@
+
+@<Chunk@/Language@/Go@/Module@/import path@=
+{"description": "Import path of a package, without quotes."}
+@
+
+@<Chunk@/Language@/Go@/Module@/check report@=
+{"description": "Output of go build, go vet, and go test on the file set go module."}
+@
+
+@<Chunk@/Language@/Go@/Module@/Go Command@/go command settings@=
+{"description": "Shell lines that pin the environment of the go command."}
+@
+
+@<Chunk@/Language@/Go@/Module@/Go Command@/build packages@=
+{"description": "Build every package of the project."}
+@
+
+@<Chunk@/Language@/Go@/Module@/Go Command@/vet packages@=
+{"description": "Vet every package of the project."}
+@
+
+@<Chunk@/Language@/Go@/Module@/Go Command@/test packages@=
+{"description": "Test every package of the project."}
+@
+
+The check report runs every check in turn and stops at the first failure.
+The output of a check ends with a line break; it is removed,
+so the line break after each reference separates the checks.
+@<Language@/Go@/Module@/check report@=
+@<@|Language@/Go@/Module@/Go Command@/build packages@+go module@|Tool@/Text Processing@/remove ending newlines@>
+@<@|Language@/Go@/Module@/Go Command@/vet packages@+go module@|Tool@/Text Processing@/remove ending newlines@>
+@<@|Language@/Go@/Module@/Go Command@/test packages@+go module@|Tool@/Text Processing@/remove ending newlines@>
+@
+@<Chunk@/Language@/Go@/Module@/Meta@/project meta information@=
+{"description": "Module path, Go version, and other properties, as a Jsonnet object."}
+@
+@<Chunk@/Language@/Go@/Module@/project properties@=
+{"description": "Jsonnet fields that override the project meta information."}
+@
+
+The commands are built in a view of the file set go module, like the checks.
+The view must also hold the command directory; a composition wrapping the project
+maps it to a directory of the host, so the binaries leave the view.
+Each binary is named after the directory of its command;
+the go command replaces an existing binary instead of writing into it.
+@<Language@/Go@/Module@/Go Command@/build commands@=#!/bin/sh
+@<.@/go command settings@>
+go build -o '@<..@/command directory@>/' ./cmd/...
+echo 'go build -o @<..@/command directory@>/ ./cmd/...: ok'
+@
+
+The command directory is bin, below the module root of the view.
+@<Language@/Go@/Module@/command directory@=bin@
+
+
+@<Chunk@/Language@/Go@/Module@/Go Command@/build commands@=
+{"description": "Build every command of the project into the command directory."}
+@
+
+@<Chunk@/Language@/Go@/Module@/command directory@=
+{"description": "Directory of the view, below the module root, that receives the built commands."}
+@
+
+The go command reports a failed test on stdout, and the output of a failed filter is dropped,
+so the report is kept and written to stderr when a test fails.
+Declare every test file in the file set go tests as well as in go module,
+so a view that only needs the program can subtract the tests.
+@<Language@/Go@/Module@/Go Command@/test packages@=#!/bin/sh
+@<.@/go command settings@>
+report=$(go test ./... 2>&1) || {
+	printf '%s\n' "$report" >&2
+	exit 1
+}
+printf '%s\n' "$report"
+@
+@<Chunk@/Language@=
+{"description": "Common structures found in languages."}
+@
+@<Chunk@/Language@/C@=
+{"description": "Structures of C programming."}
+@
+@<Chunk@/Language@/Go@=
+{"description": "Structures of Go programming."}
+@
+@<Chunk@/UI@=
+{"description": "Shared schemas and generators of user interfaces."}
+@
+@<Chunk@/UI@/Command Line@/C@=
+{"description": "Parse the command line of a C program with getopt, from the invocation syntax."}
+@
+@<Chunk@/Framework@=
+{"description": "Frameworks an application chooses to adopt."}
+@
+@<Chunk@/Project@=
+{"description": "Concrete projects."}
+@
+@<Index@/UI@/Command Line@/Python@=
+{"description": "Top-level names of the Python scripts that read the invocation syntax."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@=
+{"description": "Top-level functions."}
+@
+One case of an acceptance test is a chunk: its content is a script of checks, and this filter
+turns the script into the result of the case, so evaluating the chunk runs the test.
+The view of the filter holds the command and the fixtures of the case.
+A case that fails still evaluates: its result says what failed, and the report decides.
+@<UI@/Command Line@/Test@/run case@=#!/bin/bash
+set -u
+command=$PWD/@<.@/command@>
+@<.@/environment@>
+@<.@/Runner@/state of the case@>
+@<.@/Runner@/result@>
+@<.@/checks@>
+@<.@/Runner@/run the script on stdin@>
+finish
+@
+The project names its command with a labelled block, and passes the labels to the filter:
+the labels reach every reference of the filter.
+@<Chunk@/UI@/Command Line@/Test@/command@=
+{"description": "Path of the command under test in the view; set it under the label of the command."}
+@
+@<Chunk@/UI@/Command Line@/Test@/environment@=
+{"description": "Shell lines that prepare the environment of the command under test; set them under the label of the command."}
+@
+@<Chunk@/UI@/Command Line@/Test@=
+{"description": "Acceptance tests of a command: a case is a chunk filtered into its result."}
+@
+@<Chunk@/UI@/Command Line@/Test@/run case@=
+{"description": "Filter that runs the script of one case and prints its result: ok NAME COUNT, skip NAME: REASON, or FAIL NAME with the failed checks."}
+@
+@<Chunk@/UI@/Command Line@/Test@/summarize results@=
+{"description": "Filter that counts the results of the cases, and fails when a case failed or none passed."}
+@
+@<Chunk@/UI@/Command Line@/Test@/checks@=
+{"description": "Shell functions a case script calls; a project may add its own."}
+@
+The work directory is outside the view, because the view only shows files of the composition.
+@<UI@/Command Line@/Test@/Runner@/state of the case@=
+name=unnamed
+checks=0
+failed=
+skipped=
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+@
+The script is checked before it runs: a syntax error would otherwise stop it halfway,
+after checks that passed.
+@<UI@/Command Line@/Test@/Runner@/run the script on stdin@=
+cat >"$work/case"
+if bash -n "$work/case" 2>"$work/syntax"; then
+	. "$work/case"
+else
+	miss script "syntax error" "$work/syntax"
+fi
+@~ UI@/Command Line@/Bash@/functions@/miss @
+test_case names the case and optionally enters its fixture directory (failing immediately if missing);
+skip records the reason and ends the case without running further checks.
+@<UI@/Command Line@/Test@/checks@+
+# test_case NAME [DIRECTORY]: name the case, and enter the directory of its fixtures.
+test_case() {
+	name=$1
+	if [ $# -gt 1 ] && ! cd "$2" 2>/dev/null; then
+		miss fixtures "no directory $2"
+		finish
+	fi
+}
+
+# skip REASON: end the case without a verdict.
+skip() {
+	skipped=$1
+	finish
+}
+@~ UI@/Command Line@/Bash@/functions@/finish @~ UI@/Command Line@/Bash@/functions@/miss @
+Runs the command under test, increments the check count,
+captures stdout and stderr in $work/out and $work/err, and records its exit status in $status.
+@<UI@/Command Line@/Test@/checks@+
+# run ARGUMENT...: run the command; its output goes to $work/out and $work/err,
+# its exit status to $status.
+run() {
+	checks=$((checks + 1))
+	"$command" "$@@" >"$work/out" 2>"$work/err"
+	status=$?
+}
+@? UI@/Command Line@/Bash@/functions@/run @
+The output of a failed filter is dropped, so a failing report goes to stderr.
+A report in which no case passed fails too: the cases may all have been lost.
+@<UI@/Command Line@/Test@/summarize results@=#!/bin/sh
+results=$(cat)
+count() {
+	printf '%s\n' "$results" | grep -c "^$1 "
+}
+report=$(printf '%s\npassed %s failed %s skipped %s' "$results" "$(count ok)" "$(count FAIL)" "$(count skip)")
+if [ "$(count FAIL)" -ne 0 ] || [ "$(count ok)" -eq 0 ]; then
+	printf '%s\n' "$report" >&2
+	exit 1
+fi
+printf '%s\n' "$report"
+@
+@<Index@/UI@/Command Line@/Bash@/functions@=
+{"description": "Shell functions of the acceptance test runner."}
+@
+
+@<Chunk@/Language@/Go@/Module@/module file directory@=
+{"description": "Directory of the view, mapped from the host, that holds go.mod and go.sum."}
+@
+The input is the module file edits. go mod edit applies them to go.mod in the module file directory,
+then go mod tidy adds the indirect requirements, removes a requirement that no package imports,
+and writes go.sum. So the view must hold every Go file: the file set go module.
+A missing go.mod is started with the module line, which is all go mod edit needs.
+The module files are edited before the settings copy go.mod to the module root,
+so the copy carries the new Go version.
+@<Language@/Go@/Module@/Go Command@/tidy module files@=#!/bin/sh
+set -e
+mod='@<..@/module directory@>/@<..@/module file directory@>/go.mod'
+[ -s "$mod" ] || printf 'module %s\n' '@<..@/Meta@/module path@>' > "$mod"
+set --
+while IFS= read -r flag; do
+	[ -z "$flag" ] || set -- "$@@" "$flag"
+done
+go mod edit "$@@" "$mod"
+@<.@/go command settings@>
+go mod tidy
+echo 'go mod tidy: ok'
+@
+
+Each check runs the go command in a view of the file set go module,
+after entering the module directory.
+GOTOOLCHAIN=local keeps the go command from downloading another toolchain,
+and GOWORK=off ignores a workspace file outside the view.
+-modfile makes the go command read and write go.mod in the module file directory,
+and go.sum beside it. The go command still looks for a go.mod at the module root,
+to find the root and to choose the toolchain from its go line, so the file is copied there;
+the copy is a new file of the view, and it is discarded with the view.
+The build cache and the module cache stay at their host locations.
+A failed check fails the evaluation, and the go command reports on stderr.
+@<Language@/Go@/Module@/Go Command@/go command settings@=
+set -e
+cd '@<..@/module directory@>'
+export GOTOOLCHAIN=local
+export GOWORK=off
+export GOFLAGS='-modfile=@<..@/module file directory@>/go.mod'
+cp '@<..@/module file directory@>/go.mod' go.mod
+@
+The go command manages go.mod and go.sum: it adds the indirect requirements and the checksums,
+so the two files are not archive files. They live in a directory of the host,
+which a project maps into its node at the module file directory, in the file set go module.
+The directory is mod, below the module root of the view.
+@<Language@/Go@/Module@/module file directory@=mod@
+
+@<Chunk@/Language@/Go@/Module@/Go Command@/tidy module files@=
+{"description": "Apply the go mod edit flags on stdin to go.mod, then run go mod tidy."}
+@
+
+Evaluate the module file report after a change of the module path, the Go version,
+the requirements, or the imports of a Go file; the checks never rewrite go.mod or go.sum.
+@<Language@/Go@/Module@/module file report@=
+@<Language@/Go@/Module@/module file edits@|Language@/Go@/Module@/Go Command@/tidy module files@+go module@>
+@
+
+@<Chunk@/Language@/Go@/Module@/module file report@=
+{"description": "Output of syncing go.mod and go.sum in the module file directory with the archive."}
+@
+@<Chunk@/Language@/Go@/File@/Header@/imports@=
+{"description": "Import declaration, omitted when there are no paths."}
+@
+@<Chunk@/Tool@/Evaluate@/evaluate@=
+{"description": "Filter that executes stdin as a script with a shebang and outputs its stdout."}
+@
+@<Chunk@/Tool@/Text Processing@/remove newlines@=
+{"description": "Filter that joins input lines with spaces, dropping a trailing newline."}
+@
+@<Chunk@/Tool@/Text Processing@/remove ending newlines@=
+{"description": "Filter that strips trailing CR and LF characters from stdin."}
+@
+@<Chunk@/Tool@/Evaluate@/Runtime@/path to python interpreter@=
+{"description": "Evaluates to the path of the cached Python client script used as the script interpreter."}
+@
+@<Chunk@/Tool@/Evaluate@/Runtime@/python client@=
+{"description": "Client script that forwards execution to the background Python server or starts it."}
+@
+@<Chunk@/Tool@/Evaluate@/Runtime@/python server@=
+{"description": "Persistent Unix-socket server that preloads dependencies and forks per script request."}
+@
+@<Chunk@/Tool@/Evaluate@/Runtime@/python dependencies@=
+{"description": "PEP 723 inline script metadata declaring Python version and jsonnet/pydantic dependencies."}
+@
+@<Chunk@/Tool@/Evaluate@/Runtime@/import dependencies@=
+{"description": "Imports _jsonnet and pydantic, re-executing through uv run if unavailable."}
+@
+@<Chunk@/Tool@/Evaluate@/Runtime@/serve a connection@=
+{"description": "Handles a single client connection by restoring fds, cwd, env, and argv and running the script."}
+@
+@<Chunk@/Tool@/Evaluate@/Runtime@/run a script@=
+{"description": "Executes a Python script via runpy and maps SystemExit or exceptions to an exit status."}
+@
+@<Chunk@/Tool@/Evaluate@/Runtime@/preload pydantic@=
+{"description": "Warms up pydantic model construction and JSON validation in the server before forking."}
+@
+@<Chunk@/Tool@/Evaluate@/Runtime@/cache jsonnet@=
+{"description": "Wraps _jsonnet.evaluate_snippet with an on-disk SHA-256 cache for pure snippets."}
+@
+@<Chunk@/Tool@/Evaluate@/Runtime@/configuration helpers@=
+{"description": "Defines fail and configuration helpers for evaluating and validating Jsonnet configs."}
+@
+@<Chunk@/UI@/Command Line@/manpage synopsis@=
+{"description": "Generates the roff synopsis section of a manpage from the invocation syntax."}
+@
+@<Chunk@/UI@/Command Line@/manpage options@=
+{"description": "Generates the roff .TP option entries of a manpage from the invocation syntax."}
+@
+@<Chunk@/UI@/Command Line@/C@/command line usage@=
+{"description": "Shared usage lines escaped for embedding in a C string literal."}
+@
+@<Chunk@/UI@/Command Line@/C@/parse command line arguments@=
+{"description": "C statement block that parses argv with getopt_long and dispatches options and arguments."}
+@
+@<Chunk@/UI@/Command Line@/C@/usage enumeration@=
+{"description": "Comma-separated C enum constants for the usages of the invocation syntax."}
+@
+@<Chunk@/UI@/Command Line@/C@/command line options@=
+{"description": "C struct fields storing parsed option values (int or const char *)."}
+@
+@<Chunk@/UI@/Command Line@/C@/command line arguments@=
+{"description": "C struct fields storing parsed positional arguments as const char *."}
+@
+@<Chunk@/UI@/Command Line@/C@/getopt long options@=
+{"description": "Initializer entries for struct option long_options[], terminated by a zero entry."}
+@
+@<Chunk@/UI@/Command Line@/C@/getopt string@=
+{"description": "Short-option specification string passed to getopt_long."}
+@
+@<Chunk@/UI@/Command Line@/C@/handle long option of index "idx"@=
+{"description": "C statements matching long-only options by long_options[idx].name."}
+@
+@<Chunk@/UI@/Command Line@/C@/cases for short options@=
+{"description": "C switch cases recording options that have a short name."}
+@
+@<Chunk@/UI@/Command Line@/C@/choose usage and store arguments@=
+{"description": "C statements selecting command.usage from options or argument count and storing positional arguments."}
+@
+@<Chunk@/UI@/Command Line@/option summary@=
+{"description": "Generates one-line descriptions of all options, including non-empty defaults."}
+@
+@<Chunk@/UI@/Command Line@/command line usage@=
+{"description": "Generates the Usage: lines for every usage in the invocation syntax."}
+@
+@<Chunk@/UI@/Command Line@/invocation syntax@=
+{"description": "Jsonnet object defining a command's name, usages, options, and positional arguments."}
+@
+@<Chunk@/UI@/Command Line@/Test@/Runner@=
+{"description": "Internal runner state, reporting, and script execution for acceptance test cases."}
+@
+@<Chunk@/UI@/Command Line@/Test@/Runner@/state of the case@=
+{"description": "Initializes per-case shell variables and a temporary work directory cleaned up on exit."}
+@
+@<Chunk@/UI@/Command Line@/Test@/Runner@/result@=
+{"description": "Defines finish and miss shell functions for recording failures and printing the case verdict."}
+@
+@<Chunk@/UI@/Command Line@/Test@/Runner@/run the script on stdin@=
+{"description": "Saves the case script from stdin, syntax-checks it with bash -n, and sources it."}
+@
+@<Chunk@/Language@/C@/Module@/Interface@/extract function declarations@=
+{"description": "Filter that runs cproto -s to extract static and non-static function prototypes."}
+@
+@<Chunk@/Language@/C@/Module@/Interface@/extract global declarations@=
+{"description": "Filter that runs cproto -v -e to extract extern variable and function declarations."}
+@
+@<Chunk@/Language@/C@/Module@/Interface@/global declarations@=
+{"description": "Extracted extern declarations of global variables and functions for the module header."}
+@
+@<Chunk@/Language@/C@/Module@/Format@=
+{"description": "Formatting filter for C source and header files."}
+@
+@<Chunk@/Language@/C@/Module@/Format@/format C code@=
+{"description": "Filter that formats C code on stdin with clang-format using the view's .clang-format file."}
+@
+@<Chunk@/Language@/C@/Module@/Meta@=
+{"description": "Metadata configuration for a C module."}
+@
+@<Chunk@/Language@/C@/Module@/Meta@/module meta information@=
+{"description": "C module name and include-guard format, as a Jsonnet object."}
+@
+@<Chunk@/Language@/C@/Module@/module interface@=
+{"description": "Complete C header file assembled from exported sections, include guards, and formatting."}
+@
+@<Chunk@/Language@/C@/Module@/module@=
+{"description": "Complete C source file assembled from includes, declarations, definitions, and formatting."}
+@
+@<Chunk@/Language@/C@/Module@/includes@=
+{"description": "Header #include directives for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/data types@=
+{"description": "Struct, union, and enum definitions for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/static inline functions@=
+{"description": "Static inline function definitions for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/function declarations@=
+{"description": "Forward function prototypes extracted for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/macros@=
+{"description": "Preprocessor #define macros for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/data type declarations@=
+{"description": "Typedef and forward type declarations for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/global variables@=
+{"description": "Global variable definitions for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/functions@=
+{"description": "Function definitions for the C implementation file."}
+@
+@<Chunk@/Language@/C@/Module@/exported macros@=
+{"description": "Macros exported in the module header and also included in the implementation."}
+@
+@<Chunk@/Language@/C@/Module@/exported data types@=
+{"description": "Type definitions exported in the module header and also included in the implementation."}
+@
+@<Chunk@/Language@/C@/Module@/exported static inline functions@=
+{"description": "Static inline functions exported in the module header and also included in the implementation."}
+@
+@<Chunk@/Language@/C@/Module@/exported data type declarations@=
+{"description": "Typedefs and forward type declarations exported in the module header and implementation."}
+@
+@<Chunk@/Language@/C@/Module@/interface required includes@=
+{"description": "Header #include directives required by the module interface and implementation."}
+@
+@<Chunk@/Language@/C@/Module@/include flags@=
+{"description": "Feature-test or option macros placed before #include directives in a C module."}
+@
+@<Chunk@/Language@/C@/Module@/main body@=
+{"description": "Statements inside main() for an executable C module."}
+@
+@<Chunk@/Language@/C@/Module@/module properties@=
+{"description": "Jsonnet fields that override the C module meta information."}
+@
+@<Chunk@/Language@/Go@/File@/Header@=
+{"description": "Package clause and import declaration at the top of a Go source file."}
+@
+@<Chunk@/Language@/Go@/File@/Meta@=
+{"description": "Metadata configuration for a Go source file's package."}
+@
+@<Chunk@/Language@/Go@/Module@/Meta@=
+{"description": "Metadata configuration for a Go module."}
+@
+@<Chunk@/Framework@/Light@/light.h@=
+{"description": "Generated header file of the Light C framework."}
+@
+@<Chunk@/Framework@/Light@/light.c@=
+{"description": "Generated implementation file of the Light C framework."}
+@
+@<Chunk@/Framework@/Light@/light options@=
+{"description": "Default compile-time configuration macros for the Light framework."}
+@
+@<Index@/UI@=
+{"description": "Index of user-interface symbols."}
+@
+@<Index@/UI@/Command Line@=
+{"description": "Index of command-line generator and test runner symbols."}
+@
+@<Index@/UI@/Command Line@/Python@/classes@/Option@=
+{"description": "Pydantic model of one command-line option, its type, default, and display metadata."}
+@
+@<Index@/UI@/Command Line@/Python@/classes@/Usage@=
+{"description": "Pydantic model of one invocation form of a command: its name, options, and arguments."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/bold_option@=
+{"description": "Formats an option and its value placeholder in roff bold and italic."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/italic@=
+{"description": "Wraps roff-escaped text in italic font escapes."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/placeholder@=
+{"description": "Converts a name to an uppercase underscore-separated usage placeholder."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/roff@=
+{"description": "Escapes backslashes and hyphens in text for roff output."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/all_options@=
+{"description": "Returns a flat list of all options across every usage of an InvocationSyntax."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/option_names@=
+{"description": "Returns the list of display names for an option, short name first when present."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/option_name@=
+{"description": "Returns the primary display name of an option: its short name if set, otherwise its long name."}
+@
+@<Index@/UI@/Command Line@/Python@/functions@/option_with_value@=
+{"description": "Formats an option's display name followed by its value placeholder for non-boolean options."}
+@
+@<Index@/UI@/Command Line@/Bash@=
+{"description": "Bash symbols of the command-line acceptance test runner."}
+@
+@<Index@/UI@/Command Line@/Bash@/functions@/finish@=
+{"description": "Prints the case verdict (ok, skip, or FAIL) without a trailing newline and exits 0."}
+@
+@<Index@/UI@/Command Line@/Bash@/functions@/miss@=
+{"description": "Records a failed check message and optional indented detail file in the failure log."}
+@
+@<Index@/UI@/Command Line@/Bash@/functions@/run@=
+{"description": "Runs the command under test, increments checks, and captures stdout, stderr, and exit status."}
+@
+@<Index@/Tool@=
+{"description": "Index of shared tool symbols."}
+@
+@<Index@/Tool@/Python@/functions@/fail@=
+{"description": "Aborts script execution by calling sys.exit with an error message."}
+@
+@<File@/.clang-format@=
+{"description": "Clang-format configuration file used to format generated C modules."}
+@
+@<Specialization@/lightlib@=
+{"description": "C module specialization implementing the Light framework library (light.h and light.c)."}
+@
+@<Specialization@/executable@=
+{"description": "C module specialization adding main() and getopt_long command-line parsing."}
+@
+@<Specialization@/executable@/light@=
+{"description": "Executable C module specialization that links against the Light library via light.h."}
+@
+@<Specialization@/executable@/light-single@=
+{"description": "Single-file executable C module specialization that embeds the Light library directly."}
+@
+@<Specialization@/command@=
+{"description": "Go file specialization for a main package with flag parsing and func main."}
+@
+The module directory is the directory of the view that holds the Go module.
+Projects that live in their own home directory set it to that directory;
+the default is the root of the view.
+@<Language@/Go@/Module@/module directory@=.@
+
+@<Chunk@/Language@/Go@/Module@/module directory@=
+{"description": "Directory of the view that holds the Go module."}
+@
+@<Chunk@/Language@/Python@=
+{"description": "Structures of Python programming."}
+@
+
+@<Chunk@/Language@/Python@/Project@=
+{"description": "Structures of a whole Python project managed by uv."}
+@
+
+@<Chunk@/Language@/Python@/Project@/project directory@=
+{"description": "Directory of the view that holds pyproject.toml."}
+@
+
+@<Chunk@/Language@/Python@/Project@/lock file directory@=
+{"description": "Directory of the view, mapped from the host, that holds uv.lock."}
+@
+
+@<Chunk@/Language@/Python@/Project@/environment directory@=
+{"description": "Shell word for the directory of the host that holds the virtual environment of the project."}
+@
+
+@<Chunk@/Language@/Python@/Project@/lock file report@=
+{"description": "Output of bringing uv.lock in the lock file directory in step with pyproject.toml."}
+@
+
+@<Chunk@/Language@/Python@/Project@/uv Command@=
+{"description": "Run uv on the files of the project."}
+@
+
+@<Chunk@/Language@/Python@/Project@/uv Command@/uv settings@=
+{"description": "Shell lines that enter the project directory and pin the environment of uv."}
+@
+
+@<Chunk@/Language@/Python@/Project@/uv Command@/lock project@=
+{"description": "Resolve the dependencies of pyproject.toml and write uv.lock."}
+@
+
+@<Chunk@/Language@/Python@/Project@/uv Command@/test project@=
+{"description": "Run pytest on the project with the locked dependencies."}
+@
+
+@<Chunk@/Language@/Python@/Project@/uv Command@/check project@=
+{"description": "Run the ruff linter, the ruff formatter and pyright on the project."}
+@
+
+uv lock keeps the versions of an existing uv.lock that still satisfy pyproject.toml,
+and the result is copied back to the lock file directory, where it leaves the view.
+@<Language@/Python@/Project@/uv Command@/lock project@=#!/bin/sh
+@<.@/uv settings@>
+uv lock >&2
+cp uv.lock "$lock/uv.lock"
+echo 'uv lock: ok'
+@
+
+Evaluate the lock file report after a change of the dependencies in pyproject.toml;
+the tests and the checks never rewrite uv.lock.
+@<Language@/Python@/Project@/lock file report@=
+@<@|Language@/Python@/Project@/uv Command@/lock project@+python project@>
+@
+
+--locked makes uv fail when uv.lock is not in step with pyproject.toml, so a test never
+resolves versions on its own. pytest reports a failed test on stdout, and the output of a
+failed filter is dropped, so the report is kept and written to stderr when a test fails.
+@<Language@/Python@/Project@/uv Command@/test project@=#!/bin/sh
+@<.@/uv settings@>
+report=$(uv run --locked pytest 2>&1) || {
+	printf '%s\n' "$report" >&2
+	exit 1
+}
+printf '%s\n' "$report"
+@
+
+The checks run in turn and stop at the first failure, whose report goes to stderr.
+@<Language@/Python@/Project@/uv Command@/check project@=#!/bin/sh
+@<.@/uv settings@>
+check() {
+	report=$(uv run --locked "$@@" 2>&1) || {
+		printf '%s\n' "$report" >&2
+		exit 1
+	}
+	echo "$*: ok"
+}
+check ruff check .
+check ruff format --check .
+check pyright
+@
+
+Each filter runs uv on a copy of the project, in a temporary directory of the host:
+uv and the tools it runs rename and lock files, which the overlay of a view does not support.
+The copy is removed when the filter ends. uv looks for uv.lock beside pyproject.toml,
+so the file is copied there from the lock file directory, whose path in the view is kept in lock.
+A failed command fails the evaluation.
+@<Language@/Python@/Project@/uv Command@/uv settings@=
+set -e
+lock=$PWD/'@<..@/project directory@>/@<..@/lock file directory@>'
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+cp -R '@<..@/project directory@>/.' "$work"
+cd "$work"
+rm -rf '@<..@/lock file directory@>'
+export UV_PROJECT_ENVIRONMENT=@<..@/environment directory@>
+[ ! -f "$lock/uv.lock" ] || cp "$lock/uv.lock" uv.lock
+@
+
+The project directory is the directory of the view that holds pyproject.toml.
+Projects that live in their own home directory set it to that directory;
+the default is the root of the view.
+@<Language@/Python@/Project@/project directory@=.@
+
+uv manages uv.lock: it resolves the versions and writes the hashes, so the file is not an
+archive file. It lives in a directory of the host, which a project maps into its node at the
+lock file directory, in the file set of the project. The directory is lock, below the project directory.
+@<Language@/Python@/Project@/lock file directory@=lock@
+
+The virtual environment defaults to .venv inside the temporary copy of the project;
+a project sets this to a persistent directory of the host to reuse the environment across evaluations.
+@<Language@/Python@/Project@/environment directory@=.venv@
+@<Chunk@/Language@/Python@/File@=
+{"description": "Common structures in Python programming."}
+@
+
+@<Chunk@/Language@/Python@/File@/file@=
+{"description": "One Python source file."}
+@
+
+@<Chunk@/Language@/Python@/File@/module docstring@=
+{"description": "Module docstring at the top of the file."}
+@
+
+@<Chunk@/Language@/Python@/File@/future imports@=
+{"description": "from __future__ import statements, immediately after the module docstring."}
+@
+
+@<Chunk@/Language@/Python@/File@/imports@=
+{"description": "Import statements."}
+@
+
+@<Chunk@/Language@/Python@/File@/constants@=
+{"description": "Module-level constant definitions."}
+@
+
+@<Chunk@/Language@/Python@/File@/variables@=
+{"description": "Module-level variable and type alias definitions."}
+@
+
+@<Chunk@/Language@/Python@/File@/classes@=
+{"description": "Top-level class definitions."}
+@
+
+@<Chunk@/Language@/Python@/File@/functions@=
+{"description": "Top-level function definitions."}
+@
+
+@<Chunk@/Language@/Python@/File@/main@=
+{"description": "Entry point at the bottom of the file, such as an if __name__ == '__main__' guard."}
+@
+
+@<Chunk@/Language@/Python@/File@/Format@=
+{"description": "Format a Python source file."}
+@
+
+@<Chunk@/Language@/Python@/File@/Format@/format Python code@=
+{"description": "Validate Python syntax and normalize top-level blank lines according to PEP 8."}
+@
+
+Use only the Python standard library so formatting works without external tools on PATH.
+Parsing with ast rejects syntax errors during evaluation, and normalizing top-level blank lines
+keeps assembled chunks compliant with PEP 8 without altering block-internal formatting.
+@<Language@/Python@/File@/Format@/format Python code@=#!/usr/bin/env python3
+import ast
+import sys
+
+source = sys.stdin.read()
+if not source.strip():
+    sys.exit(0)
+
+try:
+    tree = ast.parse(source)
+except SyntaxError as error:
+    sys.exit(f"python syntax error at line {error.lineno}: {error.msg}")
+
+lines = source.splitlines()
+@<.@/collect statement spans of 'tree' in 'lines'@>
+@<.@/partition 'lines' into segments around 'spans'@>
+@<.@/write 'segments' of 'lines' with PEP 8 blank lines@>
+@
+
+Surround top-level class and function definitions with two blank lines, separate docstrings
+and import groups from following statements with one blank line, and end with a single newline.
+@<Language@/Python@/File@/Format@/write 'segments' of 'lines' with PEP 8 blank lines@=
+out = []
+prev = None
+for start, end, kind in segments:
+    if prev is not None:
+        _, prev_end_idx, prev_kind = prev
+        had_blank = any(not lines[i].strip() for i in range(prev_end_idx + 1, start))
+        if prev_kind == "def" or kind == "def":
+            gap = 2
+        elif prev_kind in ("docstring", "future") and kind != prev_kind:
+            gap = 1
+        elif prev_kind == "import" and kind != "import":
+            gap = 1
+        else:
+            gap = 1 if had_blank else 0
+        out.extend([""] * gap)
+    out.extend(lines[start : end + 1])
+    prev = (start, end, kind)
+
+sys.stdout.write("\n".join(out) + "\n")
+@
+@<Chunk@/Language@/Python@/File@/shebang@=
+{"description": "Shebang, encoding, or script metadata lines at the top of a Python script."}
+@
+@<Chunk@/Tool@/Evaluate@=
+{"description": "Evaluation of embedded scripts, including the persistent Python server and Jsonnet/pydantic configuration helpers."}
+@
+
+@<Chunk@/Tool@/Evaluate@/Runtime@=
+{"description": "Background Python server and client runtime, dependency management, and Jsonnet/pydantic configuration helpers."}
+@
+
+@<Chunk@/Tool@/Text Processing@=
+{"description": "Text processing filters based on Python."}
+@
+
+@<Specialization@/evaluate@=
+{"description": "Python file specialization for litar evaluation scripts using the persistent Python server, Jsonnet, and pydantic."}
+@
+
+@<Specialization@/evaluate@/remove newlines@=
+{"description": "Text processing filter that joins lines with spaces."}
+@
+
+@<Specialization@/evaluate@/remove ending newlines@=
+{"description": "Text processing filter that strips trailing newlines."}
+@
+
+@<Specialization@/python runtime@=
+{"description": "Python files of the background Python runtime for evaluation scripts."}
+@
+
+@<Specialization@/python runtime@/client@=
+{"description": "Client script that forwards evaluation script runs to the background server."}
+@
+
+@<Specialization@/python runtime@/server@=
+{"description": "Background server script that keeps jsonnet and pydantic loaded across evaluation runs."}
+@
+
+Joins input lines with single spaces, dropping one trailing newline so the result
+fits on one line without a trailing space.
+@<Tool@/Text Processing@/remove newlines@=@<remove newlines@:evaluate@:Language@/Python@/File@/file@>@
+
+Strip every newline at the end of the input, so the text joins the line after its reference.
+Carriage returns of CRLF endings are stripped too; other trailing whitespace is kept.
+@<Tool@/Text Processing@/remove ending newlines@=@<remove ending newlines@:evaluate@:Language@/Python@/File@/file@>@
+@<Chunk@/Tool@/Evaluate@/Shebang@=
+{"description": "POSIX shell helpers that parse and execute a script's shebang line."}
+@
+
+@<Chunk@/Tool@/Evaluate@/Shebang@/run 'temp_file' through its shebang interpreter if present@=
+{"description": "Reads the first line of temp_file and dispatches through its #! interpreter when present."}
+@
+
+@<Chunk@/Tool@/Evaluate@/Shebang@/parse shebang 'line' into 'interp' and 'rest'@=
+{"description": "Strips CR and surrounding whitespace to split a shebang body into interpreter and optional single argument."}
+@
+
+@<Chunk@/Tool@/Evaluate@/Runtime@/Interpreter@=
+{"description": "Shell steps that stage and publish the cached Python client and server directory."}
+@
+
+@<Chunk@/Tool@/Evaluate@/Runtime@/Interpreter@/prepare runtime directory 'base'@=
+{"description": "Chooses and creates the user-private base directory for cached Python runtime instances."}
+@
+
+@<Chunk@/Tool@/Evaluate@/Runtime@/Interpreter@/stage client and server scripts in 'temp'@=
+{"description": "Writes the executable client wrapper and server script into a temporary staging directory."}
+@
+
+@<Chunk@/Tool@/Evaluate@/Runtime@/Interpreter@/publish 'temp' atomically to checksum directory 'dir' under 'base'@=
+{"description": "Computes the checksum directory path and atomically renames temp into place if not yet present."}
+@
+
+@<Chunk@/Tool@/Evaluate@/Runtime@/evaluate and store 'source' under 'filename' at 'path'@=
+{"description": "Evaluates a Jsonnet snippet and atomically writes the result into the on-disk cache."}
+@
+
+@<Chunk@/Tool@/Evaluate@/Runtime@/receive 'request' and standard streams from 'connection'@=
+{"description": "Receives client file descriptors and JSON request metadata over the Unix socket."}
+@
+
+@<Chunk@/Language@/Python@/File@/Format@/collect statement spans of 'tree' in 'lines'@=
+{"description": "Finds line ranges of top-level AST statements in lines, including decorators and attached comments."}
+@
+
+@<Chunk@/Language@/Python@/File@/Format@/classify top-level AST 'node' at 'index' into 'kind'@=
+{"description": "Classifies a top-level AST statement as def, future, import, docstring, or other."}
+@
+
+@<Chunk@/Language@/Python@/File@/Format@/partition 'lines' into segments around 'spans'@=
+{"description": "Interleaves AST statement spans with standalone comment and shebang blocks."}
+@
+
+@<Chunk@/Language@/Python@/File@/Format@/write 'segments' of 'lines' with PEP 8 blank lines@=
+{"description": "Writes segments separated by PEP 8 top-level blank lines and a single trailing newline."}
+@
+
+Writes stdin to a temporary file and runs its shebang interpreter explicitly so scripts with
+long interpreter paths work across kernels with short #! limits.
+@<Tool@/Evaluate@/evaluate@=#!/bin/sh
+set -e
+temp_file=`mktemp`
+trap 'rm -f "$temp_file"' EXIT
+cat - > "$temp_file"
+chmod +x "$temp_file"
+@<.@/Shebang@/run 'temp_file' through its shebang interpreter if present@>
+@
+
+@<Tool@/Evaluate@/Shebang@/run 'temp_file' through its shebang interpreter if present@=
+IFS= read -r first < "$temp_file" || true
+case "$first" in
+'#!'*)
+    line=${first#\#!}
+    @<.@/parse shebang 'line' into 'interp' and 'rest'@>
+    if [ -n "$rest" ]; then
+        "$interp" "$rest" "$temp_file"
+    else
+        "$interp" "$temp_file"
+    fi
+    ;;
+*)
+    "$temp_file"
+    ;;
+esac
+@
+
+@<Tool@/Evaluate@/Shebang@/parse shebang 'line' into 'interp' and 'rest'@=
+cr=`printf '\r'`
+line=${line%"$cr"}
+while case "$line" in ' '*|'	'*) true;; *) false;; esac; do line=${line#?}; done
+interp=${line%%[ 	]*}
+rest=${line#"$interp"}
+while case "$rest" in ' '*|'	'*) true;; *) false;; esac; do rest=${rest#?}; done
+while case "$rest" in *' '|*'	') true;; *) false;; esac; do rest=${rest%?}; done
+@
+
+Decorators and immediately preceding comment lines belong to the statement they introduce;
+a shebang on line 1 is left outside so it stays at the top of the file.
+@<Language@/Python@/File@/Format@/collect statement spans of 'tree' in 'lines'@=
+spans = []
+prev_end = 0
+for index, node in enumerate(tree.body):
+    start = min([node.lineno, *(d.lineno for d in getattr(node, "decorator_list", []))]) - 1
+    end = (node.end_lineno or node.lineno) - 1
+    while start > prev_end and lines[start - 1].lstrip().startswith("#"):
+        if start == 1 and lines[0].startswith("#!"):
+            break
+        start -= 1
+    @<.@/classify top-level AST 'node' at 'index' into 'kind'@>
+    spans.append((start, end, kind))
+    prev_end = end + 1
+@
+
+@<Language@/Python@/File@/Format@/classify top-level AST 'node' at 'index' into 'kind'@=
+if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+    kind = "def"
+elif isinstance(node, ast.ImportFrom) and node.module == "__future__":
+    kind = "future"
+elif isinstance(node, (ast.Import, ast.ImportFrom)):
+    kind = "import"
+elif (
+    index == 0
+    and isinstance(node, ast.Expr)
+    and isinstance(node.value, ast.Constant)
+    and isinstance(node.value.value, str)
+):
+    kind = "docstring"
+else:
+    kind = "other"
+@
+
+Preserve standalone comment blocks and shebangs that sit outside AST statement spans.
+@<Language@/Python@/File@/Format@/partition 'lines' into segments around 'spans'@=
+segments = []
+
+
+def add_comments(lo, hi):
+    start = None
+    for i in range(lo, hi + 1):
+        non_empty = i < hi and bool(lines[i].strip())
+        if non_empty and start is None:
+            start = i
+        elif not non_empty and start is not None:
+            tag = "shebang" if start == 0 and lines[0].startswith("#!") else "comment"
+            segments.append((start, i - 1, tag))
+            start = None
+
+
+cursor = 0
+for start, end, kind in spans:
+    add_comments(cursor, start)
+    segments.append((start, end, kind))
+    cursor = end + 1
+add_comments(cursor, len(lines))
+@
+@<Chunk@/Language@/C@/Module@/Meta@/included flag@=
+{"description": "Include-guard macro identifier formatted from the C module meta information."}
+@
+
+@<Chunk@/Language@/C@/Module@/Interface@=
+{"description": "Filters and helpers that extract extern declarations for a C module's header interface."}
+@
+
+@<Specialization@/evaluate@/c included flag@=
+{"description": "Evaluation filter that formats a C header include-guard identifier from module meta information."}
+@
+
+@<Specialization@/evaluate@/go package name@=
+{"description": "Evaluation filter that extracts the Go package identifier from module meta information."}
+@
+
+@<Specialization@/evaluate@/go imports@=
+{"description": "Evaluation filter that wraps non-empty Go import path lines in an import (...) declaration."}
+@
+
+@<Specialization@/evaluate@/go import path@=
+{"description": "Evaluation filter that joins the Go module path with a relative package directory."}
+@
+
+@<Specialization@/evaluate@/go module@=
+{"description": "Evaluation scripts that validate Go project meta information with ProjectMeta."}
+@
+
+@<Specialization@/evaluate@/go module@/module path@=
+{"description": "Evaluation filter that extracts the Go module path from project meta information."}
+@
+
+@<Specialization@/evaluate@/go module@/module file edits@=
+{"description": "Evaluation filter that formats go mod edit flags from project meta information and requirements."}
+@
+
+@<Language@/Go@/File@/Meta@/package name@=
+@<.@/module meta information@|go package name@:evaluate@:Language@/Python@/File@/file@>
+@
+The name field is the package identifier.
+pkg stands in until a file sets its own name.
+A command does not read this name; its package clause says main.
+The module properties are the fields of a second Jsonnet object, which override these defaults;
+further fields belong there too, and Jsonnet rejects a field given twice.
+@<Language@/Go@/File@/Meta@/module meta information@=
+{
+    name: 'pkg',
+} + {
+    @<..@/module properties@>
+}
+@
+command is the rightmost label of a package main program.
+These blocks set the package name to main,
+add the flag, fmt, and os imports,
+add the command variable when the invocation syntax needs one,
+and add func main.
+func main parses the command line and then runs the main body.
+Parsing always uses the flag, fmt, and os packages,
+so those three imports stay used when the command has no flags.
+Replace module meta information to name the other files in the node.
+That replacement does not rename the command.
+@<command@:Language@/Go@/File@/Meta@/package name@=main@
+
+No import declaration is emitted when the path list is empty
+or contains only whitespace.
+A blank line between paths starts another group,
+and gofmt keeps that group.
+The paths are written unindented, one on a line; gofmt indents them.
+@<Language@/Go@/File@/Header@/imports@=
+@<..@/import paths@|go imports@:evaluate@:Language@/Python@/File@/file@>
+@
+
+@<command@:Language@/Go@/File@/import paths@+
+"flag"
+"fmt"
+"os"
+@
+
+The import path of a package is the module path joined with its directory.
+Reference it with the package label, inside quotes in import paths.
+A command needs no directory here, because no package imports a command.
+@<Language@/Go@/Module@/import path@=
+@<.@/package directory@|go import path@:evaluate@:Language@/Python@/File@/file@>
+@
+
+The package directory is the path of a package below the module root, without a leading slash.
+A package sets it under the package label.
+The package at the module root keeps the empty directory.
+@<Language@/Go@/Module@/package directory@=@
+
+The archive records what a project decides about go.mod: the module path, the Go version,
+and the direct requirements. Each becomes one flag of go mod edit, one flag on a line.
+A requirement is a line of the chunk requirements: a module path and a version.
+Blank lines are skipped; any other line with more or fewer than two fields is an error.
+@<Language@/Go@/Module@/module file edits@=
+@<.@/requirements@|module file edits@:go module@:evaluate@:Language@/Python@/File@/file@>
+@
+@<Specialization@/evaluate@/command line@=
+{"description": "Evaluation scripts that validate and render command-line invocation syntax."}
+@
+
+@<Specialization@/evaluate@/command line@/command line usage@=
+{"description": "Generator filter that formats Usage lines from an invocation syntax."}
+@
+
+@<Specialization@/evaluate@/command line@/option summary@=
+{"description": "Generator filter that formats a one-line summary for each command-line option."}
+@
+
+@<Specialization@/evaluate@/command line@/manpage@=
+{"description": "Evaluation scripts that format command-line documentation in roff."}
+@
+
+@<Specialization@/evaluate@/command line@/manpage@/manpage synopsis@=
+{"description": "Generator filter that formats manpage SYNOPSIS lines in roff."}
+@
+
+@<Specialization@/evaluate@/command line@/manpage@/manpage options@=
+{"description": "Generator filter that formats manpage OPTIONS tagged paragraphs in roff."}
+@
+
+@<Specialization@/evaluate@/command line@/c@=
+{"description": "Evaluation scripts that generate getopt_long C command-line parsers."}
+@
+
+@<Specialization@/evaluate@/command line@/c@/c usage@=
+{"description": "Filter that escapes command-line usage lines as a C string literal."}
+@
+
+@<Specialization@/evaluate@/command line@/c@/usage enumeration@=
+{"description": "Generator filter that formats C enum constants for command usages."}
+@
+
+@<Specialization@/evaluate@/command line@/c@/command line options@=
+{"description": "Generator filter that formats C struct fields for command-line options."}
+@
+
+@<Specialization@/evaluate@/command line@/c@/command line arguments@=
+{"description": "Generator filter that formats C struct fields for positional arguments."}
+@
+
+@<Specialization@/evaluate@/command line@/c@/getopt long options@=
+{"description": "Generator filter that formats struct option entries for getopt_long."}
+@
+
+@<Specialization@/evaluate@/command line@/c@/getopt string@=
+{"description": "Generator filter that formats the short-option descriptor string for getopt_long."}
+@
+
+@<Specialization@/evaluate@/command line@/c@/handle long option@=
+{"description": "Generator filter that formats C branches storing long-only options by index."}
+@
+
+@<Specialization@/evaluate@/command line@/c@/cases for short options@=
+{"description": "Generator filter that formats C switch cases storing short options."}
+@
+
+@<Specialization@/evaluate@/command line@/c@/choose usage and store arguments@=
+{"description": "Generator filter that selects the active usage and stores positional arguments in C."}
+@
+
+@<Specialization@/evaluate@/command line@/go@=
+{"description": "Evaluation scripts that generate Go flag-package command-line parsers."}
+@
+
+@<Specialization@/evaluate@/command line@/go@/command variables@=
+{"description": "Generator filter that declares the Go command struct holding flags and arguments."}
+@
+
+@<Specialization@/evaluate@/command line@/go@/store arguments@=
+{"description": "Generator filter that checks positional argument count and assigns flag.Args() in Go."}
+@
+
+@<Specialization@/evaluate@/command line@/go@/register flags@=
+{"description": "Generator filter that registers Go flag.*Var bindings for each option."}
+@
+
+@<Specialization@/evaluate@/command line@/go@/usage literal@=
+{"description": "Filter that escapes combined usage and option summary lines as a Go string literal."}
+@
+
+The manpage synopsis shows the usage lines in roff, one paragraph line per usage.
+@<UI@/Command Line@/manpage synopsis@=
+@<.@/invocation syntax@|manpage synopsis@:manpage@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
+
+The manpage options describe every option in a tagged paragraph, hidden ones included.
+@<UI@/Command Line@/manpage options@=
+@<.@/invocation syntax@|manpage options@:manpage@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
+
+The command line usage is the shared usage lines escaped as the content of a C string literal.
+@<UI@/Command Line@/C@/command line usage@=
+@<UI@/Command Line@/command line usage@>
+@|c usage@:c@:command line@:evaluate@:Language@/Python@/File@/file@
+
+@<UI@/Command Line@/Go@/command variables@=
+@<UI@/Command Line@/invocation syntax@|command variables@:go@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
+
+@<UI@/Command Line@/Go@/store arguments@=
+@<UI@/Command Line@/invocation syntax@|store arguments@:go@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
+
+A short name is registered as a second flag of the same variable.
+@<UI@/Command Line@/Go@/register flags@=
+@<UI@/Command Line@/invocation syntax@|register flags@:go@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
+
+flag.Usage prints the shared usage lines, a blank line,
+the help flag that the flag package defines, then the shared option summary.
+@<UI@/Command Line@/Go@/usage literal@=
+@<UI@/Command Line@/command line usage@>
+-h, --help: print the usage
+@<UI@/Command Line@/option summary@>
+@|usage literal@:go@:command line@:evaluate@:Language@/Python@/File@/file@
+
+The option summary describes every option on one line:
+its names, the value it takes, its description, then its default unless that is empty, false, or zero.
+@<UI@/Command Line@/option summary@=
+@<.@/invocation syntax@|option summary@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
+
+The usage lines list every usage of the command, one per line, after "Usage: ".
+@<UI@/Command Line@/command line usage@=
+@<.@/invocation syntax@|command line usage@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
+
+The result has no final line break, so a report can list one case on each line.
+A case without a check fails: a script that ended early must not look like a success.
+@<UI@/Command Line@/Test@/Runner@/result@=
+# finish: print the result of the case and end the filter.
+finish() {
+	if [ -n "$skipped" ]; then
+		printf 'skip %s: %s' "$name" "$skipped"
+	elif [ -n "$failed" ]; then
+		printf 'FAIL %s\n%s' "$name" "${failed%$'\n'}"
+	elif [ "$checks" -eq 0 ]; then
+		printf 'FAIL %s\n  no check ran' "$name"
+	else
+		printf 'ok %s %s' "$name" "$checks"
+	fi
+	exit 0
+}
+@? UI@/Command Line@/Bash@/functions@/finish @
+
+Records a failed check message and optional indented detail file in the failure log.
+@<UI@/Command Line@/Test@/Runner@/result@+
+# miss CHECK WHAT [FILE]: record a failed check, with the file that explains it.
+miss() {
+	failed+="  $1: $2"$'\n'
+	if [ $# -gt 2 ] && [ -s "$3" ]; then
+		failed+=$(sed 's/^/    /' "$3")$'\n'
+	fi
+}
+@? UI@/Command Line@/Bash@/functions@/miss @
+
+A passing command must leave stderr empty.
+@<UI@/Command Line@/Test@/checks@+
+# prints_file CHECK FILE ARGUMENT...: the command succeeds and prints exactly FILE.
+prints_file() {
+	local check=$1 want=$2
+	shift 2
+	run "$@@"
+	if [ "$status" -ne 0 ]; then
+		miss "$check" "exit $status" "$work/err"
+	elif [ -s "$work/err" ]; then
+		miss "$check" "unexpected stderr" "$work/err"
+	elif ! diff -u --label expected --label printed "$want" "$work/out" >"$work/diff"; then
+		miss "$check" stdout "$work/diff"
+	fi
+}
+@~ UI@/Command Line@/Bash@/functions@/miss @~ UI@/Command Line@/Bash@/functions@/run @
+
+@<UI@/Command Line@/Test@/checks@+
+# prints CHECK TEXT ARGUMENT...: the command succeeds and prints exactly TEXT.
+prints() {
+	local check=$1
+	printf '%s' "$2" >"$work/want"
+	shift 2
+	prints_file "$check" "$work/want" "$@@"
+}
+@
+
+A failing command must leave stdout empty, and its stderr only has to contain the needle.
+@<UI@/Command Line@/Test@/checks@+
+# fails CHECK NEEDLE ARGUMENT...: the command fails and reports NEEDLE.
+fails() {
+	local check=$1 needle=$2
+	shift 2
+	run "$@@"
+	if [ "$status" -eq 0 ]; then
+		miss "$check" "expected failure"
+	elif ! grep -F -q -e "$needle" "$work/err"; then
+		miss "$check" "stderr misses [$needle]" "$work/err"
+	elif [ -s "$work/out" ]; then
+		miss "$check" "stdout not empty" "$work/out"
+	fi
+}
+@~ UI@/Command Line@/Bash@/functions@/miss @~ UI@/Command Line@/Bash@/functions@/run @
+@<Chunk@/Framework@/Zephyr@=
+{"description": "Zephyr applications: an application of the node is built and tested in a west workspace of the host."}
+@
+
+@<Chunk@/Framework@/Zephyr@/workspace directory@=
+{"description": "Directory of the view, mapped from the host, that holds the west workspace."}
+@
+
+@<Chunk@/Framework@/Zephyr@/application directory@=
+{"description": "Directory of the view that holds the Zephyr application and, in tests below it, its test suites."}
+@
+
+@<Chunk@/Framework@/Zephyr@/West@=
+{"description": "Run west and twister on the application."}
+@
+
+@<Chunk@/Framework@/Zephyr@/West@/west settings@=
+{"description": "Shell lines that find the workspace, its Python environment and its SDK, and enter the workspace."}
+@
+
+@<Chunk@/Framework@/Zephyr@/West@/build application@=
+{"description": "Build the application for the board named on stdin."}
+@
+
+@<Chunk@/Framework@/Zephyr@/West@/test application@=
+{"description": "Run the test suites of the application with twister on the platform named on stdin."}
+@
+
+@<Chunk@/Framework@/Zephyr@/West@/Cache@=
+{"description": "Shell helpers that remove stale CMake caches when the temporary view path changes."}
+@
+
+@<Chunk@/Framework@/Zephyr@/West@/Cache@/clear stale build cache in 'build' for 'application'@=
+{"description": "Removes build when its CMakeCache.txt points to an older view mount path."}
+@
+
+@<Chunk@/Framework@/Zephyr@/West@/Cache@/clear stale twister cache in 'out' for 'application'@=
+{"description": "Removes out when any nested CMakeCache.txt points outside application."}
+@
+
+The build directory is kept between evaluations for incremental builds.
+west reports on stdout, and the output of a failed filter is dropped,
+so the report is kept and written to stderr when the build fails.
+@<Framework@/Zephyr@/West@/build application@=#!/bin/sh
+@<.@/west settings@>
+board=$(cat)
+build=build/'@<..@/application directory@>'/$(printf %s "$board" | tr / _)
+@<.@/Cache@/clear stale build cache in 'build' for 'application'@>
+report=$(west build --board "$board" --build-dir "$build" "$application" 2>&1) || {
+	printf '%s\n' "$report" >&2
+	exit 1
+}
+echo "west build --board $board @<..@/application directory@>: ok"
+@
+
+If a cache from a different view mount path is present, remove the build directory first:
+west would otherwise clean it using paths from the old cache that no longer exist.
+@<Framework@/Zephyr@/West@/Cache@/clear stale build cache in 'build' for 'application'@=
+if [ -f "$build/CMakeCache.txt" ] &&
+	! grep -qx "CMAKE_HOME_DIRECTORY:INTERNAL=$application" "$build/CMakeCache.txt"; then
+	rm -rf "$build"
+fi
+@
+
+twister builds and runs every test suite below tests of the application, keeping the output
+directory across evaluations when the view path matches.
+@<Framework@/Zephyr@/West@/test application@=#!/bin/sh
+@<.@/west settings@>
+platform=$(cat)
+out=build/'@<..@/application directory@>'/twister
+@<.@/Cache@/clear stale twister cache in 'out' for 'application'@>
+report=$("$ZEPHYR_BASE/scripts/twister" --testsuite-root "$application/tests" --platform "$platform" \
+	--outdir "$out" --aggressive-no-clean --inline-logs 2>&1) || {
+	printf '%s\n' "$report" >&2
+	exit 1
+}
+printf '%s\n' "$report"
+@
+
+Each filter runs in a view of the application and the workspace, with the workspace as the
+working directory, so west finds it. west and the Python packages of the Zephyr scripts come
+from the environment .venv of the workspace, and the SDK is the zephyr-sdk directory in it;
+the board decides whether the SDK or the compiler of the host is used.
+The build directories are in build of the workspace, so the images leave the view.
+@<Framework@/Zephyr@/West@/west settings@=
+set -e
+workspace=$PWD/'@<..@/workspace directory@>'
+application=$PWD/'@<..@/application directory@>'
+[ -d "$workspace/.west" ] || {
+	echo "no west workspace is mapped at @<..@/workspace directory@>" >&2
+	exit 1
+}
+PATH=$workspace/.venv/bin:$PATH
+export ZEPHYR_BASE=$workspace/zephyr
+sdk=$(ls -d "$workspace"/zephyr-sdk-* 2>/dev/null | tail -n 1)
+[ -z "$sdk" ] || export ZEPHYR_SDK_INSTALL_DIR=$sdk
+cd "$workspace"
+@
+
+A Zephyr application is built against a west workspace mapped from the host into the file set zephyr workspace;
+the default directory is zephyr-workspace at the root of the view.
+@<Framework@/Zephyr@/workspace directory@=zephyr-workspace@
+
+Projects that live in their own home directory set this to the application directory;
+the default is the root of the view.
+@<Framework@/Zephyr@/application directory@=.@
+
+@<Framework@/Zephyr@/West@/Cache@/clear stale twister cache in 'out' for 'application'@=
+if [ -d "$out" ] &&
+	find "$out" -name CMakeCache.txt -exec grep -L "^CMAKE_HOME_DIRECTORY:INTERNAL=$application/" {} + | grep -q .; then
+	rm -rf "$out"
+fi
+@
+@<Language@/C@/Module@/module interface@=
+#ifndef @<.@/Meta@/included flag@>
+#define @<.@/Meta@/included flag@>
+
+@<.@/interface required includes@>
+@<.@/exported macros@>
+@<.@/exported data type declarations@>
+@<.@/exported data types@>
+@<.@/Interface@/global declarations@>
+@<.@/exported static inline functions@>
+
+#endif
+@|Language@/C@/Module@/Format@/format C code@
+
+@<Language@/C@/Module@/Interface@/global declarations@+
+@<..@/macros@>
+@<..@/data type declarations@>
+@<..@/global variables@>
+@<..@/functions@>
+@|Language@/C@/Module@/Interface@/extract global declarations@
 @<Language@/C@/Module@/macros@+
 @<.@/exported macros@>
 @
@@ -397,193 +1829,6 @@ do {
     }
     @<.@/choose usage and store arguments@>
 } while (0);
-@
-@<UI@/Command Line@/C@/usage enumeration@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-syntax = configuration(CSyntax, r'''
-@<UI@/Command Line@/invocation syntax@>
-''')
-print(','.join(map(enum_constant, syntax.usages)), end='')
-@|Tool@/evaluate@
-@<UI@/Command Line@/C@/command line options@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-syntax = configuration(CSyntax, r'''
-@<UI@/Command Line@/invocation syntax@>
-''')
-print('\n'.join(('const char *' if opt.type == 'string' else 'int ') + option_field(opt) + ';'
-                for opt in all_options(syntax)), end='')
-@|Tool@/evaluate@
-An argument shared by several usages is declared once, where it first appears.
-@<UI@/Command Line@/C@/command line arguments@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-syntax = configuration(CSyntax, r'''
-@<UI@/Command Line@/invocation syntax@>
-''')
-arguments = dict.fromkeys(arg for usage in syntax.usages for arg in usage.arguments)
-print(''.join(f'const char *{argument_field(arg)};' for arg in arguments), end='')
-@|Tool@/evaluate@
-getopt_long finds the end of the options at an entry of zeros.
-@<UI@/Command Line@/C@/getopt long options@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-
-
-def option_to_longopt(opt):
-    has_arg = 'required_argument' if opt.type == 'string' else 'no_argument'
-    val = f"'{opt.short}'" if opt.short else '0'
-    return f'{{"{opt.name}",{has_arg},NULL,{val}}},'
-
-
-syntax = configuration(CSyntax, r'''
-@<UI@/Command Line@/invocation syntax@>
-''')
-print(''.join(map(option_to_longopt, all_options(syntax))) + '{0,0,0,0},', end='')
-@|Tool@/evaluate@
-@<UI@/Command Line@/C@/getopt string@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-syntax = configuration(CSyntax, r'''
-@<UI@/Command Line@/invocation syntax@>
-''')
-print(''.join(opt.short + (':' if opt.type == 'string' else '')
-              for opt in all_options(syntax) if opt.short), end='')
-@|Tool@/evaluate@
-@<UI@/Command Line@/C@/handle long option of index "idx"@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-
-
-def long_option_handling(opt):
-    if opt.short:
-        return ''
-    value = 'optarg' if opt.type == 'string' else '1'
-    return f'''
-            if (strcmp(long_options[idx].name, "{opt.name}") == 0) {{
-                command.options.{option_field(opt)} = {value};
-            }}
-        '''
-
-
-syntax = configuration(CSyntax, r'''
-@<UI@/Command Line@/invocation syntax@>
-''')
-print(''.join(map(long_option_handling, all_options(syntax))), end='')
-@|Tool@/evaluate@
-@<UI@/Command Line@/C@/cases for short options@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-
-
-def short_opt_case(opt):
-    if not opt.short:
-        return ''
-    value = 'optarg' if opt.type == 'string' else '1'
-    return f'''
-            case '{opt.short}':
-                command.options.{option_field(opt)} = {value};
-                break;
-        '''
-
-
-syntax = configuration(CSyntax, r'''
-@<UI@/Command Line@/invocation syntax@>
-''')
-print(''.join(map(short_opt_case, all_options(syntax))), end='')
-@|Tool@/evaluate@
-@<UI@/Command Line@/C@/choose usage and store arguments@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-
-
-def look_option_of_usage(opt, usage):
-    constant = enum_constant(usage)
-    short_opt = f' -{opt.short}' if opt.short else ''
-    return f'''
-        if (command.options.{option_field(opt)}) {{
-            if (!found_usage) {{
-                found_usage = 1;
-                command.usage = {constant};
-            }} else if (command.usage != {constant}) {{
-                fprintf(stderr, "Conflict option: --{opt.name}{short_opt}\\n");
-                exit(1);
-            }}
-        }}
-    '''
-
-
-def look_usage_argument_number(usage):
-    return f'''
-        if (!found_usage && argc - optind == {len(usage.arguments)}) {{
-            found_usage = 1;
-            command.usage = {enum_constant(usage)};
-        }}
-    '''
-
-
-def store_arguments_for_usage(usage):
-    store = ''.join(f'command.arguments.{argument_field(arg)} = argv[optind + {idx}];'
-                    for idx, arg in enumerate(usage.arguments))
-    return f'''
-        case {enum_constant(usage)}:
-            if (argc - optind != {len(usage.arguments)}) {{
-                fprintf(stderr, "Unmatched argument number, see --help for usage\\n");
-                exit(1);
-            }}
-            {store}
-            break;
-    '''
-
-
-syntax = configuration(CSyntax, r'''
-@<UI@/Command Line@/invocation syntax@>
-''')
-text = 'do { int found_usage = 0;'
-text += ''.join(look_option_of_usage(opt, usage)
-                for usage in syntax.usages for opt in usage.options)
-text += '\n'.join(map(look_usage_argument_number, syntax.usages))
-text += '''
-    if (!found_usage) {
-        fprintf(stderr, "Invalid usage, see --help for usage\\n");
-        exit(1);
-    }
-'''
-text += 'switch (command.usage) {'
-text += '\n'.join(map(store_arguments_for_usage, syntax.usages))
-text += '}} while (0);'
-print(text, end='')
-@|Tool@/evaluate@
-The generators include this chunk as one fragment, on top of the shared models.
-getopt_long stores an option in a field of its own: an int for a switch and a string for a value,
-so an option is bool or string, and it has no default.
-@<UI@/Command Line@/C@/invocation syntax helpers@=
-@<UI@/Command Line@/invocation syntax helpers@>
-
-
-class CSyntax(InvocationSyntax):
-    @pydantic.model_validator(mode='after')
-    def check_c_options(self):
-        for opt in all_options(self):
-            if opt.type not in ('bool', 'string'):
-                raise ValueError(f'option {opt.name!r} has type {opt.type}; C takes bool or string')
-            if opt.default is not None:
-                raise ValueError(f'option {opt.name!r} has a default, which C does not take')
-        return self
-@
-Every generator names a field with these functions, so they agree on each field.
-@<UI@/Command Line@/C@/invocation syntax helpers@+
-def enum_constant(usage):
-    return 'COMMAND_USAGE_' + usage.name.replace(' ', '_').replace('-', '_').upper()
-
-
-def option_field(opt):
-    return opt.name.replace('-', '_').lower()
-
-
-def argument_field(arg):
-    return arg.replace(' ', '_').replace('-', '_').lower()
 @
 
 There are some idioms to make life a bit easier.
@@ -1546,9 +2791,6 @@ typedef Deque Queue;
 #include <string.h>
 #include <threads.h>
 @
-@<light@:executable@:Language@/C@/Module@/include flags@+
-@<Framework@/Light@/light options@>
-@
 @<light@:executable@:Language@/C@/Module@/global variables@+
 static uint8_t context_main_memory[light_option_context_main_size];
 struct context context_main = {
@@ -1558,35 +2800,11 @@ struct context context_main = {
     .stack_top = context_main_memory,
 };
 @
-@<light@:executable@:Language@/C@/Module@/includes@+
-#include "light.h"
-@
-@<light-single@:executable@:Language@/C@/Module@/include flags@+
-@<Framework@/Light@/light options@>
-@
-@<Framework@/Light@/light options@+
-#ifndef light_option_context_main_size
-#define light_option_context_main_size (1 << 20)  /* 1 MB */
-#endif
-
-#ifndef light_option_logging_level
-/* #define light_option_logging_level ERROR */
-#endif
-@
-@<light-single@:executable@:Language@/C@/Module@/includes@+
-@<lightlib@:Language@/C@/Module@/includes@>
-@
 @<light-single@:executable@:Language@/C@/Module@/macros@+
 @<lightlib@:Language@/C@/Module@/macros@>
 @
 @<light-single@:executable@:Language@/C@/Module@/data type declarations@+
 @<lightlib@:Language@/C@/Module@/data type declarations@>
-@
-@<light-single@:executable@:Language@/C@/Module@/data types@+
-@<lightlib@:Language@/C@/Module@/data types@>
-@
-@<light-single@:executable@:Language@/C@/Module@/function declarations@+
-@<lightlib@:Language@/C@/Module@/function declarations@>
 @
 @<light-single@:executable@:Language@/C@/Module@/global variables@+
 @<lightlib@:Language@/C@/Module@/global variables@>
@@ -1598,9 +2816,6 @@ struct context context_main = {
     .memory_end = context_main_memory + sizeof(context_main_memory),
     .stack_top = context_main_memory,
 };
-@
-@<light-single@:executable@:Language@/C@/Module@/static inline functions@+
-@<lightlib@:Language@/C@/Module@/static inline functions@>
 @
 @<light-single@:executable@:Language@/C@/Module@/functions@+
 @<lightlib@:Language@/C@/Module@/functions@>
@@ -1619,306 +2834,59 @@ do {
     exit_context();
 } while (0);
 @
-@<lightlib@:Language@/C@/Module@/module properties@+
-name: 'light',
+
+Formats included_flag_format with the uppercased module name.
+@<Language@/C@/Module@/Meta@/included flag@=
+@<.@/module meta information@|c included flag@:evaluate@:Language@/Python@/File@/file@>
 @
-@<Chunk@/Language@/Go@/File@=
-{"description": "Common structures in Go programming."}
-@
-
-gofmt reads a Go source file on stdin and writes the formatted file on stdout.
-The Go toolchain fixes the format, so this filter has no style file.
-@<Language@/Go@/File@/Format@/format Go code@=#!/bin/sh
-gofmt
-@
-
-@<Chunk@/Language@/Go@/File@/Format@=
-{"description": "Format a Go source file."}
-@
-
-@<Chunk@/UI@/Command Line@/Go@=
-{"description": "Flags and positional arguments of a command."}
-@
-
-@<Chunk@/Language@/Go@/File@/file@=
-{"description": "One Go source file."}
-@
-
-@<Chunk@/Language@/Go@/File@/Header@/package clause@=
-{"description": "Package comment followed by the package clause."}
-@
-
-@<Chunk@/Language@/Go@/File@/Meta@/package name@=
-{"description": "Package identifier from the module meta information."}
-@
-
-@<Chunk@/Language@/Go@/File@/package comment@=
-{"description": "Comment lines immediately above the package clause."}
-@
-
-@<Chunk@/Language@/Go@/File@/build constraints@=
-{"description": "go:build lines before the package clause."}
-@
-
-@<Chunk@/Language@/Go@/File@/import paths@=
-{"description": "Lines of the import declaration."}
-@
-
-@<Chunk@/Language@/Go@/File@/constants@=
-{"description": "Constant declarations."}
-@
-
-@<Chunk@/Language@/Go@/File@/variables@=
-{"description": "Variable declarations."}
-@
-
-@<Chunk@/Language@/Go@/File@/types@=
-{"description": "Type declarations."}
-@
-
-@<Chunk@/Language@/Go@/File@/methods@=
-{"description": "Method declarations."}
-@
-
-@<Chunk@/Language@/Go@/File@/functions@=
-{"description": "Function declarations."}
-@
-
-@<Chunk@/Language@/Go@/File@/main body@=
-{"description": "Statements of func main in a command."}
-@
-
-@<Chunk@/Language@/Go@/File@/Format@/format Go code@=
-{"description": "Format stdin as Go and write it to stdout."}
-@
-
-@<Chunk@/UI@/Command Line@/Go@/command variables@=
-{"description": "Variable command, when the command has flags or arguments."}
-@
-
-@<Chunk@/UI@/Command Line@/Go@/register flags@=
-{"description": "Typed flag.*Var calls (BoolVar, StringVar, etc.) for the invocation syntax."}
-@
-
-@<Chunk@/UI@/Command Line@/Go@/store arguments@=
-{"description": "Statements that check and store positional arguments."}
-@
-
-@<Chunk@/UI@/Command Line@/Go@/parse command line arguments@=
-{"description": "Register flags, parse the command line, and store arguments."}
-@
-
-A Go source file is one tree.  Build constraints come first,
-because the go command reads them only before the package clause.
-The package clause is next, then the import declaration,
-then constants, variables, types, methods, and functions.
-Methods follow types, and free functions follow methods,
-so a reader can list either sequence on its own.
-A type that must stay beside its methods belongs in one block.
-Extend a sequence by adding a block.
-One package may contain several files.
-A block with no label is part of every file.
-Put a shared label to the right of a more specific one:
-blocks labeled lib are part of a reference impl@@:lib.
-A block that belongs to one file carries that file's whole label list.
-The line break before the closing control of a block is not content,
-so a file block may close on the line after its reference.
-@<Language@/Go@/File@/file@=
-@<.@/build constraints@>
-@<.@/Header@/package clause@>
-@<.@/Header@/imports@>
-@<.@/constants@>
-@<.@/variables@>
-@<.@/types@>
-@<.@/methods@>
-@<.@/functions@>
-@|Language@/Go@/File@/Format@/format Go code@
-
-go doc attaches the comment that ends immediately above the package clause.
-Leave no blank line between that comment and the clause.
-@<Language@/Go@/File@/Header@/package clause@=
-@<..@/package comment@|Tool@/Text Processing@/remove ending newlines@>
-package @<..@/Meta@/package name@>
-@
-
-@<command@:Language@/Go@/File@/variables@+
-@<UI@/Command Line@/Go@/command variables@>
-@
-
-@<command@:Language@/Go@/File@/functions@+
-func main() {
-    @<UI@/Command Line@/Go@/parse command line arguments@>
-    @<.@/main body@>
-}
-@
-@<Chunk@/Language@/Go@/File@/Meta@/module meta information@=
-{"description": "Package name and other properties, as a Jsonnet object."}
-@
-@<Chunk@/Language@/Go@/File@/module properties@=
-{"description": "Jsonnet fields that override the module meta information."}
-@
-@<Language@/Go@/File@/Meta@/package name@=
-@<Tool@/Text Processing@/basic python settings@>
-
-
-class ModuleMeta(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='allow')
-    name: str = pydantic.Field(pattern=r'^[A-Za-z_][A-Za-z0-9_]*$')
-
-
-meta = configuration(ModuleMeta, r'''
-@<.@/module meta information@>
-''')
-print(meta.name, end='')
-@|Tool@/evaluate@
-The name field is the package identifier.
-pkg stands in until a file sets its own name.
-A command does not read this name; its package clause says main.
-The module properties are the fields of a second Jsonnet object, which override these defaults;
-further fields belong there too, and Jsonnet rejects a field given twice.
-@<Language@/Go@/File@/Meta@/module meta information@=
+The module meta information is a Jsonnet object.
+The module properties are the fields of a second object, which override these defaults;
+Jsonnet rejects a field given twice in the module properties.
+@<Language@/C@/Module@/Meta@/module meta information@=
 {
-    name: 'pkg',
+    name: 'default',
+    included_flag_format: '_MODULE_%s',
 } + {
     @<..@/module properties@>
 }
 @
-@<UI@/Command Line@/Go@/command variables@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/flag syntax helpers@>
-
-
-syntax = configuration(GoSyntax, r'''
-@<UI@/Command Line@/invocation syntax@>
-''')
-usage = syntax.usages[0]
-if usage.options or usage.arguments:
-    print('var command struct {')
-    if usage.options:
-        print('flags struct {')
-        for opt in usage.options:
-            print(f'{take_field(opt.name)} {opt.type}')
-        print('}')
-    if usage.arguments:
-        print('arguments struct {')
-        for arg in usage.arguments:
-            print(f'{take_field(arg)} string')
-        print('}')
-    print('}')
-@|Tool@/evaluate@
-@<Chunk@/UI@/Command Line@/Go@/flag syntax helpers@=
-{"description": "Go field names, Go literals, and the Go limits on the shared invocation syntax."}
+@<lightlib@:Language@/C@/Module@/module properties@+
+name: 'light',
 @
-@<Chunk@/UI@/Command Line@/Go@/usage literal@=
-{"description": "Go string literal of the shared usage lines, help flag, and option summary."}
+
+@<UI@/Command Line@/C@/usage enumeration@=
+@<UI@/Command Line@/invocation syntax@|usage enumeration@:c@:command line@:evaluate@:Language@/Python@/File@/file@>
 @
-Help that is asked for goes to stdout and exits 0;
-a parse error goes to stderr, followed by the usage, and exits 2.
-The usage of flag.CommandLine is silenced while parsing,
-so the usage is printed once, after the stream is known.
-No variable is declared here, so the main body may declare any name.
-@<UI@/Command Line@/Go@/parse command line arguments@=
-@<.@/register flags@>flag.Usage = func() {
-	fmt.Fprint(flag.CommandLine.Output(), @<.@/usage literal@>)
-}
-flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
-flag.CommandLine.Usage = func() {}
-if err := flag.CommandLine.Parse(os.Args[1:]); err == flag.ErrHelp {
-	flag.CommandLine.SetOutput(os.Stdout)
-	flag.Usage()
-	os.Exit(0)
-} else if err != nil {
-	flag.Usage()
-	os.Exit(2)
-}
-@<.@/store arguments@>@
-@<UI@/Command Line@/Go@/store arguments@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/flag syntax helpers@>
 
+@<UI@/Command Line@/C@/command line options@=
+@<UI@/Command Line@/invocation syntax@|command line options@:c@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
 
-syntax = configuration(GoSyntax, r'''
-@<UI@/Command Line@/invocation syntax@>
-''')
-arguments = syntax.usages[0].arguments
-print(f'if len(flag.Args()) != {len(arguments)} {{')
-print('flag.Usage()')
-print('os.Exit(1)')
-print('}')
-for i, arg in enumerate(arguments):
-    print(f'command.arguments.{take_field(arg)} = flag.Args()[{i}]')
-@|Tool@/evaluate@
-A short name is registered as a second flag of the same variable.
-@<UI@/Command Line@/Go@/register flags@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/flag syntax helpers@>
+An argument shared by several usages is declared once, where it first appears.
+@<UI@/Command Line@/C@/command line arguments@=
+@<UI@/Command Line@/invocation syntax@|command line arguments@:c@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
 
+getopt_long finds the end of the options at an entry of zeros.
+@<UI@/Command Line@/C@/getopt long options@=
+@<UI@/Command Line@/invocation syntax@|getopt long options@:c@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
 
-syntax = configuration(GoSyntax, r'''
-@<UI@/Command Line@/invocation syntax@>
-''')
-for opt in syntax.usages[0].options:
-    field = take_field(opt.name)
-    for name in [opt.name] + ([opt.short] if opt.short else []):
-        print(f'flag.{FLAG_FUNCS[opt.type]}(&command.flags.{field}, {go_string(name)}, '
-              f'{go_literal(opt)}, {go_string(opt.description)})')
-@|Tool@/evaluate@
-flag.Usage prints the shared usage lines, a blank line,
-the help flag that the flag package defines, then the shared option summary.
-@<UI@/Command Line@/Go@/usage literal@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/flag syntax helpers@>
+@<UI@/Command Line@/C@/getopt string@=
+@<UI@/Command Line@/invocation syntax@|getopt string@:c@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
 
+@<UI@/Command Line@/C@/handle long option of index "idx"@=
+@<UI@/Command Line@/invocation syntax@|handle long option@:c@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
 
-usage = r'''@<UI@/Command Line@/command line usage@>'''
-summary = f'-h, {LONG_PREFIX}help: print the usage\n' + r'''@<UI@/Command Line@/option summary@>'''
-print(go_string(usage + '\n' + summary), end='')
-@|Tool@/evaluate@
-The option summary describes every option on one line:
-its names, the value it takes, its description, then its default unless that is empty, false, or zero.
-@<UI@/Command Line@/option summary@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
+@<UI@/Command Line@/C@/cases for short options@=
+@<UI@/Command Line@/invocation syntax@|cases for short options@:c@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
 
-
-def default_note(opt):
-    if opt.default in (None, '', False, 0):
-        return ''
-    if opt.type == 'string':
-        return ' (default "' + opt.default + '")'
-    return ' (default ' + ('true' if opt.default is True else str(opt.default)) + ')'
-
-
-def summary_line(opt):
-    value = '' if opt.type == 'bool' else f' {metavar(opt)}'
-    return ', '.join(option_names(opt)) + value + f': {opt.description}' + default_note(opt) + '\n'
-
-
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
-''')
-print(''.join(map(summary_line, all_options(syntax))), end='')
-@|Tool@/evaluate
-@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/functions@/all_options @~ Tool@/Python@/functions@/configuration @~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_names @
-The usage lines list every usage of the command, one per line, after "Usage: ".
-@<UI@/Command Line@/command line usage@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/invocation syntax helpers@>
-
-
-def usage_line(usage):
-    words = [syntax.name]
-    words += [f'[{option_with_value(opt)}]' for opt in usage.options if not opt.hide]
-    words += map(placeholder, usage.arguments)
-    return ' '.join(words)
-
-
-syntax = configuration(InvocationSyntax, r'''
-@<.@/invocation syntax@>
-''')
-print('Usage: ' + '\n       '.join(map(usage_line, syntax.usages)))
-@|Tool@/evaluate
-@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ Tool@/Python@/functions@/configuration @~ UI@/Command Line@/Python@/functions@/option_with_value @~ UI@/Command Line@/Python@/functions@/placeholder @
+@<UI@/Command Line@/C@/choose usage and store arguments@=
+@<UI@/Command Line@/invocation syntax@|choose usage and store arguments@:c@:command line@:evaluate@:Language@/Python@/File@/file@>
+@
 The invocation syntax of a command is one Jsonnet object.
 The usage lines and the manpage of the command are generated from it here,
 and a structure turns it into the parser of its language,
@@ -1960,625 +2928,6 @@ A structure rejects the features its language does not support.
 @<UI@/Command Line@/invocation syntax@=
 {}
 @~ UI@/Command Line@/Python@/classes@/InvocationSyntax @
-The generators include this chunk as one fragment, on top of the shared models,
-so an option name becomes the same Go field in each of them.
-The Go field is the name in camel case; hyphens, underscores, and spaces separate words.
-@<UI@/Command Line@/Go@/flag syntax helpers@=
-@<UI@/Command Line@/invocation syntax helpers@>
-
-GO_KEYWORDS = {
-    'break', 'default', 'func', 'interface', 'select',
-    'case', 'defer', 'go', 'map', 'struct',
-    'chan', 'else', 'goto', 'package', 'switch',
-    'const', 'fallthrough', 'if', 'range', 'type',
-    'continue', 'for', 'import', 'return', 'var',
-}
-
-
-def field_name(name):
-    parts = [part for part in re.split(r'[-_]+', re.sub(r'\s+', '-', name)) if part]
-    if not parts:
-        return ''
-    return parts[0].lower() + ''.join(part.capitalize() for part in parts[1:])
-
-
-def take_field(name):
-    field = field_name(name)
-    if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', field):
-        raise ValueError(f"name '{name}' is not a Go field")
-    if field in GO_KEYWORDS:
-        raise ValueError(f"name '{name}' is a Go keyword")
-    return field
-@
-The structures include this chunk in their generators,
-so every generator validates the invocation syntax the same way.
-A short name is one letter or digit.
-@<UI@/Command Line@/invocation syntax helpers@=
-class Option(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='forbid')
-    name: str = pydantic.Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
-    short: str | None = pydantic.Field(None, pattern=r'^[0-9A-Za-z]$')
-    type: Literal['bool', 'string', 'int', 'int64', 'uint', 'uint64', 'float64'] = 'bool'
-    argument: str | None = None
-    default: bool | int | float | str | None = None
-    description: str = ''
-    hide: bool = False
-
-    @pydantic.model_validator(mode='after')
-    def check_default(self):
-        value = self.default
-        if value is None:
-            return self
-        if self.type == 'bool':
-            suits = isinstance(value, bool)
-        elif self.type == 'string':
-            suits = isinstance(value, str)
-        elif self.type == 'float64':
-            suits = isinstance(value, (int, float)) and not isinstance(value, bool)
-        else:
-            suits = (isinstance(value, int) and not isinstance(value, bool)
-                     and (value >= 0 or not self.type.startswith('u')))
-        if not suits:
-            raise ValueError(f'default {value!r} does not suit type {self.type}')
-        return self
-@? UI@/Command Line@/Python@/classes@/Option @
-Options and arguments at the top level become one usage named after the command.
-Usage names, option names, and short names are each unique in the whole command,
-because its parser reads the options of every usage.
-@<UI@/Command Line@/invocation syntax helpers@+
-class Usage(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='forbid')
-    name: str
-    options: list[Option] = []
-    arguments: list[str] = []
-
-
-class InvocationSyntax(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='forbid')
-    name: str = 'command'
-    usages: list[Usage] = pydantic.Field(min_length=1)
-
-    @pydantic.model_validator(mode='before')
-    @classmethod
-    def gather_single_usage(cls, data):
-        if isinstance(data, dict) and 'usages' not in data:
-            data = dict(data)
-            usage = {'name': data.get('name', 'command')}
-            for key in ('options', 'arguments'):
-                if key in data:
-                    usage[key] = data.pop(key)
-            data['usages'] = [usage]
-        return data
-
-    @pydantic.model_validator(mode='after')
-    def check_unique_names(self):
-        options = all_options(self)
-        for kind, names in (
-            ('usage', [usage.name for usage in self.usages]),
-            ('option', [opt.name for opt in options]),
-            ('short option', [opt.short for opt in options if opt.short]),
-        ):
-            for name in names:
-                if names.count(name) > 1:
-                    raise ValueError(f'{kind} {name!r} is given twice')
-        return self
-@? UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/classes@/Option @? UI@/Command Line@/Python@/classes@/Usage @~ UI@/Command Line@/Python@/functions@/all_options @
-A placeholder stands for a value in a usage line: upper case, with underscores between words.
-@<UI@/Command Line@/invocation syntax helpers@+
-def all_options(syntax):
-    return [opt for usage in syntax.usages for opt in usage.options]
-
-
-def placeholder(name):
-    return name.upper().replace('-', '_').replace(' ', '_')
-
-
-def metavar(opt):
-    return placeholder(opt.argument or opt.name)
-@? UI@/Command Line@/Python@/functions@/all_options @? UI@/Command Line@/Python@/functions@/metavar @? UI@/Command Line@/Python@/functions@/placeholder @
-An option is shown by its short name if it has one, otherwise by its long name.
-A long name follows two hyphens in the usage lines and the manpage of every structure.
-@<UI@/Command Line@/invocation syntax helpers@+
-LONG_PREFIX = '--'
-
-
-def option_name(opt):
-    return f'-{opt.short}' if opt.short else LONG_PREFIX + opt.name
-
-
-def option_with_value(opt):
-    return option_name(opt) + ('' if opt.type == 'bool' else f' {metavar(opt)}')
-@~ UI@/Command Line@/Python@/functions@/metavar @? UI@/Command Line@/Python@/functions@/option_name @? UI@/Command Line@/Python@/functions@/option_with_value @? UI@/Command Line@/Python@/variables@/LONG_PREFIX @
-A description of an option names it both ways, the short name first.
-@<UI@/Command Line@/invocation syntax helpers@+
-def option_names(opt):
-    return ([f'-{opt.short}'] if opt.short else []) + [LONG_PREFIX + opt.name]
-@? UI@/Command Line@/Python@/functions@/option_names @~ UI@/Command Line@/Python@/variables@/LONG_PREFIX @
-@<UI@/Command Line@/Go@/flag syntax helpers@+
-FLAG_FUNCS = {
-    'bool': 'BoolVar',
-    'string': 'StringVar',
-    'int': 'IntVar',
-    'int64': 'Int64Var',
-    'uint': 'UintVar',
-    'uint64': 'Uint64Var',
-    'float64': 'Float64Var',
-}
-
-
-def go_string(text):
-    for raw, escaped in (('\\', '\\\\'), ('"', '\\"'), ('\n', '\\n'), ('\r', '\\r'), ('\t', '\\t')):
-        text = text.replace(raw, escaped)
-    return f'"{text}"'
-
-
-def go_literal(opt):
-    if opt.default is None:
-        return {'bool': 'false', 'string': '""'}.get(opt.type, '0')
-    if opt.type == 'bool':
-        return 'true' if opt.default else 'false'
-    if opt.type == 'string':
-        return go_string(opt.default)
-    return str(opt.default)
-@
-The flag package parses one usage, so a command has one usage; its positional arguments are an exact list.
-A short name is a second flag, so no name may be both a short and a long name,
-and h and help stay the help flags of the flag package.
-Options, and separately arguments, must become distinct Go fields.
-@<UI@/Command Line@/Go@/flag syntax helpers@+
-class GoSyntax(InvocationSyntax):
-    @pydantic.model_validator(mode='after')
-    def check_go_usage(self):
-        if len(self.usages) != 1:
-            raise ValueError('the flag package parses one usage')
-        usage = self.usages[0]
-        flags = [opt.name for opt in usage.options] + [opt.short for opt in usage.options if opt.short]
-        for name in flags:
-            if name in ('h', 'help'):
-                raise ValueError(f'flag {name!r} is the help flag of the flag package')
-            if flags.count(name) > 1:
-                raise ValueError(f'flag {name!r} is both a short name and a long name')
-        for names in ([opt.name for opt in usage.options], usage.arguments):
-            seen = set()
-            for name in names:
-                field = take_field(name)
-                if field in seen:
-                    raise ValueError(f"name '{name}' repeats field {field}")
-                seen.add(field)
-        return self
-@
-command is the rightmost label of a package main program.
-These blocks set the package name to main,
-add the flag, fmt, and os imports,
-add the command variable when the invocation syntax needs one,
-and add func main.
-func main parses the command line and then runs the main body.
-Parsing always uses the flag, fmt, and os packages,
-so those three imports stay used when the command has no flags.
-Replace module meta information to name the other files in the node.
-That replacement does not rename the command.
-@<command@:Language@/Go@/File@/Meta@/package name@=main@
-@<Chunk@/Language@/Go@/Module@=
-{"description": "Structures of a whole Go module."}
-@
-
-@<Language@/Go@/Module@/Go Command@/build packages@=#!/bin/sh
-@<.@/go command settings@>
-go build ./...
-echo 'go build ./...: ok'
-@
-
-@<Language@/Go@/Module@/Go Command@/vet packages@=#!/bin/sh
-@<.@/go command settings@>
-go vet ./...
-echo 'go vet ./...: ok'
-@
-
-@<Chunk@/Language@/Go@/Module@/Go Command@=
-{"description": "Run the go command on the files of the project."}
-@
-
-@<Chunk@/Language@/Go@/Module@/Meta@/module path@=
-{"description": "Module path from the project meta information."}
-@
-
-@<Chunk@/Language@/Go@/Module@/requirements@=
-{"description": "Direct requirements of the project: a module path and a version on each line."}
-@
-
-@<Chunk@/Language@/Go@/Module@/module file edits@=
-{"description": "Flags of go mod edit that set the module path, the Go version, and the requirements."}
-@
-
-@<Chunk@/Language@/Go@/Module@/package directory@=
-{"description": "Directory of a package below the module root."}
-@
-
-@<Chunk@/Language@/Go@/Module@/import path@=
-{"description": "Import path of a package, without quotes."}
-@
-
-@<Chunk@/Language@/Go@/Module@/check report@=
-{"description": "Output of go build, go vet, and go test on the file set go module."}
-@
-
-@<Chunk@/Language@/Go@/Module@/Go Command@/go command settings@=
-{"description": "Shell lines that pin the environment of the go command."}
-@
-
-@<Chunk@/Language@/Go@/Module@/Go Command@/build packages@=
-{"description": "Build every package of the project."}
-@
-
-@<Chunk@/Language@/Go@/Module@/Go Command@/vet packages@=
-{"description": "Vet every package of the project."}
-@
-
-@<Chunk@/Language@/Go@/Module@/Go Command@/test packages@=
-{"description": "Test every package of the project."}
-@
-
-The check report runs every check in turn and stops at the first failure.
-The output of a check ends with a line break; it is removed,
-so the line break after each reference separates the checks.
-@<Language@/Go@/Module@/check report@=
-@<@|Language@/Go@/Module@/Go Command@/build packages@+go module@|Tool@/Text Processing@/remove ending newlines@>
-@<@|Language@/Go@/Module@/Go Command@/vet packages@+go module@|Tool@/Text Processing@/remove ending newlines@>
-@<@|Language@/Go@/Module@/Go Command@/test packages@+go module@|Tool@/Text Processing@/remove ending newlines@>
-@
-The import path of a package is the module path joined with its directory.
-Reference it with the package label, inside quotes in import paths.
-A command needs no directory here, because no package imports a command.
-@<Language@/Go@/Module@/import path@=
-@<Tool@/Text Processing@/basic python settings@>
-directory = r'''
-@<.@/package directory@>
-'''.strip(' \t\n\r\f\v')
-if (re.search(r'^/|/$|//|\s', directory)
-        or any(part in ('.', '..') for part in directory.split('/'))):
-    fail(f"package directory '{directory}' is not valid")
-module = '@<.@/Meta@/module path@>'
-print(f'{module}/{directory}' if directory else module, end='')
-@|Tool@/evaluate@
-
-The package directory is the path of a package below the module root, without a leading slash.
-A package sets it under the package label.
-The package at the module root keeps the empty directory.
-@<Language@/Go@/Module@/package directory@=@
-@<Chunk@/Language@/Go@/Module@/Meta@/project meta information@=
-{"description": "Module path, Go version, and other properties, as a Jsonnet object."}
-@
-@<Chunk@/Language@/Go@/Module@/project properties@=
-{"description": "Jsonnet fields that override the project meta information."}
-@
-@<Chunk@/Language@/Go@/Module@/Meta@/project meta model@=
-{"description": "Pydantic model that validates the project meta information."}
-@
-
-The commands are built in a view of the file set go module, like the checks.
-The view must also hold the command directory; a composition wrapping the project
-maps it to a directory of the host, so the binaries leave the view.
-Each binary is named after the directory of its command;
-the go command replaces an existing binary instead of writing into it.
-@<Language@/Go@/Module@/Go Command@/build commands@=#!/bin/sh
-@<.@/go command settings@>
-go build -o '@<..@/command directory@>/' ./cmd/...
-echo 'go build -o @<..@/command directory@>/ ./cmd/...: ok'
-@
-
-The command directory is bin, below the module root of the view.
-@<Language@/Go@/Module@/command directory@=bin@
-
-
-@<Chunk@/Language@/Go@/Module@/Go Command@/build commands@=
-{"description": "Build every command of the project into the command directory."}
-@
-
-@<Chunk@/Language@/Go@/Module@/command directory@=
-{"description": "Directory of the view, below the module root, that receives the built commands."}
-@
-
-The go command reports a failed test on stdout, and the output of a failed filter is dropped,
-so the report is kept and written to stderr when a test fails.
-Declare every test file in the file set go tests as well as in go module,
-so a view that only needs the program can subtract the tests.
-@<Language@/Go@/Module@/Go Command@/test packages@=#!/bin/sh
-@<.@/go command settings@>
-report=$(go test ./... 2>&1) || {
-	printf '%s\n' "$report" >&2
-	exit 1
-}
-printf '%s\n' "$report"
-@
-@<Chunk@/Language@=
-{"description": "Common structures found in languages."}
-@
-@<Chunk@/Language@/C@=
-{"description": "Structures of C programming."}
-@
-@<Chunk@/Language@/Go@=
-{"description": "Structures of Go programming."}
-@
-@<Chunk@/UI@=
-{"description": "Shared schemas and generators of user interfaces."}
-@
-@<Chunk@/UI@/Command Line@/C@=
-{"description": "Parse the command line of a C program with getopt, from the invocation syntax."}
-@
-@<Chunk@/Framework@=
-{"description": "Frameworks an application chooses to adopt."}
-@
-@<Chunk@/Project@=
-{"description": "Concrete projects."}
-@
-@<Index@/UI@/Command Line@/Python@=
-{"description": "Top-level names of the Python scripts that read the invocation syntax."}
-@
-@<Index@/UI@/Command Line@/Python@/functions@=
-{"description": "Top-level functions."}
-@
-One case of an acceptance test is a chunk: its content is a script of checks, and this filter
-turns the script into the result of the case, so evaluating the chunk runs the test.
-The view of the filter holds the command and the fixtures of the case.
-A case that fails still evaluates: its result says what failed, and the report decides.
-@<UI@/Command Line@/Test@/run case@=#!/bin/bash
-set -u
-command=$PWD/@<.@/command@>
-@<.@/environment@>
-@<.@/Runner@/state of the case@>
-@<.@/Runner@/result@>
-@<.@/checks@>
-@<.@/Runner@/run the script on stdin@>
-finish
-@
-The project names its command with a labelled block, and passes the labels to the filter:
-the labels reach every reference of the filter.
-@<Chunk@/UI@/Command Line@/Test@/command@=
-{"description": "Path of the command under test in the view; set it under the label of the command."}
-@
-@<Chunk@/UI@/Command Line@/Test@/environment@=
-{"description": "Shell lines that prepare the environment of the command under test; set them under the label of the command."}
-@
-@<Chunk@/UI@/Command Line@/Test@=
-{"description": "Acceptance tests of a command: a case is a chunk filtered into its result."}
-@
-@<Chunk@/UI@/Command Line@/Test@/run case@=
-{"description": "Filter that runs the script of one case and prints its result: ok NAME COUNT, skip NAME: REASON, or FAIL NAME with the failed checks."}
-@
-@<Chunk@/UI@/Command Line@/Test@/summarize results@=
-{"description": "Filter that counts the results of the cases, and fails when a case failed or none passed."}
-@
-@<Chunk@/UI@/Command Line@/Test@/checks@=
-{"description": "Shell functions a case script calls; a project may add its own."}
-@
-The work directory is outside the view, because the view only shows files of the composition.
-@<UI@/Command Line@/Test@/Runner@/state of the case@=
-name=unnamed
-checks=0
-failed=
-skipped=
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-@
-The result has no final line break, so a report can list one case on each line.
-A case without a check fails: a script that ended early must not look like a success.
-@<UI@/Command Line@/Test@/Runner@/result@=
-# finish: print the result of the case and end the filter.
-finish() {
-	if [ -n "$skipped" ]; then
-		printf 'skip %s: %s' "$name" "$skipped"
-	elif [ -n "$failed" ]; then
-		printf 'FAIL %s\n%s' "$name" "${failed%$'\n'}"
-	elif [ "$checks" -eq 0 ]; then
-		printf 'FAIL %s\n  no check ran' "$name"
-	else
-		printf 'ok %s %s' "$name" "$checks"
-	fi
-	exit 0
-}
-
-# miss CHECK WHAT [FILE]: record a failed check, with the file that explains it.
-miss() {
-	failed+="  $1: $2"$'\n'
-	if [ $# -gt 2 ] && [ -s "$3" ]; then
-		failed+=$(sed 's/^/    /' "$3")$'\n'
-	fi
-}
-@? UI@/Command Line@/Bash@/functions@/finish @? UI@/Command Line@/Bash@/functions@/miss @
-The script is checked before it runs: a syntax error would otherwise stop it halfway,
-after checks that passed.
-@<UI@/Command Line@/Test@/Runner@/run the script on stdin@=
-cat >"$work/case"
-if bash -n "$work/case" 2>"$work/syntax"; then
-	. "$work/case"
-else
-	miss script "syntax error" "$work/syntax"
-fi
-@~ UI@/Command Line@/Bash@/functions@/miss @
-test_case names the case and optionally enters its fixture directory (failing immediately if missing);
-skip records the reason and ends the case without running further checks.
-@<UI@/Command Line@/Test@/checks@+
-# test_case NAME [DIRECTORY]: name the case, and enter the directory of its fixtures.
-test_case() {
-	name=$1
-	if [ $# -gt 1 ] && ! cd "$2" 2>/dev/null; then
-		miss fixtures "no directory $2"
-		finish
-	fi
-}
-
-# skip REASON: end the case without a verdict.
-skip() {
-	skipped=$1
-	finish
-}
-@~ UI@/Command Line@/Bash@/functions@/finish @~ UI@/Command Line@/Bash@/functions@/miss @
-Runs the command under test, increments the check count,
-captures stdout and stderr in $work/out and $work/err, and records its exit status in $status.
-@<UI@/Command Line@/Test@/checks@+
-# run ARGUMENT...: run the command; its output goes to $work/out and $work/err,
-# its exit status to $status.
-run() {
-	checks=$((checks + 1))
-	"$command" "$@@" >"$work/out" 2>"$work/err"
-	status=$?
-}
-@? UI@/Command Line@/Bash@/functions@/run @
-A passing command must leave stderr empty.
-@<UI@/Command Line@/Test@/checks@+
-# prints_file CHECK FILE ARGUMENT...: the command succeeds and prints exactly FILE.
-prints_file() {
-	local check=$1 want=$2
-	shift 2
-	run "$@@"
-	if [ "$status" -ne 0 ]; then
-		miss "$check" "exit $status" "$work/err"
-	elif [ -s "$work/err" ]; then
-		miss "$check" "unexpected stderr" "$work/err"
-	elif ! diff -u --label expected --label printed "$want" "$work/out" >"$work/diff"; then
-		miss "$check" stdout "$work/diff"
-	fi
-}
-
-# prints CHECK TEXT ARGUMENT...: the command succeeds and prints exactly TEXT.
-prints() {
-	local check=$1
-	printf '%s' "$2" >"$work/want"
-	shift 2
-	prints_file "$check" "$work/want" "$@@"
-}
-@~ UI@/Command Line@/Bash@/functions@/miss @~ UI@/Command Line@/Bash@/functions@/run @
-A failing command must leave stdout empty, and its stderr only has to contain the needle.
-@<UI@/Command Line@/Test@/checks@+
-# fails CHECK NEEDLE ARGUMENT...: the command fails and reports NEEDLE.
-fails() {
-	local check=$1 needle=$2
-	shift 2
-	run "$@@"
-	if [ "$status" -eq 0 ]; then
-		miss "$check" "expected failure"
-	elif ! grep -F -q -e "$needle" "$work/err"; then
-		miss "$check" "stderr misses [$needle]" "$work/err"
-	elif [ -s "$work/out" ]; then
-		miss "$check" "stdout not empty" "$work/out"
-	fi
-}
-@~ UI@/Command Line@/Bash@/functions@/miss @~ UI@/Command Line@/Bash@/functions@/run @
-The output of a failed filter is dropped, so a failing report goes to stderr.
-A report in which no case passed fails too: the cases may all have been lost.
-@<UI@/Command Line@/Test@/summarize results@=#!/bin/sh
-results=$(cat)
-count() {
-	printf '%s\n' "$results" | grep -c "^$1 "
-}
-report=$(printf '%s\npassed %s failed %s skipped %s' "$results" "$(count ok)" "$(count FAIL)" "$(count skip)")
-if [ "$(count FAIL)" -ne 0 ] || [ "$(count ok)" -eq 0 ]; then
-	printf '%s\n' "$report" >&2
-	exit 1
-fi
-printf '%s\n' "$report"
-@
-@<Index@/UI@/Command Line@/Bash@/functions@=
-{"description": "Shell functions of the acceptance test runner."}
-@
-
-@<Chunk@/Language@/Go@/Module@/module file directory@=
-{"description": "Directory of the view, mapped from the host, that holds go.mod and go.sum."}
-@
-The input is the module file edits. go mod edit applies them to go.mod in the module file directory,
-then go mod tidy adds the indirect requirements, removes a requirement that no package imports,
-and writes go.sum. So the view must hold every Go file: the file set go module.
-A missing go.mod is started with the module line, which is all go mod edit needs.
-The module files are edited before the settings copy go.mod to the module root,
-so the copy carries the new Go version.
-@<Language@/Go@/Module@/Go Command@/tidy module files@=#!/bin/sh
-set -e
-mod='@<..@/module directory@>/@<..@/module file directory@>/go.mod'
-[ -s "$mod" ] || printf 'module %s\n' '@<..@/Meta@/module path@>' > "$mod"
-set --
-while IFS= read -r flag; do
-	[ -z "$flag" ] || set -- "$@@" "$flag"
-done
-go mod edit "$@@" "$mod"
-@<.@/go command settings@>
-go mod tidy
-echo 'go mod tidy: ok'
-@
-@<Language@/Go@/Module@/Meta@/module path@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/project meta model@>
-
-
-meta = configuration(ProjectMeta, r'''
-@<.@/project meta information@>
-''')
-print(meta.module, end='')
-@|Tool@/evaluate@
-
-Each check runs the go command in a view of the file set go module,
-after entering the module directory.
-GOTOOLCHAIN=local keeps the go command from downloading another toolchain,
-and GOWORK=off ignores a workspace file outside the view.
--modfile makes the go command read and write go.mod in the module file directory,
-and go.sum beside it. The go command still looks for a go.mod at the module root,
-to find the root and to choose the toolchain from its go line, so the file is copied there;
-the copy is a new file of the view, and it is discarded with the view.
-The build cache and the module cache stay at their host locations.
-A failed check fails the evaluation, and the go command reports on stderr.
-@<Language@/Go@/Module@/Go Command@/go command settings@=
-set -e
-cd '@<..@/module directory@>'
-export GOTOOLCHAIN=local
-export GOWORK=off
-export GOFLAGS='-modfile=@<..@/module file directory@>/go.mod'
-cp '@<..@/module file directory@>/go.mod' go.mod
-@
-The go command manages go.mod and go.sum: it adds the indirect requirements and the checksums,
-so the two files are not archive files. They live in a directory of the host,
-which a project maps into its node at the module file directory, in the file set go module.
-The directory is mod, below the module root of the view.
-@<Language@/Go@/Module@/module file directory@=mod@
-
-@<Chunk@/Language@/Go@/Module@/Go Command@/tidy module files@=
-{"description": "Apply the go mod edit flags on stdin to go.mod, then run go mod tidy."}
-@
-
-Evaluate the module file report after a change of the module path, the Go version,
-the requirements, or the imports of a Go file; the checks never rewrite go.mod or go.sum.
-@<Language@/Go@/Module@/module file report@=
-@<Language@/Go@/Module@/module file edits@|Language@/Go@/Module@/Go Command@/tidy module files@+go module@>
-@
-The archive records what a project decides about go.mod: the module path, the Go version,
-and the direct requirements. Each becomes one flag of go mod edit, one flag on a line.
-A requirement is a line of the chunk requirements: a module path and a version.
-Blank lines are skipped; any other line with more or fewer than two fields is an error.
-@<Language@/Go@/Module@/module file edits@=
-@<Tool@/Text Processing@/basic python settings@>
-@<.@/Meta@/project meta model@>
-
-
-meta = configuration(ProjectMeta, r'''
-@<.@/Meta@/project meta information@>
-''')
-print(f'-module={meta.module}\n-go={meta.go}')
-for line in r'''
-@<.@/requirements@>
-'''.splitlines():
-    fields = line.split()
-    if len(fields) == 2:
-        print(f'-require={fields[0]}@@{fields[1]}')
-    elif fields:
-        fail(f"requirement '{line.strip()}' is not a module path and a version")
-@|Tool@/evaluate@
-A module path has no blank and does not start with a slash;
-a Go version is 1.N or 1.N.P.
-Further fields are kept for other generators.
-@<Language@/Go@/Module@/Meta@/project meta model@=
-class ProjectMeta(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='allow')
-    module: str = pydantic.Field(pattern=r'^[^\s/]\S*$')
-    go: str = pydantic.Field(pattern=r'^1\.\d+(\.\d+)?$')
-@
 A Go project is one Go module: packages in directories below the module root,
 with go.mod and go.sum in the module file directory, where the go command manages them.
 One node holds one project, so the blocks of this module carry no label,
@@ -2605,84 +2954,6 @@ which override these defaults; Jsonnet rejects a field given twice.
 }
 @
 
-@<Chunk@/Language@/Go@/Module@/module file report@=
-{"description": "Output of syncing go.mod and go.sum in the module file directory with the archive."}
-@
-No import declaration is emitted when the path list is empty
-or contains only whitespace.
-A blank line between paths starts another group,
-and gofmt keeps that group.
-The paths are written unindented, one on a line; gofmt indents them.
-@<Language@/Go@/File@/Header@/imports@=
-@<Tool@/Text Processing@/basic python settings@>
-paths = r'''
-@<..@/import paths@>
-'''.strip(' \t\n\r\f\v')
-if paths:
-    print(f'import (\n{paths}\n)')
-@|Tool@/evaluate@
-
-@<command@:Language@/Go@/File@/import paths@+
-"flag"
-"fmt"
-"os"
-@
-A text processing script is a Python script that declares its dependencies:
-jsonnet evaluates configuration, and pydantic validates it.
-Its interpreter runs it in a background process that has loaded them already.
-@<Tool@/Text Processing@/basic python settings@=
-#!@<.@/Runtime@/path to python interpreter@>
-@<.@/Runtime@/python dependencies@>
-import os
-import re
-import sys
-from typing import Literal
-
-@<.@/Runtime@/import dependencies@>
-
-@<.@/Runtime@/configuration helpers@>
-@
-The interpreter of a script is the client of a background Python process.
-The client and the server are written to a directory named by their checksum,
-private to the user, so a changed client, server, or python3 gets its own server.
-The directory is moved into place whole with POSIX rename, so a concurrent evaluation
-never sees it half written and macOS BSD mv without -T is not needed.
-It lies in the filter cache of litar when there is one, because the cache keeps the output
-of this chunk, the path of the client, and both must go away together.
-@<Tool@/Text Processing@/Runtime@/path to python interpreter@=
-#!/bin/sh
-set -e
-if [ -n "$LITAR_CACHE" ]; then
-    base=$LITAR_CACHE/python
-else
-    base=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/litar-python-`id -u`
-fi
-mkdir -p -m 700 "$base"
-if [ ! -O "$base" ]; then
-    echo "$base is not owned by the user" >&2
-    exit 1
-fi
-temp=`mktemp -d "$base/new.XXXXXX"`
-trap 'rm -rf "$temp"' EXIT
-printf '#!%s -S\n' "`which python3`" > "$temp/client"
-cat >> "$temp/client" <<'LITAR_PYTHON_CLIENT'
-@<.@/python client@>
-LITAR_PYTHON_CLIENT
-cat > "$temp/server" <<'LITAR_PYTHON_SERVER'
-@<.@/python server@>
-LITAR_PYTHON_SERVER
-chmod +x "$temp/client"
-dir=$base/`cat "$temp/client" "$temp/server" | cksum | tr ' ' -`
-if [ ! -x "$dir/client" ]; then
-    python3 -c 'import os, sys
-try:
-    os.rename(sys.argv[1], sys.argv[2])
-except OSError:
-    pass' "$temp" "$dir"
-    [ -x "$dir/client" ]
-fi
-echo "$dir/client"
-@|Tool@/evaluate@
 The client is the interpreter of a script.
 It passes its standard streams, arguments, directory and environment to the server,
 then exits with the status the server reports.
@@ -2691,16 +2962,48 @@ so only the first script pays for loading the dependencies.
 The server leaves the working directory, a view that is unmounted after the script,
 and closes the standard streams, which the evaluation reads until they close.
 Connecting through the relative name 'socket' in 'here' avoids the short Unix socket path limit on macOS.
-@<Tool@/Text Processing@/Runtime@/python client@=
+@<Tool@/Evaluate@/Runtime@/python client@=@<client@:python runtime@:Language@/Python@/File@/file@>@
+
+The server loads the dependencies once, then forks a fresh child for every connection,
+so each script starts from the same state and none sees what another changed.
+A lock keeps one server per directory; a second one exits at once.
+After ten idle minutes the server removes the socket and drains any connections
+that arrived before that, so no client connects to a dead socket.
+@<Tool@/Evaluate@/Runtime@/python server@=@<server@:python runtime@:Language@/Python@/File@/file@>@
+
+A Python source file is one tree. A shebang comes first for executable scripts,
+then the module docstring, then future imports, then imports, then constants,
+variables, classes, functions, and an optional entry point at the bottom.
+Extend a sequence by adding a block.
+A block with no label is part of every file.
+Put a shared label to the right of a more specific one:
+blocks labeled protocol are part of a reference test@@:protocol.
+A block that belongs to one file carries that file's whole label list.
+@<Language@/Python@/File@/file@=
+@<.@/shebang@>
+@<.@/module docstring@>
+@<.@/future imports@>
+@<.@/imports@>
+@<.@/constants@>
+@<.@/variables@>
+@<.@/classes@>
+@<.@/functions@>
+@<.@/main@>
+@|Language@/Python@/File@/Format@/format Python code@
+
+@<client@:python runtime@:Language@/Python@/File@/imports@+
 import json
 import os
 import socket
 import sys
+@
 
+@<client@:python runtime@:Language@/Python@/File@/variables@+
 here = os.path.dirname(os.path.abspath(__file__))
 cwd = os.getcwd()
+@
 
-
+@<client@:python runtime@:Language@/Python@/File@/functions@+
 def start_server():
     if os.fork() == 0:
         os.setsid()
@@ -2710,39 +3013,13 @@ def start_server():
             os.dup2(null, fd)
         server = os.path.join(here, 'server')
         os.execv(sys.executable, [sys.executable, server])
-
-
-try:
-    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    os.chdir(here)
-    try:
-        connection.connect('socket')
-    finally:
-        os.chdir(cwd)
-except OSError:
-    start_server()
-    os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
-request = {
-    'argv': [os.path.abspath(sys.argv[1]), *sys.argv[2:]],
-    'cwd': cwd,
-    'env': dict(os.environ),
-}
-socket.send_fds(connection, [b'\0'], [0, 1, 2])
-connection.sendall(json.dumps(request).encode())
-connection.shutdown(socket.SHUT_WR)
-status = b''
-while chunk := connection.recv(64):
-    status += chunk
-sys.exit(int(status) if status else 1)
 @
-The server loads the dependencies once, then forks a fresh child for every connection,
-so each script starts from the same state and none sees what another changed.
-A lock keeps one server per directory; a second one exits at once.
-After ten idle minutes the server removes its socket, so clients start a new server,
-serves the connections already waiting, and exits.
-Binding the relative name 'socket' in 'here' avoids the short Unix socket path limit on macOS.
-@<Tool@/Text Processing@/Runtime@/python server@=
-@<.@/python dependencies@>
+
+@<server@:python runtime@:Language@/Python@/File@/shebang@=
+@<Tool@/Evaluate@/Runtime@/python dependencies@>
+@
+
+@<server@:python runtime@:Language@/Python@/File@/imports@+
 import fcntl
 import hashlib
 import json
@@ -2755,102 +3032,38 @@ import sys
 import traceback
 from typing import Literal
 
-@<.@/import dependencies@>
+@<Tool@/Evaluate@/Runtime@/import dependencies@>
+@
 
-@<.@/preload pydantic@>
-
+@<server@:python runtime@:Language@/Python@/File@/variables@+
 here = os.path.dirname(os.path.abspath(__file__))
-
-@<.@/cache jsonnet@>
-
-@<.@/run a script@>
-
-@<.@/serve a connection@>
-
-
-def accept_all():
-    while True:
-        try:
-            connection, _ = listener.accept()
-        except (TimeoutError, BlockingIOError):
-            return
-        if os.fork() == 0:
-            serve(connection)
-        connection.close()
-
-
-os.chdir(here)
-lock = open('lock', 'w')
-try:
-    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-except OSError:
-    sys.exit()
-path = 'socket'
-if os.path.lexists(path):
-    os.unlink(path)
-listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-listener.bind(path)
-listener.listen(64)
-listener.settimeout(600)
-signal.signal(signal.SIGCHLD, signal.SIG_IGN)
-accept_all()
-os.unlink(path)
-listener.setblocking(False)
-accept_all()
 @
-The inline script metadata tells uv what a script, or the background process, depends on.
-@<Tool@/Text Processing@/Runtime@/python dependencies@=
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["jsonnet>=0.20", "pydantic>=2"]
-# ///
+
+@<server@:python runtime@:Language@/Python@/File@/classes@+
+@<Tool@/Evaluate@/Runtime@/preload pydantic@>
 @
-When python3 cannot import the dependencies, the script runs itself again through uv,
-which provides them from its cache, downloading them on the first run.
-The marker variable stops a second attempt, and is removed so nested scripts start afresh.
-In the background process the imports already succeeded, so a script never reaches uv there.
-@<Tool@/Text Processing@/Runtime@/import dependencies@=
-try:
-    import _jsonnet
-    import pydantic
-except ImportError:
-    if os.environ.pop('LITAR_UV_RUN', None):
-        raise
-    os.environ['LITAR_UV_RUN'] = '1'
-    os.execvp('uv', ['uv', 'run', '--quiet', '--script', *sys.argv])
-os.environ.pop('LITAR_UV_RUN', None)
+pydantic imports its parts on first use and builds its validators on the first model,
+so the server does both once, before forking, instead of every script doing them.
+@<Tool@/Evaluate@/Runtime@/preload pydantic@=
+class Preload(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='allow')
+    name: str = pydantic.Field('', pattern=r'^$')
+
+
+Preload.model_validate_json('{}')
 @
-The child of a connection takes the client's standard streams, arguments, directory
-and environment, restores the default handling of exited children for the script,
-and reports its status. When the child fails before that, the client exits with 1.
-@<Tool@/Text Processing@/Runtime@/serve a connection@=
-def serve(connection):
-    try:
-        connection.setblocking(True)
-        signal.signal(signal.SIGCHLD, signal.SIG_DFL)
-        lock.close()
-        listener.close()
-        _, fds, _, _ = socket.recv_fds(connection, 1, 3)
-        data = b''
-        while chunk := connection.recv(65536):
-            data += chunk
-        request = json.loads(data)
-        for target, fd in enumerate(fds):
-            os.dup2(fd, target)
-            os.close(fd)
-        os.chdir(request['cwd'])
-        os.environ.clear()
-        os.environ.update(request['env'])
-        sys.argv = request['argv']
-        connection.sendall(str(run(sys.argv[0])).encode())
-    except BaseException:
-        traceback.print_exc()
-    os._exit(0)
+
+@<server@:python runtime@:Language@/Python@/File@/functions@+
+@<Tool@/Evaluate@/Runtime@/cache jsonnet@>
+@
+
+@<server@:python runtime@:Language@/Python@/File@/functions@+
+@<Tool@/Evaluate@/Runtime@/run a script@>
 @
 A script ends as it would in its own interpreter:
 sys.exit with a message prints it and gives 1, an uncaught exception prints its traceback,
 and the output is flushed before the status is known.
-@<Tool@/Text Processing@/Runtime@/run a script@=
+@<Tool@/Evaluate@/Runtime@/run a script@=
 def run(script):
     try:
         runpy.run_path(script, run_name='__main__')
@@ -2872,53 +3085,89 @@ def run(script):
             status = status or 120
     return status
 @
-pydantic imports its parts on first use and builds its validators on the first model,
-so the server does both once, before forking, instead of every script doing them.
-@<Tool@/Text Processing@/Runtime@/preload pydantic@=
-class Preload(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='allow')
-    name: str = pydantic.Field('', pattern=r'^$')
 
-
-Preload.model_validate_json('{}')
+@<server@:python runtime@:Language@/Python@/File@/functions@+
+@<Tool@/Evaluate@/Runtime@/serve a connection@>
 @
-jsonnet parses its standard library again on every evaluation, which costs more than most scripts.
-The server replaces evaluate_snippet, so its scripts keep each result in a file
-named by the hash of the source, shared by later scripts and later builds.
-A source that may import a file, or an evaluation with options, is never cached,
-because its result depends on more than the source; a failed evaluation is not cached either.
-The result is written aside and renamed, so a concurrent script never reads it half written.
-@<Tool@/Text Processing@/Runtime@/cache jsonnet@=
-def cached(evaluate):
-    cache = os.path.join(here, 'jsonnet')
-    os.makedirs(cache, exist_ok=True)
 
-    def evaluate_snippet(filename, source, **options):
-        if options or 'import' in source:
-            return evaluate(filename, source, **options)
-        key = hashlib.sha256(f'{filename}\0{source}'.encode()).hexdigest()
-        path = os.path.join(cache, key)
+@<server@:python runtime@:Language@/Python@/File@/functions@+
+def accept_all():
+    while True:
         try:
-            with open(path, encoding='utf-8') as file:
-                return file.read()
-        except FileNotFoundError:
-            pass
-        value = evaluate(filename, source)
-        temp = f'{path}.{os.getpid()}'
-        with open(temp, 'w', encoding='utf-8') as file:
-            file.write(value)
-        os.replace(temp, path)
-        return value
+            connection, _ = listener.accept()
+        except (TimeoutError, BlockingIOError):
+            return
+        if os.fork() == 0:
+            serve(connection)
+        connection.close()
+@
 
-    return evaluate_snippet
+@<server@:python runtime@:Language@/Python@/File@/main@=
+os.chdir(here)
+lock = open('lock', 'w')
+try:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except OSError:
+    sys.exit()
+path = 'socket'
+if os.path.lexists(path):
+    os.unlink(path)
+listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+listener.bind(path)
+listener.listen(64)
+listener.settimeout(600)
+signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+accept_all()
+os.unlink(path)
+listener.setblocking(False)
+accept_all()
+@
 
+An evaluation script uses the background Python runtime and declares its PEP 723 dependencies
+so uv can provide them on first run.
+@<evaluate@:Language@/Python@/File@/shebang@=
+#!@<Tool@/Evaluate@/Runtime@/path to python interpreter@>
+@<Tool@/Evaluate@/Runtime@/python dependencies@>
+@
+The inline script metadata tells uv what a script, or the background process, depends on.
+@<Tool@/Evaluate@/Runtime@/python dependencies@=
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["jsonnet>=0.20", "pydantic>=2"]
+# ///
+@
 
-_jsonnet.evaluate_snippet = cached(_jsonnet.evaluate_snippet)
+@<evaluate@:Language@/Python@/File@/imports@+
+import os
+import re
+import sys
+from typing import Literal
+
+@<Tool@/Evaluate@/Runtime@/import dependencies@>
+@
+When python3 cannot import the dependencies, the script runs itself again through uv,
+which provides them from its cache, downloading them on the first run.
+The marker variable stops a second attempt, and is removed so nested scripts start afresh.
+In the background process the imports already succeeded, so a script never reaches uv there.
+@<Tool@/Evaluate@/Runtime@/import dependencies@=
+try:
+    import _jsonnet
+    import pydantic
+except ImportError:
+    if os.environ.pop('LITAR_UV_RUN', None):
+        raise
+    os.environ['LITAR_UV_RUN'] = '1'
+    os.execvp('uv', ['uv', 'run', '--quiet', '--script', *sys.argv])
+os.environ.pop('LITAR_UV_RUN', None)
+@
+
+@<evaluate@:Language@/Python@/File@/functions@+
+@<Tool@/Evaluate@/Runtime@/configuration helpers@>
 @
 Configuration is a Jsonnet expression, so a block can extend an object of a base node with +.
 A pydantic model validates the evaluated value.
 An invalid configuration, like any fail, prints a message and fails the evaluation.
-@<Tool@/Text Processing@/Runtime@/configuration helpers@=
+@<Tool@/Evaluate@/Runtime@/configuration helpers@=
 def fail(message):
     sys.exit(message)
 
@@ -2933,299 +3182,724 @@ def configuration(model, source):
     except pydantic.ValidationError as error:
         fail(str(error))
 @? Tool@/Python@/functions@/configuration @? Tool@/Python@/functions@/fail @
-@<Chunk@/Language@/Go@/File@/Header@/imports@=
-{"description": "Import declaration, omitted when there are no paths."}
-@
-@<Chunk@/Tool@/evaluate@=
-{"description": "Filter that executes stdin as a script with a shebang and outputs its stdout."}
-@
-@<Chunk@/Tool@/Text Processing@/remove newlines@=
-{"description": "Filter that joins input lines with spaces, dropping a trailing newline."}
-@
-@<Chunk@/Tool@/Text Processing@/remove ending newlines@=
-{"description": "Filter that strips trailing CR and LF characters from stdin."}
-@
-@<Chunk@/Tool@/Text Processing@/basic python settings@=
-{"description": "Preamble for Python text-processing scripts with interpreter shebang, imports, and configuration helpers."}
-@
-@<Chunk@/Tool@/Text Processing@/Runtime@=
-{"description": "Background Python server and client runtime for text-processing scripts."}
-@
-@<Chunk@/Tool@/Text Processing@/Runtime@/path to python interpreter@=
-{"description": "Evaluates to the path of the cached Python client script used as the script interpreter."}
-@
-@<Chunk@/Tool@/Text Processing@/Runtime@/python client@=
-{"description": "Client script that forwards execution to the background Python server or starts it."}
-@
-@<Chunk@/Tool@/Text Processing@/Runtime@/python server@=
-{"description": "Persistent Unix-socket server that preloads dependencies and forks per script request."}
-@
-@<Chunk@/Tool@/Text Processing@/Runtime@/python dependencies@=
-{"description": "PEP 723 inline script metadata declaring Python version and jsonnet/pydantic dependencies."}
-@
-@<Chunk@/Tool@/Text Processing@/Runtime@/import dependencies@=
-{"description": "Imports _jsonnet and pydantic, re-executing through uv run if unavailable."}
-@
-@<Chunk@/Tool@/Text Processing@/Runtime@/serve a connection@=
-{"description": "Handles a single client connection by restoring fds, cwd, env, and argv and running the script."}
-@
-@<Chunk@/Tool@/Text Processing@/Runtime@/run a script@=
-{"description": "Executes a Python script via runpy and maps SystemExit or exceptions to an exit status."}
-@
-@<Chunk@/Tool@/Text Processing@/Runtime@/preload pydantic@=
-{"description": "Warms up pydantic model construction and JSON validation in the server before forking."}
-@
-@<Chunk@/Tool@/Text Processing@/Runtime@/cache jsonnet@=
-{"description": "Wraps _jsonnet.evaluate_snippet with an on-disk SHA-256 cache for pure snippets."}
-@
-@<Chunk@/Tool@/Text Processing@/Runtime@/configuration helpers@=
-{"description": "Defines fail and configuration helpers for evaluating and validating Jsonnet configs."}
-@
-@<Chunk@/UI@/Command Line@/manpage synopsis@=
-{"description": "Generates the roff synopsis section of a manpage from the invocation syntax."}
-@
-@<Chunk@/UI@/Command Line@/manpage options@=
-{"description": "Generates the roff .TP option entries of a manpage from the invocation syntax."}
-@
-@<Chunk@/UI@/Command Line@/Manpage@=
-{"description": "Helpers for formatting command-line documentation in roff."}
-@
-@<Chunk@/UI@/Command Line@/Manpage@/manpage helpers@=
-{"description": "Defines roff escaping and bold/italic formatting helpers for manpages."}
-@
-@<Chunk@/UI@/Command Line@/C@/command line usage@=
-{"description": "Shared usage lines escaped for embedding in a C string literal."}
-@
-@<Chunk@/UI@/Command Line@/C@/parse command line arguments@=
-{"description": "C statement block that parses argv with getopt_long and dispatches options and arguments."}
-@
-@<Chunk@/UI@/Command Line@/C@/usage enumeration@=
-{"description": "Comma-separated C enum constants for the usages of the invocation syntax."}
-@
-@<Chunk@/UI@/Command Line@/C@/command line options@=
-{"description": "C struct fields storing parsed option values (int or const char *)."}
-@
-@<Chunk@/UI@/Command Line@/C@/command line arguments@=
-{"description": "C struct fields storing parsed positional arguments as const char *."}
-@
-@<Chunk@/UI@/Command Line@/C@/getopt long options@=
-{"description": "Initializer entries for struct option long_options[], terminated by a zero entry."}
-@
-@<Chunk@/UI@/Command Line@/C@/getopt string@=
-{"description": "Short-option specification string passed to getopt_long."}
-@
-@<Chunk@/UI@/Command Line@/C@/handle long option of index "idx"@=
-{"description": "C statements matching long-only options by long_options[idx].name."}
-@
-@<Chunk@/UI@/Command Line@/C@/cases for short options@=
-{"description": "C switch cases recording options that have a short name."}
-@
-@<Chunk@/UI@/Command Line@/C@/choose usage and store arguments@=
-{"description": "C statements selecting command.usage from options or argument count and storing positional arguments."}
-@
-@<Chunk@/UI@/Command Line@/C@/invocation syntax helpers@=
-{"description": "Pydantic CSyntax validator and C identifier naming helpers on top of the shared syntax helpers."}
-@
-@<Chunk@/UI@/Command Line@/option summary@=
-{"description": "Generates one-line descriptions of all options, including non-empty defaults."}
-@
-@<Chunk@/UI@/Command Line@/command line usage@=
-{"description": "Generates the Usage: lines for every usage in the invocation syntax."}
-@
-@<Chunk@/UI@/Command Line@/invocation syntax@=
-{"description": "Jsonnet object defining a command's name, usages, options, and positional arguments."}
-@
-@<Chunk@/UI@/Command Line@/invocation syntax helpers@=
-{"description": "Shared pydantic models and formatting helpers for command-line invocation syntax."}
-@
-@<Chunk@/UI@/Command Line@/Test@/Runner@=
-{"description": "Internal runner state, reporting, and script execution for acceptance test cases."}
-@
-@<Chunk@/UI@/Command Line@/Test@/Runner@/state of the case@=
-{"description": "Initializes per-case shell variables and a temporary work directory cleaned up on exit."}
-@
-@<Chunk@/UI@/Command Line@/Test@/Runner@/result@=
-{"description": "Defines finish and miss shell functions for recording failures and printing the case verdict."}
-@
-@<Chunk@/UI@/Command Line@/Test@/Runner@/run the script on stdin@=
-{"description": "Saves the case script from stdin, syntax-checks it with bash -n, and sources it."}
-@
-@<Chunk@/Language@/C@/Module@/Interface@=
-{"description": "Filters and helpers that assemble and guard a C module's header interface."}
-@
-@<Chunk@/Language@/C@/Module@/Interface@/extract function declarations@=
-{"description": "Filter that runs cproto -s to extract static and non-static function prototypes."}
-@
-@<Chunk@/Language@/C@/Module@/Interface@/extract global declarations@=
-{"description": "Filter that runs cproto -v -e to extract extern variable and function declarations."}
-@
-@<Chunk@/Language@/C@/Module@/Interface@/wrap with included flag@=
-{"description": "Filter that wraps stdin in #ifndef/#define/#endif header guards derived from module meta information."}
-@
-@<Chunk@/Language@/C@/Module@/Interface@/global declarations@=
-{"description": "Extracted extern declarations of global variables and functions for the module header."}
-@
-@<Chunk@/Language@/C@/Module@/Format@=
-{"description": "Formatting filter for C source and header files."}
-@
-@<Chunk@/Language@/C@/Module@/Format@/format C code@=
-{"description": "Filter that formats C code on stdin with clang-format using the view's .clang-format file."}
-@
-@<Chunk@/Language@/C@/Module@/Meta@=
-{"description": "Metadata configuration for a C module."}
-@
-@<Chunk@/Language@/C@/Module@/Meta@/module meta information@=
-{"description": "C module name and include-guard format, as a Jsonnet object."}
-@
-@<Chunk@/Language@/C@/Module@/module interface@=
-{"description": "Complete C header file assembled from exported sections, include guards, and formatting."}
-@
-@<Chunk@/Language@/C@/Module@/module@=
-{"description": "Complete C source file assembled from includes, declarations, definitions, and formatting."}
-@
-@<Chunk@/Language@/C@/Module@/includes@=
-{"description": "Header #include directives for the C implementation file."}
-@
-@<Chunk@/Language@/C@/Module@/data types@=
-{"description": "Struct, union, and enum definitions for the C implementation file."}
-@
-@<Chunk@/Language@/C@/Module@/static inline functions@=
-{"description": "Static inline function definitions for the C implementation file."}
-@
-@<Chunk@/Language@/C@/Module@/function declarations@=
-{"description": "Forward function prototypes extracted for the C implementation file."}
-@
-@<Chunk@/Language@/C@/Module@/macros@=
-{"description": "Preprocessor #define macros for the C implementation file."}
-@
-@<Chunk@/Language@/C@/Module@/data type declarations@=
-{"description": "Typedef and forward type declarations for the C implementation file."}
-@
-@<Chunk@/Language@/C@/Module@/global variables@=
-{"description": "Global variable definitions for the C implementation file."}
-@
-@<Chunk@/Language@/C@/Module@/functions@=
-{"description": "Function definitions for the C implementation file."}
-@
-@<Chunk@/Language@/C@/Module@/exported macros@=
-{"description": "Macros exported in the module header and also included in the implementation."}
-@
-@<Chunk@/Language@/C@/Module@/exported data types@=
-{"description": "Type definitions exported in the module header and also included in the implementation."}
-@
-@<Chunk@/Language@/C@/Module@/exported static inline functions@=
-{"description": "Static inline functions exported in the module header and also included in the implementation."}
-@
-@<Chunk@/Language@/C@/Module@/exported data type declarations@=
-{"description": "Typedefs and forward type declarations exported in the module header and implementation."}
-@
-@<Chunk@/Language@/C@/Module@/interface required includes@=
-{"description": "Header #include directives required by the module interface and implementation."}
-@
-@<Chunk@/Language@/C@/Module@/include flags@=
-{"description": "Feature-test or option macros placed before #include directives in a C module."}
-@
-@<Chunk@/Language@/C@/Module@/main body@=
-{"description": "Statements inside main() for an executable C module."}
-@
-@<Chunk@/Language@/C@/Module@/module properties@=
-{"description": "Jsonnet fields that override the C module meta information."}
-@
-@<Chunk@/Language@/Go@/File@/Header@=
-{"description": "Package clause and import declaration at the top of a Go source file."}
-@
-@<Chunk@/Language@/Go@/File@/Meta@=
-{"description": "Metadata configuration for a Go source file's package."}
-@
-@<Chunk@/Language@/Go@/Module@/Meta@=
-{"description": "Metadata configuration for a Go module."}
-@
-@<Chunk@/Framework@/Light@/light.h@=
-{"description": "Generated header file of the Light C framework."}
-@
-@<Chunk@/Framework@/Light@/light.c@=
-{"description": "Generated implementation file of the Light C framework."}
-@
-@<Chunk@/Framework@/Light@/light options@=
-{"description": "Default compile-time configuration macros for the Light framework."}
-@
-@<Index@/UI@=
-{"description": "Index of user-interface symbols."}
-@
-@<Index@/UI@/Command Line@=
-{"description": "Index of command-line generator and test runner symbols."}
-@
-@<Index@/UI@/Command Line@/Python@/classes@/Option@=
-{"description": "Pydantic model of one command-line option, its type, default, and display metadata."}
-@
-@<Index@/UI@/Command Line@/Python@/classes@/Usage@=
-{"description": "Pydantic model of one invocation form of a command: its name, options, and arguments."}
-@
-@<Index@/UI@/Command Line@/Python@/functions@/bold_option@=
-{"description": "Formats an option and its value placeholder in roff bold and italic."}
-@
-@<Index@/UI@/Command Line@/Python@/functions@/italic@=
-{"description": "Wraps roff-escaped text in italic font escapes."}
-@
-@<Index@/UI@/Command Line@/Python@/functions@/placeholder@=
-{"description": "Converts a name to an uppercase underscore-separated usage placeholder."}
-@
-@<Index@/UI@/Command Line@/Python@/functions@/roff@=
-{"description": "Escapes backslashes and hyphens in text for roff output."}
-@
-@<Index@/UI@/Command Line@/Python@/functions@/all_options@=
-{"description": "Returns a flat list of all options across every usage of an InvocationSyntax."}
-@
-@<Index@/UI@/Command Line@/Python@/functions@/option_names@=
-{"description": "Returns the list of display names for an option, short name first when present."}
-@
-@<Index@/UI@/Command Line@/Python@/functions@/option_name@=
-{"description": "Returns the primary display name of an option: its short name if set, otherwise its long name."}
-@
-@<Index@/UI@/Command Line@/Python@/functions@/option_with_value@=
-{"description": "Formats an option's display name followed by its value placeholder for non-boolean options."}
-@
-@<Index@/UI@/Command Line@/Bash@=
-{"description": "Bash symbols of the command-line acceptance test runner."}
-@
-@<Index@/UI@/Command Line@/Bash@/functions@/finish@=
-{"description": "Prints the case verdict (ok, skip, or FAIL) without a trailing newline and exits 0."}
-@
-@<Index@/UI@/Command Line@/Bash@/functions@/miss@=
-{"description": "Records a failed check message and optional indented detail file in the failure log."}
-@
-@<Index@/UI@/Command Line@/Bash@/functions@/run@=
-{"description": "Runs the command under test, increments checks, and captures stdout, stderr, and exit status."}
-@
-@<Index@/Tool@=
-{"description": "Index of shared tool symbols."}
-@
-@<Index@/Tool@/Python@/functions@/fail@=
-{"description": "Aborts script execution by calling sys.exit with an error message."}
-@
-@<File@/.clang-format@=
-{"description": "Clang-format configuration file used to format generated C modules."}
-@
-@<Specialization@/lightlib@=
-{"description": "C module specialization implementing the Light framework library (light.h and light.c)."}
-@
-@<Specialization@/executable@=
-{"description": "C module specialization adding main() and getopt_long command-line parsing."}
-@
-@<Specialization@/executable@/light@=
-{"description": "Executable C module specialization that links against the Light library via light.h."}
-@
-@<Specialization@/executable@/light-single@=
-{"description": "Single-file executable C module specialization that embeds the Light library directly."}
-@
-@<Specialization@/command@=
-{"description": "Go file specialization for a main package with flag parsing and func main."}
-@
-The module directory is the directory of the view that holds the Go module.
-Projects that live in their own home directory set it to that directory;
-the default is the root of the view.
-@<Language@/Go@/Module@/module directory@=.@
 
-@<Chunk@/Language@/Go@/Module@/module directory@=
-{"description": "Directory of the view that holds the Go module."}
+@<remove newlines@:evaluate@:Language@/Python@/File@/main@=
+lines = sys.stdin.buffer.read().split(b'\n')
+if lines[-1] == b'':
+    lines.pop()
+sys.stdout.buffer.write(b' '.join(lines))
+@
+
+@<remove ending newlines@:evaluate@:Language@/Python@/File@/main@=
+sys.stdout.buffer.write(sys.stdin.buffer.read().rstrip(b'\r\n'))
+@
+
+The interpreter of a script is the client of a background Python process.
+The client and the server are written to a directory named by their checksum,
+private to the user, so a changed client, server, or python3 gets its own server.
+@<Tool@/Evaluate@/Runtime@/path to python interpreter@=
+#!/bin/sh
+set -e
+@<.@/Interpreter@/prepare runtime directory 'base'@>
+temp=`mktemp -d "$base/new.XXXXXX"`
+trap 'rm -rf "$temp"' EXIT
+@<.@/Interpreter@/stage client and server scripts in 'temp'@>
+@<.@/Interpreter@/publish 'temp' atomically to checksum directory 'dir' under 'base'@>
+echo "$dir/client"
+@|Tool@/Evaluate@/evaluate@
+
+It lies in the filter cache of litar when there is one, because the cache keeps the output
+of path to python interpreter and both must go away together.
+@<Tool@/Evaluate@/Runtime@/Interpreter@/prepare runtime directory 'base'@=
+if [ -n "$LITAR_CACHE" ]; then
+    base=$LITAR_CACHE/python
+else
+    base=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/litar-python-`id -u`
+fi
+mkdir -p -m 700 "$base"
+if [ ! -O "$base" ]; then
+    echo "$base is not owned by the user" >&2
+    exit 1
+fi
+@
+
+@<Tool@/Evaluate@/Runtime@/Interpreter@/stage client and server scripts in 'temp'@=
+printf '#!%s -S\n' "`which python3`" > "$temp/client"
+cat >> "$temp/client" <<'LITAR_PYTHON_CLIENT'
+@<..@/python client@>
+LITAR_PYTHON_CLIENT
+cat > "$temp/server" <<'LITAR_PYTHON_SERVER'
+@<..@/python server@>
+LITAR_PYTHON_SERVER
+chmod +x "$temp/client"
+@
+
+The directory is moved into place whole with POSIX rename, so a concurrent evaluation
+never sees it half written and macOS BSD mv without -T is not needed.
+@<Tool@/Evaluate@/Runtime@/Interpreter@/publish 'temp' atomically to checksum directory 'dir' under 'base'@=
+dir=$base/`cat "$temp/client" "$temp/server" | cksum | tr ' ' -`
+if [ ! -x "$dir/client" ]; then
+    python3 -c 'import os, sys
+try:
+    os.rename(sys.argv[1], sys.argv[2])
+except OSError:
+    pass' "$temp" "$dir"
+    [ -x "$dir/client" ]
+fi
+@
+
+jsonnet parses its standard library again on every evaluation, which costs more than most scripts.
+The server replaces evaluate_snippet, so its scripts keep each result in a file
+named by the hash of the source, shared by later scripts and later builds.
+A source that may import a file, or an evaluation with options, is never cached.
+@<Tool@/Evaluate@/Runtime@/cache jsonnet@=
+def cached(evaluate):
+    cache = os.path.join(here, 'jsonnet')
+    os.makedirs(cache, exist_ok=True)
+
+    def evaluate_snippet(filename, source, **options):
+        if options or 'import' in source:
+            return evaluate(filename, source, **options)
+        key = hashlib.sha256(f'{filename}\0{source}'.encode()).hexdigest()
+        path = os.path.join(cache, key)
+        try:
+            with open(path, encoding='utf-8') as file:
+                return file.read()
+        except FileNotFoundError:
+            @<.@/evaluate and store 'source' under 'filename' at 'path'@>
+
+    return evaluate_snippet
+
+
+_jsonnet.evaluate_snippet = cached(_jsonnet.evaluate_snippet)
+@
+
+The result is written aside and renamed, so a concurrent script never reads it half written;
+a failed evaluation raises before writing and is not cached.
+@<Tool@/Evaluate@/Runtime@/evaluate and store 'source' under 'filename' at 'path'@=
+value = evaluate(filename, source)
+temp = f'{path}.{os.getpid()}'
+with open(temp, 'w', encoding='utf-8') as file:
+    file.write(value)
+os.replace(temp, path)
+return value
+@
+
+The child of a connection takes the client's standard streams, arguments, directory
+and environment, restores the default handling of exited children for the script,
+and reports its status. When the child fails before that, the client exits with 1.
+@<Tool@/Evaluate@/Runtime@/serve a connection@=
+def serve(connection):
+    try:
+        connection.setblocking(True)
+        signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+        lock.close()
+        listener.close()
+        @<.@/receive 'request' and standard streams from 'connection'@>
+        os.chdir(request['cwd'])
+        os.environ.clear()
+        os.environ.update(request['env'])
+        sys.argv = request['argv']
+        connection.sendall(str(run(sys.argv[0])).encode())
+    except BaseException:
+        traceback.print_exc()
+    os._exit(0)
+@
+
+@<Tool@/Evaluate@/Runtime@/receive 'request' and standard streams from 'connection'@=
+_, fds, _, _ = socket.recv_fds(connection, 1, 3)
+data = b''
+while chunk := connection.recv(65536):
+    data += chunk
+request = json.loads(data)
+for target, fd in enumerate(fds):
+    os.dup2(fd, target)
+    os.close(fd)
+@
+
+@<client@:python runtime@:Language@/Python@/File@/functions@+
+def connect_or_exec():
+    try:
+        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        os.chdir(here)
+        try:
+            connection.connect('socket')
+        finally:
+            os.chdir(cwd)
+        return connection
+    except OSError:
+        start_server()
+        os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
+@
+
+@<client@:python runtime@:Language@/Python@/File@/main@=
+connection = connect_or_exec()
+request = {
+    'argv': [os.path.abspath(sys.argv[1]), *sys.argv[2:]],
+    'cwd': cwd,
+    'env': dict(os.environ),
+}
+socket.send_fds(connection, [b'\0'], [0, 1, 2])
+connection.sendall(json.dumps(request).encode())
+connection.shutdown(socket.SHUT_WR)
+status = b''
+while chunk := connection.recv(64):
+    status += chunk
+sys.exit(int(status) if status else 1)
+@
+
+@<c included flag@:evaluate@:Language@/Python@/File@/classes@+
+class ModuleMeta(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='allow')
+    name: str
+    included_flag_format: str
+@
+
+@<c included flag@:evaluate@:Language@/Python@/File@/main@=
+meta = configuration(ModuleMeta, sys.stdin.read())
+sys.stdout.write(meta.included_flag_format % meta.name.upper())
+@~ Tool@/Python@/functions@/configuration @
+
+@<go package name@:evaluate@:Language@/Python@/File@/classes@+
+class ModuleMeta(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='allow')
+    name: str = pydantic.Field(pattern=r'^[A-Za-z_][A-Za-z0-9_]*$')
+@
+
+@<go package name@:evaluate@:Language@/Python@/File@/main@=
+meta = configuration(ModuleMeta, sys.stdin.read())
+print(meta.name, end='')
+@~ Tool@/Python@/functions@/configuration @
+
+@<go imports@:evaluate@:Language@/Python@/File@/main@=
+paths = sys.stdin.read().strip(' \t\n\r\f\v')
+if paths:
+    print(f'import (\n{paths}\n)')
+@
+
+A module path has no blank and does not start with a slash;
+a Go version is 1.N or 1.N.P.
+Further fields are kept for other generators.
+@<go module@:evaluate@:Language@/Python@/File@/classes@+
+class ProjectMeta(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='allow')
+    module: str = pydantic.Field(pattern=r'^[^\s/]\S*$')
+    go: str = pydantic.Field(pattern=r'^1\.\d+(\.\d+)?$')
+@
+
+@<module path@:go module@:evaluate@:Language@/Python@/File@/main@=
+meta = configuration(ProjectMeta, sys.stdin.read())
+print(meta.module, end='')
+@~ Tool@/Python@/functions@/configuration @
+
+@<go import path@:evaluate@:Language@/Python@/File@/main@=
+directory = sys.stdin.read().strip(' \t\n\r\f\v')
+if (re.search(r'^/|/$|//|\s', directory)
+        or any(part in ('.', '..') for part in directory.split('/'))):
+    fail(f"package directory '{directory}' is not valid")
+module = '@<Language@/Go@/Module@/Meta@/module path@>'
+print(f'{module}/{directory}' if directory else module, end='')
+@~ Tool@/Python@/functions@/fail @
+
+@<Language@/Go@/Module@/Meta@/module path@=
+@<.@/project meta information@|module path@:go module@:evaluate@:Language@/Python@/File@/file@>
+@
+
+@<module file edits@:go module@:evaluate@:Language@/Python@/File@/main@=
+meta = configuration(ProjectMeta, r'''
+@<Language@/Go@/Module@/Meta@/project meta information@>
+''')
+print(f'-module={meta.module}\n-go={meta.go}')
+for line in sys.stdin.read().splitlines():
+    fields = line.split()
+    if len(fields) == 2:
+        print(f'-require={fields[0]}@@{fields[1]}')
+    elif fields:
+        fail(f"requirement '{line.strip()}' is not a module path and a version")
+@~ Tool@/Python@/functions@/configuration @~ Tool@/Python@/functions@/fail @
+
+A long name follows two hyphens in the usage lines and the manpage of every structure.
+@<command line@:evaluate@:Language@/Python@/File@/constants@+
+LONG_PREFIX = '--'
+@? UI@/Command Line@/Python@/variables@/LONG_PREFIX @
+
+Checks that an option's default value matches its declared type.
+@<command line@:evaluate@:Language@/Python@/File@/functions@+
+def valid_option_default(opt_type, value):
+    if opt_type == 'bool':
+        return isinstance(value, bool)
+    if opt_type == 'string':
+        return isinstance(value, str)
+    if opt_type == 'float64':
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and (value >= 0 or not opt_type.startswith('u'))
+    )
+@
+
+One command-line option in an invocation syntax; a short name is one letter or digit.
+@<command line@:evaluate@:Language@/Python@/File@/classes@+
+class Option(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str = pydantic.Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+    short: str | None = pydantic.Field(None, pattern=r'^[0-9A-Za-z]$')
+    type: Literal['bool', 'string', 'int', 'int64', 'uint', 'uint64', 'float64'] = 'bool'
+    argument: str | None = None
+    default: bool | int | float | str | None = None
+    description: str = ''
+    hide: bool = False
+
+    @pydantic.model_validator(mode='after')
+    def check_default(self):
+        if self.default is not None and not valid_option_default(self.type, self.default):
+            raise ValueError(f'default {self.default!r} does not suit type {self.type}')
+        return self
+@? UI@/Command Line@/Python@/classes@/Option @
+
+One invocation form of a command: its name, its options, and its positional arguments.
+@<command line@:evaluate@:Language@/Python@/File@/classes@+
+class Usage(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str
+    options: list[Option] = []
+    arguments: list[str] = []
+@~ UI@/Command Line@/Python@/classes@/Option @? UI@/Command Line@/Python@/classes@/Usage @
+
+Options and arguments at the top level become one usage named after the command.
+Usage names, option names, and short names are each unique across the whole command,
+because its parser reads the options of every usage.
+@<command line@:evaluate@:Language@/Python@/File@/functions@+
+def gather_single_usage_dict(data):
+    if isinstance(data, dict) and 'usages' not in data:
+        data = dict(data)
+        usage = {'name': data.get('name', 'command')}
+        for key in ('options', 'arguments'):
+            if key in data:
+                usage[key] = data.pop(key)
+        data['usages'] = [usage]
+    return data
+
+
+def check_unique_syntax_names(syntax):
+    options = all_options(syntax)
+    for kind, names in (
+        ('usage', [usage.name for usage in syntax.usages]),
+        ('option', [opt.name for opt in options]),
+        ('short option', [opt.short for opt in options if opt.short]),
+    ):
+        for name in names:
+            if names.count(name) > 1:
+                raise ValueError(f'{kind} {name!r} is given twice')
+@~ UI@/Command Line@/Python@/functions@/all_options @
+
+Pydantic model of the invocation syntax of a command, shared by every command-line generator.
+@<command line@:evaluate@:Language@/Python@/File@/classes@+
+class InvocationSyntax(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra='forbid')
+    name: str = 'command'
+    usages: list[Usage] = pydantic.Field(min_length=1)
+
+    @pydantic.model_validator(mode='before')
+    @classmethod
+    def gather_single_usage(cls, data):
+        return gather_single_usage_dict(data)
+
+    @pydantic.model_validator(mode='after')
+    def check_unique_names(self):
+        check_unique_syntax_names(self)
+        return self
+@? UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/classes@/Usage @
+
+A placeholder stands for a value in a usage line: upper case, with underscores between words.
+@<command line@:evaluate@:Language@/Python@/File@/functions@+
+def all_options(syntax):
+    return [opt for usage in syntax.usages for opt in usage.options]
+
+
+def placeholder(name):
+    return name.upper().replace('-', '_').replace(' ', '_')
+
+
+def metavar(opt):
+    return placeholder(opt.argument or opt.name)
+@? UI@/Command Line@/Python@/functions@/all_options @? UI@/Command Line@/Python@/functions@/metavar @? UI@/Command Line@/Python@/functions@/placeholder @
+
+An option is shown by its short name if it has one, otherwise by its long name;
+a description of an option names it both ways, the short name first.
+@<command line@:evaluate@:Language@/Python@/File@/functions@+
+def option_name(opt):
+    return f'-{opt.short}' if opt.short else LONG_PREFIX + opt.name
+
+
+def option_with_value(opt):
+    return option_name(opt) + ('' if opt.type == 'bool' else f' {metavar(opt)}')
+
+
+def option_names(opt):
+    return ([f'-{opt.short}'] if opt.short else []) + [LONG_PREFIX + opt.name]
+@~ UI@/Command Line@/Python@/functions@/metavar @? UI@/Command Line@/Python@/functions@/option_name @? UI@/Command Line@/Python@/functions@/option_names @? UI@/Command Line@/Python@/functions@/option_with_value @~ UI@/Command Line@/Python@/variables@/LONG_PREFIX @
+
+@<command line usage@:command line@:evaluate@:Language@/Python@/File@/main@=
+syntax = configuration(InvocationSyntax, sys.stdin.read())
+
+
+def usage_line(usage):
+    words = [syntax.name]
+    words += [f'[{option_with_value(opt)}]' for opt in usage.options if not opt.hide]
+    words += map(placeholder, usage.arguments)
+    return ' '.join(words)
+
+
+print('Usage: ' + '\n       '.join(map(usage_line, syntax.usages)))
+@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ Tool@/Python@/functions@/configuration @~ UI@/Command Line@/Python@/functions@/option_with_value @~ UI@/Command Line@/Python@/functions@/placeholder @
+
+@<option summary@:command line@:evaluate@:Language@/Python@/File@/functions@+
+def default_note(opt):
+    if opt.default in (None, '', False, 0):
+        return ''
+    if opt.type == 'string':
+        return ' (default "' + opt.default + '")'
+    return ' (default ' + ('true' if opt.default is True else str(opt.default)) + ')'
+
+
+def summary_line(opt):
+    value = '' if opt.type == 'bool' else f' {metavar(opt)}'
+    return ', '.join(option_names(opt)) + value + f': {opt.description}' + default_note(opt) + '\n'
+@~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_names @
+
+@<option summary@:command line@:evaluate@:Language@/Python@/File@/main@=
+syntax = configuration(InvocationSyntax, sys.stdin.read())
+print(''.join(map(summary_line, all_options(syntax))), end='')
+@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/functions@/all_options @~ Tool@/Python@/functions@/configuration @
+
+roff escapes a backslash as \e and a hyphen as \-,
+so option names render with minus signs that can be copied into a shell.
+@<manpage@:command line@:evaluate@:Language@/Python@/File@/functions@+
+def roff(text):
+    return text.replace('\\', r'\e').replace('-', r'\-')
+
+
+def italic(text):
+    return rf'\fI{roff(text)}\fR'
+
+
+def bold_option(opt):
+    text = rf'\fB{roff(option_name(opt))}\fR'
+    return text if opt.type == 'bool' else text + ' ' + italic(metavar(opt))
+@? UI@/Command Line@/Python@/functions@/bold_option @? UI@/Command Line@/Python@/functions@/italic @~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_name @? UI@/Command Line@/Python@/functions@/roff @
+
+@<manpage synopsis@:manpage@:command line@:evaluate@:Language@/Python@/File@/main@=
+syntax = configuration(InvocationSyntax, sys.stdin.read())
+
+
+def usage_lines(usage):
+    lines = [f'.B {roff(syntax.name)}']
+    lines += [f'[{bold_option(opt)}]' for opt in usage.options if not opt.hide]
+    lines += [italic(placeholder(arg)) for arg in usage.arguments]
+    return lines
+
+
+print('\n.br\n'.join('\n'.join(usage_lines(usage)) for usage in syntax.usages))
+@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/functions@/bold_option @~ Tool@/Python@/functions@/configuration @~ UI@/Command Line@/Python@/functions@/italic @~ UI@/Command Line@/Python@/functions@/placeholder @~ UI@/Command Line@/Python@/functions@/roff @
+
+@<manpage options@:manpage@:command line@:evaluate@:Language@/Python@/File@/main@=
+def option_entry(opt):
+    value = '' if opt.type == 'bool' else ' ' + italic(metavar(opt))
+    tag = ', '.join(rf'\fB{roff(name)}\fR' for name in option_names(opt)) + value
+    return f'.TP\n{tag}\n{roff(opt.description)}\n'
+
+
+syntax = configuration(InvocationSyntax, sys.stdin.read())
+print(''.join(map(option_entry, all_options(syntax))), end='')
+@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/functions@/all_options @~ Tool@/Python@/functions@/configuration @~ UI@/Command Line@/Python@/functions@/italic @~ UI@/Command Line@/Python@/functions@/metavar @~ UI@/Command Line@/Python@/functions@/option_names @~ UI@/Command Line@/Python@/functions@/roff @
+getopt_long stores an option in a field of its own: an int for a switch and a string for a value,
+so an option in C is bool or string, and it has no default.
+@<c@:command line@:evaluate@:Language@/Python@/File@/classes@+
+class CSyntax(InvocationSyntax):
+    @pydantic.model_validator(mode='after')
+    def check_c_options(self):
+        for opt in all_options(self):
+            if opt.type not in ('bool', 'string'):
+                raise ValueError(f'option {opt.name!r} has type {opt.type}; C takes bool or string')
+            if opt.default is not None:
+                raise ValueError(f'option {opt.name!r} has a default, which C does not take')
+        return self
+@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @~ UI@/Command Line@/Python@/functions@/all_options @
+
+Every C generator names an enum constant or struct field with these functions, so they agree on each identifier.
+@<c@:command line@:evaluate@:Language@/Python@/File@/functions@+
+def enum_constant(usage):
+    return 'COMMAND_USAGE_' + usage.name.replace(' ', '_').replace('-', '_').upper()
+
+
+def option_field(opt):
+    return opt.name.replace('-', '_').lower()
+
+
+def argument_field(arg):
+    return arg.replace(' ', '_').replace('-', '_').lower()
+@
+
+@<c usage@:c@:command line@:evaluate@:Language@/Python@/File@/main@=
+usage = sys.stdin.read()
+print(usage.replace('\\', r'\\').replace('"', r'\"').replace('\n', r'\n'), end='')
+@
+
+@<usage enumeration@:c@:command line@:evaluate@:Language@/Python@/File@/main@=
+syntax = configuration(CSyntax, sys.stdin.read())
+print(','.join(map(enum_constant, syntax.usages)), end='')
+@~ Tool@/Python@/functions@/configuration @
+
+@<command line options@:c@:command line@:evaluate@:Language@/Python@/File@/main@=
+syntax = configuration(CSyntax, sys.stdin.read())
+lines = [
+    ('const char *' if opt.type == 'string' else 'int ') + option_field(opt) + ';'
+    for opt in all_options(syntax)
+]
+print('\n'.join(lines), end='')
+@~ UI@/Command Line@/Python@/functions@/all_options @~ Tool@/Python@/functions@/configuration @
+
+@<command line arguments@:c@:command line@:evaluate@:Language@/Python@/File@/main@=
+syntax = configuration(CSyntax, sys.stdin.read())
+arguments = dict.fromkeys(arg for usage in syntax.usages for arg in usage.arguments)
+print(''.join(f'const char *{argument_field(arg)};' for arg in arguments), end='')
+@~ Tool@/Python@/functions@/configuration @
+
+@<getopt long options@:c@:command line@:evaluate@:Language@/Python@/File@/main@=
+def option_to_longopt(opt):
+    has_arg = 'required_argument' if opt.type == 'string' else 'no_argument'
+    val = f"'{opt.short}'" if opt.short else '0'
+    return f'{{"{opt.name}",{has_arg},NULL,{val}}},'
+
+
+syntax = configuration(CSyntax, sys.stdin.read())
+print(''.join(map(option_to_longopt, all_options(syntax))) + '{0,0,0,0},', end='')
+@~ UI@/Command Line@/Python@/functions@/all_options @~ Tool@/Python@/functions@/configuration @
+
+@<getopt string@:c@:command line@:evaluate@:Language@/Python@/File@/main@=
+syntax = configuration(CSyntax, sys.stdin.read())
+specs = [opt.short + (':' if opt.type == 'string' else '') for opt in all_options(syntax) if opt.short]
+print(''.join(specs), end='')
+@~ UI@/Command Line@/Python@/functions@/all_options @~ Tool@/Python@/functions@/configuration @
+
+@<handle long option@:c@:command line@:evaluate@:Language@/Python@/File@/main@=
+def long_option_handling(opt):
+    if opt.short:
+        return ''
+    value = 'optarg' if opt.type == 'string' else '1'
+    return f'''
+            if (strcmp(long_options[idx].name, "{opt.name}") == 0) {{
+                command.options.{option_field(opt)} = {value};
+            }}
+        '''
+
+
+syntax = configuration(CSyntax, sys.stdin.read())
+print(''.join(map(long_option_handling, all_options(syntax))), end='')
+@~ UI@/Command Line@/Python@/functions@/all_options @~ Tool@/Python@/functions@/configuration @
+
+@<cases for short options@:c@:command line@:evaluate@:Language@/Python@/File@/main@=
+def short_opt_case(opt):
+    if not opt.short:
+        return ''
+    value = 'optarg' if opt.type == 'string' else '1'
+    return f'''
+            case '{opt.short}':
+                command.options.{option_field(opt)} = {value};
+                break;
+        '''
+
+
+syntax = configuration(CSyntax, sys.stdin.read())
+print(''.join(map(short_opt_case, all_options(syntax))), end='')
+@~ UI@/Command Line@/Python@/functions@/all_options @~ Tool@/Python@/functions@/configuration @
+
+@<choose usage and store arguments@:c@:command line@:evaluate@:Language@/Python@/File@/functions@+
+def look_option_of_usage(opt, usage):
+    constant = enum_constant(usage)
+    short_opt = f' -{opt.short}' if opt.short else ''
+    return f'''
+        if (command.options.{option_field(opt)}) {{
+            if (!found_usage) {{
+                found_usage = 1;
+                command.usage = {constant};
+            }} else if (command.usage != {constant}) {{
+                fprintf(stderr, "Conflict option: --{opt.name}{short_opt}\\n");
+                exit(1);
+            }}
+        }}
+    '''
+@
+
+@<choose usage and store arguments@:c@:command line@:evaluate@:Language@/Python@/File@/functions@+
+def look_usage_argument_number(usage):
+    return f'''
+        if (!found_usage && argc - optind == {len(usage.arguments)}) {{
+            found_usage = 1;
+            command.usage = {enum_constant(usage)};
+        }}
+    '''
+
+
+def store_arguments_for_usage(usage):
+    store = ''.join(
+        f'command.arguments.{argument_field(arg)} = argv[optind + {idx}];'
+        for idx, arg in enumerate(usage.arguments)
+    )
+    return f'''
+        case {enum_constant(usage)}:
+            if (argc - optind != {len(usage.arguments)}) {{
+                fprintf(stderr, "Unmatched argument number, see --help for usage\\n");
+                exit(1);
+            }}
+            {store}
+            break;
+    '''
+@
+
+@<choose usage and store arguments@:c@:command line@:evaluate@:Language@/Python@/File@/main@=
+syntax = configuration(CSyntax, sys.stdin.read())
+text = 'do { int found_usage = 0;'
+text += ''.join(look_option_of_usage(opt, usage) for usage in syntax.usages for opt in usage.options)
+text += '\n'.join(map(look_usage_argument_number, syntax.usages))
+text += '''
+    if (!found_usage) {
+        fprintf(stderr, "Invalid usage, see --help for usage\\n");
+        exit(1);
+    }
+'''
+text += 'switch (command.usage) {'
+text += '\n'.join(map(store_arguments_for_usage, syntax.usages))
+text += '}} while (0);'
+print(text, end='')
+@~ Tool@/Python@/functions@/configuration @
+@<go@:command line@:evaluate@:Language@/Python@/File@/constants@+
+GO_KEYWORDS = {
+    'break', 'default', 'func', 'interface', 'select',
+    'case', 'defer', 'go', 'map', 'struct',
+    'chan', 'else', 'goto', 'package', 'switch',
+    'const', 'fallthrough', 'if', 'range', 'type',
+    'continue', 'for', 'import', 'return', 'var',
+}
+
+FLAG_FUNCS = {
+    'bool': 'BoolVar',
+    'string': 'StringVar',
+    'int': 'IntVar',
+    'int64': 'Int64Var',
+    'uint': 'UintVar',
+    'uint64': 'Uint64Var',
+    'float64': 'Float64Var',
+}
+@
+
+The Go field is the option or argument name in camel case; hyphens, underscores, and spaces separate words.
+@<go@:command line@:evaluate@:Language@/Python@/File@/functions@+
+def field_name(name):
+    parts = [part for part in re.split(r'[-_]+', re.sub(r'\s+', '-', name)) if part]
+    if not parts:
+        return ''
+    return parts[0].lower() + ''.join(part.capitalize() for part in parts[1:])
+
+
+def take_field(name):
+    field = field_name(name)
+    if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', field):
+        raise ValueError(f"name '{name}' is not a Go field")
+    if field in GO_KEYWORDS:
+        raise ValueError(f"name '{name}' is a Go keyword")
+    return field
+@
+
+@<go@:command line@:evaluate@:Language@/Python@/File@/functions@+
+def go_string(text):
+    for raw, escaped in (('\\', '\\\\'), ('"', '\\"'), ('\n', '\\n'), ('\r', '\\r'), ('\t', '\\t')):
+        text = text.replace(raw, escaped)
+    return f'"{text}"'
+
+
+def go_literal(opt):
+    if opt.default is None:
+        return {'bool': 'false', 'string': '""'}.get(opt.type, '0')
+    if opt.type == 'bool':
+        return 'true' if opt.default else 'false'
+    if opt.type == 'string':
+        return go_string(opt.default)
+    return str(opt.default)
+@
+
+The flag package parses one usage; a short name is a second flag, so no name may be both a short
+and a long name, h and help stay reserved for help, and options and arguments must map to distinct Go fields.
+@<go@:command line@:evaluate@:Language@/Python@/File@/functions@+
+def validate_go_usage(syntax):
+    if len(syntax.usages) != 1:
+        raise ValueError('the flag package parses one usage')
+    usage = syntax.usages[0]
+    flags = [opt.name for opt in usage.options] + [opt.short for opt in usage.options if opt.short]
+    for name in flags:
+        if name in ('h', 'help'):
+            raise ValueError(f'flag {name!r} is the help flag of the flag package')
+        if flags.count(name) > 1:
+            raise ValueError(f'flag {name!r} is both a short name and a long name')
+    for names in ([opt.name for opt in usage.options], usage.arguments):
+        seen = set()
+        for name in names:
+            field = take_field(name)
+            if field in seen:
+                raise ValueError(f"name '{name}' repeats field {field}")
+            seen.add(field)
+@
+
+@<go@:command line@:evaluate@:Language@/Python@/File@/classes@+
+class GoSyntax(InvocationSyntax):
+    @pydantic.model_validator(mode='after')
+    def check_go_usage(self):
+        validate_go_usage(self)
+        return self
+@~ UI@/Command Line@/Python@/classes@/InvocationSyntax @
+
+@<command variables@:go@:command line@:evaluate@:Language@/Python@/File@/main@=
+syntax = configuration(GoSyntax, sys.stdin.read())
+usage = syntax.usages[0]
+if usage.options or usage.arguments:
+    print('var command struct {')
+    if usage.options:
+        print('flags struct {')
+        for opt in usage.options:
+            print(f'{take_field(opt.name)} {opt.type}')
+        print('}')
+    if usage.arguments:
+        print('arguments struct {')
+        for arg in usage.arguments:
+            print(f'{take_field(arg)} string')
+        print('}')
+    print('}')
+@~ Tool@/Python@/functions@/configuration @
+
+@<store arguments@:go@:command line@:evaluate@:Language@/Python@/File@/main@=
+syntax = configuration(GoSyntax, sys.stdin.read())
+arguments = syntax.usages[0].arguments
+print(f'if len(flag.Args()) != {len(arguments)} {{')
+print('flag.Usage()')
+print('os.Exit(1)')
+print('}')
+for i, arg in enumerate(arguments):
+    print(f'command.arguments.{take_field(arg)} = flag.Args()[{i}]')
+@~ Tool@/Python@/functions@/configuration @
+
+@<register flags@:go@:command line@:evaluate@:Language@/Python@/File@/main@=
+syntax = configuration(GoSyntax, sys.stdin.read())
+for opt in syntax.usages[0].options:
+    field = take_field(opt.name)
+    for name in [opt.name] + ([opt.short] if opt.short else []):
+        print(
+            f'flag.{FLAG_FUNCS[opt.type]}(&command.flags.{field}, {go_string(name)}, '
+            f'{go_literal(opt)}, {go_string(opt.description)})'
+        )
+@~ Tool@/Python@/functions@/configuration @
+
+@<usage literal@:go@:command line@:evaluate@:Language@/Python@/File@/main@=
+print(go_string(sys.stdin.read()), end='')
 @

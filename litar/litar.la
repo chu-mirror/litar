@@ -10537,7 +10537,7 @@ func TestLibraryModuleDescriptions(t *testing.T) {
 
 @~ Project@/litar@/Go@/functions@/litar.chunkTree @~ Project@/litar@/Go@/functions@/litar.describe @~ Project@/litar@/Go@/functions@/litar.exampleChain @
 
-Runtime is a nested module under Tool@@/Text Processing with its own meta chunk.
+Runtime is a nested module under Tool@@/Evaluate with its own meta chunk.
 @<Project@/litar@/Tests@/Listing@/check that the chunk tree 'tree' hides Chunk and describes the modules of 'want'@=
 if name, found := findNamed(tree, "Chunk"); found {
 	t.Fatalf("tree contains %s", name)
@@ -10548,8 +10548,8 @@ for name, desc := range want {
 		t.Fatalf("%s %+v", name, node)
 	}
 }
-inner, ok := findTree(tree, "Tool", "Text Processing", "Runtime")
-if !ok || inner.Description != "Background Python server and client runtime for text-processing scripts." {
+inner, ok := findTree(tree, "Tool", "Evaluate", "Runtime")
+if !ok || inner.Description != "Background Python server and client runtime, dependency management, and Jsonnet/pydantic configuration helpers." {
 	t.Fatalf("runtime %+v", inner)
 }
 @~ Project@/litar@/Go@/functions@/litar.findNamed @~ Project@/litar@/Go@/functions@/litar.findTree @
@@ -19267,23 +19267,13 @@ func (r *rootNode) setSlot(name string, s *viewSlot) {
 
 @? Project@/litar@/Go@/methods@/litar.rootNode.setSlot @~ Project@/litar@/Go@/types@/litar.rootNode @~ Project@/litar@/Go@/types@/litar.viewSlot @
 
-Removes a view slot from the shared FUSE root, drops its cached inode child,
-and invalidates the kernel directory entry so platforms whose vnode name cache
-ignores zero entry timeouts (such as macFUSE) do not serve stale files when the
-same slot is mounted again.
+Removes a view slot from the shared FUSE root and drops its cached inode child.
 @<fuse@:litar@:Language@/Go@/File@/methods@+
 func (r *rootNode) delSlot(name string) {
 	r.mu.Lock()
 	delete(r.slots, name)
 	r.mu.Unlock()
-	child := r.GetChild(name)
 	r.RmChild(name)
-	if child != nil {
-		if errno := r.NotifyDelete(name, child); errno == 0 || errno == syscall.ENOENT {
-			return
-		}
-	}
-	_ = r.NotifyEntry(name)
 }
 
 @? Project@/litar@/Go@/methods@/litar.rootNode.delSlot @~ Project@/litar@/Go@/types@/litar.rootNode @
@@ -20413,59 +20403,6 @@ func TestSharedFUSEEdgeCasesAndStress(t *testing.T) {
 }
 
 @~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.countLitarMounts @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.Evaluator.setIdentity @
-
-Verifies that reusing the same view slot while the shared FUSE daemon remains
-mounted serves updated archive file contents rather than stale cached entries.
-@<filter test@:litar@:Language@/Go@/File@/functions@+
-func TestSharedFUSESlotReuseWhileMounted(t *testing.T) {
-	if !fuseAvailable() {
-		t.Skip("no FUSE")
-	}
-	t.Setenv("LITAR_FUSE_DIR", t.TempDir())
-	before, beforeOK := countLitarMounts()
-	keep, err := connectFuseDaemon()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer keep.close()
-	srcV1 := "" +
-		"@@[sub/data.txt@@`src@@=one\n1\n@@\n" +
-		"@@<show@@=\n" +
-		"#!/bin/sh\n" +
-		"pwd\n" +
-		"cat sub/data.txt\n" +
-		"@@\n" +
-		"@@<run@@=@@|show@@+src@@\n"
-	ev1 := NewEvaluator(mustArch(t, srcV1), nil, nil)
-	ev1.setIdentity("/fake/reuse/composer.json", "Build")
-	got1, err := ev1.Eval(mustRef(t, "run"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines1 := strings.Split(strings.TrimSpace(got1), "\n")
-	if len(lines1) != 3 || lines1[1] != "one" || lines1[2] != "1" {
-		t.Fatalf("unexpected v1 output: %q", got1)
-	}
-	srcV2 := strings.ReplaceAll(srcV1, "one\n1\n", "one two\n2\n")
-	ev2 := NewEvaluator(mustArch(t, srcV2), nil, nil)
-	ev2.setIdentity("/fake/reuse/composer.json", "Build")
-	got2, err := ev2.Eval(mustRef(t, "run"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines2 := strings.Split(strings.TrimSpace(got2), "\n")
-	if len(lines2) != 3 || lines2[0] != lines1[0] || lines2[1] != "one two" || lines2[2] != "2" {
-		t.Fatalf("expected same path %q and updated content, got %q", lines1[0], got2)
-	}
-	keep.close()
-	after, afterOK := countLitarMounts()
-	if beforeOK && afterOK && after != before {
-		t.Fatalf("expected clean unmount after keepalive close: before=%d after=%d", before, after)
-	}
-}
-
-@~ Project@/litar@/Go@/functions@/litar.NewEvaluator @~ Project@/litar@/Go@/functions@/litar.connectFuseDaemon @~ Project@/litar@/Go@/functions@/litar.countLitarMounts @~ Project@/litar@/Go@/functions@/litar.fuseAvailable @~ Project@/litar@/Go@/functions@/litar.mustArch @~ Project@/litar@/Go@/functions@/litar.mustRef @~ Project@/litar@/Go@/methods@/litar.Evaluator.Eval @~ Project@/litar@/Go@/methods@/litar.Evaluator.setIdentity @~ Project@/litar@/Go@/methods@/litar.fuseClient.close @
-
 The litar Go module lives in the project's home directory, litar.
 @<Language@/Go@/Module@/module directory@=litar@
 
@@ -20483,4 +20420,3 @@ The litar Go module lives in the project's home directory, litar.
 @<File@/litar@/mod@/go.sum@=
 {"description": "Cryptographic checksums of the Go module dependencies."}
 @
-

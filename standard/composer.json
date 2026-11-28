@@ -5,7 +5,7 @@
         {
             "name": "Standard",
             "archive": "standard.la",
-            "description": "Shared filters, the structures of C and Go, the command line generators, and the framework Light.",
+            "description": "Shared filters, the structures of C, Go and Python, the command line generators, and the frameworks Light and Zephyr.",
             "mappings": [
                 {
                     "path": ".clang-format",

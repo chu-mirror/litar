@@ -535,7 +535,14 @@ func (r *rootNode) delSlot(name string) {
 	r.mu.Lock()
 	delete(r.slots, name)
 	r.mu.Unlock()
+	child := r.GetChild(name)
 	r.RmChild(name)
+	if child != nil {
+		if errno := r.NotifyDelete(name, child); errno == 0 || errno == syscall.ENOENT {
+			return
+		}
+	}
+	_ = r.NotifyEntry(name)
 }
 
 func (c *fuseClient) roundTrip(req fuseReq) (fuseResp, error) {
